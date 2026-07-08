@@ -13,6 +13,7 @@ import type {
   ScriptureVerse,
   AppSettings,
 } from "@shared/ipc";
+import { normalizeOverlaySettings } from "@shared/overlay-defaults";
 import { ScriptureDetector } from "./services/scripture/detector";
 import type { DetectorStats, ScriptureReference } from "./services/scripture/detector";
 import { BibleDatabase } from "./services/scripture/bible-db";
@@ -21,7 +22,15 @@ import { sttService } from "./services/stt";
 import { proPresenterService } from "./services/propresenter";
 import { scriptureService } from "./services/scripture";
 import { resilienceManager } from "./services/resilience";
+import { ndiService } from "./services/ndi";
+import { overlayWindow } from "./services/ndi/overlay-window";
 import { store } from "./db";
+
+/** D2 — which mechanism last successfully showed the scripture overlay. Drives mode-aware clear semantics. */
+type OverlayMechanism = "library" | "ndi" | "message" | null;
+
+/** Milliseconds to let the offscreen overlay window paint at least once before triggering the PP video input (D — NDI push sequence). */
+const NDI_PAINT_SETTLE_MS = 150;
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -61,6 +70,9 @@ class Orchestrator {
 
   /** Single pending auto-clear timer for the scripture overlay (one at a time). */
   private overlayClearTimer: NodeJS.Timeout | null = null;
+
+  /** D2 — mechanism-aware clear semantics. Set on EVERY successful present (including library). */
+  private lastOverlayMechanism: OverlayMechanism = null;
 
   private session: Session | null = null;
 
@@ -458,35 +470,9 @@ class Orchestrator {
       return;
     }
 
-    // Path A: a presentation named after the reference already exists in a
-    // PP library (churches with pre-built scripture decks) — trigger it.
-    const match = await proPresenterService.rawClient.searchLibraries(suggestion.reference);
-    if (match) {
-      const ok = await proPresenterService.rawClient.triggerLibraryPresentation(
-        match.libraryId,
-        match.presentationName,
-      );
-      if (ok) {
-        if (this.session) this.session.totalPresentations++;
-        this.updateHealth("propresenter", "ok");
-        log.info("[Orchestrator] Scripture presented (library)", {
-          ref: suggestion.reference,
-          library: match.libraryId,
-          presentation: match.presentationName,
-        });
-        this.emitStatus();
-        return;
-      }
-      log.warn("[Orchestrator] Library trigger failed — falling back to message push", {
-        ref: suggestion.reference,
-      });
-    }
-
-    // Path B: push verse text via the messages layer. PP's API cannot create
-    // presentations, but it can trigger a message template with token values.
-    const shown = await this.pushScriptureOverlay(suggestion);
-    if (!shown) {
-      const msg = `Failed to push "${suggestion.reference}" to ProPresenter messages layer`;
+    const mechanism = await this.dispatchScripture(suggestion);
+    if (!mechanism) {
+      const msg = `Failed to present "${suggestion.reference}" via any overlay mechanism`;
       this.updateHealth("propresenter", "error", msg);
       this.emitStatus();
       throw new Error(msg);
@@ -494,10 +480,85 @@ class Orchestrator {
 
     if (this.session) this.session.totalPresentations++;
     this.updateHealth("propresenter", "ok");
-    log.info("[Orchestrator] Scripture presented (message overlay)", {
+    log.info("[Orchestrator] Scripture presented", {
       ref: suggestion.reference,
+      mechanism,
     });
     this.emitStatus();
+  }
+
+  // ─── Mode dispatch (D1 truth table) ────────────────────────────────────────
+
+  /**
+   * Implements D1's output-precedence truth table exactly:
+   *   auto    → library match, then NDI (if ready), then message overlay
+   *   ndi     → NDI only (library NEVER searched); message overlay + health
+   *             warning as its sole fallback
+   *   message → library match, then message overlay (NDI never used)
+   *
+   * Shared by the real detection flow (`presentScripture`) and the manual
+   * "Send test verse" button (`testOverlay`) so both exercise whichever
+   * mechanism the current mode selects, per one code path. Sets
+   * `lastOverlayMechanism` (D2) on every success. Returns the mechanism that
+   * succeeded, or `null` if every applicable path failed.
+   */
+  private async dispatchScripture(suggestion: ScriptureSuggestion): Promise<OverlayMechanism> {
+    const overlay = normalizeOverlaySettings(store.get("overlay"));
+    const mode = overlay.mode;
+
+    // A fresh present is starting — any auto-clear timer left over from a
+    // *different* prior push must not fire later and clear this one's mechanism.
+    this.cancelOverlayAutoClear();
+
+    if (mode === "ndi") {
+      if (await this.pushScriptureOverlayNdi(suggestion, overlay)) {
+        this.lastOverlayMechanism = "ndi";
+        return "ndi";
+      }
+      log.warn("[Orchestrator] NDI not ready in ndi mode — falling back to message overlay", {
+        ref: suggestion.reference,
+      });
+      this.updateHealth("propresenter", "degraded", "NDI not ready — using message overlay fallback");
+      if (await this.pushScriptureOverlay(suggestion, overlay)) {
+        this.lastOverlayMechanism = "message";
+        return "message";
+      }
+      return null;
+    }
+
+    // auto & message modes both search the library first.
+    const match = await proPresenterService.rawClient.searchLibraries(suggestion.reference);
+    if (match) {
+      const ok = await proPresenterService.rawClient.triggerLibraryPresentation(
+        match.libraryId,
+        match.presentationName,
+      );
+      if (ok) {
+        this.lastOverlayMechanism = "library";
+        log.info("[Orchestrator] Scripture presented (library)", {
+          ref: suggestion.reference,
+          library: match.libraryId,
+          presentation: match.presentationName,
+        });
+        return "library";
+      }
+      log.warn("[Orchestrator] Library trigger failed — falling back", {
+        ref: suggestion.reference,
+      });
+    }
+
+    if (mode === "auto" && (await this.pushScriptureOverlayNdi(suggestion, overlay))) {
+      this.lastOverlayMechanism = "ndi";
+      return "ndi";
+    }
+
+    // message mode's only fallback, and auto's final fallback.
+    if (await this.pushScriptureOverlay(suggestion, overlay)) {
+      this.lastOverlayMechanism = "message";
+      return "message";
+    }
+
+    return null;
   }
 
   // ─── Scripture overlay (messages layer) ────────────────────────────────────
@@ -505,12 +566,12 @@ class Orchestrator {
   /**
    * Formats and pushes `suggestion` through the messages-layer overlay path,
    * honoring the user's overlay settings (template, translation suffix, verse
-   * numbers, verse cap). Schedules the auto-clear timer on success. Shared by
-   * the real detection flow and the Settings "Send test verse" button so
-   * formatting logic lives in exactly one place.
+   * numbers, verse cap). Schedules the auto-clear timer on success.
    */
-  private async pushScriptureOverlay(suggestion: ScriptureSuggestion): Promise<boolean> {
-    const overlay = store.get("overlay");
+  private async pushScriptureOverlay(
+    suggestion: ScriptureSuggestion,
+    overlay: AppSettings["overlay"],
+  ): Promise<boolean> {
     const text = this.formatMessageText(suggestion, overlay);
     if (!text) {
       log.warn("[Orchestrator] No verse text available for overlay push", {
@@ -533,7 +594,99 @@ class Orchestrator {
     return shown;
   }
 
-  /** Pushes a sample John 3:16 (KJV) overlay using current overlay settings — used by Settings "Send test verse". */
+  // ─── Scripture overlay (NDI, phase 2) ──────────────────────────────────────
+
+  /**
+   * Pushes `suggestion` through the in-app-rendered NDI overlay: ensure a PP
+   * video-input binding exists (D7), render the styled slide in the offscreen
+   * overlay window, give it one paint cycle to land in the NDI frame buffer,
+   * then trigger the bound PP video input (M0's unverified endpoint — see
+   * `ProPresenterClient.triggerVideoInput`). Returns false (never throws) on
+   * any failure so callers can fall back per the D1 truth table.
+   */
+  private async pushScriptureOverlayNdi(
+    suggestion: ScriptureSuggestion,
+    overlay: AppSettings["overlay"],
+  ): Promise<boolean> {
+    if (!ndiService.getStatus().available) return false;
+
+    const uuid = await this.ensureVideoInputBinding(overlay);
+    if (!uuid) {
+      log.warn("[Orchestrator] No PP video input bound for NDI — cannot push", {
+        ref: suggestion.reference,
+      });
+      return false;
+    }
+
+    const text = this.formatMessageText(suggestion, overlay);
+    if (!text) {
+      log.warn("[Orchestrator] No verse text available for NDI overlay push", {
+        ref: suggestion.reference,
+        translation: suggestion.translation,
+      });
+      return false;
+    }
+
+    const reference = overlay.showTranslation
+      ? `${suggestion.reference} (${suggestion.translation})`
+      : suggestion.reference;
+
+    try {
+      await overlayWindow.showScripture(reference, text, overlay.theme);
+      // Let at least one 'paint' land in NdiService's frame buffer before
+      // triggering PP onto the video input — otherwise PP may cut to a stale
+      // (blank) frame for one repeat-loop tick.
+      await new Promise((resolve) => setTimeout(resolve, NDI_PAINT_SETTLE_MS));
+
+      const triggered = await proPresenterService.rawClient.triggerVideoInput(uuid);
+      if (!triggered) {
+        log.warn("[Orchestrator] PP video-input trigger failed", { uuid, ref: suggestion.reference });
+        return false;
+      }
+
+      this.scheduleOverlayAutoClear(overlay.autoClearSec);
+      return true;
+    } catch (err) {
+      log.error("[Orchestrator] NDI overlay push failed", (err as Error).message);
+      return false;
+    }
+  }
+
+  /**
+   * D7 — PP video input binding: persist uuid, name-match only as discovery.
+   * If `overlay.ppVideoInputUuid` is set and still present in PP's
+   * `/v1/video_inputs` list, use it. Else find by name containing
+   * "ProAutomate"; if found, persist its uuid. Never hard-fails a push over
+   * discovery — returns null (NDI not ready) if neither resolves.
+   */
+  private async ensureVideoInputBinding(overlay: AppSettings["overlay"]): Promise<string | null> {
+    const inputs = await proPresenterService.rawClient.getVideoInputs();
+
+    if (overlay.ppVideoInputUuid) {
+      const bound = inputs.find((i) => i.uuid === overlay.ppVideoInputUuid);
+      if (bound) return bound.uuid;
+    }
+
+    const discovered = inputs.find((i) => i.name.includes("ProAutomate"));
+    if (discovered) {
+      const next = normalizeOverlaySettings({ ...overlay, ppVideoInputUuid: discovered.uuid });
+      store.set("overlay", next);
+      log.info("[Orchestrator] NDI video input discovered and persisted", {
+        uuid: discovered.uuid,
+        name: discovered.name,
+      });
+      return discovered.uuid;
+    }
+
+    return null;
+  }
+
+  /**
+   * Pushes a sample John 3:16 (KJV) overlay through whichever mechanism the
+   * current `overlay.mode` selects — used by the Settings/Theme "Send test
+   * verse" buttons. Shares `dispatchScripture` with the real detection flow so
+   * both exercise identical mode-dispatch logic.
+   */
   async testOverlay(): Promise<boolean> {
     const sample: ScriptureSuggestion = {
       id: "overlay-test",
@@ -552,16 +705,50 @@ class Orchestrator {
       source: "manual",
       triggerText: "",
     };
-    return this.pushScriptureOverlay(sample);
+    const mechanism = await this.dispatchScripture(sample);
+    return mechanism !== null;
   }
 
-  /** Clears the scripture message and the whole messages layer — used by Settings "Clear" and IPC CLEAR_OVERLAY. */
+  /**
+   * D2 — clear semantics are mechanism-aware, keyed on `lastOverlayMechanism`:
+   *   library → GET /v1/clear/layer/presentation
+   *   ndi     → overlay window blanked + NDI frame reset, AND the same
+   *             presentation-layer clear (removes the triggered video input)
+   *   message → clearScriptureMessage + clearMessages (phase-1 behavior)
+   *   null/unknown (e.g. after app restart) → clear all three; idempotent and cheap.
+   * Used by Settings/Theme "Clear" buttons, IPC CLEAR_OVERLAY, and the
+   * auto-clear timer.
+   */
   async clearOverlay(): Promise<boolean> {
     this.cancelOverlayAutoClear();
     const client = proPresenterService.rawClient;
-    const clearedMessage = await client.clearScriptureMessage();
-    const clearedLayer = await client.clearMessages();
-    return clearedMessage && clearedLayer;
+
+    switch (this.lastOverlayMechanism) {
+      case "library":
+        return client.clearAll();
+
+      case "ndi": {
+        await overlayWindow.clear();
+        return client.clearAll();
+      }
+
+      case "message": {
+        const clearedMessage = await client.clearScriptureMessage();
+        const clearedLayer = await client.clearMessages();
+        return clearedMessage && clearedLayer;
+      }
+
+      case null:
+      default: {
+        await overlayWindow.clear();
+        const results = await Promise.all([
+          client.clearAll(),
+          client.clearMessages(),
+          client.clearScriptureMessage(),
+        ]);
+        return results.every(Boolean);
+      }
+    }
   }
 
   private scheduleOverlayAutoClear(autoClearSec: number): void {
@@ -569,7 +756,7 @@ class Orchestrator {
     if (autoClearSec > 0) {
       this.overlayClearTimer = setTimeout(() => {
         this.overlayClearTimer = null;
-        proPresenterService.rawClient.clearScriptureMessage().catch((err) => {
+        this.clearOverlay().catch((err) => {
           log.error("[Orchestrator] Overlay auto-clear failed", (err as Error).message);
         });
       }, autoClearSec * 1_000);

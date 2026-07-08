@@ -7,6 +7,8 @@ import { initDatabase, store } from './db'
 import { lyricsService } from './services/lyrics'
 import { scriptureService } from './services/scripture'
 import { proPresenterService } from './services/propresenter'
+import { ndiService } from './services/ndi'
+import { overlayWindow } from './services/ndi/overlay-window'
 
 log.initialize()
 log.transports.file.level = 'info'
@@ -60,6 +62,13 @@ app.whenReady().then(() => {
   scriptureService.open()
   registerIpcHandlers()
 
+  // M0: start the NDI sender unconditionally on launch (hardcoded transparent
+  // test frame until the overlay window pushes real content). A missing/broken
+  // grandiose-mac native module logs and no-ops — never blocks app boot.
+  ndiService.start().catch((err) => {
+    log.error('[NDI] start() failed:', (err as Error).message)
+  })
+
   // Auto-connect to ProPresenter using stored settings
   const ppSettings = store.get('propresenter')
   if (ppSettings && ppSettings.host) {
@@ -87,6 +96,13 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit()
   }
+})
+
+app.on('before-quit', () => {
+  overlayWindow.destroy()
+  ndiService.stop().catch((err) => {
+    log.error('[NDI] stop() failed during quit:', (err as Error).message)
+  })
 })
 
 process.on('uncaughtException', (error) => {

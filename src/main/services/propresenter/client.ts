@@ -19,6 +19,7 @@ import type {
   PPTextElement,
   PPMessage,
   PPMessageToken,
+  PPVideoInput,
 } from './types'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -843,6 +844,55 @@ export class ProPresenterClient extends EventEmitter {
       return true
     } catch (err) {
       this.logAxiosError('clearScriptureMessage', err)
+      return false
+    }
+  }
+
+  // ─── Video inputs (NDI overlay, phase 2) ───────────────────────────────────
+
+  async getVideoInputs(): Promise<PPVideoInput[]> {
+    try {
+      const { data } = await this.http.get<any>('/v1/video_inputs')
+      const raw: any[] = Array.isArray(data) ? data : (data?.items ?? [])
+      return raw.map((item) => ({
+        uuid: item.uuid ?? item.id?.uuid ?? '',
+        name: item.name ?? item.id?.name ?? '',
+      }))
+    } catch (err) {
+      this.logAxiosError('getVideoInputs', err)
+      return []
+    }
+  }
+
+  /**
+   * TODO(M0 — unverified): the trigger endpoint shape below has not been
+   * confirmed against a live PP instance with an NDI video input configured
+   * (requires a user-assisted step in ProPresenter's UI — see M0 steps 3-4 in
+   * docs/plans/2026-07-08-ndi-overlay.md). We implement the expected REST
+   * shape — `GET /v1/video_inputs/{uuid}/trigger`, matching every other PP19
+   * trigger endpoint in this file — as primary, with a POST fallback if PP
+   * responds 404/405. Whichever call succeeds is logged so the real shape can
+   * be recorded back into the plan once verified live against ProPresenter.
+   */
+  async triggerVideoInput(uuid: string): Promise<boolean> {
+    const path = `/v1/video_inputs/${encodeURIComponent(uuid)}/trigger`
+    try {
+      await this.http.get(path)
+      log.info('[PP] Video input triggered (GET)', { uuid })
+      return true
+    } catch (err) {
+      const status = (err as AxiosError).response?.status
+      if (status === 404 || status === 405) {
+        try {
+          await this.http.post(path)
+          log.info('[PP] Video input triggered (POST fallback)', { uuid })
+          return true
+        } catch (postErr) {
+          this.logAxiosError('triggerVideoInput(POST fallback)', postErr)
+          return false
+        }
+      }
+      this.logAxiosError('triggerVideoInput', err)
       return false
     }
   }

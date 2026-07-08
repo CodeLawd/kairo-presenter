@@ -27,6 +27,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/stores/useAppStore'
+import { DEFAULT_OVERLAY_SETTINGS, normalizeOverlaySettings } from '@shared/overlay-defaults'
 import type { AppSettings, AudioDevice, AudioLevel, ScriptureTranslation } from '@shared/ipc'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -62,13 +63,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     contextWindowSize: 90,
   },
   display: { theme: 'dark', fontSize: 16, transcriptionFontSize: 18 },
-  overlay: {
-    template: '{Reference}\n{Text}',
-    showTranslation: true,
-    showVerseNumbers: true,
-    maxVerses: 0,
-    autoClearSec: 0,
-  },
+  overlay: DEFAULT_OVERLAY_SETTINGS,
 }
 
 // ─── Helper: Toggle ───────────────────────────────────────────────────────────
@@ -1443,7 +1438,7 @@ export default function Settings(): React.ReactElement {
         stt: { ...prev.stt, ...stored.stt },
         scripture: { ...prev.scripture, ...stored.scripture },
         display: { ...prev.display, ...stored.display },
-        overlay: { ...prev.overlay, ...stored.overlay },
+        overlay: normalizeOverlaySettings({ ...prev.overlay, ...stored.overlay }),
       }))
       setLoading(false)
     })

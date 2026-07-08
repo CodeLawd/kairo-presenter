@@ -178,8 +178,10 @@ PP Video Input (NDI) — trigger endpoint verified in M0 → presentation layer
 **M0 — de-risk (no UI). BLOCKS M1 on two live verifications:**
 1. Add dep; NdiService with the spike's hardcoded test frame; start unconditionally on app launch (log availability).
 2. `npm run dev` → main logs sender creation (ABI OK). Also run the **production build check from D4**.
-3. **USER STEP (pause, ask the user):** PP → Video Inputs → add NDI → `ProAutomate Scripture`. Then `GET /v1/video_inputs` lists it → record uuid + exact JSON shape HERE in this file.
-4. **Verify trigger endpoint** (coordinate with user — takes over PP output): expected `GET /v1/video_inputs/{uuid}/trigger`; if 404 try POST, then `/v1/trigger/…` variants. Record the working call HERE.
+3. **USER STEP — DONE 2026-07-08.** `GET /v1/video_inputs` shape (flat, NOT nested under `id`):
+   `[{"uuid":"8D0AE33F-…","name":"Input 1: Input 1","index":0},{"uuid":"34825979-1865-447B-B81E-3FEB3699FD0B","name":"Input 2","index":1}]`
+   **Finding: PP names video inputs "Input N" — it does NOT expose the NDI source name.** The D7 name-contains-"ProAutomate" discovery can never match; uuid was bound manually in settings for now. **Follow-up required:** Theme page needs a video-input picker (list from `GET /v1/video_inputs`, user selects, persist uuid). `GET /v1/video_inputs/{uuid}` (detail) is 404 — list endpoint only.
+4. **Verify trigger endpoint — DONE 2026-07-08:** `GET /v1/video_inputs/{uuid}/trigger` → HTTP 204. Primary path in `triggerVideoInput` is correct; POST fallback untested (not needed).
 5. **Verify alpha:** send (a) the opaque test frame, (b) a fully transparent frame, (c) a frame with opaque lower-third over transparent. Record what PP shows for each. If alpha is NOT honored (black instead of transparent): clear semantics rely solely on presentation-layer clear (D2 already covers this) and idle frame becomes solid black — acceptable — record the verdict either way.
 
 **M1 — real pipeline:** overlay window + shared template + DEFAULT_OVERLAY_THEME + orchestrator dispatch (D1/D2) + binding persistence (D7). Acceptance: mode=ndi approve → styled verse on PP output; clearOverlay + clearAll both remove it; mode=message still works; PP without NDI input → warning + fallback.

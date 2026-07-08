@@ -24,6 +24,8 @@ import type {
   SessionStats,
   PendingAutoPresent,
   ResilienceStatus,
+  NdiStatus,
+  PPVideoInputInfo,
   Unsubscribe,
 } from '@shared/ipc'
 import { IPC } from '@shared/ipc'
@@ -282,9 +284,21 @@ const resilience: ProAutomateAPI['resilience'] = {
   },
 }
 
+// ─── ndi ──────────────────────────────────────────────────────────────────────
+
+const ndi: ProAutomateAPI['ndi'] = {
+  getStatus(): Promise<NdiStatus> {
+    return ipcRenderer.invoke(IPC.NDI.GET_STATUS)
+  },
+
+  getVideoInputs(): Promise<PPVideoInputInfo[]> {
+    return ipcRenderer.invoke(IPC.NDI.GET_VIDEO_INPUTS)
+  },
+}
+
 // ─── Expose ───────────────────────────────────────────────────────────────────
 
-const api: ProAutomateAPI = { propresenter, audio, scripture, transcription, lyrics, settings, orchestrator, resilience }
+const api: ProAutomateAPI = { propresenter, audio, scripture, transcription, lyrics, settings, orchestrator, resilience, ndi }
 
 if (process.contextIsolated) {
   try {

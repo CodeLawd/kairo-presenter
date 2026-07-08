@@ -39,6 +39,7 @@ export interface AppSettings {
     transcriptionFontSize: number
   }
   overlay: {
+    // — phase 1 (existing, unchanged) —
     /** PP message template string. Must contain {Reference} and/or {Text}. */
     template: string
     /** Append translation to reference shown on screen: "John 3:16 (KJV)" */
@@ -49,6 +50,54 @@ export interface AppSettings {
     maxVerses: number
     /** Auto-clear overlay after N seconds; 0 = manual clear only */
     autoClearSec: number
+    // — phase 2 (new) —
+    /** Output mode — see D1 truth table in docs/plans/2026-07-08-ndi-overlay.md */
+    mode: 'auto' | 'ndi' | 'message'
+    /** Persisted after discovery (D7) — the bound PP video-input uuid for the NDI source. */
+    ppVideoInputUuid: string
+    /** In-app rendered theme used by the NDI overlay window and its WYSIWYG preview. */
+    theme: OverlayTheme
+  }
+}
+
+// ─── Overlay theme (phase 2 — NDI in-app renderer) ────────────────────────────
+// Schema is locked (see D-decisions in docs/plans/2026-07-08-ndi-overlay.md).
+// Defaults + the normalizer that enforces the constraints below live in
+// src/lib/overlay-defaults.ts (DEFAULT_OVERLAY_THEME / normalizeOverlaySettings).
+
+export interface OverlayTheme {
+  background: {
+    type: 'color' | 'gradient' | 'transparent'
+    color: string          // '#0b1220'
+    color2?: string        // gradient end; used when type === 'gradient'
+    angleDeg?: number      // gradient angle, 0–360
+    opacity: number        // 0–1, applies to the whole background layer
+  }
+  verse: {
+    fontFamily: string     // CSS family list
+    fontSizePx: number     // 12–200
+    fontWeight: number     // 100–900
+    color: string
+    lineHeight: number     // 0.9–2.5
+    align: 'left' | 'center' | 'right'
+    shadow: boolean        // text-shadow for legibility over video
+  }
+  reference: {
+    show: boolean
+    position: 'above' | 'below'
+    fontFamily: string
+    fontSizePx: number
+    fontWeight: number
+    color: string
+    uppercase: boolean
+  }
+  layout: {
+    position: 'lower-third' | 'center' | 'top' | 'full'
+    maxWidthPct: number    // 20–100
+    paddingPx: number      // 0–200
+    backdropBox: boolean   // rounded box behind the text block
+    backdropColor: string  // rgba recommended
+    backdropRadiusPx: number // 0–64
   }
 }
 
@@ -299,6 +348,29 @@ export interface LyricsAPI {
   addToPlaylist: (songId: string, playlistId: string) => Promise<void>
 }
 
+// ─── NDI ───────────────────────────────────────────────────────────────────────
+
+export interface NdiStatus {
+  /** grandiose-mac loaded and sender created successfully. */
+  available: boolean
+  /** Frame loop currently pushing frames to the NDI sender. */
+  sending: boolean
+  /** A PP video input (bound uuid, or discovered by name) is currently present in PP's /v1/video_inputs list. */
+  ppInputConfigured: boolean
+}
+
+/** One entry from PP's `GET /v1/video_inputs` — PP names these "Input N", it does NOT expose the NDI source name. */
+export interface PPVideoInputInfo {
+  uuid: string
+  name: string
+}
+
+export interface NdiAPI {
+  getStatus: () => Promise<NdiStatus>
+  /** Lists PP's configured video inputs so the user can bind the NDI one manually. */
+  getVideoInputs: () => Promise<PPVideoInputInfo[]>
+}
+
 export interface SettingsAPI {
   get: <K extends keyof AppSettings>(key: K) => Promise<AppSettings[K]>
   set: <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => Promise<void>
@@ -399,6 +471,7 @@ export interface ProAutomateAPI {
   settings: SettingsAPI
   orchestrator: OrchestratorAPI
   resilience: ResilienceAPI
+  ndi: NdiAPI
 }
 
 // ─── IPC channel constants ────────────────────────────────────────────────────
@@ -474,5 +547,9 @@ export const IPC = {
     RESTORE:       'resilience:restore',          // invoke
     DISCARD:       'resilience:discard',          // invoke
     STATUS_CHANGE: 'resilience:statusChange',     // push (ResilienceStatus)
+  },
+  NDI: {
+    GET_STATUS:       'ndi:getStatus',       // invoke — { available, sending, ppInputConfigured }
+    GET_VIDEO_INPUTS: 'ndi:getVideoInputs',  // invoke — PPVideoInputInfo[]
   },
 } as const

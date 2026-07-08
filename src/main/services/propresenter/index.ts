@@ -9,6 +9,7 @@ import type {
 } from '@shared/ipc'
 import { ProPresenterClient } from './client'
 import type { PPLibraryItem, PPPlaylist, PPStreamUpdate } from './types'
+import { ndiService } from '../ndi'
 
 type StatusCallback = (status: ProPresenterStatus) => void
 
@@ -234,7 +235,9 @@ class ProPresenterService {
   }
 
   async clearAll(): Promise<void> {
-    // Clear both layers: slides (presentation) and scripture overlay (messages)
+    // Clear both PP layers: slides (presentation) and scripture overlay (messages),
+    // plus (D2) reset the NDI overlay window/sender back to a blank frame.
+    ndiService.clearFrame()
     await Promise.all([this.client.clearAll(), this.client.clearMessages()])
   }
 

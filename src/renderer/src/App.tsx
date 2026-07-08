@@ -6,6 +6,7 @@ import Scripture from '@/components/scripture/Scripture'
 import Transcription from '@/components/transcription/Transcription'
 import Lyrics from '@/components/lyrics/Lyrics'
 import Operator from '@/components/operator/Operator'
+import ThemeEditor from '@/components/theme/ThemeEditor'
 import Settings from '@/components/settings/Settings'
 import { useAppStore } from '@/stores/useAppStore'
 
@@ -15,6 +16,7 @@ export type NavRoute =
   | 'transcription'
   | 'lyrics'
   | 'operator'
+  | 'theme'
 
 // ─── Persistent audio pipeline (lives at app root, not tied to any route) ──────
 
@@ -133,6 +135,7 @@ const views: Record<NavRoute, React.ReactNode> = {
   transcription: <Transcription />,
   lyrics: <Lyrics />,
   operator: <Operator />,
+  theme: <ThemeEditor />,
 }
 
 export default function App(): React.ReactElement {

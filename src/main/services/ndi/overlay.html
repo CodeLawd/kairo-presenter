@@ -1,0 +1,38 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>ProAutomate NDI Overlay</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: transparent;
+      }
+      #root {
+        position: relative;
+        width: 100%;
+        height: 100%;
+      }
+      #root * {
+        box-sizing: border-box;
+        -webkit-font-smoothing: antialiased;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      // Populated by the main process via
+      // webContents.executeJavaScript('window.__setContent(...)') with the
+      // output of renderOverlayHTML() (src/lib/overlay-template.ts).
+      window.__setContent = function (html) {
+        document.getElementById('root').innerHTML = html;
+      };
+    </script>
+  </body>
+</html>

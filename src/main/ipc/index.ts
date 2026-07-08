@@ -2,6 +2,7 @@ import { ipcMain, BrowserWindow, systemPreferences } from "electron";
 import log from "electron-log/main";
 import type { AppSettings, OrchestratorConfig, ResilienceStatus } from "@shared/ipc";
 import { IPC } from "@shared/ipc";
+import { normalizeOverlaySettings } from "@shared/overlay-defaults";
 import { store } from "../db";
 import { proPresenterService } from "../services/propresenter";
 import { audioService } from "../services/audio";
@@ -10,6 +11,7 @@ import { scriptureService } from "../services/scripture";
 import { lyricsService } from "../services/lyrics";
 import { orchestrator } from "../orchestrator";
 import { resilienceManager } from "../services/resilience";
+import { ndiService } from "../services/ndi";
 
 // ─── Broadcast helper ─────────────────────────────────────────────────────────
 
@@ -257,23 +259,61 @@ function registerResilienceHandlers(): void {
   });
 }
 
+// ─── NDI handlers ──────────────────────────────────────────────────────────────
+
+function registerNdiHandlers(): void {
+  ipcMain.handle(IPC.NDI.GET_STATUS, async () => {
+    const ndiStatus = ndiService.getStatus();
+    const overlay = normalizeOverlaySettings(store.get("overlay"));
+
+    let ppInputConfigured = false;
+    if (proPresenterService.getStatus().state === "connected") {
+      const inputs = await proPresenterService.rawClient.getVideoInputs();
+      ppInputConfigured = overlay.ppVideoInputUuid
+        ? inputs.some((i) => i.uuid === overlay.ppVideoInputUuid)
+        : inputs.some((i) => i.name.includes("ProAutomate"));
+    }
+
+    return { ...ndiStatus, ppInputConfigured };
+  });
+
+  ipcMain.handle(IPC.NDI.GET_VIDEO_INPUTS, async () => {
+    if (proPresenterService.getStatus().state !== "connected") return [];
+    return proPresenterService.rawClient.getVideoInputs();
+  });
+}
+
 // ─── Settings handlers ────────────────────────────────────────────────────────
 
 function registerSettingsHandlers(): void {
   ipcMain.handle(IPC.SETTINGS.GET, (_event, key: keyof AppSettings) => {
+    if (key === "overlay") return normalizeOverlaySettings(store.get("overlay"));
     return store.get(key);
   });
 
   ipcMain.handle(
     IPC.SETTINGS.SET,
     (_event, key: keyof AppSettings, value: AppSettings[typeof key]) => {
-      store.set(key, value);
+      if (key === "overlay") {
+        // D3 belt-and-braces: electron-store's `set` wholesale-replaces the
+        // `overlay` object (no deep-merge). A renderer page that only edits a
+        // slice of it (e.g. the Theme editor writing `theme`/`mode` without the
+        // phase-1 template fields, or vice versa) must not blow away the rest —
+        // merge with what's already stored, then normalize/clamp before persisting.
+        const merged = normalizeOverlaySettings({
+          ...store.get("overlay"),
+          ...(value as Partial<AppSettings["overlay"]>),
+        });
+        store.set("overlay", merged);
+      } else {
+        store.set(key, value);
+      }
       log.debug("Setting updated", { key });
     },
   );
 
   ipcMain.handle(IPC.SETTINGS.GET_ALL, () => {
-    return store.store;
+    return { ...store.store, overlay: normalizeOverlaySettings(store.get("overlay")) };
   });
 }
 
@@ -321,6 +361,7 @@ export function registerIpcHandlers(): void {
   registerLyricsHandlers();
   registerSettingsHandlers();
   registerResilienceHandlers();
+  registerNdiHandlers();
   wireEventBroadcasting();
   log.info("All IPC handlers registered");
 }

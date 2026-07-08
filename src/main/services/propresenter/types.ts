@@ -170,6 +170,14 @@ export interface PPStageMessageRequest {
   message: string
 }
 
+// ─── Video inputs (NDI overlay, phase 2) ───────────────────────────────────────
+
+/** Normalized shape of a `GET /v1/video_inputs` entry — PP's raw JSON may nest under `id`. */
+export interface PPVideoInput {
+  uuid: string
+  name: string
+}
+
 // ─── Connection events ────────────────────────────────────────────────────────
 
 export type PPConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error'

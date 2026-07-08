@@ -4,6 +4,7 @@ import {
   Mic,
   Music2,
   MonitorPlay,
+  Palette,
   Settings,
   ChevronRight,
   Radio,
@@ -23,6 +24,7 @@ const primaryNav: NavItem[] = [
   { id: 'transcription', label: 'Transcription', icon: Mic },
   { id: 'lyrics', label: 'Lyrics', icon: Music2 },
   { id: 'operator', label: 'Operator', icon: MonitorPlay },
+  { id: 'theme', label: 'Theme', icon: Palette },
 ]
 
 interface SidebarProps {
