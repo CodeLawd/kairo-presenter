@@ -1,0 +1,326 @@
+import { ipcMain, BrowserWindow, systemPreferences } from "electron";
+import log from "electron-log/main";
+import type { AppSettings, OrchestratorConfig, ResilienceStatus } from "@shared/ipc";
+import { IPC } from "@shared/ipc";
+import { store } from "../db";
+import { proPresenterService } from "../services/propresenter";
+import { audioService } from "../services/audio";
+import { sttService } from "../services/stt";
+import { scriptureService } from "../services/scripture";
+import { lyricsService } from "../services/lyrics";
+import { orchestrator } from "../orchestrator";
+import { resilienceManager } from "../services/resilience";
+
+// ─── Broadcast helper ─────────────────────────────────────────────────────────
+
+function broadcast<T>(channel: string, data: T): void {
+  BrowserWindow.getAllWindows().forEach((win) => {
+    if (!win.isDestroyed()) {
+      win.webContents.send(channel, data);
+    }
+  });
+}
+
+// ─── ProPresenter handlers ────────────────────────────────────────────────────
+
+function registerProPresenterHandlers(): void {
+  ipcMain.handle(IPC.PROPRESENTER.CONNECT, async (_event, options) => {
+    const { host, port, password } = options as {
+      host: string;
+      port: number;
+      password: string;
+    };
+    await proPresenterService.connect({
+      host,
+      port,
+      password,
+    });
+    log.info("ProPresenter connect requested", { host, port });
+  });
+
+  ipcMain.handle(IPC.PROPRESENTER.DISCONNECT, async () => {
+    await proPresenterService.disconnect();
+  });
+
+  ipcMain.handle(IPC.PROPRESENTER.GET_STATUS, () => {
+    return proPresenterService.getStatus();
+  });
+
+  ipcMain.handle(
+    IPC.PROPRESENTER.TRIGGER_SLIDE,
+    async (_event, slideId: string) => {
+      await proPresenterService.triggerSlide(slideId);
+      log.info("Slide triggered", { slideId });
+    },
+  );
+
+  ipcMain.handle(IPC.PROPRESENTER.CLEAR_ALL, async () => {
+    await proPresenterService.clearAll();
+  });
+
+  ipcMain.handle(IPC.PROPRESENTER.GET_LIBRARY, async () => {
+    return proPresenterService.getLibrary();
+  });
+
+  ipcMain.handle(IPC.PROPRESENTER.GET_PLAYLISTS, async () => {
+    return proPresenterService.getPlaylists();
+  });
+
+  ipcMain.handle(IPC.PROPRESENTER.TEST_OVERLAY, async () => {
+    return orchestrator.testOverlay();
+  });
+
+  ipcMain.handle(IPC.PROPRESENTER.CLEAR_OVERLAY, async () => {
+    return orchestrator.clearOverlay();
+  });
+}
+
+// ─── Audio handlers ───────────────────────────────────────────────────────────
+
+function registerAudioHandlers(): void {
+  ipcMain.handle(IPC.AUDIO.GET_DEVICES, async () => {
+    return audioService.getDevices();
+  });
+
+  // Renderer calls this when orchestrator starts — creates the PassThrough stream
+  // that Deepgram will consume. The renderer then streams PCM via audio:pcmChunk.
+  ipcMain.handle(IPC.AUDIO.START_CAPTURE, async () => {
+    audioService.createRendererStream();
+  });
+
+  ipcMain.handle(IPC.AUDIO.STOP_CAPTURE, () => {
+    audioService.stopCapture();
+  });
+
+  // One-way: renderer sends raw Int16 PCM chunks here
+  ipcMain.on(IPC.AUDIO.PCM_CHUNK, (_event, buffer: ArrayBuffer) => {
+    audioService.feedPCMChunk(Buffer.from(buffer))
+  })
+}
+
+// ─── Scripture handlers ───────────────────────────────────────────────────────
+
+function registerScriptureHandlers(): void {
+  ipcMain.handle(IPC.SCRIPTURE.REGISTER, (_event, suggestion) => {
+    scriptureService.receiveSuggestion(suggestion);
+  });
+
+  ipcMain.handle(
+    IPC.SCRIPTURE.APPROVE,
+    async (_event, suggestionId: string) => {
+      await orchestrator.approveSuggestion(suggestionId);
+    },
+  );
+
+  ipcMain.handle(IPC.SCRIPTURE.DISMISS, (_event, suggestionId: string) => {
+    orchestrator.dismissSuggestion(suggestionId);
+  });
+
+  ipcMain.handle(IPC.SCRIPTURE.SEARCH, async (_event, query: string) => {
+    return scriptureService.search(query);
+  });
+
+  ipcMain.handle(
+    IPC.SCRIPTURE.SET_TRANSLATION,
+    async (_event, translation: string) => {
+      scriptureService.setDefaultTranslation(translation);
+      await store.set("scripture", {
+        ...store.get("scripture"),
+        defaultTranslation: translation,
+      });
+    },
+  );
+
+  ipcMain.handle(
+    IPC.SCRIPTURE.SET_AUTO_MODE,
+    async (_event, enabled: boolean) => {
+      scriptureService.setAutoMode(enabled);
+      await store.set("scripture", {
+        ...store.get("scripture"),
+        autoMode: enabled,
+      });
+    },
+  );
+
+  ipcMain.handle(
+    IPC.SCRIPTURE.SET_CONFIDENCE,
+    async (_event, threshold: number) => {
+      scriptureService.setConfidenceThreshold(threshold);
+      await store.set("scripture", {
+        ...store.get("scripture"),
+        confidenceThreshold: threshold,
+      });
+    },
+  );
+}
+
+// ─── Transcription handlers ───────────────────────────────────────────────────
+
+function registerTranscriptionHandlers(): void {
+  ipcMain.handle(IPC.TRANSCRIPTION.GET_HISTORY, () => {
+    return sttService.getHistory();
+  });
+
+  ipcMain.handle(IPC.TRANSCRIPTION.CLEAR_HISTORY, () => {
+    sttService.clearHistory();
+  });
+}
+
+// ─── Orchestrator handlers ────────────────────────────────────────────────────
+
+function registerOrchestratorHandlers(): void {
+  ipcMain.handle(IPC.ORCHESTRATOR.START, async (_event, config: OrchestratorConfig) => {
+    await orchestrator.start(config);
+  });
+
+  ipcMain.handle(IPC.ORCHESTRATOR.STOP, async () => {
+    await orchestrator.stop();
+  });
+
+  ipcMain.handle(IPC.ORCHESTRATOR.GET_STATUS, () => {
+    return orchestrator.getStatus();
+  });
+
+  ipcMain.handle(IPC.ORCHESTRATOR.GET_STATS, () => {
+    return orchestrator.getStats();
+  });
+
+  ipcMain.handle(IPC.ORCHESTRATOR.APPROVE, async (_event, suggestionId: string) => {
+    await orchestrator.approveSuggestion(suggestionId);
+  });
+
+  ipcMain.handle(IPC.ORCHESTRATOR.DISMISS, (_event, suggestionId: string) => {
+    orchestrator.dismissSuggestion(suggestionId);
+  });
+
+  ipcMain.handle(IPC.ORCHESTRATOR.DISMISS_AUTO, (_event, suggestionId: string) => {
+    orchestrator.dismissAuto(suggestionId);
+  });
+}
+
+// ─── Lyrics handlers ──────────────────────────────────────────────────────────
+
+function registerLyricsHandlers(): void {
+  ipcMain.handle(IPC.LYRICS.SEARCH, async (_event, query: string) => {
+    return lyricsService.search(query);
+  });
+
+  ipcMain.handle(IPC.LYRICS.IMPORT, async (_event, source) => {
+    return lyricsService.importSong(source);
+  });
+
+  ipcMain.handle(IPC.LYRICS.GET_LIBRARY, () => {
+    return lyricsService.getLibrary();
+  });
+
+  ipcMain.handle(IPC.LYRICS.GET_SONG, (_event, id: string) => {
+    return lyricsService.getSong(id);
+  });
+
+  ipcMain.handle(IPC.LYRICS.UPDATE, (_event, id: string, song) => {
+    return lyricsService.updateSong(id, song);
+  });
+
+  ipcMain.handle(IPC.LYRICS.DELETE, (_event, id: string) => {
+    return lyricsService.deleteSong(id);
+  });
+
+  ipcMain.handle(IPC.LYRICS.TOGGLE_FAVORITE, (_event, id: string) => {
+    return lyricsService.toggleFavorite(id);
+  });
+
+  ipcMain.handle(IPC.LYRICS.SEND_TO_PP, async (_event, songId: string, options) => {
+    await lyricsService.sendToProPresenter(songId, options);
+  });
+
+  ipcMain.handle(
+    IPC.LYRICS.ADD_TO_PLAYLIST,
+    async (_event, songId: string, playlistId: string) => {
+      lyricsService.addToPlaylist(songId, playlistId);
+    },
+  );
+}
+
+// ─── Resilience handlers ──────────────────────────────────────────────────────
+
+function registerResilienceHandlers(): void {
+  ipcMain.handle(IPC.RESILIENCE.GET_STATUS, () => {
+    return resilienceManager.getStatus();
+  });
+
+  ipcMain.handle(IPC.RESILIENCE.RESTORE, async () => {
+    await resilienceManager.restoreSession();
+  });
+
+  ipcMain.handle(IPC.RESILIENCE.DISCARD, async () => {
+    await resilienceManager.discardSession();
+  });
+}
+
+// ─── Settings handlers ────────────────────────────────────────────────────────
+
+function registerSettingsHandlers(): void {
+  ipcMain.handle(IPC.SETTINGS.GET, (_event, key: keyof AppSettings) => {
+    return store.get(key);
+  });
+
+  ipcMain.handle(
+    IPC.SETTINGS.SET,
+    (_event, key: keyof AppSettings, value: AppSettings[typeof key]) => {
+      store.set(key, value);
+      log.debug("Setting updated", { key });
+    },
+  );
+
+  ipcMain.handle(IPC.SETTINGS.GET_ALL, () => {
+    return store.store;
+  });
+}
+
+// ─── Push event wiring ────────────────────────────────────────────────────────
+// Services emit events → broadcast pushes them to all renderer windows.
+
+function wireEventBroadcasting(): void {
+  proPresenterService.onStatusChange((status) => {
+    broadcast(IPC.PROPRESENTER.STATUS_CHANGE, status);
+  });
+
+  sttService.onTranscript((result) => {
+    broadcast(IPC.TRANSCRIPTION.TRANSCRIPT, result);
+  });
+
+  sttService.onInterim((result) => {
+    broadcast(IPC.TRANSCRIPTION.INTERIM, result);
+  });
+
+  scriptureService.onSuggestion((suggestion) => {
+    broadcast(IPC.SCRIPTURE.SUGGESTION, suggestion);
+  });
+
+  orchestrator.onStatus((status) => {
+    broadcast(IPC.ORCHESTRATOR.STATUS, status);
+  });
+
+  orchestrator.onPendingAuto((pending) => {
+    broadcast(IPC.ORCHESTRATOR.PENDING_AUTO, pending);
+  });
+
+  resilienceManager.onStatusChange((status: ResilienceStatus) => {
+    broadcast(IPC.RESILIENCE.STATUS_CHANGE, status);
+  });
+}
+
+// ─── Entry point ──────────────────────────────────────────────────────────────
+
+export function registerIpcHandlers(): void {
+  registerProPresenterHandlers();
+  registerAudioHandlers();
+  registerScriptureHandlers();
+  registerTranscriptionHandlers();
+  registerOrchestratorHandlers();
+  registerLyricsHandlers();
+  registerSettingsHandlers();
+  registerResilienceHandlers();
+  wireEventBroadcasting();
+  log.info("All IPC handlers registered");
+}

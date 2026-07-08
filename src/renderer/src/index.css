@@ -1,0 +1,113 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  /* Electron drag region for frameless window on macOS */
+  .drag-region {
+    -webkit-app-region: drag;
+  }
+
+  .no-drag {
+    -webkit-app-region: no-drag;
+  }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #27272a;
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #3f3f46;
+  }
+}
+
+@layer components {
+  .page-header {
+    @apply text-2xl font-semibold text-white tracking-tight font-sans;
+  }
+
+  .page-subtitle {
+    @apply text-sm text-slate-400 mt-1 font-sans;
+  }
+
+  .card {
+    @apply bg-surface rounded-xl border border-surface-border/60 p-4;
+  }
+
+  .double-bezel-outer {
+    @apply bg-surface border border-surface-border/60 rounded-xl p-0 transition-all duration-300;
+  }
+
+  .double-bezel-inner {
+    @apply border-none p-4 bg-transparent shadow-none h-full;
+  }
+
+  .badge-connected {
+    @apply inline-flex items-center gap-1.5 text-xs font-semibold text-teal-400 bg-teal-500/10 px-2 py-0.5 rounded-full border border-teal-500/20 shadow-glow-teal;
+  }
+
+  .badge-disconnected {
+    @apply inline-flex items-center gap-1.5 text-xs font-semibold text-slate-400 bg-slate-800/40 px-2 py-0.5 rounded-full border border-slate-700/30;
+  }
+
+  .btn-primary {
+    @apply px-4 py-2 rounded-lg bg-teal-600 hover:bg-teal-500 text-white text-sm font-bold
+           transition-[background-color,color,border-color,transform] duration-200 ease-out-expo
+           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/80 focus-visible:ring-offset-2 focus-visible:ring-offset-surface
+           active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100;
+  }
+
+  .btn-secondary {
+    @apply px-4 py-2 rounded-lg bg-surface-elevated hover:bg-surface-tertiary text-slate-300
+           hover:text-white text-sm font-medium border border-surface-border
+           transition-[background-color,color,border-color,transform] duration-200 ease-out-expo
+           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/80 focus-visible:ring-offset-2 focus-visible:ring-offset-surface
+           active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .input {
+    @apply w-full px-3 py-2 rounded-lg bg-surface border border-surface-border text-white
+           text-sm placeholder:text-slate-500 transition-[border-color,box-shadow] duration-200 ease-out-expo
+           focus-visible:outline-none focus-visible:border-teal-500
+           focus-visible:ring-2 focus-visible:ring-teal-500/30;
+  }
+
+  .label {
+    @apply block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider;
+  }
+
+  /* Utility for styling raw scripture texts */
+  .scripture-text {
+    @apply font-serif text-slate-200 leading-relaxed text-base antialiased;
+  }
+
+  /* Skip link for keyboard users */
+  .skip-link {
+    @apply sr-only focus-visible:not-sr-only focus-visible:absolute focus-visible:top-4 focus-visible:left-4 focus-visible:z-50
+           focus-visible:bg-teal-600 focus-visible:text-white focus-visible:px-4 focus-visible:py-2 focus-visible:rounded-lg
+           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2 focus-visible:ring-offset-surface;
+  }
+}

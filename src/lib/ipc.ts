@@ -1,0 +1,478 @@
+// ─── Common ───────────────────────────────────────────────────────────────────
+
+export type Unsubscribe = () => void
+
+// ─── App Settings ─────────────────────────────────────────────────────────────
+
+export type ScriptureTranslation = 'ESV' | 'NIV' | 'NLT' | 'KJV' | 'NKJV' | 'CSB' | 'NASB'
+export type STTProvider = 'deepgram' | 'whisper' | 'none'
+
+export interface AppSettings {
+  propresenter: {
+    host: string
+    port: number
+    password: string
+  }
+  audio: {
+    deviceId: string
+  }
+  stt: {
+    provider: STTProvider
+    apiKey: string
+    anthropicApiKey: string
+    deepseekApiKey: string
+    llmProvider: 'anthropic' | 'deepseek'
+    bibleApiKey: string
+    language: string
+  }
+  scripture: {
+    defaultTranslation: ScriptureTranslation
+    showVerseNumbers: boolean
+    autoMode: boolean
+    confidenceThreshold: number
+    debounceInterval: number
+    contextWindowSize: number
+  }
+  display: {
+    theme: 'dark' | 'light'
+    fontSize: number
+    transcriptionFontSize: number
+  }
+  overlay: {
+    /** PP message template string. Must contain {Reference} and/or {Text}. */
+    template: string
+    /** Append translation to reference shown on screen: "John 3:16 (KJV)" */
+    showTranslation: boolean
+    /** Show verse numbers when pushing multi-verse passages */
+    showVerseNumbers: boolean
+    /** Max verses per push; 0 = no cap (whole detected range) */
+    maxVerses: number
+    /** Auto-clear overlay after N seconds; 0 = manual clear only */
+    autoClearSec: number
+  }
+}
+
+// ─── ProPresenter ─────────────────────────────────────────────────────────────
+
+export interface ConnectOptions {
+  host: string
+  port: number
+  password: string
+}
+
+export type ProPresenterConnectionState =
+  | 'disconnected'
+  | 'connecting'
+  | 'connected'
+  | 'error'
+
+export interface ProPresenterStatus {
+  state: ProPresenterConnectionState
+  host: string
+  port: number
+  version: string | null
+  activeSlideId: string | null
+  activePresentationId: string | null
+  activePresentationName: string | null
+  activePlaylistId: string | null
+  activePlaylistName: string | null
+}
+
+export interface ProPresenterSlide {
+  id: string
+  label: string
+  notes: string
+  textContent: string
+  thumbnailUrl?: string
+}
+
+export interface ProPresenterPresentation {
+  id: string
+  name: string
+  slides: ProPresenterSlide[]
+}
+
+export interface ProPresenterPlaylistItem {
+  id: string
+  type: 'presentation' | 'media' | 'header'
+  name: string
+  presentationId?: string
+}
+
+export interface ProPresenterPlaylist {
+  id: string
+  name: string
+  items: ProPresenterPlaylistItem[]
+}
+
+export interface ProPresenterLibrary {
+  presentations: ProPresenterPresentation[]
+}
+
+// ─── Audio ────────────────────────────────────────────────────────────────────
+
+export interface AudioDevice {
+  id: string
+  label: string
+  kind: 'audioinput' | 'audiooutput'
+  isDefault: boolean
+}
+
+export interface AudioLevel {
+  rms: number       // 0–1
+  peak: number      // 0–1
+  clipping: boolean
+  timestamp: number
+}
+
+export interface AudioError {
+  code: 'DEVICE_NOT_FOUND' | 'PERMISSION_DENIED' | 'CAPTURE_FAILED' | 'UNKNOWN'
+  message: string
+}
+
+// ─── Scripture ────────────────────────────────────────────────────────────────
+
+export interface ScriptureVerse {
+  book: string
+  chapter: number
+  verse: number
+  text: string
+}
+
+export interface ScriptureSuggestion {
+  id: string
+  reference: string
+  verses: ScriptureVerse[]
+  translation: ScriptureTranslation
+  confidence: number
+  source: 'auto' | 'manual'
+  triggerText: string
+}
+
+export interface ScriptureResult {
+  reference: string
+  verses: ScriptureVerse[]
+  translation: ScriptureTranslation
+}
+
+// ─── Transcription ────────────────────────────────────────────────────────────
+
+export interface TranscriptWord {
+  word: string
+  start: number
+  end: number
+  confidence: number
+}
+
+export interface TranscriptResult {
+  id: string
+  text: string
+  words: TranscriptWord[]
+  isFinal: true
+  timestamp: number
+  duration: number
+}
+
+export interface InterimResult {
+  text: string
+  stability: number
+  timestamp: number
+}
+
+// ─── Lyrics ───────────────────────────────────────────────────────────────────
+
+export type LyricsImportSource =
+  | { type: 'url'; url: string }
+  | { type: 'ccli'; ccliNumber: string; apiKey: string }
+  | { type: 'text'; title: string; artist: string; text: string; copyright?: string }
+  | { type: 'usr'; content: string; filename?: string }
+
+export type LyricsSectionType =
+  | 'verse'
+  | 'chorus'
+  | 'bridge'
+  | 'pre-chorus'
+  | 'tag'
+  | 'intro'
+  | 'outro'
+  | 'ending'
+
+export type LyricsSource = 'usr' | 'text' | 'propresenter' | 'ccli'
+
+export interface LyricsSongSection {
+  type: LyricsSectionType
+  label: string
+  lines: string[]
+}
+
+export interface LyricsSong {
+  id: string
+  title: string
+  artist: string
+  copyright?: string
+  ccliNumber?: string
+  isFavorite?: boolean
+  source?: LyricsSource
+  sections: LyricsSongSection[]
+  createdAt: number
+  updatedAt: number
+}
+
+export interface SongPresentOptions {
+  /** Max lines to put on a single slide. Default: 4 */
+  linesPerSlide?: number
+  /** Soft word-wrap character limit per line. Default: 40 */
+  maxCharsPerLine?: number
+  /**
+   * Where to place the copyright notice.
+   * 'each'     — appended as final line on every slide
+   * 'last'     — appended only on the very last content slide
+   * 'separate' — its own final slide group ("Copyright")
+   * 'none'     — omitted entirely (default)
+   */
+  copyrightPosition?: 'each' | 'last' | 'separate' | 'none'
+  /** Trigger the first slide in ProPresenter immediately after import. Default: false */
+  triggerFirst?: boolean
+}
+
+// ─── Per-namespace API shapes (shared source of truth) ────────────────────────
+
+export interface ProPresenterAPI {
+  connect: (options: ConnectOptions) => Promise<void>
+  disconnect: () => Promise<void>
+  getStatus: () => Promise<ProPresenterStatus>
+  triggerSlide: (slideId: string) => Promise<void>
+  clearAll: () => Promise<void>
+  getLibrary: () => Promise<ProPresenterLibrary>
+  getPlaylists: () => Promise<ProPresenterPlaylist[]>
+  /** Pushes a sample verse (John 3:16 KJV) through the scripture overlay path using current overlay settings. */
+  testOverlay: () => Promise<boolean>
+  /** Clears the scripture message and the whole messages layer. */
+  clearOverlay: () => Promise<boolean>
+  /** Returns cleanup fn — call when component unmounts. */
+  onStatusChange: (callback: (status: ProPresenterStatus) => void) => Unsubscribe
+}
+
+export interface AudioAPI {
+  getDevices: () => Promise<AudioDevice[]>
+  startCapture: (deviceId: string) => Promise<void>
+  stopCapture: () => Promise<void>
+  /** Send raw Int16 PCM chunk (16kHz mono) from renderer to main for Deepgram. */
+  sendPCMChunk: (buffer: ArrayBuffer) => void
+  /** Returns cleanup fn. */
+  onLevel: (callback: (level: AudioLevel) => void) => Unsubscribe
+  /** Returns cleanup fn. */
+  onError: (callback: (error: AudioError) => void) => Unsubscribe
+}
+
+export interface ScriptureAPI {
+  /** Returns cleanup fn. Fires when auto-detection finds a scripture reference. */
+  onSuggestion: (callback: (suggestion: ScriptureSuggestion) => void) => Unsubscribe
+  approve: (suggestionId: string) => Promise<void>
+  dismiss: (suggestionId: string) => Promise<void>
+  /** Register a manually-built suggestion so orchestrator.approveSuggestion can present it. */
+  register: (suggestion: ScriptureSuggestion) => Promise<void>
+  search: (query: string) => Promise<ScriptureResult[]>
+  setTranslation: (translation: ScriptureTranslation) => Promise<void>
+  setAutoMode: (enabled: boolean) => Promise<void>
+  setConfidenceThreshold: (threshold: number) => Promise<void>
+}
+
+export interface TranscriptionAPI {
+  /** Returns cleanup fn. Fires for each finalized transcript segment. */
+  onTranscript: (callback: (result: TranscriptResult) => void) => Unsubscribe
+  /** Returns cleanup fn. Fires for in-progress, not-yet-final text. */
+  onInterim: (callback: (result: InterimResult) => void) => Unsubscribe
+  getHistory: () => Promise<TranscriptResult[]>
+  clearHistory: () => Promise<void>
+}
+
+export interface LyricsAPI {
+  search: (query: string) => Promise<LyricsSong[]>
+  import: (source: LyricsImportSource) => Promise<LyricsSong>
+  getLibrary: () => Promise<LyricsSong[]>
+  getSong: (id: string) => Promise<LyricsSong | null>
+  update: (id: string, song: LyricsSong) => Promise<LyricsSong | null>
+  delete: (id: string) => Promise<boolean>
+  toggleFavorite: (id: string) => Promise<boolean>
+  sendToProPresenter: (songId: string, options?: SongPresentOptions) => Promise<void>
+  addToPlaylist: (songId: string, playlistId: string) => Promise<void>
+}
+
+export interface SettingsAPI {
+  get: <K extends keyof AppSettings>(key: K) => Promise<AppSettings[K]>
+  set: <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => Promise<void>
+  getAll: () => Promise<AppSettings>
+}
+
+// ─── Orchestrator ─────────────────────────────────────────────────────────────
+
+export interface OrchestratorConfig {
+  audioDeviceId: string
+  sttProvider: STTProvider
+  sttApiKey: string
+  sttLanguage: string
+  /** LLM provider for scripture detection */
+  llmProvider: 'anthropic' | 'deepseek'
+  llmApiKey: string
+  /** Model override (default: claude-haiku-4-5-20251001 for anthropic, deepseek-chat for deepseek) */
+  scriptureModel?: string
+  scriptureTranslation: ScriptureTranslation
+  autoMode: boolean
+  /** Minimum confidence (0–1) to trigger auto-present; default 0.7 */
+  confidenceThreshold: number
+  /** Seconds between detection and auto-present; default 3 */
+  autoPresentDelaySec: number
+}
+
+export interface SessionStats {
+  sessionId: string
+  startedAt: number
+  durationMs: number
+  totalWords: number
+  totalDetections: number
+  totalPresentations: number
+  detectorCalls: number
+  avgDetectorLatencyMs: number
+  estimatedCostUsd: number
+}
+
+export interface ResilienceStatus {
+  overallHealth: 'ALL_GOOD' | 'DEGRADED' | 'CRITICAL'
+  internetConnected: boolean
+  ppReconnectCountdown: number | null
+  ppQueueSize: number
+  claudeFallbackActive: boolean
+  audioDeviceLost: boolean
+  recoverySessionAvailable: boolean
+  health: ServiceHealth[]
+}
+
+export interface ResilienceAPI {
+  getStatus: () => Promise<ResilienceStatus>
+  restoreSession: () => Promise<void>
+  discardSession: () => Promise<void>
+  onStatusChange: (callback: (status: ResilienceStatus) => void) => Unsubscribe
+}
+
+export type ServiceName = 'audio' | 'stt' | 'detector' | 'propresenter'
+
+export interface ServiceHealth {
+  service: ServiceName
+  status: 'ok' | 'error' | 'degraded'
+  lastError?: string
+  lastUpdated: number
+}
+
+export interface OrchestratorStatus {
+  running: boolean
+  autoMode: boolean
+  ppConnected: boolean
+  health: ServiceHealth[]
+  totalPresentations: number
+}
+
+export interface PendingAutoPresent {
+  suggestionId: string
+  reference: string
+  expiresAt: number
+}
+
+export interface OrchestratorAPI {
+  start: (config: OrchestratorConfig) => Promise<void>
+  stop: () => Promise<void>
+  getStatus: () => Promise<OrchestratorStatus>
+  getStats: () => Promise<SessionStats | null>
+  approveSuggestion: (suggestionId: string) => Promise<void>
+  dismissSuggestion: (suggestionId: string) => Promise<void>
+  dismissAuto: (suggestionId: string) => Promise<void>
+  onStatus: (callback: (status: OrchestratorStatus) => void) => Unsubscribe
+  onPendingAuto: (callback: (pending: PendingAutoPresent) => void) => Unsubscribe
+}
+
+export interface ProAutomateAPI {
+  propresenter: ProPresenterAPI
+  audio: AudioAPI
+  scripture: ScriptureAPI
+  transcription: TranscriptionAPI
+  lyrics: LyricsAPI
+  settings: SettingsAPI
+  orchestrator: OrchestratorAPI
+  resilience: ResilienceAPI
+}
+
+// ─── IPC channel constants ────────────────────────────────────────────────────
+// invoke = ipcRenderer.invoke / ipcMain.handle   (request → response)
+// push   = webContents.send / ipcRenderer.on     (main → renderer, one-way)
+
+export const IPC = {
+  PROPRESENTER: {
+    CONNECT:        'propresenter:connect',         // invoke
+    DISCONNECT:     'propresenter:disconnect',      // invoke
+    GET_STATUS:     'propresenter:getStatus',       // invoke
+    TRIGGER_SLIDE:  'propresenter:triggerSlide',    // invoke
+    CLEAR_ALL:      'propresenter:clearAll',        // invoke
+    GET_LIBRARY:    'propresenter:getLibrary',      // invoke
+    GET_PLAYLISTS:  'propresenter:getPlaylists',    // invoke
+    TEST_OVERLAY:   'propresenter:testOverlay',     // invoke
+    CLEAR_OVERLAY:  'propresenter:clearOverlay',    // invoke
+    STATUS_CHANGE:  'propresenter:statusChange',    // push
+  },
+  AUDIO: {
+    GET_DEVICES:    'audio:getDevices',             // invoke
+    START_CAPTURE:  'audio:startCapture',           // invoke
+    STOP_CAPTURE:   'audio:stopCapture',            // invoke
+    PCM_CHUNK:      'audio:pcmChunk',               // renderer→main send
+    LEVEL:          'audio:level',                  // push
+    ERROR:          'audio:error',                  // push
+  },
+  SCRIPTURE: {
+    APPROVE:                'scripture:approve',                 // invoke
+    DISMISS:                'scripture:dismiss',                 // invoke
+    REGISTER:               'scripture:register',                // invoke
+    SEARCH:                 'scripture:search',                  // invoke
+    SET_TRANSLATION:        'scripture:setTranslation',         // invoke
+    SET_AUTO_MODE:          'scripture:setAutoMode',             // invoke
+    SET_CONFIDENCE:         'scripture:setConfidenceThreshold',  // invoke
+    SUGGESTION:             'scripture:suggestion',              // push
+  },
+  TRANSCRIPTION: {
+    GET_HISTORY:    'transcription:getHistory',     // invoke
+    CLEAR_HISTORY:  'transcription:clearHistory',   // invoke
+    TRANSCRIPT:     'transcription:transcript',     // push
+    INTERIM:        'transcription:interim',        // push
+  },
+  LYRICS: {
+    SEARCH:          'lyrics:search',               // invoke
+    IMPORT:          'lyrics:import',               // invoke
+    GET_LIBRARY:     'lyrics:getLibrary',           // invoke
+    GET_SONG:        'lyrics:getSong',              // invoke
+    UPDATE:          'lyrics:update',               // invoke
+    DELETE:          'lyrics:delete',               // invoke
+    TOGGLE_FAVORITE: 'lyrics:toggleFavorite',       // invoke
+    SEND_TO_PP:      'lyrics:sendToProPresenter',   // invoke
+    ADD_TO_PLAYLIST: 'lyrics:addToPlaylist',        // invoke
+  },
+  SETTINGS: {
+    GET:            'settings:get',                 // invoke
+    SET:            'settings:set',                 // invoke
+    GET_ALL:        'settings:getAll',              // invoke
+  },
+  ORCHESTRATOR: {
+    START:        'orchestrator:start',         // invoke
+    STOP:         'orchestrator:stop',          // invoke
+    GET_STATUS:   'orchestrator:getStatus',     // invoke
+    GET_STATS:    'orchestrator:getStats',      // invoke
+    APPROVE:      'orchestrator:approve',       // invoke
+    DISMISS:      'orchestrator:dismiss',       // invoke
+    DISMISS_AUTO: 'orchestrator:dismissAuto',   // invoke
+    STATUS:       'orchestrator:status',        // push (OrchestratorStatus)
+    PENDING_AUTO: 'orchestrator:pendingAuto',   // push (PendingAutoPresent)
+  },
+  RESILIENCE: {
+    GET_STATUS:    'resilience:getStatus',        // invoke
+    RESTORE:       'resilience:restore',          // invoke
+    DISCARD:       'resilience:discard',          // invoke
+    STATUS_CHANGE: 'resilience:statusChange',     // push (ResilienceStatus)
+  },
+} as const
