@@ -4,7 +4,9 @@ export type Unsubscribe = () => void
 
 // ─── App Settings ─────────────────────────────────────────────────────────────
 
-export type ScriptureTranslation = 'ESV' | 'NIV' | 'NLT' | 'KJV' | 'NKJV' | 'CSB' | 'NASB'
+export type ScriptureTranslation =
+  | 'NKJV' | 'KJV' | 'BSB' | 'WEB' | 'ASV' | 'OEB'
+  | 'NIV' | 'NLT' | 'NASB' | 'MSG' | 'AMPC' | 'TPT' | 'ESV' | 'CSB'
 export type STTProvider = 'deepgram' | 'whisper' | 'none'
 
 export interface AppSettings {
@@ -58,6 +60,15 @@ export interface AppSettings {
     /** In-app rendered theme used by the NDI overlay window and its WYSIWYG preview. */
     theme: OverlayTheme
   }
+  themeLibrary: CustomOverlayTheme[]
+}
+
+export interface CustomOverlayTheme {
+  id: string
+  name: string
+  createdAt: number
+  updatedAt: number
+  theme: OverlayTheme
 }
 
 // ─── Overlay theme (phase 2 — NDI in-app renderer) ────────────────────────────
@@ -67,11 +78,17 @@ export interface AppSettings {
 
 export interface OverlayTheme {
   background: {
-    type: 'color' | 'gradient' | 'transparent'
+    type: 'color' | 'gradient' | 'transparent' | 'image' | 'video'
     color: string          // '#0b1220'
     color2?: string        // gradient end; used when type === 'gradient'
     angleDeg?: number      // gradient angle, 0–360
     opacity: number        // 0–1, applies to the whole background layer
+    /** Absolute local file path of the media shown when type is 'image'/'video'.
+     *  Picked via native dialog; served to both renderers over the pa-media:// protocol,
+     *  which only allows the currently-configured path. */
+    mediaPath?: string
+    /** How image/video media fills the 1920×1080 frame. Default 'cover'. */
+    mediaFit?: 'cover' | 'contain' | 'fill'
   }
   verse: {
     fontFamily: string     // CSS family list
@@ -93,11 +110,13 @@ export interface OverlayTheme {
   }
   layout: {
     position: 'lower-third' | 'center' | 'top' | 'full'
-    maxWidthPct: number    // 20–100
+    maxWidthPct: number    // 20–100 (ignored by 'full', which is full-bleed)
     paddingPx: number      // 0–200
     backdropBox: boolean   // rounded box behind the text block
     backdropColor: string  // rgba recommended
     backdropRadiusPx: number // 0–64
+    /** 'full' position only: auto-size verse text to fill the frame (overrides verse.fontSizePx). */
+    autoFitText: boolean
   }
 }
 
@@ -196,12 +215,156 @@ export interface ScriptureSuggestion {
   confidence: number
   source: 'auto' | 'manual'
   triggerText: string
+  /** Shared identity and ordering for verses expanded from one detected range. */
+  passageId?: string
+  passageReference?: string
+  passageIndex?: number
+  passageLength?: number
 }
 
 export interface ScriptureResult {
   reference: string
   verses: ScriptureVerse[]
   translation: ScriptureTranslation
+}
+
+export interface ScriptureTranslationOption {
+  id: ScriptureTranslation
+  name: string
+  access: 'local' | 'api'
+  available: boolean
+  requiresApiKey: boolean
+}
+
+export interface SermonScriptureItem {
+  id: string
+  reference: string
+  translation: ScriptureTranslation
+  verses: ScriptureVerse[]
+  available: boolean
+  error?: string
+}
+
+export interface SermonPlan {
+  id: string
+  title: string
+  sourceFileName: string
+  items: SermonScriptureItem[]
+  createdAt: number
+  updatedAt: number
+  reviewedAt?: number
+}
+
+export function completeSermonPlanReview(plan: SermonPlan, completedAt = Date.now()): SermonPlan {
+  return { ...plan, reviewedAt: completedAt, updatedAt: completedAt }
+}
+
+export function sermonPlanNeedsReview(plan: SermonPlan): boolean {
+  return typeof plan.reviewedAt !== 'number'
+}
+
+export function appendScriptureResultToPlan(
+  plan: SermonPlan,
+  result: ScriptureResult,
+  itemId: string,
+  addedAt = Date.now(),
+): SermonPlan {
+  return insertScriptureResultInPlan(plan, result, itemId, null, 'after', addedAt)
+}
+
+/** Insert a scripture item after/before a relative playlist item (or append if relative missing). */
+export function insertScriptureResultInPlan(
+  plan: SermonPlan,
+  result: ScriptureResult,
+  itemId: string,
+  relativeItemId: string | null,
+  position: 'before' | 'after' = 'after',
+  addedAt = Date.now(),
+): SermonPlan {
+  const entry: SermonScriptureItem = {
+    id: itemId,
+    reference: result.reference,
+    translation: result.translation,
+    verses: result.verses,
+    available: true,
+  }
+  const items = [...plan.items]
+  const relativeIndex = relativeItemId
+    ? items.findIndex((item) => item.id === relativeItemId)
+    : -1
+  if (relativeIndex < 0) {
+    items.push(entry)
+  } else {
+    items.splice(relativeIndex + (position === 'after' ? 1 : 0), 0, entry)
+  }
+  return { ...plan, items, updatedAt: addedAt }
+}
+
+/** Append each result as its own playlist item (passage row). Multi-verse results stay one item. */
+export function appendScriptureResultsToPlan(
+  plan: SermonPlan,
+  results: ScriptureResult[],
+  batchId: string,
+  addedAt = Date.now(),
+): SermonPlan {
+  let updated = plan
+  for (const [index, result] of results.entries()) {
+    if (result.verses.length === 0) continue
+    updated = appendScriptureResultToPlan(
+      updated,
+      result,
+      `${batchId}-${index}`,
+      addedAt,
+    )
+  }
+  return updated
+}
+
+/** Split multi-verse playlist rows into one item per verse. */
+export function expandSermonPlanItems(items: SermonScriptureItem[]): SermonScriptureItem[] {
+  return items.flatMap((item) => {
+    if (item.verses.length <= 1) return [item]
+    return item.verses.map((verse, index) => ({
+      id: `${item.id}-v${verse.chapter}-${verse.verse}-${index}`,
+      reference: `${verse.book} ${verse.chapter}:${verse.verse}`,
+      translation: item.translation,
+      verses: [verse],
+      available: item.available,
+      error: item.error,
+    }))
+  })
+}
+
+export function removeSermonPlanItem(plan: SermonPlan, itemId: string, removedAt = Date.now()): SermonPlan {
+  return {
+    ...plan,
+    items: plan.items.filter((item) => item.id !== itemId),
+    updatedAt: removedAt,
+  }
+}
+
+export function reorderSermonPlanItem(
+  plan: SermonPlan,
+  draggedId: string,
+  targetId: string,
+  position: 'before' | 'after',
+  movedAt = Date.now(),
+): SermonPlan {
+  if (draggedId === targetId) return plan
+  const fromIndex = plan.items.findIndex((item) => item.id === draggedId)
+  if (fromIndex < 0) return plan
+  const items = [...plan.items]
+  const [movedItem] = items.splice(fromIndex, 1)
+  const targetIndex = items.findIndex((item) => item.id === targetId)
+  if (targetIndex < 0) return plan
+  items.splice(targetIndex + (position === 'after' ? 1 : 0), 0, movedItem)
+  return { ...plan, items, updatedAt: movedAt }
+}
+
+export interface SermonPlanDraft {
+  title: string
+  sourceFileName: string
+  items: Array<Pick<SermonScriptureItem, 'id' | 'reference' | 'translation'>>
 }
 
 // ─── Transcription ────────────────────────────────────────────────────────────
@@ -321,8 +484,13 @@ export interface ScriptureAPI {
   dismiss: (suggestionId: string) => Promise<void>
   /** Register a manually-built suggestion so orchestrator.approveSuggestion can present it. */
   register: (suggestion: ScriptureSuggestion) => Promise<void>
-  search: (query: string) => Promise<ScriptureResult[]>
+  search: (query: string, translation?: ScriptureTranslation) => Promise<ScriptureResult[]>
+  getTranslations: () => Promise<ScriptureTranslationOption[]>
   setTranslation: (translation: ScriptureTranslation) => Promise<void>
+  importSermonNotes: () => Promise<SermonPlanDraft | null>
+  listSermonPlans: () => Promise<SermonPlan[]>
+  saveSermonPlan: (plan: SermonPlan) => Promise<SermonPlan>
+  deleteSermonPlan: (planId: string) => Promise<void>
   setAutoMode: (enabled: boolean) => Promise<void>
   setConfidenceThreshold: (threshold: number) => Promise<void>
 }
@@ -369,11 +537,18 @@ export interface NdiAPI {
   getStatus: () => Promise<NdiStatus>
   /** Lists PP's configured video inputs so the user can bind the NDI one manually. */
   getVideoInputs: () => Promise<PPVideoInputInfo[]>
+  /** Native open-file dialog for an overlay background image/video. Resolves to the absolute path, or null if cancelled. */
+  pickOverlayMedia: (kind: 'image' | 'video') => Promise<string | null>
 }
 
 export interface SettingsAPI {
   get: <K extends keyof AppSettings>(key: K) => Promise<AppSettings[K]>
-  set: <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => Promise<void>
+  /**
+   * For `overlay`, main merges the value onto the freshly-read stored object, so
+   * pages may send only the fields they own (see D3 in src/main/ipc/index.ts).
+   * Every other key is replaced wholesale — send the complete section object.
+   */
+  set: <K extends keyof AppSettings>(key: K, value: AppSettings[K] | Partial<AppSettings[K]>) => Promise<void>
   getAll: () => Promise<AppSettings>
 }
 
@@ -504,7 +679,12 @@ export const IPC = {
     DISMISS:                'scripture:dismiss',                 // invoke
     REGISTER:               'scripture:register',                // invoke
     SEARCH:                 'scripture:search',                  // invoke
+    GET_TRANSLATIONS:       'scripture:getTranslations',         // invoke
     SET_TRANSLATION:        'scripture:setTranslation',         // invoke
+    IMPORT_SERMON_NOTES:    'scripture:importSermonNotes',       // invoke
+    LIST_SERMON_PLANS:      'scripture:listSermonPlans',         // invoke
+    SAVE_SERMON_PLAN:       'scripture:saveSermonPlan',          // invoke
+    DELETE_SERMON_PLAN:     'scripture:deleteSermonPlan',        // invoke
     SET_AUTO_MODE:          'scripture:setAutoMode',             // invoke
     SET_CONFIDENCE:         'scripture:setConfidenceThreshold',  // invoke
     SUGGESTION:             'scripture:suggestion',              // push
@@ -549,7 +729,8 @@ export const IPC = {
     STATUS_CHANGE: 'resilience:statusChange',     // push (ResilienceStatus)
   },
   NDI: {
-    GET_STATUS:       'ndi:getStatus',       // invoke — { available, sending, ppInputConfigured }
-    GET_VIDEO_INPUTS: 'ndi:getVideoInputs',  // invoke — PPVideoInputInfo[]
+    GET_STATUS:         'ndi:getStatus',         // invoke — { available, sending, ppInputConfigured }
+    GET_VIDEO_INPUTS:   'ndi:getVideoInputs',    // invoke — PPVideoInputInfo[]
+    PICK_OVERLAY_MEDIA: 'ndi:pickOverlayMedia',  // invoke — native file dialog → absolute path | null
   },
 } as const

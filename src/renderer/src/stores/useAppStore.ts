@@ -31,6 +31,16 @@ interface AppState {
   scriptureProjectedCount: number
   autoModeEnabled: boolean
   confidenceThreshold: number
+  /** Last opened sermon playlist — restored when returning to Scripture. */
+  scriptureActivePlanId: string | null
+  /** Last focused/live playlist item id within that plan. */
+  scriptureActiveItemId: string | null
+  /** Card index within that item (0 for single-verse rows). */
+  scriptureActiveCardInRow: number
+  /** How the item was highlighted when leaving. */
+  scriptureHighlightMode: 'none' | 'focus' | 'live'
+  /** Bumps when PP output is cleared so Scripture can drop Live badges. */
+  scriptureOutputClearToken: number
 
   // ── Session ───────────────────────────────────────────────────────────────
   sessionStartTime: number
@@ -54,6 +64,15 @@ interface AppState {
   addScriptureDetection: (reference: string) => void
   incrementScriptureProjected: () => void
   setAutoMode: (enabled: boolean, threshold: number) => void
+  setScriptureActivePlanId: (id: string | null) => void
+  setScriptureViewState: (state: {
+    planId?: string | null
+    itemId?: string | null
+    cardInRow?: number
+    mode?: 'none' | 'focus' | 'live'
+  }) => void
+  clearScriptureViewState: () => void
+  clearScriptureLiveOutput: () => void
 
   // ── Legacy setters ────────────────────────────────────────────────────────
   setProPresenterConnected: (connected: boolean) => void
@@ -91,6 +110,11 @@ export const useAppStore = create<AppState>((set) => ({
   scriptureProjectedCount: 0,
   autoModeEnabled: false,
   confidenceThreshold: 0.7,
+  scriptureActivePlanId: null,
+  scriptureActiveItemId: null,
+  scriptureActiveCardInRow: 0,
+  scriptureHighlightMode: 'none',
+  scriptureOutputClearToken: 0,
 
   // ── Session ───────────────────────────────────────────────────────────────
   sessionStartTime: Date.now(),
@@ -152,6 +176,37 @@ export const useAppStore = create<AppState>((set) => ({
 
   setAutoMode: (enabled, threshold) =>
     set({ autoModeEnabled: enabled, confidenceThreshold: threshold }),
+
+  setScriptureActivePlanId: (id) => set({ scriptureActivePlanId: id }),
+
+  setScriptureViewState: (state) =>
+    set((current) => ({
+      scriptureActivePlanId:
+        state.planId !== undefined ? state.planId : current.scriptureActivePlanId,
+      scriptureActiveItemId:
+        state.itemId !== undefined ? state.itemId : current.scriptureActiveItemId,
+      scriptureActiveCardInRow:
+        state.cardInRow !== undefined
+          ? state.cardInRow
+          : current.scriptureActiveCardInRow,
+      scriptureHighlightMode:
+        state.mode !== undefined ? state.mode : current.scriptureHighlightMode,
+    })),
+
+  clearScriptureViewState: () =>
+    set({
+      scriptureActivePlanId: null,
+      scriptureActiveItemId: null,
+      scriptureActiveCardInRow: 0,
+      scriptureHighlightMode: 'none',
+    }),
+
+  clearScriptureLiveOutput: () =>
+    set((state) => ({
+      scriptureOutputClearToken: state.scriptureOutputClearToken + 1,
+      scriptureHighlightMode:
+        state.scriptureHighlightMode === 'live' ? 'focus' : state.scriptureHighlightMode,
+    })),
 
   // ── Legacy ────────────────────────────────────────────────────────────────
 

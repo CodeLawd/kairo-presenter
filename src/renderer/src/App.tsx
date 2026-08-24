@@ -1,19 +1,16 @@
 import { useState, useEffect, useRef } from 'react'
 import { X } from 'lucide-react'
-import Sidebar from '@/components/layout/Sidebar'
-import Dashboard from '@/components/dashboard/Dashboard'
+import AppShell from '@/components/layout/AppShell'
 import Scripture from '@/components/scripture/Scripture'
-import Transcription from '@/components/transcription/Transcription'
 import Lyrics from '@/components/lyrics/Lyrics'
 import Operator from '@/components/operator/Operator'
 import ThemeEditor from '@/components/theme/ThemeEditor'
 import Settings from '@/components/settings/Settings'
 import { useAppStore } from '@/stores/useAppStore'
+import { applyAppTheme } from '@/lib/appTheme'
 
 export type NavRoute =
-  | 'dashboard'
   | 'scripture'
-  | 'transcription'
   | 'lyrics'
   | 'operator'
   | 'theme'
@@ -130,17 +127,23 @@ function AudioPipeline(): null {
 }
 
 const views: Record<NavRoute, React.ReactNode> = {
-  dashboard: <Dashboard />,
   scripture: <Scripture />,
-  transcription: <Transcription />,
   lyrics: <Lyrics />,
   operator: <Operator />,
   theme: <ThemeEditor />,
 }
 
 export default function App(): React.ReactElement {
-  const [route, setRoute] = useState<NavRoute>('dashboard')
+  const [route, setRoute] = useState<NavRoute>('operator')
   const [settingsOpen, setSettingsOpen] = useState(false)
+
+  useEffect(() => {
+    window.api.settings.getAll().then((settings) => {
+      applyAppTheme(settings.display.theme)
+    }).catch(() => {
+      applyAppTheme('dark')
+    })
+  }, [])
 
   // Listen to Escape key to close settings modal
   useEffect(() => {
@@ -155,16 +158,15 @@ export default function App(): React.ReactElement {
   }, [settingsOpen])
 
   return (
-    <div className="flex h-screen bg-surface text-white overflow-hidden select-none relative">
+    <div className="flex h-screen flex-col bg-surface text-white overflow-hidden select-none relative">
       <AudioPipeline />
-      <Sidebar
+      <AppShell
         currentRoute={route}
         onNavigate={setRoute}
-        settingsOpen={settingsOpen}
-        onToggleSettings={() => setSettingsOpen(!settingsOpen)}
+        onOpenSettings={() => setSettingsOpen(true)}
       />
-      <main className="flex-1 overflow-hidden bg-surface-secondary w-full h-full flex flex-col">
-        <div key={route} className="animate-fade-in h-full w-full flex flex-col overflow-hidden">
+      <main className="relative flex-1 min-h-0 overflow-hidden bg-surface-secondary w-full flex flex-col">
+        <div key={route} className="flex min-h-0 w-full flex-1 flex-col overflow-hidden [&>*]:min-h-0 [&>*]:flex-1">
           {views[route]}
         </div>
       </main>
@@ -200,4 +202,3 @@ export default function App(): React.ReactElement {
     </div>
   )
 }
-

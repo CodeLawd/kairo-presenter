@@ -50,8 +50,16 @@ class STTService {
     this.transcriptCallbacks.push(callback)
   }
 
+  offTranscript(callback: TranscriptCallback): void {
+    this.transcriptCallbacks = this.transcriptCallbacks.filter((item) => item !== callback)
+  }
+
   onInterim(callback: InterimCallback): void {
     this.interimCallbacks.push(callback)
+  }
+
+  offInterim(callback: InterimCallback): void {
+    this.interimCallbacks = this.interimCallbacks.filter((item) => item !== callback)
   }
 
   // ─── Public API ───────────────────────────────────────────────────────────

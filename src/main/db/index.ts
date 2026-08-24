@@ -2,6 +2,7 @@ import Store from 'electron-store'
 import log from 'electron-log/main'
 import type { AppSettings } from '@shared/ipc'
 import { DEFAULT_OVERLAY_SETTINGS, normalizeOverlaySettings } from '@shared/overlay-defaults'
+import { normalizeThemeLibrary } from '@shared/theme-library'
 
 export type { AppSettings }
 
@@ -24,7 +25,7 @@ const defaults: AppSettings = {
     language: 'en-US',
   },
   scripture: {
-    defaultTranslation: 'ESV',
+    defaultTranslation: 'NKJV',
     showVerseNumbers: true,
     autoMode: false,
     confidenceThreshold: 0.7,
@@ -37,12 +38,25 @@ const defaults: AppSettings = {
     transcriptionFontSize: 18,
   },
   overlay: DEFAULT_OVERLAY_SETTINGS,
+  themeLibrary: [],
 }
 
 export const store = new Store<AppSettings>({
   name: 'proautomate-settings',
   defaults,
 })
+
+const migrations = new Store<{ nkjvDefaultV1: boolean; customThemeLibraryV1: boolean }>({
+  name: 'proautomate-migrations',
+  defaults: { nkjvDefaultV1: false, customThemeLibraryV1: false },
+})
+
+// Product decision: NKJV is the default. Apply once for existing installs whose
+// electron-store file predates the new default, then preserve future user choices.
+if (!migrations.get('nkjvDefaultV1')) {
+  store.set('scripture', { ...store.get('scripture'), defaultTranslation: 'NKJV' })
+  migrations.set('nkjvDefaultV1', true)
+}
 
 // D3 migration — electron-store shallow-Object.assign's `defaults` at startup;
 // it does NOT deep-merge. A pre-phase-2 user's stored `overlay` (no `mode` /
@@ -51,6 +65,12 @@ export const store = new Store<AppSettings>({
 // one-time write-back. Heals the on-disk shape on every launch (a no-op once
 // already normalized).
 store.set('overlay', normalizeOverlaySettings(store.get('overlay')))
+if (!migrations.get('customThemeLibraryV1')) {
+  store.set('themeLibrary', normalizeThemeLibrary(undefined, store.get('overlay').theme))
+  migrations.set('customThemeLibraryV1', true)
+} else {
+  store.set('themeLibrary', normalizeThemeLibrary(store.get('themeLibrary'), store.get('overlay').theme))
+}
 
 export function initDatabase(): void {
   log.info('electron-store initialized', { path: store.path })

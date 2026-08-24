@@ -1,4 +1,5 @@
-import { ipcMain, BrowserWindow, systemPreferences } from "electron";
+import { ipcMain, BrowserWindow, systemPreferences, dialog } from "electron";
+import type { OpenDialogOptions } from "electron";
 import log from "electron-log/main";
 import type { AppSettings, OrchestratorConfig, ResilienceStatus } from "@shared/ipc";
 import { IPC } from "@shared/ipc";
@@ -8,10 +9,13 @@ import { proPresenterService } from "../services/propresenter";
 import { audioService } from "../services/audio";
 import { sttService } from "../services/stt";
 import { scriptureService } from "../services/scripture";
+import { extractScriptureReferences, readSermonDocument, sermonPlanStore } from "../services/scripture/sermon-plans";
+import path from "path";
 import { lyricsService } from "../services/lyrics";
 import { orchestrator } from "../orchestrator";
 import { resilienceManager } from "../services/resilience";
 import { ndiService } from "../services/ndi";
+import { allowPickedOverlayMedia } from "../services/ndi/media-allowlist";
 
 // ─── Broadcast helper ─────────────────────────────────────────────────────────
 
@@ -118,9 +122,35 @@ function registerScriptureHandlers(): void {
     orchestrator.dismissSuggestion(suggestionId);
   });
 
-  ipcMain.handle(IPC.SCRIPTURE.SEARCH, async (_event, query: string) => {
-    return scriptureService.search(query);
+  ipcMain.handle(IPC.SCRIPTURE.SEARCH, async (_event, query: string, translation?: AppSettings['scripture']['defaultTranslation']) => {
+    return scriptureService.search(query, translation, store.get('stt').bibleApiKey);
   });
+
+  ipcMain.handle(IPC.SCRIPTURE.GET_TRANSLATIONS, async () => {
+    return scriptureService.getTranslationOptions(store.get('stt').bibleApiKey);
+  });
+
+  ipcMain.handle(IPC.SCRIPTURE.IMPORT_SERMON_NOTES, async () => {
+    const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+    const options: OpenDialogOptions = {
+      properties: ['openFile'],
+      filters: [{ name: 'Sermon notes', extensions: ['docx', 'pdf', 'txt', 'md', 'rtf'] }],
+    };
+    const result = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
+    if (result.canceled || !result.filePaths[0]) return null;
+    const filePath = result.filePaths[0];
+    const text = await readSermonDocument(filePath);
+    const defaultTranslation = store.get('scripture').defaultTranslation;
+    return {
+      title: path.basename(filePath, path.extname(filePath)),
+      sourceFileName: path.basename(filePath),
+      items: extractScriptureReferences(text, defaultTranslation),
+    };
+  });
+
+  ipcMain.handle(IPC.SCRIPTURE.LIST_SERMON_PLANS, () => sermonPlanStore.list());
+  ipcMain.handle(IPC.SCRIPTURE.SAVE_SERMON_PLAN, (_event, plan) => sermonPlanStore.save(plan));
+  ipcMain.handle(IPC.SCRIPTURE.DELETE_SERMON_PLAN, (_event, planId: string) => sermonPlanStore.delete(planId));
 
   ipcMain.handle(
     IPC.SCRIPTURE.SET_TRANSLATION,
@@ -280,6 +310,20 @@ function registerNdiHandlers(): void {
   ipcMain.handle(IPC.NDI.GET_VIDEO_INPUTS, async () => {
     if (proPresenterService.getStatus().state !== "connected") return [];
     return proPresenterService.rawClient.getVideoInputs();
+  });
+
+  ipcMain.handle(IPC.NDI.PICK_OVERLAY_MEDIA, async (_event, kind: "image" | "video") => {
+    const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+    const filters =
+      kind === "video"
+        ? [{ name: "Videos", extensions: ["mp4", "mov", "m4v", "webm"] }]
+        : [{ name: "Images", extensions: ["png", "jpg", "jpeg", "gif", "webp", "bmp"] }];
+    const result = win
+      ? await dialog.showOpenDialog(win, { properties: ["openFile"], filters })
+      : await dialog.showOpenDialog({ properties: ["openFile"], filters });
+    if (result.canceled || result.filePaths.length === 0) return null;
+    allowPickedOverlayMedia(result.filePaths[0]);
+    return result.filePaths[0];
   });
 }
 

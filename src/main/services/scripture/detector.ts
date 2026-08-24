@@ -29,7 +29,7 @@ export interface DetectorConfig {
   minIntervalMs?: number;
   /** How long the same reference is suppressed in the dedup cache (default 5 min) */
   cacheWindowMs?: number;
-  /** Per-call timeout in ms (default 10 000) */
+  /** Per-call timeout in ms (default 15 000) */
   timeoutMs?: number;
 }
 
@@ -59,6 +59,7 @@ interface DetectorEvents {
   detection: [refs: ScriptureReference[]];
   processing: [text: string];
   error: [err: Error];
+  requestSuccess: [];
   stats: [stats: DetectorStats];
 }
 
@@ -89,7 +90,7 @@ const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
 const DEFAULT_MAX_TOKENS = 1536;
 const DEFAULT_INTERVAL = 5_000;
 const DEFAULT_CACHE_WINDOW = 5 * 60_000;
-const DEFAULT_TIMEOUT = 10_000;
+const DEFAULT_TIMEOUT = 15_000;
 const MAX_RETRIES = 3;
 const RETRY_BASE_MS = 1_000;
 const SOURCE_TEXT_MAX_CHARS = 150; // ~15 words
@@ -328,9 +329,20 @@ export class ScriptureDetector extends EventEmitter {
   private processing = false;
   private lastCallTime = 0;
   private flushTimer: NodeJS.Timeout | null = null;
+  private explicitContext: {
+    book: string;
+    chapter: number;
+    awaitingVerse: boolean;
+    updatedAt: number;
+  } | null = null;
 
-  // Dedup cache: normalized ref key → expiry timestamp
-  private dedupCache = new Map<string, number>();
+  // Dedup cache: normalized ref key → reference + expiry timestamp. Keeping the
+  // interval lets a later single-verse detection overlap a previously-detected
+  // passage range (and vice versa) instead of appearing as a duplicate card.
+  private dedupCache = new Map<
+    string,
+    { ref: ScriptureReference; expiry: number }
+  >();
 
   // Stats
   private statsData = {
@@ -378,6 +390,12 @@ export class ScriptureDetector extends EventEmitter {
   /** Submit transcript text for analysis. Queues; only latest text is sent. */
   analyze(text: string): void {
     if (!text.trim()) return;
+
+    // Explicit citations are deterministic and latency-sensitive. Resolve them
+    // locally before entering the throttled AI queue; the AI remains the path
+    // for quotation/paraphrase detection when no explicit reference is present.
+    if (this.analyzeExplicit(text, true)) return;
+
     this.pendingText = text;
 
     if (this.processing) return; // flush() called after current call finishes
@@ -393,6 +411,79 @@ export class ScriptureDetector extends EventEmitter {
       }, delay);
     }
     // If a timer is already scheduled and new text arrived, pendingText is updated above
+  }
+
+  /** Fast deterministic path safe to call for every interim STT update. */
+  analyzeExplicit(
+    text: string,
+    requireVerse = false,
+    deferAmbiguousRepeatedPair = false,
+  ): boolean {
+    const now = Date.now();
+    if (this.explicitContext && now - this.explicitContext.updatedAt > 12_000) {
+      this.explicitContext = null;
+    }
+
+    const direct = matchExplicitScriptures(text);
+    const directWithVerse = direct.filter(
+      (ref) =>
+        (!requireVerse || hasExplicitVerseSignal(ref.sourceText)) &&
+        (!deferAmbiguousRepeatedPair ||
+          !isAmbiguousRepeatedChapterPair(ref)),
+    );
+    const remembered = direct[direct.length - 1];
+    if (remembered) {
+      this.explicitContext = {
+        book: remembered.book,
+        chapter: remembered.chapter,
+        awaitingVerse:
+          /\bverses?\b/i.test(text) ||
+          !hasExplicitVerseSignal(remembered.sourceText) ||
+          this.explicitContext?.awaitingVerse === true,
+        updatedAt: now,
+      };
+    } else if (this.explicitContext && /\bverses?\b/i.test(text)) {
+      this.explicitContext.awaitingVerse = true;
+      this.explicitContext.updatedAt = now;
+    }
+
+    let explicit = directWithVerse;
+    if (
+      explicit.length === 0 &&
+      direct.length === 0 &&
+      this.explicitContext?.awaitingVerse
+    ) {
+      const normalized = normalizeWordNumbers(text);
+      const range = normalized.match(
+        /\b(\d+)(?:(?:\s*(?:-|to|thru|through)\s*|\s+)(\d+))?\b/,
+      );
+      if (range) {
+        const verseStart = Number(range[1]);
+        const verseEnd = range[2] ? Number(range[2]) : undefined;
+        if (deferAmbiguousRepeatedPair && verseEnd === undefined) {
+          return false;
+        }
+        explicit = [{
+          book: this.explicitContext.book,
+          chapter: this.explicitContext.chapter,
+          verseStart,
+          ...(verseEnd !== undefined && verseEnd > verseStart ? { verseEnd } : {}),
+          confidence: 0.9,
+          detectionType: "explicit",
+          sourceText: `${this.explicitContext.book} ${this.explicitContext.chapter}:${verseStart}${verseEnd !== undefined ? `-${verseEnd}` : ""}`,
+        }];
+        this.explicitContext.updatedAt = now;
+      }
+    }
+    if (explicit.length === 0) return false;
+    const deduplicated = this.filterDedup(explicit);
+    this.statsData.cacheHits += explicit.length - deduplicated.length;
+    if (deduplicated.length > 0) {
+      this.statsData.totalDetections += deduplicated.length;
+      this.emit("detection", deduplicated);
+    }
+    this.emit("stats", this.getStats());
+    return true;
   }
 
   reconfigure(config: Partial<DetectorConfig>): void {
@@ -446,6 +537,7 @@ export class ScriptureDetector extends EventEmitter {
       this.flushTimer = null;
     }
     this.pendingText = null;
+    this.explicitContext = null;
     this.removeAllListeners();
   }
 
@@ -536,6 +628,8 @@ export class ScriptureDetector extends EventEmitter {
           return;
         }
 
+        this.emit("requestSuccess");
+
         const deduplicated = this.filterDedup(parsed);
         this.statsData.cacheHits += parsed.length - deduplicated.length;
 
@@ -621,17 +715,43 @@ export class ScriptureDetector extends EventEmitter {
     const now = Date.now();
 
     // Evict expired entries
-    for (const [key, expiry] of this.dedupCache) {
-      if (now > expiry) this.dedupCache.delete(key);
+    for (const [key, entry] of this.dedupCache) {
+      if (now > entry.expiry) this.dedupCache.delete(key);
     }
 
     return refs.filter((ref) => {
       const key = dedupKey(ref);
-      if (this.dedupCache.has(key)) return false;
-      this.dedupCache.set(key, now + this.cfg.cacheWindowMs);
+      for (const [cachedKey, entry] of this.dedupCache) {
+        if (referenceContains(entry.ref, ref)) return false;
+        if (referenceContains(ref, entry.ref)) {
+          this.dedupCache.delete(cachedKey);
+        }
+      }
+      this.dedupCache.set(key, {
+        ref,
+        expiry: now + this.cfg.cacheWindowMs,
+      });
       return true;
     });
   }
+}
+
+function hasExplicitVerseSignal(sourceText: string): boolean {
+  return (
+    /\bverses?\b/i.test(sourceText) ||
+    /:\s*\d+/.test(sourceText) ||
+    /\b\d+\s+\d+(?:\s*(?:-|to|thru|through)\s*\d+)?\b/i.test(sourceText)
+  );
+}
+
+function isAmbiguousRepeatedChapterPair(ref: ScriptureReference): boolean {
+  if (ref.chapter !== ref.verseStart || ref.verseEnd !== undefined) return false;
+  if (/\bverses?\b|:|(?:-|\bto\b|\bthru\b|\bthrough\b)/i.test(ref.sourceText)) {
+    return false;
+  }
+
+  const numbers = ref.sourceText.match(/\d+/g) ?? [];
+  return numbers.length === 2 && Number(numbers[0]) === Number(numbers[1]);
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -639,6 +759,24 @@ export class ScriptureDetector extends EventEmitter {
 function dedupKey(ref: ScriptureReference): string {
   const end = ref.verseEnd != null ? `-${ref.verseEnd}` : "";
   return `${ref.book.toLowerCase()} ${ref.chapter}:${ref.verseStart}${end}`;
+}
+
+function referenceContains(
+  container: ScriptureReference,
+  candidate: ScriptureReference,
+): boolean {
+  if (
+    container.book.toLowerCase() !== candidate.book.toLowerCase() ||
+    container.chapter !== candidate.chapter
+  ) {
+    return false;
+  }
+  const containerEnd = container.verseEnd ?? container.verseStart;
+  const candidateEnd = candidate.verseEnd ?? candidate.verseStart;
+  return (
+    container.verseStart <= candidate.verseStart &&
+    containerEnd >= candidateEnd
+  );
 }
 
 function parseResponse(raw: string): ScriptureReference[] | null {
@@ -931,6 +1069,24 @@ function normalizeWordNumbers(text: string): string {
   };
 
   let normalized = text.toLowerCase();
+  normalized = normalized.replace(/\bchapter\s+number\s+/g, "chapter ");
+
+  // STT commonly spells numbered book prefixes as ordinals. Restrict this
+  // conversion to canonical numbered-book names so ordinary sermon phrases
+  // such as "the second time" are left untouched.
+  normalized = normalized.replace(
+    /\b(first|second|third)\s+(?=(?:samuel|kings?|chronicles|corinthians|thessalonians|timothy|peter|john)\b)/g,
+    (_match, ordinal: string) =>
+      ordinal === "first" ? "1 " : ordinal === "second" ? "2 " : "3 ",
+  );
+
+  // Psalm is the only Bible book with three-digit chapter numbers. Speakers
+  // commonly say "Psalm one thirty nine" (139) without saying "hundred".
+  normalized = normalized.replace(
+    /\b(psalms?)\s+one(?:\s+hundred(?:\s+and)?)?\s+(ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty)(?:[-\s](one|two|three|four|five|six|seven|eight|nine))?\b/g,
+    (_match, book: string, remainder: string, unit?: string) =>
+      `${book} ${100 + parseInt(wordsMap[remainder], 10) + (unit ? parseInt(wordsMap[unit], 10) : 0)}`,
+  );
 
   // Replace compound word numbers (e.g. "twenty-eight" or "twenty eight")
   normalized = normalized.replace(
@@ -969,7 +1125,7 @@ export function matchExplicitScriptures(text: string): ScriptureReference[] {
 
   // Match book name, followed by chapter, optionally verse, optionally verse range
   const regex = new RegExp(
-    `\\b(${bookRegexStr})\\b\\s*(?:chapter\\s+)?(\\d+)(?:\\s*[:\\s]\\s*(?:verse\\s+)?(\\d+)(?:\\s*(?:-|thru|through|to)\\s*(\\d+))?)?`,
+    `\\b(${bookRegexStr})\\b\\s*(?:chapter\\s+)?(\\d+)(?:\\s+\\2(?=\\s+(?:verse\\s+)?\\d+\\s*(?:-|thru|through|to)))?(?:\\s*[:\\s]\\s*(?:verse\\s+)?(\\d+)(?:(?:\\s*(?:-|thru|through|to)\\s*|\\s+)(\\d+))?)?`,
     "gi",
   );
 

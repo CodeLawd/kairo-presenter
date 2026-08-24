@@ -10,6 +10,9 @@ import { ndiService } from './index'
 const WIDTH = 1920
 const HEIGHT = 1080
 const OSR_FRAME_RATE = 10
+// Video backgrounds repaint continuously — 10fps reads as a slideshow. 24 keeps
+// motion acceptable without tripling the BGRA copy load. Tune after live perf checks.
+const OSR_FRAME_RATE_VIDEO = 24
 
 // ─── Offscreen overlay renderer ────────────────────────────────────────────────
 // D4/D5: offscreen hidden BrowserWindow loaded from the `?asset`-imported
@@ -75,7 +78,9 @@ class OverlayWindow {
     if (!ndiService.getStatus().available) return
     const win = await this.ensureWindow()
     if (win.isDestroyed()) return
-    const html = renderOverlayHTML(theme, reference, text)
+    const isVideoBg = theme.background.type === 'video' && !!theme.background.mediaPath
+    win.webContents.setFrameRate(isVideoBg ? OSR_FRAME_RATE_VIDEO : OSR_FRAME_RATE)
+    const html = renderOverlayHTML(theme, reference, text, WIDTH, HEIGHT)
     await win.webContents.executeJavaScript(`window.__setContent(${JSON.stringify(html)})`)
   }
 

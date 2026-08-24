@@ -1,15 +1,12 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import {
   BookOpen,
   X,
-  Check,
   Play,
   Pause,
   Search,
   Activity,
   Trash2,
-  Edit2,
-  Save,
   Volume2,
   AlertTriangle,
   RotateCcw,
@@ -17,7 +14,27 @@ import {
 } from 'lucide-react'
 import { useAppStore } from '@/stores/useAppStore'
 import { cn } from '@/lib/utils'
+import {
+  normalizeOperatorPanelWidth,
+  resizeOperatorPanel,
+} from '@shared/operator-layout'
+import type { OperatorPanelSide } from '@shared/operator-layout'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
+import { VerseThemePreview } from '@/components/scripture/VerseThemePreview'
+import { CARD_BASE_HEIGHT, CARD_BASE_WIDTH } from '@/components/scripture/types'
+import { DEFAULT_OVERLAY_SETTINGS, normalizeOverlaySettings } from '@shared/overlay-defaults'
+import {
+  applyOperatorSuggestionSent,
+  findReadingProgress,
+  groupScriptureSuggestions,
+  mergeScriptureSuggestion,
+  updatePassageFollow,
+} from '@shared/scripture-live-progress'
+import type { PassageFollowState } from '@shared/scripture-live-progress'
 import type {
+  AppSettings,
   ScriptureSuggestion,
   PendingAutoPresent,
   ServiceHealth,
@@ -187,25 +204,152 @@ export default function Operator(): React.ReactElement {
 
   // Scripture suggestions queue
   const [suggestions, setSuggestions] = useState<ScriptureSuggestion[]>([])
+  const suggestionsRef = useRef<ScriptureSuggestion[]>([])
+  const recentReadingTextRef = useRef('')
+  const verseCardRefs = useRef(new Map<string, HTMLButtonElement>())
+  const [readingProgress, setReadingProgress] = useState<{
+    matchedId: string
+    nextId: string
+  } | null>(null)
+  const [sentSuggestionIds, setSentSuggestionIds] = useState<Set<string>>(
+    () => new Set()
+  )
+  const sentSuggestionIdsRef = useRef(new Set<string>())
+  const followStateRef = useRef<PassageFollowState | null>(null)
+  const [overlay, setOverlay] = useState<AppSettings['overlay']>(DEFAULT_OVERLAY_SETTINGS)
+  const [defaultTranslation, setDefaultTranslation] = useState<AppSettings['scripture']['defaultTranslation']>('NKJV')
   const [pendingAuto, setPendingAuto] = useState<PendingAutoPresent[]>([])
+  const [transcriptWidth, setTranscriptWidth] = useState(() =>
+    normalizeOperatorPanelWidth('left', localStorage.getItem('operator-transcript-width'), 240)
+  )
+  const [previewWidth, setPreviewWidth] = useState(() =>
+    normalizeOperatorPanelWidth('right', localStorage.getItem('operator-preview-width'), 320)
+  )
+  const liveOutputPreviewWidth = Math.min(CARD_BASE_WIDTH, previewWidth - 32)
+  const liveOutputPreviewHeight = Math.round((liveOutputPreviewWidth * 9) / 16)
   const [activeProjection, setActiveProjection] = useState<{
     reference: string
     text: string
   } | null>(null)
+  const suggestionGroups = useMemo(
+    () => groupScriptureSuggestions(suggestions),
+    [suggestions]
+  )
+
+  const startPanelResize = useCallback((side: OperatorPanelSide, event: React.PointerEvent): void => {
+    event.preventDefault()
+    const startX = event.clientX
+    const startWidth = side === 'left' ? transcriptWidth : previewWidth
+    let finalWidth = startWidth
+    const setWidth = side === 'left' ? setTranscriptWidth : setPreviewWidth
+    const storageKey = side === 'left' ? 'operator-transcript-width' : 'operator-preview-width'
+
+    const handlePointerMove = (pointerEvent: PointerEvent): void => {
+      finalWidth = resizeOperatorPanel(side, startWidth, pointerEvent.clientX - startX)
+      setWidth(finalWidth)
+    }
+    const handlePointerUp = (): void => {
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      localStorage.setItem(storageKey, String(finalWidth))
+    }
+
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerUp, { once: true })
+  }, [previewWidth, transcriptWidth])
+
+  const resizePanelByKeyboard = useCallback((side: OperatorPanelSide, deltaX: number): void => {
+    const currentWidth = side === 'left' ? transcriptWidth : previewWidth
+    const nextWidth = resizeOperatorPanel(side, currentWidth, deltaX)
+    if (side === 'left') setTranscriptWidth(nextWidth)
+    else setPreviewWidth(nextWidth)
+    localStorage.setItem(
+      side === 'left' ? 'operator-transcript-width' : 'operator-preview-width',
+      String(nextWidth)
+    )
+  }, [previewWidth, transcriptWidth])
+  const livePreviewResult = useMemo(() => {
+    if (!activeProjection) return null
+    const detected = suggestions.find((item) => item.reference === activeProjection.reference)
+    if (detected) {
+      return {
+        reference: detected.reference,
+        translation: detected.translation,
+        verses: detected.verses,
+      }
+    }
+    const parsed = activeProjection.reference.match(/^(.+?)\s+(\d+):(\d+)/)
+    return {
+      reference: activeProjection.reference,
+      translation: defaultTranslation,
+      verses: [{
+        book: parsed?.[1] ?? '',
+        chapter: Number(parsed?.[2] ?? 0),
+        verse: Number(parsed?.[3] ?? 0),
+        text: activeProjection.text,
+      }],
+    }
+  }, [activeProjection, defaultTranslation, suggestions])
+
+  useEffect(() => {
+    suggestionsRef.current = suggestions
+  }, [suggestions])
+
+  useEffect(() => {
+    Promise.all([
+      window.api.settings.get('overlay'),
+      window.api.settings.get('scripture'),
+    ])
+      .then(([storedOverlay, storedScripture]) => {
+        setOverlay(normalizeOverlaySettings(storedOverlay))
+        setDefaultTranslation(storedScripture.defaultTranslation)
+      })
+      .catch(console.error)
+  }, [])
+
+  const advanceAutoFollowFromText = useCallback((text: string): void => {
+    const current = followStateRef.current
+    if (!current || !text.trim()) return
+    const update = updatePassageFollow(current, text, suggestionsRef.current)
+    followStateRef.current = update.state
+    if (!update.nextSuggestionId || sentSuggestionIdsRef.current.has(update.nextSuggestionId)) return
+    const candidate = suggestionsRef.current.find((item) => item.id === update.nextSuggestionId)
+    if (!candidate) return
+
+    const sent = new Set(sentSuggestionIdsRef.current).add(candidate.id)
+    sentSuggestionIdsRef.current = sent
+    setSentSuggestionIds(sent)
+    setActiveProjection({
+      reference: candidate.reference,
+      text: candidate.verses.map((verse) => verse.text).join(' '),
+    })
+    window.api.scripture.register(candidate)
+      .then(() => window.api.orchestrator.approveSuggestion(candidate.id))
+      .catch((err) => {
+        console.error(err)
+        followStateRef.current = current
+        const reverted = new Set(sentSuggestionIdsRef.current)
+        reverted.delete(candidate.id)
+        sentSuggestionIdsRef.current = reverted
+        setSentSuggestionIds(reverted)
+      })
+  }, [])
+
+  useEffect(() => {
+    if (!readingProgress) return
+    verseCardRefs.current.get(readingProgress.nextId)?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'nearest',
+    })
+  }, [readingProgress])
 
   // Quick actions search input
   const [searchQuery, setSearchQuery] = useState('')
   const searchInputRef = useRef<HTMLInputElement>(null)
-
-  // Common scriptures quick grid
-  const [quickAccess, setQuickAccess] = useState<string[]>(() => {
-    const saved = localStorage.getItem('proautomate_quick_access')
-    return saved
-      ? JSON.parse(saved)
-      : ['John 3:16', 'Psalm 23:1', 'Romans 8:28', 'Genesis 1:1', 'Isaiah 40:31', 'Philippians 4:13']
-  })
-  const [isEditingGrid, setIsEditingGrid] = useState(false)
-  const [tempQuickAccess, setTempQuickAccess] = useState<string[]>([...quickAccess])
 
   // System Health state
   const [health, setHealth] = useState<ServiceHealth[]>([])
@@ -262,16 +406,6 @@ export default function Operator(): React.ReactElement {
   // Session duration timer
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
 
-  // Time ticker state for Auto-present countdown progress
-  const [now, setNow] = useState(Date.now())
-
-  // ── Setup Tick Tickers ──────────────────────────────────────────────────────
-
-  useEffect(() => {
-    const interval = setInterval(() => setNow(Date.now()), 50)
-    return () => clearInterval(interval)
-  }, [])
-
   // ── Sync Active Projection with Store's Current Slide ──────────────────────
 
   const currentSlide = useAppStore((state) => state.currentSlide)
@@ -312,10 +446,24 @@ export default function Operator(): React.ReactElement {
       const seg = resultToSegment(result)
       setSegments((prev) => [...prev, seg].slice(-50))
       setInterimText('')
+      advanceAutoFollowFromText(result.text)
+
+      recentReadingTextRef.current = `${recentReadingTextRef.current} ${result.text}`.slice(-650)
+      const progress = findReadingProgress(
+        recentReadingTextRef.current,
+        suggestionsRef.current
+      )
+      if (progress) {
+        setReadingProgress({
+          matchedId: suggestionsRef.current[progress.matchedIndex]?.id ?? progress.activeSuggestionId,
+          nextId: progress.activeSuggestionId,
+        })
+      }
     })
 
     const unsubInterim = window.api.transcription.onInterim((result) => {
       setInterimText(result.text)
+      advanceAutoFollowFromText(result.text)
     })
 
     const unsubSuggestion = window.api.scripture.onSuggestion((suggestion) => {
@@ -347,7 +495,16 @@ export default function Operator(): React.ReactElement {
       // 2. Insert into the visual queue
       setSuggestions((prev) => {
         if (prev.some((s) => s.id === suggestion.id)) return prev
-        return [...prev, suggestion]
+        const next = mergeScriptureSuggestion(prev, suggestion)
+        suggestionsRef.current = next
+        const progress = findReadingProgress(recentReadingTextRef.current, next)
+        if (progress) {
+          setReadingProgress({
+            matchedId: next[progress.matchedIndex]?.id ?? progress.activeSuggestionId,
+            nextId: progress.activeSuggestionId,
+          })
+        }
+        return next
       })
     })
 
@@ -371,7 +528,7 @@ export default function Operator(): React.ReactElement {
       unsubPendingAuto()
       unsubStatus()
     }
-  }, [setIsTranscribing, setAutoMode, confidenceThreshold])
+  }, [setIsTranscribing, setAutoMode, confidenceThreshold, advanceAutoFollowFromText])
 
   // ── Auto-present Cleanup and Projection Trigger ─────────────────────────────
 
@@ -430,13 +587,27 @@ export default function Operator(): React.ReactElement {
       try {
         const sug = suggestions.find((s) => s.id === id)
         if (sug) {
+          if (sug.passageId && (sug.passageLength ?? 1) > 1) {
+            followStateRef.current = {
+              passageId: sug.passageId,
+              currentIndex: sug.passageIndex ?? 0,
+              matchedTokenIndexes: [],
+            }
+          }
           setActiveProjection({
             reference: sug.reference,
             text: sug.verses.map((v) => v.text).join(' '),
           })
         }
+        const sentState = applyOperatorSuggestionSent(
+          suggestions,
+          sentSuggestionIdsRef.current,
+          id
+        )
+        sentSuggestionIdsRef.current = sentState.sentSuggestionIds
+        setSentSuggestionIds(sentState.sentSuggestionIds)
+        setSuggestions(sentState.suggestions)
         await window.api.orchestrator.approveSuggestion(id)
-        setSuggestions((prev) => prev.filter((s) => s.id !== id))
         setPendingAuto((prev) => prev.filter((p) => p.suggestionId !== id))
       } catch (err) {
         console.error(err)
@@ -455,19 +626,11 @@ export default function Operator(): React.ReactElement {
     }
   }, [])
 
-  const handleDismissAuto = useCallback(async (id: string): Promise<void> => {
-    try {
-      await window.api.orchestrator.dismissAuto(id)
-      setPendingAuto((prev) => prev.filter((p) => p.suggestionId !== id))
-    } catch (err) {
-      console.error(err)
-    }
-  }, [])
-
   const handleClearProjection = useCallback(async (): Promise<void> => {
     try {
       await window.api.propresenter.clearAll()
       setActiveProjection(null)
+      useAppStore.getState().clearScriptureLiveOutput()
     } catch (err) {
       console.error(err)
     }
@@ -495,32 +658,6 @@ export default function Operator(): React.ReactElement {
           text: res.verses.map((v) => v.text).join(' '),
         })
         setSearchQuery('')
-      }
-    } catch (err) {
-      console.error(err)
-    }
-  }
-
-  const handleQuickGridSelect = async (ref: string) => {
-    try {
-      const results = await window.api.scripture.search(ref)
-      if (results && results.length > 0) {
-        const res = results[0]
-        const suggestion: ScriptureSuggestion = {
-          id: `manual-grid-${Date.now()}`,
-          reference: res.reference,
-          verses: res.verses,
-          translation: res.translation,
-          confidence: 1.0,
-          source: 'manual',
-          triggerText: ref,
-        }
-        await window.api.scripture.register(suggestion)
-        await window.api.orchestrator.approveSuggestion(suggestion.id)
-        setActiveProjection({
-          reference: res.reference,
-          text: res.verses.map((v) => v.text).join(' '),
-        })
       }
     } catch (err) {
       console.error(err)
@@ -568,12 +705,6 @@ export default function Operator(): React.ReactElement {
         console.error(err)
       }
     }
-  }
-
-  const handleSaveGrid = () => {
-    setQuickAccess(tempQuickAccess)
-    localStorage.setItem('proautomate_quick_access', JSON.stringify(tempQuickAccess))
-    setIsEditingGrid(false)
   }
 
   // ── Keyboard Shortcuts Listener ─────────────────────────────────────────────
@@ -670,11 +801,11 @@ export default function Operator(): React.ReactElement {
 
   return (
     <div className="h-full w-full flex flex-col bg-surface overflow-hidden">
-      {/* Header bar */}
-      <header className="flex items-center justify-between px-6 py-3 border-b border-surface-border bg-surface-secondary/40 shrink-0">
-        <div>
-          <h1 className="text-base font-bold text-white leading-none tracking-tight">Operator Dashboard</h1>
-          <p className="text-[10px] text-slate-500 mt-1 leading-none">Live church presentation telemetry & override panel</p>
+      {/* Workspace command bar */}
+      <header className="flex h-10 items-center justify-between border-b border-surface-border bg-surface-secondary/40 px-4 shrink-0">
+        <div className="flex items-center gap-2.5">
+          <span className="text-xs font-semibold text-zinc-300">Live workspace</span>
+          <span className="text-[10px] font-mono tabular-nums text-zinc-600">{formatTime(elapsedSeconds)}</span>
         </div>
         <div className="flex items-center gap-4">
           {/* Key shortcut helper */}
@@ -684,18 +815,10 @@ export default function Operator(): React.ReactElement {
             <span><kbd className="px-1.5 py-0.5 bg-zinc-800 rounded text-slate-400 font-mono text-[9px]">Backspace</kbd> Clear</span>
             <span><kbd className="px-1.5 py-0.5 bg-zinc-800 rounded text-slate-400 font-mono text-[9px]">Ctrl+F</kbd> Search</span>
           </div>
-          <button
-            onClick={handleToggleAutoMode}
-            className={cn(
-              'px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 border',
-              autoModeEnabled
-                ? 'bg-teal-500/10 border-teal-500/30 text-teal-400 shadow-sm'
-                : 'bg-zinc-900 border-zinc-800 text-slate-400 hover:text-slate-200'
-            )}
-            title="Press Ctrl+A to toggle"
-          >
-            Auto-Mode: {autoModeEnabled ? 'ON' : 'OFF'}
-          </button>
+          <div className="flex items-center gap-2 text-[11px] text-muted-foreground" title="Press Ctrl+A to toggle">
+            <span>Automation</span>
+            <Switch checked={autoModeEnabled} onCheckedChange={handleToggleAutoMode} aria-label="Toggle automation" />
+          </div>
         </div>
       </header>
 
@@ -709,7 +832,9 @@ export default function Operator(): React.ReactElement {
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <button
+            <Button
+              variant="outline"
+              size="sm"
               onClick={async () => {
                 try {
                   await window.api.resilience.discardSession()
@@ -717,11 +842,11 @@ export default function Operator(): React.ReactElement {
                   console.error(e)
                 }
               }}
-              className="px-3 py-1 bg-zinc-900 border border-zinc-800 rounded-none uppercase font-mono text-[10px] text-slate-400 hover:text-slate-200"
             >
               Discard
-            </button>
-            <button
+            </Button>
+            <Button
+              size="sm"
               onClick={async () => {
                 try {
                   await window.api.resilience.restoreSession()
@@ -729,10 +854,9 @@ export default function Operator(): React.ReactElement {
                   console.error(e)
                 }
               }}
-              className="px-3 py-1 bg-teal-600 border border-teal-500/30 rounded-none uppercase font-mono text-[10px] text-white hover:bg-teal-500"
             >
               Restore Session
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -754,10 +878,13 @@ export default function Operator(): React.ReactElement {
 
       {/* Main columns */}
       <div className="flex-1 min-h-0 w-full flex">
-        {/* LEFT COLUMN: Live Transcript (25%) */}
-        <section className="w-1/4 min-w-[240px] border-r border-surface-border flex flex-col bg-surface-secondary/15">
+        {/* LEFT COLUMN: compact live transcript */}
+        <section
+          className="shrink-0 flex flex-col bg-surface-secondary/15"
+          style={{ width: transcriptWidth }}
+        >
           <div className="px-4 py-3.5 border-b border-surface-border flex items-center justify-between bg-surface-secondary/40 shrink-0">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Live Transcript</span>
+            <span className="font-narrow text-xs font-semibold text-slate-400 uppercase tracking-[0.08em]">Live transcript</span>
             {isTranscribing && (
               <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[9px] text-emerald-400 font-bold tracking-wider uppercase animate-pulse">
                 <span className="w-1 h-1 rounded-full bg-emerald-400" />
@@ -773,7 +900,7 @@ export default function Operator(): React.ReactElement {
           )}
           <div
             onScroll={handleTranscriptScroll}
-            className="flex-1 overflow-y-auto p-4 space-y-3 scroll-smooth font-serif text-slate-300 leading-relaxed text-sm antialiased select-text"
+            className="flex-1 overflow-y-auto p-4 space-y-3 scroll-smooth font-sans text-zinc-300 leading-relaxed text-sm antialiased select-text"
           >
             {segments.map((seg) => (
               <p key={seg.id} className="transition-all duration-300 opacity-90 hover:opacity-100">
@@ -816,142 +943,117 @@ export default function Operator(): React.ReactElement {
           </div>
         </section>
 
-        {/* CENTER COLUMN: Scripture Suggestion Queue & Projected Content (50%) */}
-        <section className="flex-1 border-r border-surface-border flex flex-col">
+        <button
+          type="button"
+          aria-label="Resize live transcript panel"
+          title="Drag to resize live transcript"
+          className="group relative w-1.5 shrink-0 cursor-col-resize border-x border-surface-border/60 bg-surface-secondary/30 outline-none transition-colors hover:bg-teal-500/20 focus-visible:bg-teal-500/25"
+          onPointerDown={(event) => startPanelResize('left', event)}
+          onKeyDown={(event) => {
+            if (event.key === 'ArrowLeft') resizePanelByKeyboard('left', -16)
+            if (event.key === 'ArrowRight') resizePanelByKeyboard('left', 16)
+          }}
+        >
+          <span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-transparent transition-colors group-hover:bg-teal-400/70" />
+        </button>
+
+        {/* CENTER COLUMN: scripture detection workspace */}
+        <section className="min-w-0 flex-1 flex flex-col">
           {resilienceStatus && resilienceStatus.claudeFallbackActive && (
             <div className="bg-amber-950/10 border-b border-amber-500/20 px-5 py-2 text-[10px] font-bold text-amber-400/90 flex items-center justify-between shrink-0 animate-pulse">
               <span>CLAUDE OFFLINE — LOCAL REGEX DETECTION ACTIVE</span>
               <span className="text-[9px] uppercase tracking-wider text-slate-500 font-mono">FALLBACK ACTIVE</span>
             </div>
           )}
-          {/* NOW PROJECTING */}
-          <div className="p-5 border-b border-surface-border bg-surface-secondary/20 shrink-0 space-y-3">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest block">Now Projecting</span>
-            <div className="flex gap-4 items-stretch min-h-[96px] bg-surface border border-surface-border rounded-xl overflow-hidden p-4 shadow-sm">
-              <div className="flex-1 flex flex-col justify-center min-w-0">
-                {activeProjection ? (
-                  <>
-                    <p className="text-[11px] font-bold text-teal-400 uppercase tracking-wider font-sans leading-none mb-1">
-                      {activeProjection.reference}
-                    </p>
-                    <p className="text-sm text-white font-serif leading-relaxed line-clamp-3 italic">
-                      “{activeProjection.text}”
-                    </p>
-                  </>
-                ) : (
-                  <div className="flex flex-col items-center justify-center h-full text-slate-500 py-3">
-                    <BookOpenCheck size={18} className="text-slate-600 mb-1" />
-                    <p className="text-xs font-semibold">No scripture active on screen</p>
-                  </div>
-                )}
-              </div>
-              <button
-                onClick={handleClearProjection}
-                disabled={!activeProjection}
-                className={cn(
-                  'w-28 flex flex-col items-center justify-center gap-1.5 rounded-lg border text-xs font-bold transition-all duration-200 uppercase tracking-wider',
-                  activeProjection
-                    ? 'bg-rose-600/10 border-rose-500/30 text-rose-400 hover:bg-rose-600/20 active:bg-rose-600/35 cursor-pointer'
-                    : 'bg-zinc-900/50 border-zinc-800 text-slate-600 cursor-not-allowed'
-                )}
-                aria-label="Clear ProPresenter output (Backspace)"
-              >
-                <X size={15} />
-                Clear
-              </button>
-            </div>
-          </div>
-
           {/* SUGGESTION QUEUE */}
           <div className="px-5 py-3.5 border-b border-surface-border bg-surface-secondary/40 shrink-0">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Detections & Suggestions Queue</span>
+            <span className="font-narrow text-xs font-semibold text-zinc-500 uppercase tracking-[0.08em]">Detected content</span>
           </div>
-          <div className="flex-1 overflow-y-auto p-5 space-y-3 bg-surface-secondary/5">
-            {suggestions.map((s) => {
-              const pending = pendingAuto.find((p) => p.suggestionId === s.id)
-              const msLeft = pending ? pending.expiresAt - now : 0
-              const pct = pending ? Math.max(0, Math.min(100, (msLeft / 3000) * 100)) : 0
-              const secsLeft = Math.ceil(msLeft / 1000)
-
-              return (
-                <div
-                  key={s.id}
-                  className={cn(
-                    'relative overflow-hidden border bg-surface rounded-xl p-4 shadow-sm transition-all duration-200 group',
-                    pending ? 'border-teal-500/30 bg-teal-950/5' : 'border-surface-border'
-                  )}
-                >
-                  {/* Countdown progress line on top edge if auto presenting */}
-                  {pending && (
-                    <div
-                      onClick={() => handleDismissAuto(s.id)}
-                      className="absolute top-0 left-0 h-1 bg-teal-400 transition-all duration-100 ease-linear cursor-pointer"
-                      style={{ width: `${pct}%` }}
-                      title="Click countdown line to pause auto-present"
-                    />
-                  )}
-
-                  <div className="flex items-start justify-between gap-4">
+          <div className="flex-1 overflow-y-auto bg-surface-secondary/5 p-4">
+            <div className="space-y-5">
+              {suggestionGroups.map((group) => {
+                const followState = followStateRef.current
+                return (
+                <section key={group.id} className="space-y-2.5">
+                  <div className="flex items-end justify-between gap-3 px-0.5">
                     <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-bold text-white tracking-tight">{s.reference}</span>
-                        <span className="px-1.5 py-0.5 rounded bg-zinc-800 text-[9px] text-slate-500 font-bold uppercase border border-zinc-700">
-                          {s.translation}
-                        </span>
-                        {pending && (
-                          <span
-                            onClick={() => handleDismissAuto(s.id)}
-                            className="px-1.5 py-0.5 rounded bg-teal-500/10 border border-teal-500/20 text-[9px] text-teal-400 font-extrabold cursor-pointer hover:bg-teal-500/20"
-                            title="Click to cancel timer"
-                          >
-                            AUTO-SEND IN {secsLeft}s (CANCEL)
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 mt-1.5">
-                        <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider shrink-0">Confidence:</span>
-                        <div className="w-24 bg-zinc-800 rounded-full h-1.5 overflow-hidden">
-                          <div
-                            className={cn(
-                              'h-full rounded-full transition-all duration-300',
-                              s.confidence >= 0.8 ? 'bg-emerald-500' : s.confidence >= 0.6 ? 'bg-amber-500' : 'bg-rose-500'
-                            )}
-                            style={{ width: `${Math.round(s.confidence * 100)}%` }}
-                          />
-                        </div>
-                        <span className="text-[10px] font-mono text-slate-400">{Math.round(s.confidence * 100)}%</span>
-                      </div>
-                    </div>
-
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => handleDismissSuggestion(s.id)}
-                        className="w-10 h-10 flex items-center justify-center rounded-lg bg-zinc-900 border border-zinc-800 text-slate-400 hover:text-rose-400 hover:bg-rose-950/20 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/50"
-                        title="Dismiss Suggestion (Esc)"
-                      >
-                        <X size={16} />
-                      </button>
-                      <button
-                        onClick={() => handleApproveSuggestion(s.id)}
-                        className="flex items-center gap-1.5 px-4 h-10 rounded-lg bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold uppercase tracking-wider transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400"
-                        title="Project Now (Space / Enter)"
-                      >
-                        <Check size={14} />
-                        Send
-                      </button>
-                    </div>
-                  </div>
-
-                  {s.verses.length > 0 && (
-                    <div className="mt-3 bg-surface-secondary/40 border border-surface-border/50 rounded-lg p-3">
-                      <p className="text-xs text-slate-400 font-serif leading-relaxed italic">
-                        “{s.verses.map((v) => v.text).join(' ')}”
+                      <p className="text-sm font-semibold text-slate-200">{group.reference}</p>
+                      <p className="mt-0.5 text-[10px] text-slate-500">
+                        {group.suggestions.length} verse{group.suggestions.length !== 1 ? 's' : ''} · selected theme preview
                       </p>
                     </div>
-                  )}
-                </div>
-              )
-            })}
+                    {followStateRef.current?.passageId === group.id && (
+                      <span className="text-[10px] font-semibold text-teal-300">Auto-follow armed</span>
+                    )}
+                  </div>
+                  <div
+                    className="grid justify-start gap-3"
+                    style={{
+                      gridTemplateColumns: `repeat(auto-fill, ${CARD_BASE_WIDTH}px)`,
+                    }}
+                  >
+                    {group.suggestions.map((s) => {
+                      const isReading =
+                        followState !== null &&
+                        followState.passageId === s.passageId &&
+                        followState.currentIndex === s.passageIndex
+                      const isUpNext =
+                        followState !== null &&
+                        followState.passageId === s.passageId &&
+                        followState.currentIndex + 1 === s.passageIndex
+                      const isSent = sentSuggestionIds.has(s.id)
+                      const isLive = activeProjection?.reference === s.reference
+                      return (
+                        <article key={s.id} className="min-w-0 space-y-1.5">
+                          <VerseThemePreview
+                            result={{
+                              reference: s.reference,
+                              translation: s.translation,
+                              verses: s.verses,
+                            }}
+                            theme={overlay.theme}
+                            showTranslation={overlay.showTranslation}
+                            showVerseNumbers={overlay.showVerseNumbers}
+                            maxVerses={1}
+                            width={CARD_BASE_WIDTH}
+                            height={CARD_BASE_HEIGHT}
+                            isFocused={isReading || isUpNext}
+                            isLive={isLive}
+                            sendStatus={isLive ? 'sent' : 'idle'}
+                            onSelect={() => void handleApproveSuggestion(s.id)}
+                            cardRef={(element) => {
+                              if (element) verseCardRefs.current.set(s.id, element)
+                              else verseCardRefs.current.delete(s.id)
+                            }}
+                          />
+                          <div className="flex items-center justify-between gap-2 px-0.5">
+                            <div className="min-w-0">
+                              <p className="truncate text-[11px] font-semibold text-slate-300">{s.reference}</p>
+                              <p className={cn(
+                                'text-[9px] font-semibold',
+                                isLive ? 'text-teal-300' : isReading ? 'text-amber-300' : isUpNext ? 'text-slate-400' : 'text-slate-600'
+                              )}>
+                                {isLive ? 'Live · following reading' : isReading ? 'Reading now' : isUpNext ? 'Up next' : isSent ? 'Shown' : `${Math.round(s.confidence * 100)}% confidence`}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => void handleDismissSuggestion(s.id)}
+                              className="flex size-7 shrink-0 items-center justify-center rounded-md text-slate-600 transition-colors hover:bg-rose-500/10 hover:text-rose-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/50"
+                              title={`Dismiss ${s.reference}`}
+                              aria-label={`Dismiss ${s.reference}`}
+                            >
+                              <X size={13} />
+                            </button>
+                          </div>
+                        </article>
+                      )
+                    })}
+                  </div>
+                </section>
+                )
+              })}
+            </div>
 
             {suggestions.length === 0 && (
               <div className="flex flex-col items-center justify-center py-16 text-slate-600 border border-dashed border-zinc-800 rounded-xl">
@@ -963,206 +1065,142 @@ export default function Operator(): React.ReactElement {
           </div>
         </section>
 
-        {/* RIGHT COLUMN: Quick Actions & Pipeline Controller (25%) */}
-        <section className="w-1/4 min-w-[260px] flex flex-col">
-          {/* Status Panel */}
-          <div className="p-4 border-b border-surface-border bg-surface-secondary/40 space-y-3 shrink-0">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">System Health</span>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-semibold text-slate-500">Session Timer:</span>
-                <span className="text-xs font-mono font-bold text-white tracking-tight tabular-nums">
-                  {formatTime(elapsedSeconds)}
-                </span>
-              </div>
-            </div>
+        <button
+          type="button"
+          aria-label="Resize live output preview panel"
+          title="Drag to resize live output preview"
+          className="group relative w-1.5 shrink-0 cursor-col-resize border-x border-surface-border/60 bg-surface-secondary/30 outline-none transition-colors hover:bg-teal-500/20 focus-visible:bg-teal-500/25"
+          onPointerDown={(event) => startPanelResize('right', event)}
+          onKeyDown={(event) => {
+            if (event.key === 'ArrowLeft') resizePanelByKeyboard('right', -16)
+            if (event.key === 'ArrowRight') resizePanelByKeyboard('right', 16)
+          }}
+        >
+          <span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-transparent transition-colors group-hover:bg-teal-400/70" />
+        </button>
 
-            <div className="grid grid-cols-1 gap-2">
-              <HealthIndicator
-                label="ProPresenter"
-                status={ppStatus}
-                error={ppError}
+        {/* RIGHT COLUMN: live output preview and essential controls */}
+        <aside
+          className="shrink-0 flex flex-col bg-surface-secondary/10"
+          style={{ width: previewWidth }}
+        >
+          <div className="border-b border-surface-border p-4 space-y-3 shrink-0">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-semibold text-slate-300">Live output</p>
+                <p className="text-[10px] text-slate-500">Selected theme · ProPresenter</p>
+              </div>
+              <span className="font-mono text-[11px] font-semibold tabular-nums text-slate-400">
+                {formatTime(elapsedSeconds)}
+              </span>
+            </div>
+            {livePreviewResult ? (
+              <VerseThemePreview
+                result={livePreviewResult}
+                theme={overlay.theme}
+                showTranslation={overlay.showTranslation}
+                showVerseNumbers={overlay.showVerseNumbers}
+                maxVerses={1}
+                width={liveOutputPreviewWidth}
+                height={liveOutputPreviewHeight}
+                isFocused={false}
+                isLive
+                sendStatus="sent"
+                onSelect={() => undefined}
+                cardRef={() => undefined}
               />
-              <HealthIndicator
-                label="STT Pipeline"
-                status={sttStatus}
-                error={sttError}
-              />
-              <HealthIndicator
-                label="Claude AI"
-                status={claudeStatusMapped}
-                error={claudeErrorMapped}
-              />
+            ) : (
+              <div
+                className="flex flex-col items-center justify-center rounded-xl border border-dashed border-surface-border bg-surface text-slate-500"
+                style={{ width: liveOutputPreviewWidth, height: liveOutputPreviewHeight }}
+              >
+                <BookOpenCheck size={20} className="mb-2 text-slate-600" />
+                <p className="text-xs font-semibold">Nothing is live</p>
+                <p className="mt-0.5 text-[10px] text-slate-600">Send a verse to preview it here</p>
+              </div>
+            )}
+            <div className="grid grid-cols-3 gap-1.5">
+              {[
+                { label: 'PP', status: ppStatus, error: ppError },
+                { label: 'STT', status: sttStatus, error: sttError },
+                { label: 'AI', status: claudeStatusMapped, error: claudeErrorMapped },
+              ].map((service) => (
+                <div
+                  key={service.label}
+                  title={service.error}
+                  className="flex items-center justify-center gap-1.5 rounded-md border border-surface-border bg-surface px-2 py-1.5"
+                >
+                  <span className={cn(
+                    'size-1.5 rounded-full',
+                    service.status === 'ok' ? 'bg-emerald-500' :
+                      service.status === 'degraded' ? 'bg-amber-500' :
+                        service.status === 'error' ? 'bg-rose-500' : 'bg-zinc-600'
+                  )} />
+                  <span className="text-[9px] font-semibold text-slate-400">{service.label}</span>
+                </div>
+              ))}
             </div>
           </div>
 
-          {/* Manual Search */}
-          <div className="p-4 border-b border-surface-border space-y-2.5 shrink-0">
+          <div className="flex-1 p-4 space-y-2.5 min-h-0">
             <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Manual scripture search</label>
             <div className="flex gap-2">
               <div className="relative flex-1">
-                <input
+                <Input
                   ref={searchInputRef}
                   type="text"
                   placeholder="e.g. John 3:16 or Psalm 23"
-                  className="input pr-8"
+                  className="pr-8"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleManualSearch()}
                 />
                 <Search size={14} className="absolute right-3 top-2.5 text-slate-500" />
               </div>
-              <button
+              <Button
                 onClick={handleManualSearch}
-                className="px-3.5 rounded-lg bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold transition-colors shrink-0"
+                className="shrink-0"
               >
                 Go
-              </button>
+              </Button>
             </div>
+            <p className="text-[10px] leading-relaxed text-slate-600">
+              Explicit references appear instantly. Quoted verses are matched from the rolling transcript.
+            </p>
           </div>
 
-          {/* Quick-Access Scriptures Grid */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-[180px]">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Common Scriptures</span>
-              <button
-                onClick={() => {
-                  if (isEditingGrid) {
-                    handleSaveGrid()
-                  } else {
-                    setTempQuickAccess([...quickAccess])
-                    setIsEditingGrid(true)
-                  }
-                }}
-                className="text-[10px] font-bold text-teal-400 hover:text-teal-300 flex items-center gap-1 transition-colors"
+          {/* Compact pipeline controls */}
+          <div className="shrink-0 border-t border-surface-border bg-surface-secondary/20 p-3">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-foreground">Pipeline controls</p>
+                <p className="truncate text-[10px] text-muted-foreground">
+                  {isTranscribing ? 'Listening and detecting scripture' : 'Audio capture is stopped'}
+                </p>
+              </div>
+              <span className={cn('size-2 shrink-0 rounded-full', isTranscribing ? 'bg-emerald-500' : 'bg-muted-foreground/40')} aria-hidden="true" />
+            </div>
+            <div className="grid grid-cols-[1fr_auto] gap-2">
+              <Button
+                variant={isTranscribing ? 'secondary' : 'default'}
+                onClick={handleTogglePipeline}
               >
-                {isEditingGrid ? (
-                  <>
-                    <Save size={10} /> Save Grid
-                  </>
-                ) : (
-                  <>
-                    <Edit2 size={10} /> Edit Grid
-                  </>
-                )}
-              </button>
+                {isTranscribing ? <Pause data-icon="inline-start" /> : <Play data-icon="inline-start" />}
+                {isTranscribing ? 'Pause' : 'Start pipeline'}
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={handleClearProjection}
+                disabled={!activeProjection}
+                title="Clear the current ProPresenter output"
+              >
+                <Trash2 data-icon="inline-start" />
+                Clear output
+              </Button>
             </div>
-
-            {isEditingGrid ? (
-              <div className="grid grid-cols-2 gap-2">
-                {tempQuickAccess.map((ref, idx) => (
-                  <input
-                    key={idx}
-                    type="text"
-                    className="input text-center text-xs font-semibold py-1.5 px-2 bg-surface-secondary border-surface-border text-white"
-                    value={ref}
-                    onChange={(e) => {
-                      const updated = [...tempQuickAccess]
-                      updated[idx] = e.target.value
-                      setTempQuickAccess(updated)
-                    }}
-                  />
-                ))}
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 gap-2">
-                {quickAccess.map((ref) => (
-                  <button
-                    key={ref}
-                    onClick={() => handleQuickGridSelect(ref)}
-                    className="py-3 px-2 rounded-xl bg-surface border border-surface-border hover:border-teal-500/40 text-xs font-semibold text-slate-300 hover:text-white hover:bg-surface-secondary/30 transition-all text-center truncate shadow-sm active:bg-zinc-800"
-                  >
-                    {ref}
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
-
-          {/* Bottom Pipeline stop & Emergency buttons */}
-          <div className="p-4 border-t border-surface-border bg-surface-secondary/10 shrink-0 space-y-3">
-            <button
-              onClick={handleTogglePipeline}
-              className={cn(
-                'w-full py-3.5 rounded-xl border text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all duration-200 active:scale-[0.99]',
-                isTranscribing
-                  ? 'bg-amber-600/10 border-amber-500/20 text-amber-400 hover:bg-amber-600/20 shadow-glow-amber/5'
-                  : 'bg-emerald-600/10 border-emerald-500/20 text-emerald-400 hover:bg-emerald-600/20 shadow-glow-emerald/5'
-              )}
-            >
-              {isTranscribing ? (
-                <>
-                  <Pause size={14} /> Pause Pipeline
-                </>
-              ) : (
-                <>
-                  <Play size={14} /> Start Pipeline
-                </>
-              )}
-            </button>
-
-            <button
-              onClick={handleClearProjection}
-              className="w-full py-4.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-extrabold uppercase tracking-widest text-xs transition-all duration-200 shadow-glow-rose/10 flex items-center justify-center gap-2 border border-rose-500/20 active:scale-[0.99]"
-            >
-              <Trash2 size={15} />
-              Emergency Clear
-            </button>
-          </div>
-        </section>
+        </aside>
       </div>
-    </div>
-  )
-}
-
-// ─── Health Indicator Sub-Component ──────────────────────────────────────────
-
-function HealthIndicator({
-  label,
-  status,
-  error,
-}: {
-  label: string
-  status: 'ok' | 'degraded' | 'error' | 'unknown'
-  error?: string
-}): React.ReactElement {
-  const statusColorMap = {
-    ok: 'bg-emerald-500 shadow-glow-emerald/50',
-    degraded: 'bg-amber-500 shadow-glow-amber/50 animate-pulse',
-    error: 'bg-rose-500 shadow-glow-rose/50 animate-pulse',
-    unknown: 'bg-zinc-600',
-  }
-
-  const borderColors = {
-    ok: 'border-surface-border/50',
-    degraded: 'border-amber-500/20',
-    error: 'border-rose-500/20',
-    unknown: 'border-surface-border/50',
-  }
-
-  return (
-    <div
-      className={cn(
-        'flex items-center justify-between p-2.5 bg-surface border rounded-xl shadow-sm transition-all',
-        borderColors[status]
-      )}
-    >
-      <div className="flex items-center gap-2.5 min-w-0">
-        <span className={cn('w-2 h-2 rounded-full shrink-0', statusColorMap[status])} />
-        <span className="text-xs font-bold text-white truncate tracking-tight">{label}</span>
-      </div>
-      {error ? (
-        <span
-          className="text-[10px] text-rose-400 font-medium truncate max-w-[120px] ml-2"
-          title={error}
-        >
-          {error}
-        </span>
-      ) : (
-        <span className="text-[9px] text-slate-500 font-semibold uppercase tracking-wider">
-          {status === 'ok' ? 'Online' : status === 'unknown' ? 'Offline' : 'Error'}
-        </span>
-      )}
     </div>
   )
 }

@@ -17,7 +17,7 @@ import type { AppSettings, OverlayTheme } from './ipc'
 // ─── Theme defaults (schema locked — see docs/plans/2026-07-08-ndi-overlay.md) ─
 
 export const DEFAULT_OVERLAY_THEME: OverlayTheme = {
-  background: { type: 'transparent', color: '#0b1220', opacity: 1 },
+  background: { type: 'transparent', color: '#0b1220', opacity: 1, mediaFit: 'cover' },
   verse: {
     fontFamily: "'Helvetica Neue', Arial, sans-serif",
     fontSizePx: 54,
@@ -43,6 +43,7 @@ export const DEFAULT_OVERLAY_THEME: OverlayTheme = {
     backdropBox: true,
     backdropColor: 'rgba(3, 10, 20, 0.75)',
     backdropRadiusPx: 16,
+    autoFitText: false,
   },
 }
 
@@ -120,11 +121,22 @@ export function normalizeOverlayTheme(raw: unknown): OverlayTheme {
 
   return {
     background: {
-      type: safeEnum(bg.type, ['color', 'gradient', 'transparent'] as const, d.background.type),
+      type: safeEnum(
+        bg.type,
+        ['color', 'gradient', 'transparent', 'image', 'video'] as const,
+        d.background.type
+      ),
       color: safeColor(bg.color, d.background.color),
       color2: bg.color2 !== undefined ? safeColor(bg.color2, d.background.color) : undefined,
       angleDeg: bg.angleDeg !== undefined ? clampNum(bg.angleDeg, 0, 360, 0) : undefined,
       opacity: clampNum(bg.opacity, 0, 1, d.background.opacity),
+      // Path validity (existence, readability) is enforced by the pa-media://
+      // allowlist in the main process, not here — this stays a pure module.
+      mediaPath:
+        typeof bg.mediaPath === 'string' && bg.mediaPath.trim() !== ''
+          ? bg.mediaPath.trim()
+          : undefined,
+      mediaFit: safeEnum(bg.mediaFit, ['cover', 'contain', 'fill'] as const, 'cover'),
     },
     verse: {
       fontFamily: safeFontFamily(verse.fontFamily, d.verse.fontFamily),
@@ -155,6 +167,7 @@ export function normalizeOverlayTheme(raw: unknown): OverlayTheme {
       backdropBox: safeBool(layout.backdropBox, d.layout.backdropBox),
       backdropColor: safeColor(layout.backdropColor, d.layout.backdropColor),
       backdropRadiusPx: clampNum(layout.backdropRadiusPx, 0, 64, d.layout.backdropRadiusPx),
+      autoFitText: safeBool(layout.autoFitText, d.layout.autoFitText),
     },
   }
 }

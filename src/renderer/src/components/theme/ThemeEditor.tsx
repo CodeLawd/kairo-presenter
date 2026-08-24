@@ -12,13 +12,33 @@ import {
   XCircle,
   AlertCircle,
   MonitorPlay,
+  Plus,
+  Copy,
+  Save,
+  RotateCcw,
+  MoreHorizontal,
   type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
+import { Slider as SliderPrimitive } from '@/components/ui/slider'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { useAppStore } from '@/stores/useAppStore'
 import { renderOverlayHTML } from '@shared/overlay-template'
 import { DEFAULT_OVERLAY_SETTINGS, normalizeOverlaySettings } from '@shared/overlay-defaults'
-import type { AppSettings, OverlayTheme, NdiStatus, PPVideoInputInfo } from '@shared/ipc'
+import type { AppSettings, CustomOverlayTheme, OverlayTheme, NdiStatus, PPVideoInputInfo } from '@shared/ipc'
+import { createCustomTheme } from '@shared/theme-library'
+import { clampPaneWidth, scaleToFit } from '@/lib/paneSizing'
 
 // ─── Sample content for the WYSIWYG preview ────────────────────────────────────
 
@@ -27,6 +47,17 @@ const SAMPLE_TEXT =
   'For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.'
 
 type TestStatus = 'idle' | 'testing' | 'ok' | 'fail'
+type InspectorTab = 'style' | 'type' | 'layout' | 'output'
+const LIBRARY_MIN = 160
+const LIBRARY_MAX = 280
+const INSPECTOR_MIN = 300
+const INSPECTOR_MAX = 480
+const PREVIEW_MIN = 300
+
+function storedPaneWidth(key: string, fallback: number, min: number, max: number): number {
+  const stored = Number(window.localStorage.getItem(key))
+  return clampPaneWidth(Number.isFinite(stored) && stored > 0 ? stored : fallback, min, max)
+}
 
 // ─── Small reusable atoms (local to this page, mirrors Settings.tsx style) ────
 
@@ -40,26 +71,11 @@ function Toggle({
   disabled?: boolean
 }): React.ReactElement {
   return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
+    <Switch
+      checked={checked}
       disabled={disabled}
-      onClick={() => onChange(!checked)}
-      className={cn(
-        'relative inline-flex w-10 h-5 rounded-full transition-all duration-300 ease-out-expo shrink-0',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50 focus-visible:ring-offset-1 focus-visible:ring-offset-surface',
-        'disabled:opacity-40 disabled:cursor-not-allowed',
-        checked ? 'bg-teal-500 shadow-glow-teal/20' : 'bg-surface-secondary border border-surface-border/50'
-      )}
-    >
-      <span
-        className={cn(
-          'absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-300 ease-out-expo shadow-sm',
-          checked ? 'translate-x-5' : 'translate-x-0'
-        )}
-      />
-    </button>
+      onCheckedChange={onChange}
+    />
   )
 }
 
@@ -82,7 +98,6 @@ function Slider({
   unit?: string
   format?: (v: number) => string
 }): React.ReactElement {
-  const pct = ((value - min) / (max - min)) * 100
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
@@ -92,15 +107,12 @@ function Slider({
           {unit}
         </span>
       </div>
-      <input
-        type="range"
+      <SliderPrimitive
         min={min}
         max={max}
         step={step}
-        value={value}
-        onChange={(e) => onChange(parseFloat(e.target.value))}
-        className="w-full h-1.5 appearance-none rounded-full cursor-pointer bg-surface-secondary accent-teal-500"
-        style={{ background: `linear-gradient(to right, #009f9f ${pct}%, #243d5c ${pct}%)` }}
+        value={[value]}
+        onValueChange={(next) => onChange(next[0])}
         aria-label={label}
       />
     </div>
@@ -120,12 +132,12 @@ function ColorField({
   return (
     <div>
       <label className="label">{label}</label>
-      <div className="flex items-center gap-2">
+      <div className="relative">
         <input
           type="color"
           value={isHex6 ? value : '#000000'}
           onChange={(e) => onChange(e.target.value)}
-          className="w-9 h-9 shrink-0 rounded-lg border border-surface-border bg-surface cursor-pointer p-0.5"
+          className="absolute left-2 top-1/2 z-10 h-6 w-6 -translate-y-1/2 cursor-pointer rounded-md border border-surface-border bg-surface p-0.5"
           aria-label={`${label} color swatch`}
           title={isHex6 ? undefined : 'Swatch only supports 6-digit hex — edit the text field for rgba()'}
         />
@@ -134,7 +146,7 @@ function ColorField({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           spellCheck={false}
-          className="input font-mono text-xs"
+          className="input h-9 pl-11 font-mono text-xs"
           placeholder="#rrggbb or rgba(...)"
           aria-label={`${label} value`}
         />
@@ -154,24 +166,33 @@ function SegmentedControl<T extends string>({
   options: { value: T; label: string }[]
   onChange: (v: T) => void
 }): React.ReactElement {
+  const columns = options.length >= 5
+    ? 'grid-cols-3'
+    : options.length === 4
+      ? 'grid-cols-2'
+      : options.length === 3
+        ? 'grid-cols-3'
+        : 'grid-cols-2'
   return (
     <div>
       <label className="label">{label}</label>
-      <div className="flex items-center gap-1.5 flex-wrap">
+      <ToggleGroup
+        type="single"
+        value={value}
+        onValueChange={(next) => next && onChange(next as T)}
+        variant="outline"
+        className={cn('grid w-full gap-1 rounded-lg bg-surface p-1', columns)}
+      >
         {options.map((opt) => (
-          <button
+          <ToggleGroupItem
             key={opt.value}
-            type="button"
-            onClick={() => onChange(opt.value)}
-            className={cn(
-              'px-3 py-1.5 rounded-lg text-xs font-bold border transition-all',
-              value === opt.value ? 'bg-teal-500/15 border-teal-500/40 text-teal-300' : 'btn-secondary'
-            )}
+            value={opt.value}
+            className="min-h-8 w-full px-2 py-1.5 text-xs font-semibold leading-tight data-[state=on]:border-primary/50 data-[state=on]:bg-primary/15 data-[state=on]:text-orange-300"
           >
             {opt.label}
-          </button>
+          </ToggleGroupItem>
         ))}
-      </div>
+      </ToggleGroup>
     </div>
   )
 }
@@ -186,15 +207,13 @@ function SectionCard({
   children: React.ReactNode
 }): React.ReactElement {
   return (
-    <div className="double-bezel-outer">
-      <div className="double-bezel-inner p-5 space-y-5">
-        <div className="flex items-center gap-2.5">
-          <Icon size={15} className="text-teal-400 shrink-0" aria-hidden="true" />
-          <p className="text-sm font-bold text-white tracking-tight">{title}</p>
-        </div>
-        {children}
+    <section className="space-y-4 rounded-xl bg-surface-secondary/35 p-4">
+      <div className="flex items-center gap-2">
+        <Icon size={14} className="shrink-0 text-orange-400" aria-hidden="true" />
+        <h2 className="text-sm font-semibold tracking-tight text-white">{title}</h2>
       </div>
-    </div>
+      {children}
+    </section>
   )
 }
 
@@ -208,10 +227,42 @@ const FONT_STACKS = [
   { label: 'Courier (mono)', value: "'Courier New', Courier, monospace" },
 ]
 
+const BUILT_IN_THEMES: Array<{ id: string; name: string; theme: OverlayTheme }> = [
+  { id: 'broadcast', name: 'Broadcast', theme: DEFAULT_OVERLAY_SETTINGS.theme },
+  {
+    id: 'warm-paper',
+    name: 'Warm paper',
+    theme: {
+      ...DEFAULT_OVERLAY_SETTINGS.theme,
+      background: { ...DEFAULT_OVERLAY_SETTINGS.theme.background, type: 'color', color: '#e8dfcf' },
+      verse: { ...DEFAULT_OVERLAY_SETTINGS.theme.verse, fontFamily: "Georgia, 'Times New Roman', serif", color: '#201d19', shadow: false, align: 'left' },
+      reference: { ...DEFAULT_OVERLAY_SETTINGS.theme.reference, color: '#8b4b32', position: 'above' },
+      layout: { ...DEFAULT_OVERLAY_SETTINGS.theme.layout, position: 'center', backdropBox: false, maxWidthPct: 72 },
+    },
+  },
+  {
+    id: 'midnight',
+    name: 'Midnight',
+    theme: {
+      ...DEFAULT_OVERLAY_SETTINGS.theme,
+      background: { ...DEFAULT_OVERLAY_SETTINGS.theme.background, type: 'gradient', color: '#07111f', color2: '#18324b', angleDeg: 135 },
+      reference: { ...DEFAULT_OVERLAY_SETTINGS.theme.reference, color: '#f2a36f' },
+      layout: { ...DEFAULT_OVERLAY_SETTINGS.theme.layout, position: 'center', backdropBox: false, maxWidthPct: 76 },
+    },
+  },
+]
+
 // ─── Main page ──────────────────────────────────────────────────────────────────
 
 export default function ThemeEditor(): React.ReactElement {
+  const libraryWidth = storedPaneWidth('theme-library-width', 192, LIBRARY_MIN, LIBRARY_MAX)
+  const inspectorWidth = storedPaneWidth('theme-inspector-width', 330, INSPECTOR_MIN, INSPECTOR_MAX)
   const [overlay, setOverlay] = useState<AppSettings['overlay']>(DEFAULT_OVERLAY_SETTINGS)
+  const [draftTheme, setDraftTheme] = useState<OverlayTheme>(DEFAULT_OVERLAY_SETTINGS.theme)
+  const [themeLibrary, setThemeLibrary] = useState<CustomOverlayTheme[]>([])
+  const [selectedThemeId, setSelectedThemeId] = useState<string | null>(null)
+  const [themeName, setThemeName] = useState('')
+  const [inspectorTab, setInspectorTab] = useState<InspectorTab>('style')
   const [loading, setLoading] = useState(true)
   const [saved, setSaved] = useState(false)
   const [ndiStatus, setNdiStatus] = useState<NdiStatus>({ available: false, sending: false, ppInputConfigured: false })
@@ -224,11 +275,33 @@ export default function ThemeEditor(): React.ReactElement {
 
   // Load overlay settings on mount.
   useEffect(() => {
-    window.api.settings.get('overlay').then((stored) => {
-      setOverlay(normalizeOverlaySettings(stored))
+    Promise.all([window.api.settings.get('overlay'), window.api.settings.get('themeLibrary')]).then(([stored, library]) => {
+      const normalized = normalizeOverlaySettings(stored)
+      setOverlay(normalized)
+      setDraftTheme(structuredClone(normalized.theme))
+      setThemeLibrary(library)
+      const matching = library.find((item) => JSON.stringify(item.theme) === JSON.stringify(normalized.theme))
+      if (matching) {
+        setSelectedThemeId(matching.id)
+        setThemeName(matching.name)
+      }
       setLoading(false)
     })
   }, [])
+
+  // Preview renders a real 1920×1080 frame scaled down to the panel width, so
+  // proportions (font px vs frame) match the NDI output exactly.
+  const previewFrameRef = useRef<HTMLDivElement>(null)
+  const [previewScale, setPreviewScale] = useState(0.2)
+  useEffect(() => {
+    const el = previewFrameRef.current
+    if (!el) return
+    const update = (): void => setPreviewScale(scaleToFit(el.clientWidth, 1920))
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [loading])
 
   // Poll NDI status (availability + sender + PP video-input binding).
   useEffect(() => {
@@ -249,26 +322,95 @@ export default function ThemeEditor(): React.ReactElement {
     }
   }, [])
 
-  const persist = useCallback((next: AppSettings['overlay']) => {
-    setOverlay(next)
-    window.api.settings.set('overlay', next).then(() => {
-      if (savedTimerRef.current) clearTimeout(savedTimerRef.current)
-      setSaved(true)
-      savedTimerRef.current = setTimeout(() => setSaved(false), 1500)
-    })
+  const flashSaved = useCallback(() => {
+    if (savedTimerRef.current) clearTimeout(savedTimerRef.current)
+    setSaved(true)
+    savedTimerRef.current = setTimeout(() => setSaved(false), 1500)
   }, [])
+
+  // Persist only the fields this page owns — main merges onto the freshly-read
+  // stored overlay, so a stale copy here can never clobber the phase-1 fields
+  // the Settings modal owns (template, showTranslation, …).
+  const persist = useCallback(
+    (next: AppSettings['overlay']) => {
+      setOverlay(next)
+      window.api.settings
+        .set('overlay', {
+          mode: next.mode,
+          ppVideoInputUuid: next.ppVideoInputUuid,
+          theme: next.theme,
+        })
+        .then(flashSaved)
+    },
+    [flashSaved]
+  )
 
   const updateTheme = useCallback(
     <K extends keyof OverlayTheme>(section: K, partial: Partial<OverlayTheme[K]>) => {
-      persist({
-        ...overlay,
-        theme: { ...overlay.theme, [section]: { ...overlay.theme[section], ...partial } },
-      })
+      setDraftTheme((current) => ({
+        ...current,
+        [section]: { ...current[section], ...partial },
+      }))
     },
-    [overlay, persist]
+    []
   )
 
   const setMode = (mode: AppSettings['overlay']['mode']): void => persist({ ...overlay, mode })
+
+  const handlePickMedia = useCallback(
+    async (kind: 'image' | 'video'): Promise<void> => {
+      const picked = await window.api.ndi.pickOverlayMedia(kind)
+      if (!picked) return
+      setDraftTheme((current) => ({
+        ...current,
+        background: { ...current.background, mediaPath: picked },
+      }))
+    },
+    []
+  )
+
+  const persistLibrary = useCallback((next: CustomOverlayTheme[]) => {
+    setThemeLibrary(next)
+    void window.api.settings.set('themeLibrary', next)
+  }, [])
+
+  const selectTheme = (id: string, name: string, theme: OverlayTheme): void => {
+    setSelectedThemeId(id)
+    setThemeName(name)
+    setDraftTheme(structuredClone(theme))
+  }
+
+  const saveAsTheme = (): void => {
+    const savedTheme = createCustomTheme(themeName || 'Untitled theme', draftTheme)
+    persistLibrary([...themeLibrary, savedTheme])
+    setSelectedThemeId(savedTheme.id)
+    setThemeName(savedTheme.name)
+  }
+
+  const saveThemeChanges = (): void => {
+    if (!selectedThemeId || selectedThemeId.startsWith('builtin:')) return
+    const next = themeLibrary.map((item) => item.id === selectedThemeId
+      ? { ...item, name: themeName.trim() || item.name, updatedAt: Date.now(), theme: structuredClone(draftTheme) }
+      : item)
+    persistLibrary(next)
+  }
+
+  const duplicateTheme = (): void => {
+    const copy = createCustomTheme(`${themeName || 'Theme'} copy`, draftTheme)
+    persistLibrary([...themeLibrary, copy])
+    setSelectedThemeId(copy.id)
+    setThemeName(copy.name)
+  }
+
+  const deleteTheme = (): void => {
+    if (!selectedThemeId || selectedThemeId.startsWith('builtin:')) return
+    if (!window.confirm(`Delete “${themeName || 'Untitled theme'}”? This cannot be undone.`)) return
+    persistLibrary(themeLibrary.filter((item) => item.id !== selectedThemeId))
+    setSelectedThemeId(null)
+    setThemeName('')
+  }
+
+  const applyToOutput = (): void => persist({ ...overlay, theme: structuredClone(draftTheme) })
 
   // PP video inputs for the manual NDI binding picker. PP names inputs
   // "Input N" and never exposes the NDI source name, so auto-discovery can't
@@ -321,18 +463,141 @@ export default function ThemeEditor(): React.ReactElement {
     )
   }
 
-  const theme = overlay.theme
+  const theme = draftTheme
+  const hasDraftChanges = JSON.stringify(draftTheme) !== JSON.stringify(overlay.theme)
   const previewHtml = renderOverlayHTML(theme, SAMPLE_REFERENCE, SAMPLE_TEXT)
 
   return (
-    <div className="h-full w-full flex overflow-hidden">
+    <ResizablePanelGroup orientation="horizontal" className="h-full overflow-hidden">
+      {/* Theme library */}
+      <ResizablePanel
+        id="theme-library"
+        data-pane="library"
+        defaultSize={libraryWidth}
+        minSize={LIBRARY_MIN}
+        maxSize={LIBRARY_MAX}
+        onResize={({ inPixels }, _id, previous) => {
+          if (previous) window.localStorage.setItem('theme-library-width', String(Math.round(inPixels)))
+        }}
+      >
+      <aside className="h-full bg-surface-secondary/30 overflow-y-auto p-3">
+        <div className="mb-4 flex items-center justify-between gap-2 px-1">
+          <div>
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.16em]">Themes</p>
+            <p className="text-[11px] text-slate-500 mt-0.5">Select to preview</p>
+          </div>
+          <Button
+            variant="outline"
+            size="icon"
+            className="shrink-0 text-slate-400 hover:text-teal-300"
+            onClick={saveAsTheme}
+            aria-label="Save draft as a new theme"
+            title="Save as new theme"
+          >
+            <Plus size={14} aria-hidden="true" />
+          </Button>
+        </div>
+        <div className="space-y-6">
+          <div>
+            <p className="label">Built in</p>
+            <div className="space-y-2">
+              {BUILT_IN_THEMES.map((item) => (
+                <ThemeTile
+                  key={item.id}
+                  name={item.name}
+                  theme={item.theme}
+                  selected={selectedThemeId === `builtin:${item.id}`}
+                  onClick={() => selectTheme(`builtin:${item.id}`, item.name, item.theme)}
+                />
+              ))}
+            </div>
+          </div>
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <p className="label mb-0">My themes</p>
+              <span className="text-[10px] text-slate-500 tabular-nums">{themeLibrary.length}</span>
+            </div>
+            <div className="space-y-2">
+              {themeLibrary.map((item) => (
+                <ThemeTile
+                  key={item.id}
+                  name={item.name}
+                  theme={item.theme}
+                  selected={selectedThemeId === item.id}
+                  onClick={() => selectTheme(item.id, item.name, item.theme)}
+                />
+              ))}
+              {themeLibrary.length === 0 && <p className="text-xs text-slate-500 py-3">No saved themes yet.</p>}
+            </div>
+          </div>
+        </div>
+      </aside>
+      </ResizablePanel>
+      <ResizableHandle withHandle aria-label="Resize theme library" />
+      <ResizablePanel id="theme-workspace" minSize={PREVIEW_MIN + INSPECTOR_MIN}>
+      <ResizablePanelGroup orientation="horizontal" className="flex-row-reverse">
+
       {/* Controls column */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="max-w-2xl p-8 space-y-6">
+      <ResizablePanel
+        id="theme-inspector"
+        data-pane="inspector"
+        defaultSize={inspectorWidth}
+        minSize={INSPECTOR_MIN}
+        maxSize={INSPECTOR_MAX}
+        onResize={({ inPixels }, _id, previous) => {
+          if (previous) window.localStorage.setItem('theme-inspector-width', String(Math.round(inPixels)))
+        }}
+        className="theme-inspector"
+      >
+      <div className="h-full overflow-y-auto">
+        <div className="w-full p-4 space-y-4">
           <div className="flex items-center justify-between">
-            <div>
-              <h1 className="page-header text-3xl">Theme</h1>
-              <p className="page-subtitle">In-app scripture renderer — background, font, size, color, position</p>
+            <div className="min-w-0 flex-1">
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Editing theme</p>
+              <div className="mt-1 flex items-center gap-1">
+                <input
+                  id="theme-name"
+                  className="min-w-0 flex-1 border-0 bg-transparent p-0 text-base font-semibold text-white outline-none placeholder:text-slate-600 disabled:text-slate-300"
+                  value={themeName}
+                  placeholder="Unsaved theme"
+                  disabled={!selectedThemeId || selectedThemeId.startsWith('builtin:')}
+                  onChange={(event) => setThemeName(event.target.value)}
+                  aria-label="Theme name"
+                />
+                {selectedThemeId && !selectedThemeId.startsWith('builtin:') && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="shrink-0 text-slate-500 hover:text-teal-300"
+                    onClick={saveThemeChanges}
+                    aria-label="Save theme changes"
+                    title="Save theme changes"
+                  >
+                    <Save size={14} aria-hidden="true" />
+                  </Button>
+                )}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" className="text-slate-500 hover:text-white" aria-label="Theme actions">
+                    <MoreHorizontal size={15} aria-hidden="true" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-40">
+                    <DropdownMenuItem onSelect={duplicateTheme}>
+                      <Copy size={13} /> Duplicate
+                    </DropdownMenuItem>
+                    {selectedThemeId && !selectedThemeId.startsWith('builtin:') && (
+                      <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem variant="destructive" onSelect={deleteTheme}>
+                          <Trash2 size={13} /> Delete
+                        </DropdownMenuItem>
+                      </>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+              <p className="mt-0.5 text-[11px] text-slate-500">Adjustments preview privately</p>
             </div>
             {saved && (
               <span className="flex items-center gap-1.5 text-xs font-semibold text-teal-400 animate-fade-in">
@@ -342,14 +607,33 @@ export default function ThemeEditor(): React.ReactElement {
             )}
           </div>
 
+          <Tabs value={inspectorTab} onValueChange={(value) => setInspectorTab(value as InspectorTab)}>
+          <TabsList className="grid h-9 w-full grid-cols-4" aria-label="Theme controls">
+            {([
+              ['style', 'Style'],
+              ['type', 'Type'],
+              ['layout', 'Layout'],
+              ['output', 'Output'],
+            ] as const).map(([id, label]) => (
+              <TabsTrigger
+                key={id}
+                value={id}
+                className="text-[11px]"
+              >
+                {label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+          </Tabs>
+
           {/* ── Output mode ─────────────────────────────────────────────────── */}
-          <SectionCard icon={Radio} title="Output mode">
+          {inspectorTab === 'output' && <SectionCard icon={Radio} title="Output mode">
             <div className="grid grid-cols-3 gap-2">
               {(
                 [
-                  { value: 'auto', label: 'Auto', hint: 'Library → NDI → message' },
-                  { value: 'ndi', label: 'NDI', hint: 'Custom theme only' },
-                  { value: 'message', label: 'PP Message', hint: 'Library → message' },
+                  { value: 'auto', label: 'Auto' },
+                  { value: 'ndi', label: 'NDI' },
+                  { value: 'message', label: 'Message' },
                 ] as const
               ).map((opt) => (
                 <button
@@ -357,7 +641,7 @@ export default function ThemeEditor(): React.ReactElement {
                   type="button"
                   onClick={() => setMode(opt.value)}
                   className={cn(
-                    'flex flex-col items-start gap-1 px-3.5 py-3 rounded-xl border text-left transition-all',
+                    'px-2 py-2 rounded-lg border text-center transition-all',
                     overlay.mode === opt.value
                       ? 'bg-teal-500/15 border-teal-500/40 text-teal-300'
                       : 'btn-secondary'
@@ -365,10 +649,14 @@ export default function ThemeEditor(): React.ReactElement {
                   aria-pressed={overlay.mode === opt.value}
                 >
                   <span className="text-xs font-bold">{opt.label}</span>
-                  <span className="text-[10px] text-slate-500 leading-snug">{opt.hint}</span>
                 </button>
               ))}
             </div>
+            <p className="text-[11px] leading-relaxed text-slate-500">
+              {overlay.mode === 'auto' && 'Uses NDI when available, then falls back to a ProPresenter message.'}
+              {overlay.mode === 'ndi' && 'Always uses the custom rendered NDI output.'}
+              {overlay.mode === 'message' && 'Uses ProPresenter’s native message layer.'}
+            </p>
 
             {/* NDI video-input binding — PP hides NDI source names, so the user picks manually */}
             {overlay.mode !== 'message' && (
@@ -396,10 +684,10 @@ export default function ThemeEditor(): React.ReactElement {
                 </p>
               </div>
             )}
-          </SectionCard>
+          </SectionCard>}
 
           {/* ── Background ───────────────────────────────────────────────────── */}
-          <SectionCard icon={Layers} title="Background">
+          {inspectorTab === 'style' && <SectionCard icon={Layers} title="Background">
             <SegmentedControl
               label="Type"
               value={theme.background.type}
@@ -407,14 +695,16 @@ export default function ThemeEditor(): React.ReactElement {
                 { value: 'transparent', label: 'Transparent' },
                 { value: 'color', label: 'Solid color' },
                 { value: 'gradient', label: 'Gradient' },
+                { value: 'image', label: 'Image' },
+                { value: 'video', label: 'Video' },
               ]}
               onChange={(type) => updateTheme('background', { type })}
             />
 
-            {theme.background.type !== 'transparent' && (
+            {(theme.background.type === 'color' || theme.background.type === 'gradient') && (
               <>
                 <div className="border-t border-surface-border/50" />
-                <div className="grid grid-cols-2 gap-4">
+                <div className={cn('grid gap-4', theme.background.type === 'gradient' ? 'grid-cols-2' : 'grid-cols-1')}>
                   <ColorField
                     label={theme.background.type === 'gradient' ? 'Start color' : 'Color'}
                     value={theme.background.color}
@@ -438,20 +728,68 @@ export default function ThemeEditor(): React.ReactElement {
                     unit="°"
                   />
                 )}
-                <Slider
-                  label="Opacity"
-                  value={theme.background.opacity}
-                  onChange={(opacity) => updateTheme('background', { opacity })}
-                  min={0}
-                  max={1}
-                  step={0.05}
-                  format={(v) => v.toFixed(2)}
+              </>
+            )}
+
+            {(theme.background.type === 'image' || theme.background.type === 'video') && (
+              <>
+                <div className="border-t border-surface-border/50" />
+                <div>
+                  <label className="label">
+                    {theme.background.type === 'video' ? 'Video file' : 'Image file'}
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      className="btn-secondary px-3 py-2 text-xs shrink-0"
+                      onClick={() => handlePickMedia(theme.background.type as 'image' | 'video')}
+                    >
+                      Choose file…
+                    </button>
+                    <span
+                      className="text-xs text-slate-400 font-mono truncate min-w-0"
+                      title={theme.background.mediaPath}
+                    >
+                      {theme.background.mediaPath
+                        ? theme.background.mediaPath.split('/').pop()
+                        : 'No file selected'}
+                    </span>
+                  </div>
+                  {theme.background.type === 'video' && (
+                    <p className="text-[10px] text-slate-500 mt-1.5 leading-snug">
+                      Plays muted on a loop behind the text. Keep clips short and lightweight —
+                      the NDI output repaints every frame.
+                    </p>
+                  )}
+                </div>
+                <SegmentedControl
+                  label="Fit"
+                  value={theme.background.mediaFit ?? 'cover'}
+                  options={[
+                    { value: 'cover', label: 'Cover' },
+                    { value: 'contain', label: 'Contain' },
+                    { value: 'fill', label: 'Stretch' },
+                  ]}
+                  onChange={(mediaFit) => updateTheme('background', { mediaFit })}
                 />
               </>
             )}
-          </SectionCard>
+
+            {theme.background.type !== 'transparent' && (
+              <Slider
+                label="Opacity"
+                value={theme.background.opacity}
+                onChange={(opacity) => updateTheme('background', { opacity })}
+                min={0}
+                max={1}
+                step={0.05}
+                format={(v) => v.toFixed(2)}
+              />
+            )}
+          </SectionCard>}
 
           {/* ── Verse text ───────────────────────────────────────────────────── */}
+          {inspectorTab === 'type' && <>
           <SectionCard icon={Type} title="Verse text">
             <div>
               <label className="label">Font</label>
@@ -467,15 +805,17 @@ export default function ThemeEditor(): React.ReactElement {
                 ))}
               </select>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <Slider
-                label="Size"
-                value={theme.verse.fontSizePx}
-                onChange={(fontSizePx) => updateTheme('verse', { fontSizePx })}
-                min={12}
-                max={200}
-                unit="px"
-              />
+            <div className={cn('grid gap-4', theme.layout.position === 'full' && theme.layout.autoFitText ? 'grid-cols-1' : 'grid-cols-2')}>
+              {!(theme.layout.position === 'full' && theme.layout.autoFitText) && (
+                <Slider
+                  label="Size"
+                  value={theme.verse.fontSizePx}
+                  onChange={(fontSizePx) => updateTheme('verse', { fontSizePx })}
+                  min={12}
+                  max={200}
+                  unit="px"
+                />
+              )}
               <Slider
                 label="Weight"
                 value={theme.verse.fontWeight}
@@ -527,12 +867,7 @@ export default function ThemeEditor(): React.ReactElement {
               <Toggle checked={theme.reference.show} onChange={(show) => updateTheme('reference', { show })} />
             </div>
 
-            <div
-              className={cn(
-                'space-y-5 transition-opacity duration-200',
-                theme.reference.show ? 'opacity-100' : 'opacity-30 pointer-events-none'
-              )}
-            >
+            {theme.reference.show && <div className="space-y-4">
               <div className="border-t border-surface-border/50" />
               <SegmentedControl
                 label="Position"
@@ -589,11 +924,12 @@ export default function ThemeEditor(): React.ReactElement {
                   />
                 </div>
               </div>
-            </div>
+            </div>}
           </SectionCard>
+          </>}
 
           {/* ── Layout ───────────────────────────────────────────────────────── */}
-          <SectionCard icon={LayoutTemplate} title="Layout">
+          {inspectorTab === 'layout' && <SectionCard icon={LayoutTemplate} title="Layout">
             <SegmentedControl
               label="Position preset"
               value={theme.layout.position}
@@ -601,19 +937,36 @@ export default function ThemeEditor(): React.ReactElement {
                 { value: 'lower-third', label: 'Lower third' },
                 { value: 'center', label: 'Center' },
                 { value: 'top', label: 'Top' },
-                { value: 'full', label: 'Full' },
+                { value: 'full', label: 'Fullscreen' },
               ]}
               onChange={(position) => updateTheme('layout', { position })}
             />
-            <div className="grid grid-cols-2 gap-4">
-              <Slider
-                label="Max width"
-                value={theme.layout.maxWidthPct}
-                onChange={(maxWidthPct) => updateTheme('layout', { maxWidthPct })}
-                min={20}
-                max={100}
-                unit="%"
-              />
+            {theme.layout.position === 'full' && (
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-bold text-white tracking-tight">Auto-fit text</p>
+                  <p className="text-[10px] text-slate-500 mt-0.5 leading-relaxed">
+                    Size the verse automatically to fill the screen — longer passages shrink,
+                    short ones grow. Overrides the verse Size slider.
+                  </p>
+                </div>
+                <Toggle
+                  checked={theme.layout.autoFitText}
+                  onChange={(autoFitText) => updateTheme('layout', { autoFitText })}
+                />
+              </div>
+            )}
+            <div className={cn('grid gap-4', theme.layout.position === 'full' ? 'grid-cols-1' : 'grid-cols-2')}>
+              {theme.layout.position !== 'full' && (
+                <Slider
+                  label="Max width"
+                  value={theme.layout.maxWidthPct}
+                  onChange={(maxWidthPct) => updateTheme('layout', { maxWidthPct })}
+                  min={20}
+                  max={100}
+                  unit="%"
+                />
+              )}
               <Slider
                 label="Padding"
                 value={theme.layout.paddingPx}
@@ -630,12 +983,7 @@ export default function ThemeEditor(): React.ReactElement {
                 onChange={(backdropBox) => updateTheme('layout', { backdropBox })}
               />
             </div>
-            <div
-              className={cn(
-                'grid grid-cols-2 gap-4 transition-opacity duration-200',
-                theme.layout.backdropBox ? 'opacity-100' : 'opacity-30 pointer-events-none'
-              )}
-            >
+            {theme.layout.backdropBox && <div className="grid grid-cols-2 gap-4">
               <ColorField
                 label="Backdrop color"
                 value={theme.layout.backdropColor}
@@ -649,16 +997,19 @@ export default function ThemeEditor(): React.ReactElement {
                 max={64}
                 unit="px"
               />
-            </div>
-          </SectionCard>
+            </div>}
+          </SectionCard>}
         </div>
       </div>
+      </ResizablePanel>
+      <ResizableHandle withHandle aria-label="Resize theme inspector" />
 
       {/* Preview + status column */}
-      <div className="w-[440px] shrink-0 border-l border-surface-border/50 bg-surface-secondary/20 overflow-y-auto">
-        <div className="p-6 space-y-5">
+      <ResizablePanel id="theme-preview" minSize={PREVIEW_MIN}>
+      <div className="h-full bg-surface-secondary/25 overflow-y-auto">
+        <div className="flex min-h-full flex-col gap-5 p-5">
           {/* NDI / PP status line */}
-          <div className="double-bezel-outer">
+          <div className="double-bezel-outer order-3">
             <div className="double-bezel-inner p-4 space-y-3">
               <div className="flex items-center gap-2">
                 <MonitorPlay size={14} className="text-teal-400 shrink-0" aria-hidden="true" />
@@ -685,24 +1036,49 @@ export default function ThemeEditor(): React.ReactElement {
           </div>
 
           {/* WYSIWYG preview */}
-          <div>
-            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest font-sans mb-2">
-              Live preview
-            </p>
-            <div className="relative w-full aspect-video rounded-xl bg-[repeating-conic-gradient(#1a1a1a_0%_25%,#0d0d0d_0%_50%)] bg-[length:16px_16px] border border-surface-border/50 overflow-hidden">
+          <div className="order-1">
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest font-sans">Preview</p>
+                <p className="text-xs text-slate-400 mt-1">John 3:16 · 1920 × 1080</p>
+              </div>
+              {hasDraftChanges && <span className="text-[10px] font-semibold text-orange-300 bg-orange-400/10 px-2 py-1 rounded-md">Unapplied changes</span>}
+            </div>
+            <div
+              ref={previewFrameRef}
+              className="relative w-full aspect-video rounded-xl bg-[repeating-conic-gradient(#1a1a1a_0%_25%,#0d0d0d_0%_50%)] bg-[length:16px_16px] border border-surface-border/50 overflow-hidden"
+            >
               <div
-                className="absolute inset-0"
+                style={{
+                  width: 1920,
+                  height: 1080,
+                  transform: `scale(${previewScale})`,
+                  transformOrigin: 'top left',
+                }}
                 // eslint-disable-next-line react/no-danger
                 dangerouslySetInnerHTML={{ __html: previewHtml }}
               />
             </div>
             <p className="text-[10px] text-slate-500 mt-2 leading-relaxed">
-              Same renderer used for the live NDI output — pixel-exact, not an approximation.
+              Pixel-exact preview. Changes remain private until applied to output.
             </p>
           </div>
 
+          <div className="order-2 flex items-center gap-2">
+            <button className="btn-primary flex-1 flex items-center justify-center gap-2" onClick={applyToOutput} disabled={!hasDraftChanges}>
+              <MonitorPlay size={14} /> Apply to output
+            </button>
+            <button
+              className="btn-secondary flex items-center gap-2"
+              onClick={() => setDraftTheme(structuredClone(overlay.theme))}
+              disabled={!hasDraftChanges}
+            >
+              <RotateCcw size={13} /> Discard
+            </button>
+          </div>
+
           {/* Test / clear */}
-          <div className="space-y-2">
+          <div className="order-4 space-y-2">
             <div className="flex items-center gap-2">
               <button
                 className="btn-primary flex items-center gap-2 flex-1 justify-center"
@@ -744,7 +1120,10 @@ export default function ThemeEditor(): React.ReactElement {
           </div>
         </div>
       </div>
-    </div>
+      </ResizablePanel>
+      </ResizablePanelGroup>
+      </ResizablePanel>
+    </ResizablePanelGroup>
   )
 }
 
@@ -757,5 +1136,55 @@ function StatusRow({ label, ok }: { label: string; ok: boolean }): React.ReactEl
         {ok ? 'Ready' : 'Not ready'}
       </span>
     </div>
+  )
+}
+
+function ThemeTile({
+  name,
+  theme,
+  selected,
+  onClick,
+}: {
+  name: string
+  theme: OverlayTheme
+  selected: boolean
+  onClick: () => void
+}): React.ReactElement {
+  const html = renderOverlayHTML(theme, 'John 3:16', 'For God so loved the world…')
+  const frameRef = useRef<HTMLSpanElement>(null)
+  const [scale, setScale] = useState(0.08)
+  useEffect(() => {
+    const frame = frameRef.current
+    if (!frame) return
+    const update = (): void => setScale(scaleToFit(frame.clientWidth, 1920))
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(frame)
+    return () => observer.disconnect()
+  }, [])
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={selected}
+      className={cn(
+        'w-full rounded-lg p-1 text-left border transition-all duration-200',
+        selected
+          ? 'bg-teal-500/10 border-teal-500/50 shadow-[0_0_0_1px_rgb(var(--control-accent)/0.12)]'
+          : 'bg-surface border-surface-border/60 hover:border-slate-500'
+      )}
+    >
+      <span ref={frameRef} className="block relative w-full aspect-video rounded-md overflow-hidden bg-surface-tertiary">
+        <span
+          className="block absolute left-0 top-0"
+          style={{ width: 1920, height: 1080, transform: `scale(${scale})`, transformOrigin: 'top left' }}
+          // eslint-disable-next-line react/no-danger
+          dangerouslySetInnerHTML={{ __html: html }}
+        />
+      </span>
+      <span className={cn('block truncate px-1.5 pb-1 pt-1.5 text-[11px] font-semibold', selected ? 'text-orange-300' : 'text-slate-300')}>
+        {name}
+      </span>
+    </button>
   )
 }

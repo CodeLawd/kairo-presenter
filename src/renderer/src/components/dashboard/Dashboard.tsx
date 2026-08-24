@@ -689,7 +689,7 @@ export default function Dashboard(): React.ReactElement {
     <div className="p-8 w-full space-y-6">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="page-header text-3xl">Dashboard</h1>
+          <h1 className="page-header">Dashboard</h1>
           <p className="page-subtitle">Real-time system status & telemetry</p>
         </div>
         <div className="flex items-center gap-2 text-xs font-semibold text-slate-400 bg-surface-tertiary/60 border border-surface-border/40 rounded-lg px-3.5 py-2 font-sans shadow-sm">

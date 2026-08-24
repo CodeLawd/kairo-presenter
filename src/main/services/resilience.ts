@@ -8,6 +8,7 @@ import type { ResilienceStatus, ScriptureSuggestion, ServiceHealth, ServiceName 
 import { proPresenterService } from './propresenter'
 import { audioService } from './audio'
 import { sttService } from './stt'
+import { transitionDetectorRecovery } from '@shared/detector-recovery'
 
 
 const RECOVERY_FILE = 'session-recovery.json'
@@ -18,6 +19,7 @@ class ResilienceManager extends EventEmitter {
   private ppCountdownTimer: NodeJS.Timeout | null = null
   private claudeFallbackActive = false
   private claudeErrorCount = 0
+  private claudeProbeActive = false
   private audioDeviceLost = false
   private recoverySessionAvailable = false
 
@@ -280,27 +282,51 @@ class ResilienceManager extends EventEmitter {
   // ─── Claude / API Failures ─────────────────────────────────────────────────
 
   handleClaudeError(err: Error): void {
-    this.claudeErrorCount++
+    const previousFallback = this.claudeFallbackActive
+    const next = transitionDetectorRecovery({
+      consecutiveErrors: this.claudeErrorCount,
+      fallbackActive: this.claudeFallbackActive,
+      probing: this.claudeProbeActive,
+    }, 'request_failed')
+    this.claudeErrorCount = next.consecutiveErrors
+    this.claudeFallbackActive = next.fallbackActive
+    this.claudeProbeActive = next.probing
     this.updateServiceHealth('detector', 'degraded', `Claude failure: ${err.message}`)
     
-    if (this.claudeErrorCount >= 2 && !this.claudeFallbackActive) {
+    if (!previousFallback && this.claudeFallbackActive) {
       log.warn('[Resilience] Claude API failed twice consecutively. Activating local regex fallback.')
       this.setClaudeFallback(true)
       
       // Schedule Claude API test retry in 30 seconds
       setTimeout(() => {
         log.info('[Resilience] Probing Claude API connectivity after 30 seconds')
-        this.setClaudeFallback(false)
-        this.claudeErrorCount = 0
+        const probing = transitionDetectorRecovery({
+          consecutiveErrors: this.claudeErrorCount,
+          fallbackActive: this.claudeFallbackActive,
+          probing: this.claudeProbeActive,
+        }, 'begin_probe')
+        this.claudeErrorCount = probing.consecutiveErrors
+        this.claudeFallbackActive = probing.fallbackActive
+        this.claudeProbeActive = probing.probing
+        if (this.orch?.detector) this.orch.detector.fallbackMode = false
+        this.updateServiceHealth('detector', 'degraded', 'Testing AI detector connectivity')
+        this.emitStatus()
       }, 30000)
     }
   }
 
   handleClaudeSuccess(): void {
-    this.claudeErrorCount = 0
-    if (this.claudeFallbackActive) {
-      this.setClaudeFallback(false)
-    }
+    const recovered = transitionDetectorRecovery({
+      consecutiveErrors: this.claudeErrorCount,
+      fallbackActive: this.claudeFallbackActive,
+      probing: this.claudeProbeActive,
+    }, 'request_succeeded')
+    this.claudeErrorCount = recovered.consecutiveErrors
+    this.claudeFallbackActive = recovered.fallbackActive
+    this.claudeProbeActive = recovered.probing
+    if (this.orch?.detector) this.orch.detector.fallbackMode = false
+    this.updateServiceHealth('detector', 'ok')
+    this.emitStatus()
   }
 
   private setClaudeFallback(active: boolean): void {

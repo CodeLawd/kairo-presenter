@@ -40,7 +40,7 @@ interface BookSeed {
 }
 
 // prettier-ignore
-const BOOKS: BookSeed[] = [
+export const BOOKS: BookSeed[] = [
   // ── Old Testament ──────────────────────────────────────────────────────────
   { id:  1, name: 'Genesis',          abbr: 'Gen',   testament: 'OT', aliases: ['Ge', 'Gn'] },
   { id:  2, name: 'Exodus',           abbr: 'Exod',  testament: 'OT', aliases: ['Ex', 'Exo', 'Exd'] },

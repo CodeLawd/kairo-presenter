@@ -4,40 +4,117 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        surface: {
-          DEFAULT: '#121214',
-          secondary: '#18181b',
-          tertiary: '#202023',
-          elevated: '#2d2d31',
-          border: '#3a3a3e',
+        border: 'rgb(var(--surface-border) / <alpha-value>)',
+        input: 'rgb(var(--surface-border) / <alpha-value>)',
+        ring: 'rgb(var(--control-accent) / <alpha-value>)',
+        background: 'rgb(var(--surface) / <alpha-value>)',
+        foreground: 'rgb(var(--text-primary) / <alpha-value>)',
+        primary: {
+          DEFAULT: 'rgb(var(--control-accent) / <alpha-value>)',
+          foreground: '#ffffff',
         },
+        secondary: {
+          DEFAULT: 'rgb(var(--surface-tertiary) / <alpha-value>)',
+          foreground: 'rgb(var(--text-primary) / <alpha-value>)',
+        },
+        muted: {
+          DEFAULT: 'rgb(var(--surface-secondary) / <alpha-value>)',
+          foreground: 'rgb(var(--neutral-400) / <alpha-value>)',
+        },
+        accent: {
+          DEFAULT: 'rgb(var(--surface-tertiary) / <alpha-value>)',
+          foreground: 'rgb(var(--text-primary) / <alpha-value>)',
+        },
+        popover: {
+          DEFAULT: 'rgb(var(--surface-elevated) / <alpha-value>)',
+          foreground: 'rgb(var(--text-primary) / <alpha-value>)',
+        },
+        card: {
+          DEFAULT: 'rgb(var(--surface-secondary) / <alpha-value>)',
+          foreground: 'rgb(var(--text-primary) / <alpha-value>)',
+        },
+        destructive: {
+          DEFAULT: '#ef4444',
+          foreground: '#ffffff',
+        },
+        surface: {
+          DEFAULT: 'rgb(var(--surface) / <alpha-value>)',
+          secondary: 'rgb(var(--surface-secondary) / <alpha-value>)',
+          tertiary: 'rgb(var(--surface-tertiary) / <alpha-value>)',
+          elevated: 'rgb(var(--surface-elevated) / <alpha-value>)',
+          border: 'rgb(var(--surface-border) / <alpha-value>)',
+        },
+        // Legacy class name retained to avoid a risky app-wide class migration.
+        // This is the product accent: an ember orange, not a status color.
         teal: {
-          50: '#ffffff',
-          100: '#fafafa',
-          200: '#f4f4f5',
-          300: '#e4e4e7', // active text highlights / silver
-          400: '#ffffff', // white text highlights
-          500: '#52525b', // active button hover bg / clear active indicator
-          600: '#3f3f46', // primary button default bg
-          700: '#27272a', // active press state bg
-          800: '#202023',
-          900: '#18181b',
-          950: '#27272a', // highlight section bg
+          50: '#fff7ed',
+          100: '#ffedd5',
+          200: '#fed7aa',
+          300: '#fdba74',
+          400: '#fb923c',
+          500: '#f26b38',
+          600: '#dc5124',
+          700: '#b73c1b',
+          800: '#8f311c',
+          900: '#742b1b',
+          950: '#3f130a',
+        },
+        // Existing components use slate extensively; neutralize its blue cast.
+        slate: {
+          50: 'rgb(var(--neutral-50) / <alpha-value>)',
+          100: 'rgb(var(--neutral-100) / <alpha-value>)',
+          200: 'rgb(var(--neutral-200) / <alpha-value>)',
+          300: 'rgb(var(--neutral-300) / <alpha-value>)',
+          400: 'rgb(var(--neutral-400) / <alpha-value>)',
+          500: 'rgb(var(--neutral-500) / <alpha-value>)',
+          600: 'rgb(var(--neutral-600) / <alpha-value>)',
+          700: 'rgb(var(--neutral-700) / <alpha-value>)',
+          800: 'rgb(var(--neutral-800) / <alpha-value>)',
+          900: 'rgb(var(--neutral-900) / <alpha-value>)',
+          950: 'rgb(var(--neutral-950) / <alpha-value>)',
+        },
+        zinc: {
+          50: 'rgb(var(--neutral-50) / <alpha-value>)',
+          100: 'rgb(var(--neutral-100) / <alpha-value>)',
+          200: 'rgb(var(--neutral-200) / <alpha-value>)',
+          300: 'rgb(var(--neutral-300) / <alpha-value>)',
+          400: 'rgb(var(--neutral-400) / <alpha-value>)',
+          500: 'rgb(var(--neutral-500) / <alpha-value>)',
+          600: 'rgb(var(--neutral-600) / <alpha-value>)',
+          700: 'rgb(var(--neutral-700) / <alpha-value>)',
+          800: 'rgb(var(--neutral-800) / <alpha-value>)',
+          900: 'rgb(var(--neutral-900) / <alpha-value>)',
+          950: 'rgb(var(--neutral-950) / <alpha-value>)',
         },
       },
       fontFamily: {
-        sans: ['SF Pro Display', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Inter', 'sans-serif'],
-        serif: ['Charter', 'Georgia', 'Cambria', 'Times New Roman', 'serif'],
-        mono: ['SF Mono', 'JetBrains Mono', 'Fira Code', 'monospace'],
+        sans: ['Source Sans 3', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
+        narrow: ['Source Sans 3', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+        serif: ['Source Sans 3', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+        mono: ['SF Mono', 'Menlo', 'Consolas', 'monospace'],
+      },
+      borderRadius: {
+        lg: 'var(--radius)',
+        md: 'var(--radius-md)',
+        sm: 'var(--radius-sm)',
+      },
+      fontSize: {
+        xs: ['0.75rem', { lineHeight: '1rem' }],
+        sm: ['0.8125rem', { lineHeight: '1.125rem' }],
+        base: ['0.9375rem', { lineHeight: '1.375rem' }],
+        lg: ['1.0625rem', { lineHeight: '1.5rem' }],
+        xl: ['1.25rem', { lineHeight: '1.625rem' }],
+        '2xl': ['1.5rem', { lineHeight: '1.875rem' }],
+        '3xl': ['1.875rem', { lineHeight: '2.125rem' }],
       },
       transitionTimingFunction: {
         'out-expo': 'cubic-bezier(0.16, 1, 0.3, 1)',
         'spring': 'cubic-bezier(0.34, 1.56, 0.64, 1)',
       },
       boxShadow: {
-        'glow-teal': '0 0 15px rgba(255, 255, 255, 0.12)',
-        'glow-red': '0 0 15px rgba(239, 68, 68, 0.35)',
-        'glow-yellow': '0 0 15px rgba(234, 179, 8, 0.35)',
+        'glow-teal': 'none',
+        'glow-red': 'none',
+        'glow-yellow': 'none',
       },
       animation: {
         'fade-in': 'fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
@@ -46,8 +123,8 @@ module.exports = {
       },
       keyframes: {
         fadeIn: {
-          '0%': { opacity: '0', transform: 'translateY(12px)', filter: 'blur(4px)' },
-          '100%': { opacity: '1', transform: 'translateY(0)', filter: 'blur(0)' },
+          '0%': { opacity: '0' },
+          '100%': { opacity: '1' },
         },
         slideIn: {
           '0%': { opacity: '0', transform: 'translateX(-12px)' },

@@ -1,7 +1,10 @@
-import { app, BrowserWindow, shell } from 'electron'
-import { join } from 'path'
+import { app, BrowserWindow, shell, protocol, net } from 'electron'
+import { join, resolve } from 'path'
+import { pathToFileURL } from 'url'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import log from 'electron-log/main'
+import { normalizeOverlaySettings } from '@shared/overlay-defaults'
+import { PA_MEDIA_URL_PREFIX } from '@shared/overlay-template'
 import { registerIpcHandlers } from './ipc'
 import { initDatabase, store } from './db'
 import { lyricsService } from './services/lyrics'
@@ -9,11 +12,49 @@ import { scriptureService } from './services/scripture'
 import { proPresenterService } from './services/propresenter'
 import { ndiService } from './services/ndi'
 import { overlayWindow } from './services/ndi/overlay-window'
+import { isPickedOverlayMediaAllowed } from './services/ndi/media-allowlist'
 
 log.initialize()
 log.transports.file.level = 'info'
 log.transports.console.level = is.dev ? 'debug' : 'warn'
 log.info('ProAutomate starting', { version: app.getVersion() })
+
+// pa-media:// — serves the overlay theme's background image/video to both the
+// renderer (Theme editor preview; its http/file origin can't load file:// under
+// webSecurity) and the offscreen NDI overlay window, through one code path.
+// Must be declared before app ready; `stream: true` lets <video> play from it.
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'pa-media', privileges: { stream: true } },
+])
+
+function registerPaMediaProtocol(): void {
+  protocol.handle('pa-media', (request) => {
+    try {
+      if (!request.url.startsWith(PA_MEDIA_URL_PREFIX)) {
+        return new Response('Bad request', { status: 400 })
+      }
+      const requested = resolve(
+        decodeURIComponent(request.url.slice(PA_MEDIA_URL_PREFIX.length))
+      )
+
+      // Allowlist: only the currently-configured background media file is
+      // servable — the scheme must not become an arbitrary-file-read bridge.
+      const overlay = normalizeOverlaySettings(store.get('overlay'))
+      const allowed = overlay.theme.background.mediaPath
+        ? resolve(overlay.theme.background.mediaPath)
+        : null
+      if ((!allowed || requested !== allowed) && !isPickedOverlayMediaAllowed(requested)) {
+        log.warn('[pa-media] Blocked non-configured path', { requested })
+        return new Response('Forbidden', { status: 403 })
+      }
+
+      return net.fetch(pathToFileURL(requested).toString())
+    } catch (err) {
+      log.warn('[pa-media] Request failed', (err as Error).message)
+      return new Response('Bad request', { status: 400 })
+    }
+  })
+}
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -24,7 +65,7 @@ function createWindow(): void {
     show: false,
     autoHideMenuBar: true,
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
-    backgroundColor: '#0d1b2a',
+    backgroundColor: '#171717',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
@@ -58,8 +99,10 @@ app.whenReady().then(() => {
   })
 
   initDatabase()
+  registerPaMediaProtocol()
   lyricsService.open()
   scriptureService.open()
+  scriptureService.setDefaultTranslation(store.get('scripture').defaultTranslation)
   registerIpcHandlers()
 
   // M0: start the NDI sender unconditionally on launch (hardcoded transparent

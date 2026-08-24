@@ -14,7 +14,9 @@ import type {
   AppSettings,
 } from "@shared/ipc";
 import { normalizeOverlaySettings } from "@shared/overlay-defaults";
+import { getOverlayDispatchOrder } from "@shared/overlay-dispatch";
 import { ScriptureDetector } from "./services/scripture/detector";
+import { subscribeExplicitScriptureDetection } from "./services/scripture/live-detection-wiring";
 import type { DetectorStats, ScriptureReference } from "./services/scripture/detector";
 import { BibleDatabase } from "./services/scripture/bible-db";
 import { audioService } from "./services/audio";
@@ -77,6 +79,7 @@ class Orchestrator {
   private session: Session | null = null;
 
   private bufferAnalyzeListener: ((ctx: string, _ts: number) => void) | null = null;
+  private explicitDetectionCleanup: (() => void) | null = null;
 
   private statusCallbacks: StatusCallback[] = [];
   private pendingAutoCallbacks: PendingAutoCallback[] = [];
@@ -159,10 +162,12 @@ class Orchestrator {
       });
 
       this.detector.on("detection", (refs) => {
-        resilienceManager.handleClaudeSuccess();
         this.handleDetection(refs).catch((err) =>
           log.error("[Orchestrator] handleDetection error", (err as Error).message),
         );
+      });
+      this.detector.on("requestSuccess", () => {
+        resilienceManager.handleClaudeSuccess();
       });
 
       this.detector.on("stats", (stats: DetectorStats) => {
@@ -191,6 +196,10 @@ class Orchestrator {
         this.detector!.analyze(ctx);
       };
       sttService.buffer.on("analyzeReady", this.bufferAnalyzeListener);
+      this.explicitDetectionCleanup = subscribeExplicitScriptureDetection(
+        sttService,
+        this.detector,
+      );
     }
 
     // Start STT (connects Deepgram WebSocket)
@@ -272,6 +281,8 @@ class Orchestrator {
       sttService.buffer.off("analyzeReady", this.bufferAnalyzeListener);
       this.bufferAnalyzeListener = null;
     }
+    this.explicitDetectionCleanup?.();
+    this.explicitDetectionCleanup = null;
 
     resilienceManager.registerStateCallback(null);
 
@@ -385,28 +396,64 @@ class Orchestrator {
         }
       }
 
-      const reference = buildReferenceString(ref);
-      const suggestion: ScriptureSuggestion = {
-        id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-        reference,
-        verses,
-        translation,
-        confidence: ref.confidence,
-        source: "auto",
-        triggerText: ref.sourceText,
-      };
+      // One Operator suggestion per verse — never jumble a range into a single card
+      const verseItems: ScriptureVerse[] =
+        verses.length > 0
+          ? verses
+          : ref.verseEnd != null && ref.verseEnd > ref.verseStart
+            ? Array.from(
+                { length: ref.verseEnd - ref.verseStart + 1 },
+                (_, i) =>
+                  ({
+                    book: ref.book,
+                    chapter: ref.chapter,
+                    verse: ref.verseStart + i,
+                    text: "",
+                  }) satisfies ScriptureVerse,
+              )
+            : [
+                {
+                  book: ref.book,
+                  chapter: ref.chapter,
+                  verse: ref.verseStart,
+                  text: "",
+                } satisfies ScriptureVerse,
+              ];
 
-      this.pendingSuggestions.set(suggestion.id, suggestion);
-      if (this.session) this.session.totalDetections++;
+      const passageId = `${ref.book.toLowerCase().replace(/\s+/g, "-")}-${ref.chapter}-${ref.verseStart}-${ref.verseEnd ?? ref.verseStart}-${Date.now()}`;
+      const passageReference =
+        ref.verseEnd != null && ref.verseEnd > ref.verseStart
+          ? `${ref.book} ${ref.chapter}:${ref.verseStart}-${ref.verseEnd}`
+          : `${ref.book} ${ref.chapter}:${ref.verseStart}`;
 
-      // Publish through scriptureService so existing IPC/renderer pipeline works
-      scriptureService.receiveSuggestion(suggestion);
+      for (const [verseIndex, verse] of verseItems.entries()) {
+        const suggestion: ScriptureSuggestion = {
+          id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          reference: `${verse.book} ${verse.chapter}:${verse.verse}`,
+          verses: verse.text ? [verse] : [],
+          translation,
+          confidence: ref.confidence,
+          source: "auto",
+          triggerText: ref.sourceText,
+          passageId,
+          passageReference,
+          passageIndex: verseIndex,
+          passageLength: verseItems.length,
+        };
 
-      if (
-        this.cfg.autoMode &&
-        ref.confidence >= (this.cfg.confidenceThreshold ?? 0.7)
-      ) {
-        this.scheduleAutoPresent(suggestion);
+        this.pendingSuggestions.set(suggestion.id, suggestion);
+        if (this.session) this.session.totalDetections++;
+
+        // Publish through scriptureService so existing IPC/renderer pipeline works
+        scriptureService.receiveSuggestion(suggestion);
+
+        if (
+          this.cfg.autoMode &&
+          verseItems.length === 1 &&
+          ref.confidence >= (this.cfg.confidenceThreshold ?? 0.7)
+        ) {
+          this.scheduleAutoPresent(suggestion);
+        }
       }
 
       this.updateHealth("detector", "ok");
@@ -417,8 +464,13 @@ class Orchestrator {
 
   // ─── Auto-present countdown ────────────────────────────────────────────────
 
-  private scheduleAutoPresent(suggestion: ScriptureSuggestion): void {
-    const delayMs = (this.cfg?.autoPresentDelaySec ?? 3) * 1_000;
+  private scheduleAutoPresent(
+    suggestion: ScriptureSuggestion,
+    staggerIndex = 0,
+  ): void {
+    const baseDelayMs = (this.cfg?.autoPresentDelaySec ?? 3) * 1_000;
+    // Stagger multi-verse detections so each verse presents in sequence
+    const delayMs = baseDelayMs + staggerIndex * baseDelayMs;
     const expiresAt = Date.now() + delayMs;
 
     const timer = setTimeout(async () => {
@@ -510,52 +562,47 @@ class Orchestrator {
     // *different* prior push must not fire later and clear this one's mechanism.
     this.cancelOverlayAutoClear();
 
-    if (mode === "ndi") {
-      if (await this.pushScriptureOverlayNdi(suggestion, overlay)) {
-        this.lastOverlayMechanism = "ndi";
-        return "ndi";
+    for (const mechanism of getOverlayDispatchOrder(mode)) {
+      if (mechanism === "ndi") {
+        if (await this.pushScriptureOverlayNdi(suggestion, overlay)) {
+          this.lastOverlayMechanism = "ndi";
+          return "ndi";
+        }
+        if (mode === "ndi") {
+          log.warn("[Orchestrator] NDI not ready in ndi mode — falling back to message overlay", {
+            ref: suggestion.reference,
+          });
+          this.updateHealth("propresenter", "degraded", "NDI not ready — using message overlay fallback");
+        }
+        continue;
       }
-      log.warn("[Orchestrator] NDI not ready in ndi mode — falling back to message overlay", {
-        ref: suggestion.reference,
-      });
-      this.updateHealth("propresenter", "degraded", "NDI not ready — using message overlay fallback");
+
+      if (mechanism === "library") {
+        const match = await proPresenterService.rawClient.searchLibraries(suggestion.reference);
+        if (!match) continue;
+        const ok = await proPresenterService.rawClient.triggerLibraryPresentation(
+          match.libraryId,
+          match.presentationName,
+        );
+        if (ok) {
+          this.lastOverlayMechanism = "library";
+          log.info("[Orchestrator] Scripture presented (library)", {
+            ref: suggestion.reference,
+            library: match.libraryId,
+            presentation: match.presentationName,
+          });
+          return "library";
+        }
+        log.warn("[Orchestrator] Library trigger failed — falling back", {
+          ref: suggestion.reference,
+        });
+        continue;
+      }
+
       if (await this.pushScriptureOverlay(suggestion, overlay)) {
         this.lastOverlayMechanism = "message";
         return "message";
       }
-      return null;
-    }
-
-    // auto & message modes both search the library first.
-    const match = await proPresenterService.rawClient.searchLibraries(suggestion.reference);
-    if (match) {
-      const ok = await proPresenterService.rawClient.triggerLibraryPresentation(
-        match.libraryId,
-        match.presentationName,
-      );
-      if (ok) {
-        this.lastOverlayMechanism = "library";
-        log.info("[Orchestrator] Scripture presented (library)", {
-          ref: suggestion.reference,
-          library: match.libraryId,
-          presentation: match.presentationName,
-        });
-        return "library";
-      }
-      log.warn("[Orchestrator] Library trigger failed — falling back", {
-        ref: suggestion.reference,
-      });
-    }
-
-    if (mode === "auto" && (await this.pushScriptureOverlayNdi(suggestion, overlay))) {
-      this.lastOverlayMechanism = "ndi";
-      return "ndi";
-    }
-
-    // message mode's only fallback, and auto's final fallback.
-    if (await this.pushScriptureOverlay(suggestion, overlay)) {
-      this.lastOverlayMechanism = "message";
-      return "message";
     }
 
     return null;
@@ -898,10 +945,12 @@ class Orchestrator {
         });
 
         this.detector.on("detection", (refs) => {
-          resilienceManager.handleClaudeSuccess();
           this.handleDetection(refs).catch((err) =>
             log.error("[Orchestrator] handleDetection error on recovery", (err as Error).message)
           );
+        });
+        this.detector.on("requestSuccess", () => {
+          resilienceManager.handleClaudeSuccess();
         });
 
         this.detector.on("stats", (stats: DetectorStats) => {
@@ -925,6 +974,11 @@ class Orchestrator {
           this.detector!.analyze(ctx);
         };
         sttService.buffer.on("analyzeReady", this.bufferAnalyzeListener);
+        this.explicitDetectionCleanup?.();
+        this.explicitDetectionCleanup = subscribeExplicitScriptureDetection(
+          sttService,
+          this.detector,
+        );
       }
 
       sttService.configure(this.cfg.sttProvider, this.cfg.sttApiKey, this.cfg.sttLanguage);
@@ -958,13 +1012,6 @@ class Orchestrator {
     const status = this.getStatus();
     this.statusCallbacks.forEach((cb) => cb(status));
   }
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function buildReferenceString(ref: ScriptureReference): string {
-  const base = `${ref.book} ${ref.chapter}:${ref.verseStart}`;
-  return ref.verseEnd != null ? `${base}-${ref.verseEnd}` : base;
 }
 
 // ─── Singleton ────────────────────────────────────────────────────────────────

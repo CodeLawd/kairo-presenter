@@ -203,3 +203,33 @@ PP Video Input (NDI) — trigger endpoint verified in M0 → presentation layer
 - Image/video backgrounds, multiple theme presets (v2.1)
 - Audio over NDI
 - Windows/x64 work beyond the load guard
+
+---
+
+## Rev 4 addendum — 2026-07-08 (fullscreen / auto-fit / media backgrounds)
+
+Schema additions (all healed by `normalizeOverlayTheme`; escaping/clamping rules extend D5a):
+
+| Field | Values | Clamp/validation | Notes |
+|-------|--------|------------------|-------|
+| `background.type` | + `'image'` \| `'video'` | enum, junk → `'transparent'` default | media element (`<img>`/`<video autoplay loop muted playsinline>`) inside the bg layer; CSS bg kept for color/gradient |
+| `background.mediaPath` | absolute local path | string, trimmed; blank → `undefined`. Existence is NOT checked here (pure module) | rendered as `pa-media://media/<encodeURIComponent(path)>` — escaped like any attr |
+| `background.mediaFit` | `'cover'`\|`'contain'`\|`'fill'` | enum, default `'cover'` | maps to `object-fit` |
+| `layout.autoFitText` | boolean | `safeBool`, default `false` | only honored when `layout.position === 'full'` |
+
+Rendering:
+- `'full'` position is now truly full-bleed: content box `flex:1; max-width:100%`, children stretched, backdrop corners forced square. `maxWidthPct` ignored (UI disables it).
+- Auto-fit: `estimateAutoFitVerseFontPx` in `overlay-template.ts` — pure char-metric estimate (0.55 avg-width factor, conservative), binary search 24–200px, reference row + padding subtracted. Both preview and NDI window render from the same computed px, so WYSIWYG holds even where the estimate is imperfect.
+- Preview now renders a real 1920×1080 frame scaled with `transform: scale(panelWidth/1920)` — proportions finally match the output.
+
+Security (extends D5a):
+- `pa-media://` protocol (main/index.ts): serves ONLY the path currently stored at `overlay.theme.background.mediaPath` (path-resolved equality); anything else → 403. Prevents the scheme becoming an arbitrary-file-read bridge from the renderer.
+- Renderer CSP gained `img-src pa-media:` / `media-src pa-media:`.
+- ThemeEditor persists the picked path BEFORE state renders the media element (allowlist must be current when the request lands).
+
+Settings write-ownership (closes latent D3 gap):
+- Main's SETTINGS.SET merge already read fresh-from-disk, but both pages sent full stale objects. Now: Settings modal sends only phase-1 fields; ThemeEditor sends only `mode`/`ppVideoInputUuid`/`theme`. Cross-page clobber (incl. orchestrator's persisted `ppVideoInputUuid`) is no longer possible.
+
+Perf note: video backgrounds raise the offscreen frame rate to 24fps (`OSR_FRAME_RATE_VIDEO`); static themes stay at 10fps. Live-validate CPU on the production Mac before a Sunday.
+
+21:26 "small text" incident — RESOLVED, not a code bug: settings file mtime 21:31:18 proves the 64px/lower-third theme was saved AFTER the 21:26 push (which correctly rendered the then-current old theme) and BEFORE the 21:35–21:36 pushes. conf v10 reads the file on every `store.get` — no caching layer exists in that path.

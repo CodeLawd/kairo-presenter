@@ -26,7 +26,10 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { Switch } from '@/components/ui/switch'
+import { Slider } from '@/components/ui/slider'
 import { useAppStore } from '@/stores/useAppStore'
+import { applyAppTheme } from '@/lib/appTheme'
 import { DEFAULT_OVERLAY_SETTINGS, normalizeOverlaySettings } from '@shared/overlay-defaults'
 import type { AppSettings, AudioDevice, AudioLevel, ScriptureTranslation } from '@shared/ipc'
 
@@ -48,14 +51,14 @@ const SECTION_NAV: { id: Section; label: string; hint: string; icon: LucideIcon 
   { id: 'general', label: 'General', hint: 'Theme & font sizes', icon: SlidersHorizontal },
 ]
 
-const TRANSLATIONS: ScriptureTranslation[] = ['KJV', 'NIV', 'ESV', 'NKJV', 'NLT', 'CSB', 'NASB']
+const TRANSLATIONS: ScriptureTranslation[] = ['NKJV', 'KJV', 'BSB', 'WEB', 'ASV', 'OEB', 'NIV', 'NLT', 'NASB', 'MSG', 'AMPC', 'TPT']
 
 const DEFAULT_SETTINGS: AppSettings = {
   propresenter: { host: 'localhost', port: 50000, password: '' },
   audio: { deviceId: '' },
   stt: { provider: 'none', apiKey: '', anthropicApiKey: '', deepseekApiKey: '', llmProvider: 'anthropic', bibleApiKey: '', language: 'en-US' },
   scripture: {
-    defaultTranslation: 'ESV',
+    defaultTranslation: 'NKJV',
     showVerseNumbers: true,
     autoMode: false,
     confidenceThreshold: 0.7,
@@ -64,6 +67,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   },
   display: { theme: 'dark', fontSize: 16, transcriptionFontSize: 18 },
   overlay: DEFAULT_OVERLAY_SETTINGS,
+  themeLibrary: [],
 }
 
 // ─── Helper: Toggle ───────────────────────────────────────────────────────────
@@ -78,26 +82,11 @@ function Toggle({
   disabled?: boolean
 }) {
   return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
+    <Switch
+      checked={checked}
       disabled={disabled}
-      onClick={() => onChange(!checked)}
-      className={cn(
-        'relative inline-flex w-10 h-5 rounded-full transition-all duration-300 ease-out-expo shrink-0',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50 focus-visible:ring-offset-1 focus-visible:ring-offset-surface',
-        'disabled:opacity-40 disabled:cursor-not-allowed',
-        checked ? 'bg-teal-500 shadow-glow-teal/20' : 'bg-surface-secondary border border-surface-border/50'
-      )}
-    >
-      <span
-        className={cn(
-          'absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-300 ease-out-expo shadow-sm',
-          checked ? 'translate-x-5' : 'translate-x-0'
-        )}
-      />
-    </button>
+      onCheckedChange={onChange}
+    />
   )
 }
 
@@ -950,17 +939,12 @@ function ScriptureSection({
                     {sc.confidenceThreshold.toFixed(2)}
                   </span>
                 </div>
-                <input
-                  type="range"
+                <Slider
                   min={0}
                   max={1}
                   step={0.05}
-                  value={sc.confidenceThreshold}
-                  onChange={(e) =>
-                    update('scripture', { confidenceThreshold: parseFloat(e.target.value) })
-                  }
-                  className="w-full h-1.5 appearance-none rounded-full cursor-pointer bg-surface-secondary accent-teal-500"
-                  style={{ background: `linear-gradient(to right, #009f9f ${sc.confidenceThreshold * 100}%, #243d5c ${sc.confidenceThreshold * 100}%)` }}
+                  value={[sc.confidenceThreshold]}
+                  onValueChange={(next) => update('scripture', { confidenceThreshold: next[0] })}
                   aria-label="Confidence threshold range slider"
                 />
                 <div className="flex justify-between text-[9px] font-bold text-slate-600 mt-2 font-sans tracking-wide uppercase">
@@ -1439,6 +1423,7 @@ export default function Settings(): React.ReactElement {
         scripture: { ...prev.scripture, ...stored.scripture },
         display: { ...prev.display, ...stored.display },
         overlay: normalizeOverlaySettings({ ...prev.overlay, ...stored.overlay }),
+        themeLibrary: stored.themeLibrary ?? prev.themeLibrary,
       }))
       setLoading(false)
     })
@@ -1455,10 +1440,21 @@ export default function Settings(): React.ReactElement {
     section: K,
     partial: Partial<AppSettings[K]>
   ) => {
-    setSettings((prev) => ({
-      ...prev,
-      [section]: { ...prev[section], ...partial },
-    }))
+    const shouldPersistTheme = section === 'display' && 'theme' in partial && Boolean(partial.theme)
+    if (section === 'display' && 'theme' in partial && partial.theme) {
+      const theme = partial.theme as AppSettings['display']['theme']
+      applyAppTheme(theme)
+    }
+    setSettings((prev) => {
+      const nextSection = { ...prev[section], ...partial }
+      if (shouldPersistTheme) {
+        void window.api.settings.set('display', nextSection as AppSettings['display'])
+      }
+      return {
+        ...prev,
+        [section]: nextSection,
+      }
+    })
   }, [])
 
   // Show saved feedback for 2s
@@ -1483,7 +1479,19 @@ export default function Settings(): React.ReactElement {
       window.api.settings.set('scripture', settings.scripture).then(() => showSaved('scripture'))
     },
     overlay: () => {
-      window.api.settings.set('overlay', settings.overlay).then(() => showSaved('overlay'))
+      // Send only the phase-1 fields this modal edits — main merges onto the
+      // freshly-read stored overlay, so this stale copy can't clobber the Theme
+      // page's mode/theme or the ppVideoInputUuid the orchestrator persists.
+      const o = settings.overlay
+      window.api.settings
+        .set('overlay', {
+          template: o.template,
+          showTranslation: o.showTranslation,
+          showVerseNumbers: o.showVerseNumbers,
+          maxVerses: o.maxVerses,
+          autoClearSec: o.autoClearSec,
+        })
+        .then(() => showSaved('overlay'))
     },
     general: () => {
       window.api.settings.set('display', settings.display).then(() => showSaved('general'))

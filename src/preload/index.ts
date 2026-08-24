@@ -131,12 +131,32 @@ const scripture: ProAutomateAPI['scripture'] = {
     return ipcRenderer.invoke(IPC.SCRIPTURE.REGISTER, suggestion)
   },
 
-  search(query: string): Promise<ScriptureResult[]> {
-    return ipcRenderer.invoke(IPC.SCRIPTURE.SEARCH, query)
+  search(query: string, translation?: ScriptureTranslation): Promise<ScriptureResult[]> {
+    return ipcRenderer.invoke(IPC.SCRIPTURE.SEARCH, query, translation)
+  },
+
+  getTranslations() {
+    return ipcRenderer.invoke(IPC.SCRIPTURE.GET_TRANSLATIONS)
   },
 
   setTranslation(translation: ScriptureTranslation): Promise<void> {
     return ipcRenderer.invoke(IPC.SCRIPTURE.SET_TRANSLATION, translation)
+  },
+
+  importSermonNotes() {
+    return ipcRenderer.invoke(IPC.SCRIPTURE.IMPORT_SERMON_NOTES)
+  },
+
+  listSermonPlans() {
+    return ipcRenderer.invoke(IPC.SCRIPTURE.LIST_SERMON_PLANS)
+  },
+
+  saveSermonPlan(plan) {
+    return ipcRenderer.invoke(IPC.SCRIPTURE.SAVE_SERMON_PLAN, plan)
+  },
+
+  deleteSermonPlan(planId: string): Promise<void> {
+    return ipcRenderer.invoke(IPC.SCRIPTURE.DELETE_SERMON_PLAN, planId)
   },
 
   setAutoMode(enabled: boolean): Promise<void> {
@@ -215,7 +235,7 @@ const settings: ProAutomateAPI['settings'] = {
     return ipcRenderer.invoke(IPC.SETTINGS.GET, key)
   },
 
-  set<K extends keyof AppSettings>(key: K, value: AppSettings[K]): Promise<void> {
+  set<K extends keyof AppSettings>(key: K, value: AppSettings[K] | Partial<AppSettings[K]>): Promise<void> {
     return ipcRenderer.invoke(IPC.SETTINGS.SET, key, value)
   },
 
@@ -293,6 +313,10 @@ const ndi: ProAutomateAPI['ndi'] = {
 
   getVideoInputs(): Promise<PPVideoInputInfo[]> {
     return ipcRenderer.invoke(IPC.NDI.GET_VIDEO_INPUTS)
+  },
+
+  pickOverlayMedia(kind: 'image' | 'video'): Promise<string | null> {
+    return ipcRenderer.invoke(IPC.NDI.PICK_OVERLAY_MEDIA, kind)
   },
 }
 

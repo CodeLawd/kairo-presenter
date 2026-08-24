@@ -27,6 +27,16 @@ import {
   ChevronRight,
 } from 'lucide-react'
 import { cn, downloadFile } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import type {
   LyricsSong,
   LyricsSongSection,
@@ -1277,12 +1287,12 @@ export default function Lyrics(): React.ReactElement {
           <p className="page-subtitle">Manage and project worship songs to ProPresenter</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <button className="btn-secondary flex items-center gap-1.5 text-sm py-2" onClick={() => setShowImport(true)}>
-            <Upload size={14} /> Import
-          </button>
-          <button className="btn-primary flex items-center gap-1.5 text-sm py-2" onClick={handleNewSong}>
-            <FilePlus size={14} /> New Song
-          </button>
+          <Button variant="outline" onClick={() => setShowImport(true)}>
+            <Upload data-icon="inline-start" /> Import
+          </Button>
+          <Button onClick={handleNewSong}>
+            <FilePlus data-icon="inline-start" /> New Song
+          </Button>
         </div>
       </div>
 
@@ -1294,66 +1304,64 @@ export default function Lyrics(): React.ReactElement {
           {/* Search */}
           <div className="relative">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
-            <input
+            <Input
               type="text"
-              className="input pl-9 pr-9 py-2 text-sm"
+              className="pl-9 pr-9"
               placeholder="Search title, artist, CCLI…"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               aria-label="Search songs"
             />
             {query && (
-              <button
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors focus-visible:outline-none"
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="absolute right-2 top-1/2 -translate-y-1/2"
                 onClick={() => setQuery('')}
                 aria-label="Clear search"
               >
-                <X size={13} />
-              </button>
+                <X />
+              </Button>
             )}
           </div>
 
           {/* Filter chips + sort */}
           <div className="flex items-center gap-1">
+            <ToggleGroup
+              type="single"
+              value={filter}
+              onValueChange={(value) => value && setFilter(value as FilterType)}
+              variant="outline"
+              size="sm"
+            >
             {(['all', 'favorites', 'recent'] as FilterType[]).map((f) => (
-              <button
+              <ToggleGroupItem
                 key={f}
-                onClick={() => setFilter(f)}
-                className={cn(
-                  'px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-colors',
-                  filter === f
-                    ? 'bg-surface-elevated text-white border border-surface-border'
-                    : 'text-slate-500 hover:text-slate-300 border border-transparent'
-                )}
+                value={f}
+                className="text-[11px]"
               >
                 {f === 'all' ? 'All' : f === 'favorites' ? '★ Favorites' : 'Recent'}
-              </button>
+              </ToggleGroupItem>
             ))}
+            </ToggleGroup>
             <div className="flex-1" />
-            <div className="relative" ref={sortRef}>
-              <button
-                onClick={() => setSortOpen((o) => !o)}
-                className="flex items-center gap-1 px-2.5 py-1 text-[11px] text-slate-500 hover:text-slate-300 transition-colors focus-visible:outline-none rounded-lg border border-transparent hover:border-surface-border"
-              >
-                Sort <ChevronDown size={11} className={cn('transition-transform', sortOpen && 'rotate-180')} />
-              </button>
-              {sortOpen && (
-                <div className="absolute right-0 mt-1 w-36 rounded-lg bg-surface-elevated border border-surface-border shadow-xl z-30 py-1 overflow-hidden animate-fade-in">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm">Sort <ChevronDown data-icon="inline-end" /></Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-40">
+                <DropdownMenuGroup>
                   {(['title', 'artist', 'recent', 'added'] as SortType[]).map((s) => (
-                    <button
+                    <DropdownMenuItem
                       key={s}
-                      onClick={() => { setSortBy(s); setSortOpen(false) }}
-                      className={cn(
-                        'w-full px-3.5 py-1.5 text-[12px] text-left transition-colors',
-                        sortBy === s ? 'text-teal-400 bg-teal-500/10' : 'text-slate-400 hover:bg-surface-tertiary hover:text-white'
-                      )}
+                      onSelect={() => setSortBy(s)}
                     >
-                      {s === 'recent' ? 'Last Modified' : s === 'added' ? 'Date Added' : `By ${s.charAt(0).toUpperCase() + s.slice(1)}`}
-                    </button>
+                      {sortBy === s ? '✓ ' : ''}{s === 'recent' ? 'Last Modified' : s === 'added' ? 'Date Added' : `By ${s.charAt(0).toUpperCase() + s.slice(1)}`}
+                    </DropdownMenuItem>
                   ))}
-                </div>
-              )}
-            </div>
+                </DropdownMenuGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
 
           {/* Song list */}
