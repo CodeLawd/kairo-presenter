@@ -1,8 +1,6 @@
 import path from 'path'
 import { app } from 'electron'
-import { is } from '@electron-toolkit/utils'
 import log from 'electron-log/main'
-import axios from 'axios'
 import type {
   ScriptureSuggestion,
   ScriptureResult,
@@ -12,13 +10,26 @@ import type {
 } from '@shared/ipc'
 import { BibleDatabase } from './bible-db'
 import { parseScriptureReference } from './reference'
+import { buildApiBibleIdMap } from './api-bible'
+import { ApiBibleClient } from './api-bible-client'
+import { ApiBibleLookup, type ApiBibleLookupCache } from './api-bible-lookup'
+import type { ApiBibleCache } from './api-bible-cache'
 
 type SuggestionCallback = (suggestion: ScriptureSuggestion) => void
 
-class ScriptureService {
+export class ScriptureService {
   private db: BibleDatabase | null = null
+  private apiCache: ApiBibleCache | null = null
+  private client: ApiBibleClient | null = null
+  private clientKey = ''
+  private lookup: ApiBibleLookup | null = null
+  /** Access revalidation happens once per app session, not once per search. */
+  private readonly sessionStartedAt = Date.now()
   private defaultTranslation: ScriptureTranslation = 'NKJV'
   private apiBibleIds = new Map<string, string>()
+  /** Which API key `apiBibleIds` was loaded for; ids never outlive their key. */
+  private apiBibleIdsKey: string | null = null
+  private clientFactory: (apiKey: string) => ApiBibleClient = (apiKey) => new ApiBibleClient(apiKey)
   private autoMode = false
   private confidenceThreshold = 0.7
   private pendingSuggestions = new Map<string, ScriptureSuggestion>()
@@ -27,12 +38,27 @@ class ScriptureService {
   // ─── Lifecycle ────────────────────────────────────────────────────────────
 
   open(dbPath?: string): void {
+    // Required lazily: `is` reads `app.isPackaged` on import, which does not
+    // exist when this module is loaded outside a running Electron app (tests).
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { is } = require('@electron-toolkit/utils') as typeof import('@electron-toolkit/utils')
     const p = dbPath ?? (
       is.dev
         ? path.join(app.getAppPath(), 'resources', 'bible.db')
         : path.join(process.resourcesPath, 'bible.db')
     )
     this.db = new BibleDatabase(p)
+  }
+
+  /** Injected by the main process once `userData` paths and encryption resolve. */
+  attachApiCache(cache: ApiBibleCache | null): void {
+    this.apiCache = cache
+    this.lookup = null
+    log.info('[Scripture] API.Bible cache', { attached: cache !== null })
+  }
+
+  getApiCache(): ApiBibleCache | null {
+    return this.apiCache
   }
 
   // ─── Event subscriptions ──────────────────────────────────────────────────
@@ -87,25 +113,141 @@ class ScriptureService {
       log.warn('Scripture DB not open')
       return []
     }
+
+    const mapRows = (
+      rows: Array<{ bookName: string; chapter: number; verse: number; text: string; translationId?: string }>,
+      tx: typeof translation,
+    ): ScriptureResult[] =>
+      rows.map((v) => ({
+        reference: `${v.bookName} ${v.chapter}:${v.verse}`,
+        verses: [{ book: v.bookName, chapter: v.chapter, verse: v.verse, text: v.text }],
+        translation: (v.translationId as typeof translation) || tx,
+      }))
+
+    const localIds = this.db.getAllTranslations().map((item) => item.id.toUpperCase())
+    const preferredIsLocal = localIds.includes(translation.toUpperCase())
+    const tryTranslations = [
+      translation,
+      ...localIds.filter((id) => id !== translation.toUpperCase()),
+    ]
+
     const ref = this.parseReference(query)
     if (ref) {
-      const verses = await this.lookupVerses(ref.book, ref.chapter, ref.verseStart, ref.verseEnd, translation)
-      if (verses.length > 0) {
-        const bookName = this.db.resolveBookName(ref.book)?.name ?? ref.book
-        const end = ref.verseEnd ? `–${ref.verseEnd}` : ''
-        const reference = `${bookName} ${ref.chapter}:${ref.verseStart}${end}`
-        return [{ reference, verses, translation }]
+      for (const tx of tryTranslations) {
+        const verses = await this.lookupVerses(
+          ref.book,
+          ref.chapter,
+          ref.verseStart,
+          ref.verseEnd,
+          tx as typeof translation,
+        )
+        if (verses.length > 0) {
+          const bookName = this.db.resolveBookName(ref.book)?.name ?? ref.book
+          const end = ref.verseEnd ? `–${ref.verseEnd}` : ''
+          const reference = `${bookName} ${ref.chapter}:${ref.verseStart}${end}`
+          return [{ reference, verses, translation: tx as typeof translation }]
+        }
       }
       if (apiKey) return this.lookupFromApiBible(ref, translation, apiKey)
     }
-    // Full-text keyword search
-    const rows = this.db.searchText(query, translation)
+
+    // Phrase / keyword search: prefer the configured API.Bible translation
+    // (NKJV, NIV, …), then fall back to the local bible.db seed.
+    if (apiKey) {
+      try {
+        const apiHits = await this.searchPhraseFromApiBible(query, translation, apiKey)
+        if (apiHits.length > 0) {
+          log.info('Scripture phrase search via API.Bible', {
+            query,
+            translation,
+            hits: apiHits.length,
+            top: apiHits.slice(0, 3).map((hit) => hit.reference),
+          })
+          return apiHits
+        }
+      } catch (error) {
+        log.warn('[Scripture] API.Bible phrase search failed — trying local', {
+          query,
+          translation,
+          message: (error as Error).message,
+        })
+      }
+    }
+
+    // Remembered-phrase search uses the local bible.db. If the Settings
+    // translation is API-only (NKJV, NIV, …), search every seeded Bible and
+    // prefer rows from the requested translation when present.
+    const phraseRows = preferredIsLocal
+      ? this.db.searchText(query, translation)
+      : this.db.searchText(query) // all local translations
+
+    let rows = phraseRows
+    if (rows.length === 0 && preferredIsLocal) {
+      rows = this.db.searchText(query)
+    }
+    if (rows.length === 0) {
+      for (const tx of localIds) {
+        if (preferredIsLocal && tx === translation.toUpperCase()) continue
+        rows = this.db.searchText(query, tx)
+        if (rows.length > 0) break
+      }
+    }
     if (rows.length === 0) return []
-    return rows.map((v) => ({
-      reference: `${v.bookName} ${v.chapter}:${v.verse}`,
-      verses: [{ book: v.bookName, chapter: v.chapter, verse: v.verse, text: v.text }],
-      translation,
-    }))
+
+    if (preferredIsLocal) {
+      rows = [
+        ...rows.filter((row) => row.translationId.toUpperCase() === translation.toUpperCase()),
+        ...rows.filter((row) => row.translationId.toUpperCase() !== translation.toUpperCase()),
+      ]
+    }
+
+    log.info('Scripture phrase search hits', {
+      query,
+      preferred: translation,
+      preferredIsLocal,
+      hits: rows.length,
+      top: rows.slice(0, 3).map((row) => `${row.translationId} ${row.bookName} ${row.chapter}:${row.verse}`),
+    })
+
+    return mapRows(
+      rows.slice(0, 25).map((v) => ({
+        bookName: v.bookName,
+        chapter: v.chapter,
+        verse: v.verse,
+        text: v.text,
+        translationId: v.translationId,
+      })),
+      (rows[0]?.translationId as typeof translation) || translation,
+    )
+  }
+
+  private async searchPhraseFromApiBible(
+    query: string,
+    translation: ScriptureTranslation,
+    apiKey: string,
+  ): Promise<ScriptureResult[]> {
+    const bibleId = await this.resolveBibleId(translation, apiKey)
+    const hits = await this.getClient(apiKey).search(bibleId, query, 8)
+    return hits.flatMap((hit) => {
+      const book =
+        (hit.reference.match(/^(.+?)\s+\d+:\d+/)?.[1] ?? '').trim() ||
+        (hit.bookId ? this.db?.resolveBookName(hit.bookId)?.name : null) ||
+        hit.bookId ||
+        'Unknown'
+      const chapter = hit.chapter
+      const verse = hit.verse
+      if (!chapter || !verse || !hit.text) return []
+      const reference = hit.reference.includes(':')
+        ? hit.reference.replace(/\s+/g, ' ').trim()
+        : `${book} ${chapter}:${verse}`
+      return [
+        {
+          reference,
+          translation,
+          verses: [{ book, chapter, verse, text: hit.text }],
+        },
+      ]
+    })
   }
 
   async lookupVerses(
@@ -128,25 +270,17 @@ class ScriptureService {
     }))
   }
 
-  async getTranslationOptions(apiKey = ''): Promise<ScriptureTranslationOption[]> {
-    const catalog: Array<[ScriptureTranslation, string, 'local' | 'api']> = [
-      ['NKJV', 'New King James Version', 'api'],
-      ['KJV', 'King James Version', 'local'],
-      ['BSB', 'Berean Standard Bible', 'local'],
-      ['WEB', 'World English Bible', 'local'],
-      ['ASV', 'American Standard Version', 'local'],
-      ['OEB', 'Open English Bible', 'local'],
-      ['NIV', 'New International Version', 'api'],
-      ['NLT', 'New Living Translation', 'api'],
-      ['NASB', 'New American Standard Bible', 'api'],
-      ['MSG', 'The Message', 'api'],
-      ['AMPC', 'Amplified Bible, Classic Edition', 'api'],
-      ['TPT', 'The Passion Translation', 'api'],
-    ]
+  async getTranslationOptions(apiKey = '', strict = false): Promise<ScriptureTranslationOption[]> {
+    const catalog = TRANSLATION_CATALOG
     const local = new Set(this.db?.getAllTranslations().map((item) => item.id.toUpperCase()) ?? [])
-    if (apiKey) await this.loadApiBibleIds(apiKey).catch((error) => {
-      log.warn('[Scripture] Unable to load API.Bible translations', (error as Error).message)
-    })
+    if (apiKey) {
+      try {
+        await this.loadApiBibleIds(apiKey)
+      } catch (error) {
+        log.warn('[Scripture] Unable to load API.Bible translations', (error as Error).message)
+        if (strict) throw error
+      }
+    }
     return catalog.map(([id, name, access]) => ({
       id, name, access,
       available: local.has(id) || this.apiBibleIds.has(id),
@@ -155,15 +289,74 @@ class ScriptureService {
   }
 
   private async loadApiBibleIds(apiKey: string): Promise<void> {
-    const response = await axios.get('https://api.scripture.api.bible/v1/bibles', {
-      headers: { 'api-key': apiKey }, timeout: 10_000,
-      params: { language: 'eng' },
-    })
-    const bibles = (response.data?.data ?? []) as Array<{ id: string; abbreviation?: string; name?: string }>
-    for (const bible of bibles) {
-      const abbreviation = (bible.abbreviation ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '')
-      if (abbreviation) this.apiBibleIds.set(abbreviation, bible.id)
+    const bibles = await this.getClient(apiKey).listBibles()
+    this.apiBibleIds = buildApiBibleIdMap(bibles)
+    this.apiBibleIdsKey = apiKey
+  }
+
+  /** Resolves the API.Bible id authorized for a translation, loading the list once. */
+  async resolveBibleId(translation: ScriptureTranslation, apiKey: string): Promise<string> {
+    if (this.apiBibleIdsKey !== apiKey || !this.apiBibleIds.has(translation)) {
+      await this.loadApiBibleIds(apiKey)
     }
+    const bibleId = this.apiBibleIds.get(translation)
+    if (!bibleId) throw new Error(`${translation} is not authorized for this API.Bible key.`)
+    return bibleId
+  }
+
+  /** API translations the saved key can reach, for the offline cache UI. */
+  async listAuthorizedTranslations(apiKey: string): Promise<
+    Array<{ bibleId: string; translation: ScriptureTranslation; name: string }>
+  > {
+    if (!apiKey) {
+      this.forgetAuthorizedIds()
+      return []
+    }
+    await this.loadApiBibleIds(apiKey)
+    return TRANSLATION_CATALOG.flatMap(([id, name, access]) => {
+      if (access !== 'api') return []
+      const bibleId = this.apiBibleIds.get(id)
+      return bibleId ? [{ bibleId, translation: id, name }] : []
+    })
+  }
+
+  /** Throws unless the id is in the list this API key is authorized for. */
+  async ensureAuthorizedBibleId(bibleId: string, apiKey: string): Promise<void> {
+    if (this.apiBibleIdsKey === apiKey && this.isAuthorizedBibleId(bibleId)) return
+    await this.loadApiBibleIds(apiKey)
+    if (!this.isAuthorizedBibleId(bibleId)) {
+      throw new Error('That Bible is not authorized for this API.Bible key.')
+    }
+  }
+
+  /** True when the id belongs to the list this key is authorized for. */
+  isAuthorizedBibleId(bibleId: string): boolean {
+    return [...this.apiBibleIds.values()].includes(bibleId)
+  }
+
+  getClient(apiKey: string): ApiBibleClient {
+    if (!this.client || this.clientKey !== apiKey) {
+      // A new key authorizes a different set of Bibles. Dropping the old ids
+      // stops a lookup from requesting a Bible this key cannot reach, which
+      // would come back 403 and purge otherwise valid cached content.
+      this.forgetAuthorizedIds()
+      this.client = this.clientFactory(apiKey)
+      this.clientKey = apiKey
+      this.lookup = null
+    }
+    return this.client
+  }
+
+  private forgetAuthorizedIds(): void {
+    this.apiBibleIds = new Map()
+    this.apiBibleIdsKey = null
+  }
+
+  /** Test seam: supply an `ApiBibleClient` built on a stub transport. */
+  setClientFactoryForTesting(factory: (apiKey: string) => ApiBibleClient): void {
+    this.clientFactory = factory
+    this.client = null
+    this.forgetAuthorizedIds()
   }
 
   private async lookupFromApiBible(
@@ -172,26 +365,31 @@ class ScriptureService {
     apiKey: string,
   ): Promise<ScriptureResult[]> {
     if (!this.db) return []
-    if (!this.apiBibleIds.has(translation)) await this.loadApiBibleIds(apiKey)
-    const bibleId = this.apiBibleIds.get(translation)
-    if (!bibleId) throw new Error(`${translation} is not authorized for this API.Bible key.`)
+    const bibleId = await this.resolveBibleId(translation, apiKey)
     const book = this.db.resolveBookName(ref.book)
     if (!book) return []
-    const usfm = USFM_BOOK_CODES[book.id - 1]
-    const start = `${usfm}.${ref.chapter}.${ref.verseStart}`
-    const passageId = ref.verseEnd ? `${start}-${usfm}.${ref.chapter}.${ref.verseEnd}` : start
-    const response = await axios.get(
-      `https://api.scripture.api.bible/v1/bibles/${encodeURIComponent(bibleId)}/passages/${passageId}`,
-      { headers: { 'api-key': apiKey }, timeout: 10_000, params: { 'content-type': 'text', 'include-notes': false, 'include-titles': false } },
-    )
-    const text = String(response.data?.data?.content ?? '').replace(/\s+/g, ' ').trim()
-    if (!text) return []
-    const end = ref.verseEnd ? `–${ref.verseEnd}` : ''
-    return [{
-      reference: `${book.name} ${ref.chapter}:${ref.verseStart}${end}`,
+    return this.getLookup(apiKey).lookupPassage({
+      bibleId,
       translation,
-      verses: [{ book: book.name, chapter: ref.chapter, verse: ref.verseStart, text }],
-    }]
+      book: { id: book.id, name: book.name },
+      chapter: ref.chapter,
+      verseStart: ref.verseStart,
+      verseEnd: ref.verseEnd,
+    })
+  }
+
+  /** One lookup per cache+key pair, so per-session access checks are not repeated. */
+  private getLookup(apiKey: string): ApiBibleLookup {
+    const client = this.getClient(apiKey)
+    if (!this.lookup) {
+      this.lookup = new ApiBibleLookup(
+        this.apiCache ?? NO_CACHE,
+        client,
+        Date.now,
+        this.sessionStartedAt,
+      )
+    }
+    return this.lookup
   }
 
   parseReference(input: string): {
@@ -228,9 +426,31 @@ class ScriptureService {
   }
 }
 
-export const scriptureService = new ScriptureService()
-
-const USFM_BOOK_CODES = [
-  'GEN','EXO','LEV','NUM','DEU','JOS','JDG','RUT','1SA','2SA','1KI','2KI','1CH','2CH','EZR','NEH','EST','JOB','PSA','PRO','ECC','SNG','ISA','JER','LAM','EZK','DAN','HOS','JOL','AMO','OBA','JON','MIC','NAM','HAB','ZEP','HAG','ZEC','MAL',
-  'MAT','MRK','LUK','JHN','ACT','ROM','1CO','2CO','GAL','EPH','PHP','COL','1TH','2TH','1TI','2TI','TIT','PHM','HEB','JAS','1PE','2PE','1JN','2JN','3JN','JUD','REV',
+const TRANSLATION_CATALOG: Array<[ScriptureTranslation, string, 'local' | 'api']> = [
+  ['NKJV', 'New King James Version', 'api'],
+  ['KJV', 'King James Version', 'local'],
+  ['BSB', 'Berean Standard Bible', 'local'],
+  ['WEB', 'World English Bible', 'local'],
+  ['ASV', 'American Standard Version', 'local'],
+  ['OEB', 'Open English Bible', 'local'],
+  ['NIV', 'New International Version', 'api'],
+  ['NLT', 'New Living Translation', 'api'],
+  ['NASB', 'New American Standard Bible', 'api'],
+  ['MSG', 'The Message', 'api'],
+  ['AMPC', 'Amplified Bible, Classic Edition', 'api'],
+  ['TPT', 'The Passion Translation', 'api'],
 ]
+
+/** Used when OS encryption is unavailable: lookups still work, nothing persists. */
+const NO_CACHE: ApiBibleLookupCache = {
+  getRange: () => null,
+  hasRange: () => false,
+  getTranslationState: () => null,
+  upsertTranslation: () => {},
+  putPassage: () => {},
+  markUnavailable: () => {},
+  getLastAccessCheck: () => Number.MAX_SAFE_INTEGER,
+  markAccessChecked: () => {},
+}
+
+export const scriptureService = new ScriptureService()

@@ -26,7 +26,7 @@ function adaptLibrary(items: PPLibraryItem[]): ProPresenterLibrary {
 }
 
 function adaptPlaylist(pp: PPPlaylist): ProPresenterPlaylist {
-  const items: ProPresenterPlaylistItem[] = pp.items.map((item) => ({
+  const items: ProPresenterPlaylistItem[] = (pp.items ?? []).map((item) => ({
     id: item.id.uuid,
     type: item.type === 'presentation' ? 'presentation'
          : item.type === 'video'        ? 'media'

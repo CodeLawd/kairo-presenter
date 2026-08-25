@@ -6,6 +6,25 @@ export interface ScriptureSuggestionGroup {
   suggestions: ScriptureSuggestion[];
 }
 
+export interface OperatorSuggestionSections {
+  current: ScriptureSuggestionGroup[];
+  history: ScriptureSuggestionGroup[];
+}
+
+export function partitionOperatorSuggestionGroups(
+  groups: ScriptureSuggestionGroup[],
+  _activeGroupId: string | null,
+  visibleGroupCount = 3,
+): OperatorSuggestionSections {
+  const newestFirst = [...groups].reverse();
+  const current = newestFirst.slice(0, Math.max(0, visibleGroupCount));
+  const currentIds = new Set(current.map((group) => group.id));
+  return {
+    current,
+    history: newestFirst.filter((group) => !currentIds.has(group.id)),
+  };
+}
+
 export interface ScriptureReadingProgress {
   matchedIndex: number;
   activeIndex: number;
@@ -62,6 +81,17 @@ export function groupScriptureSuggestions(
         (left.passageIndex ?? 0) - (right.passageIndex ?? 0),
     ),
   }));
+}
+
+export function navigateOperatorSuggestionId(
+  visibleIds: string[],
+  selectedId: string | null,
+  delta: -1 | 1,
+): string | null {
+  if (visibleIds.length === 0) return null;
+  const currentIndex = selectedId ? visibleIds.indexOf(selectedId) : -1;
+  if (currentIndex < 0) return visibleIds[0];
+  return visibleIds[Math.max(0, Math.min(visibleIds.length - 1, currentIndex + delta))];
 }
 
 export function findReadingProgress(
@@ -259,7 +289,7 @@ const SPOKEN_ALIASES: Record<string, string> = {
   unto: "to",
 };
 
-function tokenize(text: string): string[] {
+export function tokenize(text: string): string[] {
   return text
     .toLowerCase()
     .replace(/[^a-z0-9']+/g, " ")

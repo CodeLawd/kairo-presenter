@@ -9,10 +9,27 @@ import type {
   LyricsSectionType,
   LyricsSource,
   LyricsImportSource,
+  LyricsOnlineResult,
+  LyricsOnlinePreview,
+  LyricsProvider,
   SongPresentOptions,
 } from '@shared/ipc'
+import {
+  DEFAULT_IMPORT_SLIDE_LINES,
+  DEFAULT_MAX_CHARS_PER_LINE,
+  applyImportSlideBreaks,
+  preserveSlideBreaks,
+  splitIntoSlideChunks,
+} from '@shared/lyrics-slides'
+import { store } from '../../db'
 import { proPresenterService } from '../propresenter'
 import type { PPSlideGroupSpec } from '../propresenter/types'
+import { lyricsScraperService } from './scraper'
+import { lrclibService } from './lrclib'
+import { searchAllProviders } from './online'
+import { scrapeLyricsPage } from './web-lyrics'
+import { extractLyricLines } from './normalize'
+import { isSectionLine, parseSectionLabel, type SectionLabelResult } from './section-label'
 
 // ─── Internal types ───────────────────────────────────────────────────────────
 
@@ -22,6 +39,7 @@ interface InternalSection {
   /** 1-based ordinal within this type (Verse 1, Verse 2…) */
   index: number
   lines: string[]
+  lineColors?: (string | null)[]
 }
 
 interface Song {
@@ -37,12 +55,50 @@ interface Song {
   updatedAt: number
 }
 
-interface SectionLabelResult {
-  type: LyricsSectionType
-  index: number
+// ─── Section lines JSON (backward compatible) ─────────────────────────────────
+
+/** Persist lines; include colors only when at least one override is set. */
+function serializeSectionLines(lines: string[], lineColors?: (string | null)[]): string {
+  if (lineColors && lineColors.some((c) => Boolean(c?.trim()))) {
+    const colors = lines.map((_, i) => {
+      const c = lineColors[i]?.trim()
+      return c || null
+    })
+    return JSON.stringify({ lines, lineColors: colors })
+  }
+  return JSON.stringify(lines)
 }
 
-// ─── SQL ──────────────────────────────────────────────────────────────────────
+function parseSectionLines(raw: string): {
+  lines: string[]
+  lineColors?: (string | null)[]
+} {
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (Array.isArray(parsed)) {
+      return { lines: parsed.map((x) => String(x ?? '')) }
+    }
+    if (
+      parsed &&
+      typeof parsed === 'object' &&
+      Array.isArray((parsed as { lines?: unknown }).lines)
+    ) {
+      const obj = parsed as { lines: unknown[]; lineColors?: unknown[] }
+      const lines = obj.lines.map((x) => String(x ?? ''))
+      const rawColors = obj.lineColors
+      const lineColors = Array.isArray(rawColors)
+        ? lines.map((_, i) => {
+            const c = rawColors[i]
+            return typeof c === 'string' && c.trim() ? c.trim() : null
+          })
+        : undefined
+      return { lines, lineColors }
+    }
+  } catch {
+    /* fall through */
+  }
+  return { lines: [] }
+}
 
 const SQL_CREATE_SONGS = `
   CREATE TABLE IF NOT EXISTS songs (
@@ -116,130 +172,9 @@ interface FtsRow {
   lyrics: string
 }
 
-// ─── Section label parser ─────────────────────────────────────────────────────
-
-/**
- * Detects whether a line is a section header in any of these forms:
- *   [V1]  {V1}  (V1)   — bracketed short codes
- *   V1  C  B  PC  T  I  O  E  — raw short codes
- *   Verse 1  Chorus  Bridge  Pre-Chorus  Tag  Intro  Outro  Ending — English words
- *
- * Returns null if the line is not a section header.
- */
-function parseSectionLabel(rawLine: string): SectionLabelResult | null {
-  // Strip surrounding brackets / braces / parens and whitespace
-  const stripped = rawLine.replace(/^[\[\({]\s*|\s*[\]\)}]$/g, '').trim()
-  // Strip trailing colon
-  const line = stripped.replace(/:+\s*$/, '').trim()
-  if (!line) return null
-
-  const lower = line.toLowerCase().replace(/\s+/g, ' ')
-
-  // ── Verse ──────────────────────────────────────────────────────────────────
-  const verseMatch = lower.match(/^v(?:erse)?\.?\s*(\d*)$/)
-  if (verseMatch) {
-    const n = parseInt(verseMatch[1] || '1') || 1
-    return { type: 'verse', index: n }
-  }
-
-  // ── Chorus ─────────────────────────────────────────────────────────────────
-  const chorusMatch = lower.match(/^c(?:horus)?\.?\s*(\d*)$/)
-  if (chorusMatch) {
-    const n = parseInt(chorusMatch[1] || '1') || 1
-    return { type: 'chorus', index: n }
-  }
-
-  // ── Bridge ─────────────────────────────────────────────────────────────────
-  const bridgeMatch = lower.match(/^b(?:ridge)?\.?\s*(\d*)$/)
-  if (bridgeMatch) {
-    const n = parseInt(bridgeMatch[1] || '1') || 1
-    return { type: 'bridge', index: n }
-  }
-
-  // ── Pre-Chorus ─────────────────────────────────────────────────────────────
-  if (/^(?:pc|p\.?c\.?|pre[-\s]?c(?:ho(?:rus)?)?|prechorus)\.?\s*\d*$/.test(lower)) {
-    return { type: 'pre-chorus', index: 1 }
-  }
-
-  // ── Tag ────────────────────────────────────────────────────────────────────
-  if (/^t(?:ag)?\.?\s*\d*$/.test(lower)) {
-    return { type: 'tag', index: 1 }
-  }
-
-  // ── Intro ──────────────────────────────────────────────────────────────────
-  if (/^i(?:ntro(?:duction)?)?\.?\s*\d*$/.test(lower)) {
-    return { type: 'intro', index: 1 }
-  }
-
-  // ── Outro ──────────────────────────────────────────────────────────────────
-  if (/^o(?:utro)?\.?\s*\d*$/.test(lower)) {
-    return { type: 'outro', index: 1 }
-  }
-
-  // ── Ending ─────────────────────────────────────────────────────────────────
-  if (/^(?:e(?:nd(?:ing)?)?|ending)\.?\s*\d*$/.test(lower)) {
-    return { type: 'ending', index: 1 }
-  }
-
-  return null
-}
-
-/**
- * Returns true if the line looks like a section label in any supported form.
- */
-function isSectionLine(line: string): boolean {
-  const trimmed = line.trim()
-  if (!trimmed) return false
-  // Must be short — section labels are never full sentences
-  if (trimmed.length > 30) return false
-  // Check for explicit bracket forms first
-  if (/^[\[\({]/.test(trimmed)) return parseSectionLabel(trimmed) !== null
-  // Check for plain text labels (standalone lines like "Verse 1" or "Chorus")
-  return parseSectionLabel(trimmed) !== null
-}
+// ─── Section label parsing lives in ./section-label ───────────────────────────
 
 // ─── Text utilities ───────────────────────────────────────────────────────────
-
-/**
- * Soft-wraps a single line at word boundaries when it exceeds maxChars.
- * Never splits in the middle of a word.
- */
-function wrapLine(line: string, maxChars: number): string[] {
-  if (line.length <= maxChars) return [line]
-  const words = line.split(/\s+/)
-  const wrapped: string[] = []
-  let current = ''
-  for (const word of words) {
-    if (!current) {
-      current = word
-    } else if (current.length + 1 + word.length <= maxChars) {
-      current += ' ' + word
-    } else {
-      wrapped.push(current)
-      current = word
-    }
-  }
-  if (current) wrapped.push(current)
-  return wrapped.length > 0 ? wrapped : [line]
-}
-
-/**
- * Splits a list of (possibly long) lines into chunks of at most maxLines each,
- * respecting the soft character limit per line via word-wrapping.
- */
-function splitIntoSlideChunks(lines: string[], maxLines: number, maxChars: number): string[][] {
-  // Expand lines via word-wrap first
-  const expanded: string[] = []
-  for (const line of lines) {
-    expanded.push(...wrapLine(line, maxChars))
-  }
-  // Chunk into maxLines pages
-  const chunks: string[][] = []
-  for (let i = 0; i < expanded.length; i += maxLines) {
-    chunks.push(expanded.slice(i, i + maxLines))
-  }
-  return chunks.length > 0 ? chunks : [[]]
-}
 
 /** Canonical form of a block for duplicate detection (lowercase, no punctuation). */
 function canonicalize(lines: string[]): string {
@@ -247,6 +182,13 @@ function canonicalize(lines: string[]): string {
     .map((l) => l.toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim())
     .filter(Boolean)
     .join('\n')
+}
+
+/** Loose key for matching a remote result against the library (case/punctuation insensitive). */
+function songMatchKey(title: string, artist: string): string {
+  const norm = (value: string): string =>
+    value.toLowerCase().replace(/\(.*?\)/g, '').replace(/[^a-z0-9]/g, '')
+  return `${norm(title)}|${norm(artist)}`
 }
 
 /** Build a human label for a section type + index. */
@@ -491,18 +433,20 @@ class LyricsService {
     const typeCount = new Map<LyricsSectionType, number>()
 
     const flush = (): void => {
-      if (!currentLabel) return
-      const clean = currentLines.map((l) => l.trimEnd()).filter((_, i, a) => {
-        // Remove leading/trailing blank lines within section
-        if (i === 0 && !a[i]) return false
-        if (i === a.length - 1 && !a[i]) return false
-        return true
-      })
+      const clean = preserveSlideBreaks(currentLines)
       if (clean.length === 0) return
+
+      // Orphan lines before the first marker — keep as a verse instead of dropping.
+      const label = currentLabel ?? (() => {
+        const seen = (typeCount.get('verse') ?? 0) + 1
+        typeCount.set('verse', seen)
+        return { type: 'verse' as const, index: seen }
+      })()
+
       sections.push({
-        type:  currentLabel.type,
-        label: sectionLabel(currentLabel.type, currentLabel.index),
-        index: currentLabel.index,
+        type:  label.type,
+        label: sectionLabel(label.type, label.index),
+        index: label.index,
         lines: clean,
       })
     }
@@ -619,13 +563,13 @@ class LyricsService {
   /**
    * Converts a Song into ProPresenter slide groups ready for `createGroupedPresentation`.
    *
-   * Each section becomes one slide group. Long sections are split across
-   * multiple slides (max `linesPerSlide` lines each, word-wrapped at `maxCharsPerLine`).
+   * Each section becomes one slide group. Blank lines inside a section are the
+   * slide boundaries — the operator (or the import default) decides the split.
+   * Long lyric lines soft-wrap within a slide at `maxCharsPerLine`.
    * Copyright placement is controlled by `copyrightPosition`.
    */
   formatSlides(song: Song, options: SongPresentOptions = {}): PPSlideGroupSpec[] {
-    const linesPerSlide  = options.linesPerSlide  ?? 4
-    const maxCharsPerLine = options.maxCharsPerLine ?? 40
+    const maxCharsPerLine = options.maxCharsPerLine ?? DEFAULT_MAX_CHARS_PER_LINE
     const copyrightPos   = options.copyrightPosition ?? 'none'
     const copyrightText  = song.copyright.trim()
 
@@ -634,7 +578,7 @@ class LyricsService {
     let totalSlideCount = 0
 
     for (const section of song.sections) {
-      const chunks = splitIntoSlideChunks(section.lines, linesPerSlide, maxCharsPerLine)
+      const chunks = splitIntoSlideChunks(section.lines, maxCharsPerLine)
       const slides = chunks.map((chunk, chunkIdx) => {
         const label =
           chunks.length === 1
@@ -709,7 +653,7 @@ class LyricsService {
           sec.type,
           sec.label,
           sec.index,
-          JSON.stringify(sec.lines),
+          serializeSectionLines(sec.lines, sec.lineColors),
           i
         )
       }
@@ -743,7 +687,14 @@ class LyricsService {
       this.stmts.deleteSections.run(id)
       for (let i = 0; i < updates.sections.length; i++) {
         const sec = updates.sections[i]
-        this.stmts.insertSection.run(id, sec.type, sec.label, i + 1, JSON.stringify(sec.lines), i)
+        this.stmts.insertSection.run(
+          id,
+          sec.type,
+          sec.label,
+          i + 1,
+          serializeSectionLines(sec.lines, sec.lineColors),
+          i
+        )
       }
       this.stmts.deleteFts.run(id)
       this.stmts.insertFts.run(id, updates.title, updates.artist, lyricsText)
@@ -821,7 +772,119 @@ class LyricsService {
     return sorted
   }
 
+  // ─── Online search (tier 2) ──────────────────────────────────────────────────
+
+  /**
+   * Searches remote catalogues, then flags any result the library already holds
+   * so the UI can offer the local copy instead of importing a duplicate.
+   */
+  async searchOnline(query: string): Promise<LyricsOnlineResult[]> {
+    const results = await searchAllProviders(query, {
+      braveApiKey: store.get('lyrics')?.braveApiKey,
+    })
+    if (results.length === 0) return results
+
+    const owned = new Map<string, string>()
+    for (const song of this.getLibrary()) {
+      owned.set(songMatchKey(song.title, song.artist), song.id)
+    }
+
+    return results.map((result) => {
+      const existingSongId = owned.get(songMatchKey(result.title, result.artist))
+      return existingSongId ? { ...result, existingSongId } : result
+    })
+  }
+
+  /**
+   * Fetches and parses lyrics for a search hit without writing to the library.
+   * Operators use this to confirm the song before Import.
+   */
+  async previewOnline(source: {
+    provider: LyricsProvider
+    url: string
+    title: string
+    artist: string
+  }): Promise<LyricsOnlinePreview> {
+    log.info('[LyricsService] Preview online', {
+      provider: source.provider,
+      title: source.title,
+    })
+    const text = await this.fetchOnlineLyricsText(source)
+    const song = this.parseOnlineText(text, source.title, source.artist, source.provider)
+    return {
+      title: song.title,
+      artist: song.artist,
+      provider: source.provider,
+      url: source.url,
+      sections: song.sections.map((s) => ({
+        type: s.type,
+        label: s.label,
+        lines: s.lines,
+      })),
+    }
+  }
+
+  /**
+   * Parses provider text into sections. When markers/blocks yield nothing but
+   * lyric lines remain, fall back to a single verse so preview/import still work.
+   */
+  private parseOnlineText(
+    text: string,
+    title: string,
+    artist: string,
+    provider: LyricsProvider
+  ): Song {
+    const song = this.parseText(text, title, artist)
+    song.source = provider
+    if (song.sections.length > 0) return song
+
+    const lines = extractLyricLines(text)
+    if (lines.length === 0) {
+      throw new Error('No lyric text was found on this page.')
+    }
+
+    log.warn('[LyricsService] No sections parsed — using flat verse fallback', {
+      title,
+      lineCount: lines.length,
+      provider,
+    })
+    song.sections = [
+      {
+        type: 'verse',
+        label: 'Verse 1',
+        index: 1,
+        lines,
+      },
+    ]
+    return song
+  }
+
+  private async fetchOnlineLyricsText(source: {
+    provider: LyricsProvider
+    url: string
+    title?: string
+  }): Promise<string> {
+    if (source.provider === 'lrclib') {
+      return lrclibService.fetchLyrics(source.url)
+    }
+    if (source.provider === 'web') {
+      return (await scrapeLyricsPage(source.url)).lyrics
+    }
+    return lyricsScraperService.fetchLyrics(source.url, { title: source.title })
+  }
+
   // ─── Import dispatcher ───────────────────────────────────────────────────────
+
+  /**
+   * Fresh imports usually arrive as unbroken walls of text. Couplet them so the
+   * operator has editable slides from the start — unless the source already
+   * carried blank-line breaks of its own.
+   */
+  private applyImportSlideBreaks(song: Song): void {
+    for (const section of song.sections) {
+      section.lines = applyImportSlideBreaks(section.lines, DEFAULT_IMPORT_SLIDE_LINES)
+    }
+  }
 
   async importSong(source: LyricsImportSource): Promise<LyricsSong> {
     log.info('[LyricsService] Importing song', { type: source.type })
@@ -839,6 +902,7 @@ class LyricsService {
             return existing
           }
         }
+        this.applyImportSlideBreaks(song)
         this.addSong(song)
         const result = this.songToIPC(song)
         this.emitImported(result)
@@ -847,6 +911,26 @@ class LyricsService {
 
       if (source.type === 'text') {
         song = this.parseText(source.text, source.title, source.artist, source.copyright)
+        this.applyImportSlideBreaks(song)
+        this.addSong(song)
+        const result = this.songToIPC(song)
+        this.emitImported(result)
+        return result
+      }
+
+      if (source.type === 'online') {
+        // Re-check the library here as well as in searchOnline — the result list
+        // may have been on screen while the same song was imported another way.
+        const key = songMatchKey(source.title, source.artist)
+        const existing = this.getLibrary().find((s) => songMatchKey(s.title, s.artist) === key)
+        if (existing) {
+          log.info('[LyricsService] Online import already in library', { title: source.title })
+          return existing
+        }
+
+        const text = await this.fetchOnlineLyricsText(source)
+        song = this.parseOnlineText(text, source.title, source.artist, source.provider)
+        this.applyImportSlideBreaks(song)
         this.addSong(song)
         const result = this.songToIPC(song)
         this.emitImported(result)
@@ -1027,11 +1111,15 @@ class LyricsService {
   /** Convert the DB row + sections into the IPC-safe LyricsSong shape. */
   private rowToIPC(row: SongRow, db: BetterSqlite3.Database): LyricsSong {
     const sectionRows = this.stmts.listSections.all(row.id) as SectionRow[]
-    const sections: LyricsSongSection[] = sectionRows.map((s) => ({
-      type:  s.type as LyricsSectionType,
-      label: s.label,
-      lines: JSON.parse(s.lines) as string[],
-    }))
+    const sections: LyricsSongSection[] = sectionRows.map((s) => {
+      const parsed = parseSectionLines(s.lines)
+      return {
+        type:  s.type as LyricsSectionType,
+        label: s.label,
+        lines: parsed.lines,
+        ...(parsed.lineColors ? { lineColors: parsed.lineColors } : {}),
+      }
+    })
 
     return {
       id:          row.id,
@@ -1061,6 +1149,7 @@ class LyricsService {
         type:  s.type,
         label: s.label,
         lines: s.lines,
+        ...(s.lineColors ? { lineColors: s.lineColors } : {}),
       })),
       createdAt:   song.createdAt,
       updatedAt:   song.updatedAt,

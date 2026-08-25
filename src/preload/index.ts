@@ -2,6 +2,9 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import type {
+  AppBootstrapSnapshot,
+  ApiBibleDownloadProgress,
+  BootstrapProgress,
   ProAutomateAPI,
   ConnectOptions,
   ProPresenterStatus,
@@ -15,8 +18,12 @@ import type {
   ScriptureTranslation,
   TranscriptResult,
   InterimResult,
+  LivePlanState,
   LyricsSong,
   LyricsImportSource,
+  LyricsOnlineResult,
+  LyricsOnlinePreview,
+  LyricsSongSection,
   SongPresentOptions,
   AppSettings,
   OrchestratorConfig,
@@ -112,6 +119,18 @@ const audio: ProAutomateAPI['audio'] = {
   },
 }
 
+// ─── app ──────────────────────────────────────────────────────────────────────
+
+const appApi: ProAutomateAPI['app'] = {
+  bootstrap(): Promise<AppBootstrapSnapshot> {
+    return ipcRenderer.invoke(IPC.APP.BOOTSTRAP)
+  },
+
+  onBootstrapProgress(callback: (progress: BootstrapProgress) => void): Unsubscribe {
+    return subscribe<BootstrapProgress>(IPC.APP.BOOTSTRAP_PROGRESS, callback)
+  },
+}
+
 // ─── scripture ────────────────────────────────────────────────────────────────
 
 const scripture: ProAutomateAPI['scripture'] = {
@@ -135,8 +154,8 @@ const scripture: ProAutomateAPI['scripture'] = {
     return ipcRenderer.invoke(IPC.SCRIPTURE.SEARCH, query, translation)
   },
 
-  getTranslations() {
-    return ipcRenderer.invoke(IPC.SCRIPTURE.GET_TRANSLATIONS)
+  getTranslations(apiKey?: string) {
+    return ipcRenderer.invoke(IPC.SCRIPTURE.GET_TRANSLATIONS, apiKey)
   },
 
   setTranslation(translation: ScriptureTranslation): Promise<void> {
@@ -159,12 +178,48 @@ const scripture: ProAutomateAPI['scripture'] = {
     return ipcRenderer.invoke(IPC.SCRIPTURE.DELETE_SERMON_PLAN, planId)
   },
 
+  getLivePlan() {
+    return ipcRenderer.invoke(IPC.SCRIPTURE.GET_LIVE_PLAN)
+  },
+
+  setLivePlan(planId: string | null) {
+    return ipcRenderer.invoke(IPC.SCRIPTURE.SET_LIVE_PLAN, planId)
+  },
+
+  onLivePlanChange(callback: (state: LivePlanState) => void): Unsubscribe {
+    return subscribe<LivePlanState>(IPC.SCRIPTURE.LIVE_PLAN_CHANGED, callback)
+  },
+
   setAutoMode(enabled: boolean): Promise<void> {
     return ipcRenderer.invoke(IPC.SCRIPTURE.SET_AUTO_MODE, enabled)
   },
 
   setConfidenceThreshold(threshold: number): Promise<void> {
     return ipcRenderer.invoke(IPC.SCRIPTURE.SET_CONFIDENCE, threshold)
+  },
+
+  listOfflineTranslations() {
+    return ipcRenderer.invoke(IPC.SCRIPTURE.LIST_OFFLINE_TRANSLATIONS)
+  },
+
+  downloadTranslation(bibleId: string): Promise<void> {
+    return ipcRenderer.invoke(IPC.SCRIPTURE.DOWNLOAD_TRANSLATION, bibleId)
+  },
+
+  pauseTranslationDownload(bibleId: string): Promise<void> {
+    return ipcRenderer.invoke(IPC.SCRIPTURE.PAUSE_TRANSLATION_DOWNLOAD, bibleId)
+  },
+
+  refreshOfflineTranslation(bibleId: string): Promise<void> {
+    return ipcRenderer.invoke(IPC.SCRIPTURE.REFRESH_OFFLINE_TRANSLATION, bibleId)
+  },
+
+  removeOfflineTranslation(bibleId: string): Promise<void> {
+    return ipcRenderer.invoke(IPC.SCRIPTURE.REMOVE_OFFLINE_TRANSLATION, bibleId)
+  },
+
+  onOfflineDownloadProgress(callback: (value: ApiBibleDownloadProgress) => void): Unsubscribe {
+    return subscribe<ApiBibleDownloadProgress>(IPC.SCRIPTURE.OFFLINE_DOWNLOAD_PROGRESS, callback)
   },
 }
 
@@ -193,6 +248,19 @@ const transcription: ProAutomateAPI['transcription'] = {
 const lyrics: ProAutomateAPI['lyrics'] = {
   search(query: string): Promise<LyricsSong[]> {
     return ipcRenderer.invoke(IPC.LYRICS.SEARCH, query)
+  },
+
+  searchOnline(query: string): Promise<LyricsOnlineResult[]> {
+    return ipcRenderer.invoke(IPC.LYRICS.SEARCH_ONLINE, query)
+  },
+
+  previewOnline(source: {
+    provider: import('@shared/ipc').LyricsProvider
+    url: string
+    title: string
+    artist: string
+  }): Promise<LyricsOnlinePreview> {
+    return ipcRenderer.invoke(IPC.LYRICS.PREVIEW_ONLINE, source)
   },
 
   import(source: LyricsImportSource): Promise<LyricsSong> {
@@ -225,6 +293,18 @@ const lyrics: ProAutomateAPI['lyrics'] = {
 
   addToPlaylist(songId: string, playlistId: string): Promise<void> {
     return ipcRenderer.invoke(IPC.LYRICS.ADD_TO_PLAYLIST, songId, playlistId)
+  },
+
+  translateSections(
+    sections: LyricsSongSection[],
+    options?: {
+      target?: string
+      sourceLanguage?: string
+      title?: string
+      artist?: string
+    }
+  ): Promise<LyricsSongSection[]> {
+    return ipcRenderer.invoke(IPC.LYRICS.TRANSLATE, sections, options)
   },
 }
 
@@ -322,7 +402,7 @@ const ndi: ProAutomateAPI['ndi'] = {
 
 // ─── Expose ───────────────────────────────────────────────────────────────────
 
-const api: ProAutomateAPI = { propresenter, audio, scripture, transcription, lyrics, settings, orchestrator, resilience, ndi }
+const api: ProAutomateAPI = { app: appApi, propresenter, audio, scripture, transcription, lyrics, settings, orchestrator, resilience, ndi }
 
 if (process.contextIsolated) {
   try {

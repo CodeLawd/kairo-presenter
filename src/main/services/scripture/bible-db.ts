@@ -2,6 +2,54 @@ import Database from 'better-sqlite3'
 import type BetterSqlite3 from 'better-sqlite3'
 import log from 'electron-log/main'
 
+/** Tiny words that drown phrase FTS (e.g. “love is patient”). */
+const FTS_STOPWORDS = new Set([
+  'a', 'an', 'the', 'and', 'or', 'of', 'to', 'in', 'on', 'at', 'by', 'for',
+  'is', 'are', 'was', 'were', 'be', 'been', 'as', 'it', 'he', 'she', 'we', 'they',
+  'my', 'me', 'his', 'her', 'our', 'your', 'their',
+])
+
+function significantSearchTokens(query: string): string[] {
+  return query
+    .toLowerCase()
+    .replace(/["*^(){}]/g, ' ')
+    .split(/\s+/)
+    .filter((token) => token.length > 2 && !FTS_STOPWORDS.has(token))
+}
+
+/** Prefer near-exact remembered phrases (Psalm 23) over loose token hits. */
+function scorePhraseMatch(text: string, query: string, tokens: string[]): number {
+  const hay = text
+    .toLowerCase()
+    .replace(/\{[^}]+\}/g, ' ')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  const needle = query
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (!hay || !needle) return 0
+  if (hay.includes(needle)) return 1000
+  if (tokens.length >= 2) {
+    const compact = tokens.join(' ')
+    if (hay.includes(compact)) return 900
+    // Tokens in order with gaps: "lord … shepherd"
+    let from = 0
+    let inOrder = 0
+    for (const token of tokens) {
+      const at = hay.indexOf(token, from)
+      if (at < 0) break
+      inOrder += 1
+      from = at + token.length
+    }
+    if (inOrder === tokens.length) return 500 + inOrder * 20
+    return inOrder * 15
+  }
+  return tokens.some((token) => hay.includes(token)) ? 10 : 0
+}
+
 // ─── Public types ─────────────────────────────────────────────────────────────
 
 export interface BibleVerse {
@@ -372,16 +420,54 @@ export class BibleDatabase {
 
   searchText(query: string, translation?: string, limit = 50): BibleVerse[] {
     const tx = translation ?? null
-    try {
-      // FTS5 match — escape special chars
-      const ftsQuery = query.replace(/["*^()]/g, ' ').trim()
-      const rows = this.stmts.searchFts.all(ftsQuery, tx, tx) as VerseRow[]
-      return rows.slice(0, limit).map(rowToVerse)
-    } catch {
-      // Fall back to LIKE if FTS query is malformed
-      const rows = this.stmts.searchLike.all(`%${query}%`, tx, tx) as VerseRow[]
-      return rows.slice(0, limit).map(rowToVerse)
+    const cleaned = query.replace(/["*^()]/g, ' ').replace(/\s+/g, ' ').trim()
+    if (!cleaned) return []
+
+    const tokens = significantSearchTokens(cleaned)
+    const ftsQuery = tokens.length > 0 ? tokens.join(' ') : cleaned
+    const seen = new Set<string>()
+    const scored: Array<{ verse: BibleVerse; score: number }> = []
+
+    const pushRows = (rows: VerseRow[]): void => {
+      for (const row of rows) {
+        const key = `${row.translation_id}:${row.book_id}:${row.chapter}:${row.verse}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        const verse = rowToVerse(row)
+        const score = scorePhraseMatch(verse.text, cleaned, tokens)
+        if (score <= 0 && tokens.length >= 2) continue
+        scored.push({ verse, score })
+      }
     }
+
+    try {
+      pushRows(this.stmts.searchFts.all(ftsQuery, tx, tx) as VerseRow[])
+    } catch {
+      // Fall through to LIKE
+    }
+
+    // Exact-ish phrase pass (helps when FTS token order is noisy).
+    if (tokens.length >= 2) {
+      const likeNeedle = `%${tokens.join('%')}%`
+      try {
+        pushRows(this.stmts.searchLike.all(likeNeedle, tx, tx) as VerseRow[])
+      } catch {
+        // ignore
+      }
+    }
+
+    if (scored.length === 0) {
+      try {
+        pushRows(this.stmts.searchLike.all(`%${cleaned}%`, tx, tx) as VerseRow[])
+      } catch {
+        // ignore
+      }
+    }
+
+    return scored
+      .sort((left, right) => right.score - left.score)
+      .slice(0, limit)
+      .map((item) => item.verse)
   }
 
   resolveBookName(input: string): BibleBook | null {

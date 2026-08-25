@@ -175,8 +175,9 @@ export class ProPresenterClient extends EventEmitter {
   private startStream(): void {
     if (this.streamReq) return
 
-    // PP20 uses POST /v1/status/updates with a body specifying which streams to aggregate
-    const streamBody = JSON.stringify({ url: '/v1/presentation/active' })
+    // POST /v1/status/updates takes an array of bare status paths to aggregate.
+    // Anything else — an object, or paths carrying the /v1/ prefix — is a 400.
+    const streamBody = JSON.stringify(['presentation/active'])
     const options: http.RequestOptions = {
       hostname: this.host,
       port: this.port,
@@ -396,10 +397,31 @@ export class ProPresenterClient extends EventEmitter {
     }
   }
 
+  /**
+   * Lists presentations in one library, or across every library when no id is
+   * given. There is no endpoint that returns all presentations at once —
+   * `/v1/library` is a 404 — so the aggregate case fans out over `/v1/libraries`.
+   */
   async getLibrary(libraryId?: string): Promise<PPLibraryItem[]> {
+    if (!libraryId) {
+      const libraries = await this.getLibraries()
+      const items: PPLibraryItem[] = []
+      const seen = new Set<string>()
+      for (const library of libraries) {
+        const id = library.id.uuid || library.id.name
+        if (!id) continue
+        for (const item of await this.getLibrary(id)) {
+          const key = item.id.uuid || `${library.id.name}/${item.id.name}`
+          if (seen.has(key)) continue
+          seen.add(key)
+          items.push(item)
+        }
+      }
+      return items
+    }
+
     try {
-      const path = libraryId ? `/v1/library/${encodeURIComponent(libraryId)}` : '/v1/library'
-      const { data } = await this.http.get<any>(path)
+      const { data } = await this.http.get<any>(`/v1/library/${encodeURIComponent(libraryId)}`)
       // PP returns {update_type, items: [{uuid, name, index}]} — normalize to PPLibraryItem shape
       const raw: any[] = Array.isArray(data) ? data : (data?.items ?? [])
       return raw.map((item) => ({
@@ -480,8 +502,20 @@ export class ProPresenterClient extends EventEmitter {
 
   async getPlaylists(): Promise<PPPlaylist[]> {
     try {
-      const { data } = await this.http.get<PPPlaylist[]>('/v1/playlists')
-      return Array.isArray(data) ? data : []
+      const { data } = await this.http.get<unknown>('/v1/playlists')
+      // Index payload is usually a flat array of { id }; sometimes wrapped.
+      // Items live on GET /v1/playlist/{id} — do not assume they are here.
+      const raw: unknown[] = Array.isArray(data)
+        ? data
+        : Array.isArray((data as { data?: unknown[] } | null)?.data)
+          ? ((data as { data: unknown[] }).data)
+          : Array.isArray((data as { playlists?: unknown[] } | null)?.playlists)
+            ? ((data as { playlists: unknown[] }).playlists)
+            : []
+      return raw.filter((entry): entry is PPPlaylist => {
+        const id = (entry as PPPlaylist | null)?.id
+        return Boolean(id?.uuid && id?.name != null)
+      })
     } catch (err) {
       this.logAxiosError('getPlaylists', err)
       return []

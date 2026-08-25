@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { cn } from "@/lib/utils";
 import {
-  formatOverlayReference,
+  formatCardReference,
   formatOverlayVerseText,
 } from "@shared/overlay-content";
 import { renderOverlayHTML } from "@shared/overlay-template";
@@ -31,7 +31,6 @@ export interface VerseThemePreviewProps {
 export function VerseThemePreview({
   result,
   theme,
-  showTranslation,
   showVerseNumbers,
   maxVerses,
   width,
@@ -42,11 +41,7 @@ export function VerseThemePreview({
   onSelect,
   cardRef,
 }: VerseThemePreviewProps): React.ReactElement {
-  const reference = formatOverlayReference(
-    result.reference,
-    result.translation,
-    showTranslation,
-  );
+  const reference = formatCardReference(result.reference);
   const text = formatOverlayVerseText(result.verses, {
     showVerseNumbers,
     maxVerses,
@@ -101,28 +96,31 @@ export function VerseThemePreview({
         )}
       </div>
 
-      <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-1 p-1.5">
+      <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-start gap-1 p-1.5">
         <span className="rounded bg-black/55 px-1.5 py-0.5 font-sans text-[9px] font-bold uppercase tracking-wider text-slate-200 backdrop-blur-sm">
           {result.translation}
         </span>
-        <div className="flex items-center gap-1">
+      </div>
+
+      {(sendStatus === "sending" || sendStatus === "error" || showLiveBadge) && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-center p-1.5">
           {sendStatus === "sending" && (
-            <span className="rounded-full bg-slate-600/80 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-slate-100 backdrop-blur-sm">
+            <span className="rounded-full bg-slate-900/85 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-slate-100 shadow-sm ring-1 ring-white/10 backdrop-blur-sm">
               Sending
             </span>
           )}
           {sendStatus === "error" && (
-            <span className="rounded-full bg-red-500/80 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white backdrop-blur-sm">
+            <span className="rounded-full bg-red-600/90 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white shadow-sm backdrop-blur-sm">
               Failed
             </span>
           )}
           {showLiveBadge && sendStatus !== "sending" && sendStatus !== "error" && (
-            <span className="rounded-full bg-teal-500/90 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white backdrop-blur-sm">
+            <span className="rounded-full bg-teal-500/95 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white shadow-sm ring-1 ring-teal-300/30 backdrop-blur-sm">
               Live
             </span>
           )}
         </div>
-      </div>
+      )}
     </button>
   );
 }

@@ -2,6 +2,7 @@ import { EventEmitter } from "events";
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import log from "electron-log/main";
+import { matchPlanQuote, type SermonPlanIndex } from "@shared/sermon-plan-match";
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -15,6 +16,13 @@ export interface ScriptureReference {
   confidence: number;
   detectionType: DetectionType;
   sourceText: string;
+}
+
+/** Chapter-only model guesses may be reviewed, but verse 1 is only a schema placeholder. */
+export function canAutoPresentScriptureReference(
+  ref: ScriptureReference,
+): boolean {
+  return ref.detectionType !== "partial";
 }
 
 export interface DetectorConfig {
@@ -94,6 +102,10 @@ const DEFAULT_TIMEOUT = 15_000;
 const MAX_RETRIES = 3;
 const RETRY_BASE_MS = 1_000;
 const SOURCE_TEXT_MAX_CHARS = 150; // ~15 words
+/** Rolling speech kept for plan-quote matching — mirrors the Operator's reading window. */
+const PLAN_QUOTE_WINDOW_CHARS = 600;
+/** A gap this long means the preacher moved on; stale half-verses must not match. */
+const PLAN_QUOTE_WINDOW_TTL_MS = 60_000;
 
 // ─── System prompt ────────────────────────────────────────────────────────────
 
@@ -336,6 +348,12 @@ export class ScriptureDetector extends EventEmitter {
     updatedAt: number;
   } | null = null;
 
+  // Live sermon-playlist matching. Held as a provider rather than a snapshot so
+  // re-selecting or editing the playlist takes effect without re-wiring.
+  private planIndexProvider: (() => SermonPlanIndex | null) | null = null;
+  private planQuoteWindow = "";
+  private planQuoteWindowAt = 0;
+
   // Dedup cache: normalized ref key → reference + expiry timestamp. Keeping the
   // interval lets a later single-verse detection overlap a previously-detected
   // passage range (and vice versa) instead of appearing as a duplicate card.
@@ -476,6 +494,8 @@ export class ScriptureDetector extends EventEmitter {
       }
     }
     if (explicit.length === 0) return false;
+    // A spoken citation supersedes whatever reading was in progress.
+    this.resetPlanQuoteWindow();
     const deduplicated = this.filterDedup(explicit);
     this.statsData.cacheHits += explicit.length - deduplicated.length;
     if (deduplicated.length > 0) {
@@ -484,6 +504,67 @@ export class ScriptureDetector extends EventEmitter {
     }
     this.emit("stats", this.getStats());
     return true;
+  }
+
+  /** Supplies the live sermon-playlist index used by {@link analyzePlanQuote}. */
+  setPlanIndexProvider(provider: (() => SermonPlanIndex | null) | null): void {
+    this.planIndexProvider = provider;
+    if (!provider) this.resetPlanQuoteWindow();
+  }
+
+  /**
+   * Matches recent speech against the live playlist's verse text, so a verse the
+   * preacher starts reading resolves without waiting for the LLM. Returns true
+   * when a detection was emitted.
+   *
+   * Emissions go through the same dedup cache as every other path, so a spoken
+   * citation for the same passage — before or after — is never duplicated.
+   */
+  analyzePlanQuote(text: string): boolean {
+    const index = this.planIndexProvider?.() ?? null;
+    if (!index || !text.trim()) return false;
+
+    const now = Date.now();
+    if (now - this.planQuoteWindowAt > PLAN_QUOTE_WINDOW_TTL_MS) {
+      this.planQuoteWindow = "";
+    }
+    this.planQuoteWindowAt = now;
+    this.planQuoteWindow = `${this.planQuoteWindow} ${text}`
+      .trim()
+      .slice(-PLAN_QUOTE_WINDOW_CHARS);
+
+    const match = matchPlanQuote(index, this.planQuoteWindow);
+    if (!match) return false;
+
+    const { verse } = match.entry;
+    const ref: ScriptureReference = {
+      book: verse.book,
+      chapter: verse.chapter,
+      verseStart: verse.verse,
+      confidence: Math.min(0.95, match.coverage),
+      detectionType: "quote",
+      // Must be the current segment, not the rolling window: the Operator finds
+      // the transcript line to highlight by substring-matching triggerText.
+      sourceText: text.slice(0, SOURCE_TEXT_MAX_CHARS),
+    };
+
+    const deduplicated = this.filterDedup([ref]);
+    this.resetPlanQuoteWindow();
+    if (deduplicated.length === 0) {
+      this.statsData.cacheHits += 1;
+      this.emit("stats", this.getStats());
+      return false;
+    }
+
+    this.statsData.totalDetections += deduplicated.length;
+    this.emit("detection", deduplicated);
+    this.emit("stats", this.getStats());
+    return true;
+  }
+
+  private resetPlanQuoteWindow(): void {
+    this.planQuoteWindow = "";
+    this.planQuoteWindowAt = 0;
   }
 
   reconfigure(config: Partial<DetectorConfig>): void {
@@ -1070,6 +1151,19 @@ function normalizeWordNumbers(text: string): string {
 
   let normalized = text.toLowerCase();
   normalized = normalized.replace(/\bchapter\s+number\s+/g, "chapter ");
+
+  // Deepgram occasionally joins one half of a spoken compound number while
+  // rendering the other half differently: "2four" / "twenty4" for 24.
+  normalized = normalized.replace(
+    /\b([2-9])(one|two|three|four|five|six|seven|eight|nine)\b/g,
+    (_match, tensDigit: string, unit: string) =>
+      String(Number(tensDigit) * 10 + Number(wordsMap[unit])),
+  );
+  normalized = normalized.replace(
+    /\b(twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)([1-9])\b/g,
+    (_match, tens: string, unitDigit: string) =>
+      String(Number(wordsMap[tens]) + Number(unitDigit)),
+  );
 
   // STT commonly spells numbered book prefixes as ordinals. Restrict this
   // conversion to canonical numbered-book names so ordinary sermon phrases

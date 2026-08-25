@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, protocol, net } from 'electron'
+import { app, BrowserWindow, Menu, shell, protocol, net } from 'electron'
 import { join, resolve } from 'path'
 import { pathToFileURL } from 'url'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -9,6 +9,7 @@ import { registerIpcHandlers } from './ipc'
 import { initDatabase, store } from './db'
 import { lyricsService } from './services/lyrics'
 import { scriptureService } from './services/scripture'
+import { initOfflineBibles } from './services/scripture/offline-bibles'
 import { proPresenterService } from './services/propresenter'
 import { ndiService } from './services/ndi'
 import { overlayWindow } from './services/ndi/overlay-window'
@@ -56,6 +57,51 @@ function registerPaMediaProtocol(): void {
   })
 }
 
+function setupApplicationMenu(): void {
+  // Standard Edit roles (Select All, Copy, Paste, …) must live on the app menu
+  // or their accelerators never reach focused inputs in Electron.
+  const isMac = process.platform === 'darwin'
+  const template: Electron.MenuItemConstructorOptions[] = [
+    ...(isMac
+      ? [{
+          label: app.name,
+          submenu: [
+            { role: 'about' as const },
+            { type: 'separator' as const },
+            { role: 'services' as const },
+            { type: 'separator' as const },
+            { role: 'hide' as const },
+            { role: 'hideOthers' as const },
+            { role: 'unhide' as const },
+            { type: 'separator' as const },
+            { role: 'quit' as const },
+          ],
+        }]
+      : []),
+    {
+      label: 'File',
+      submenu: [isMac ? { role: 'close' } : { role: 'quit' }],
+    },
+    { role: 'editMenu' },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { role: 'toggleDevTools' },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' },
+      ],
+    },
+    { role: 'windowMenu' },
+  ]
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template))
+}
+
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
     width: 1280,
@@ -93,6 +139,7 @@ function createWindow(): void {
 
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.proautomate')
+  setupApplicationMenu()
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
@@ -103,6 +150,7 @@ app.whenReady().then(() => {
   lyricsService.open()
   scriptureService.open()
   scriptureService.setDefaultTranslation(store.get('scripture').defaultTranslation)
+  initOfflineBibles()
   registerIpcHandlers()
 
   // M0: start the NDI sender unconditionally on launch (hardcoded transparent

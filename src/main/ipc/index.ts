@@ -10,12 +10,15 @@ import { audioService } from "../services/audio";
 import { sttService } from "../services/stt";
 import { scriptureService } from "../services/scripture";
 import { extractScriptureReferences, readSermonDocument, sermonPlanStore } from "../services/scripture/sermon-plans";
+import { livePlanService } from "../services/scripture/live-plan";
+import { getDownloadManager, hasDownloadManager } from "../services/scripture/offline-bibles";
 import path from "path";
 import { lyricsService } from "../services/lyrics";
 import { orchestrator } from "../orchestrator";
 import { resilienceManager } from "../services/resilience";
 import { ndiService } from "../services/ndi";
 import { allowPickedOverlayMedia } from "../services/ndi/media-allowlist";
+import { runBootstrap } from "../bootstrap";
 
 // ─── Broadcast helper ─────────────────────────────────────────────────────────
 
@@ -126,8 +129,11 @@ function registerScriptureHandlers(): void {
     return scriptureService.search(query, translation, store.get('stt').bibleApiKey);
   });
 
-  ipcMain.handle(IPC.SCRIPTURE.GET_TRANSLATIONS, async () => {
-    return scriptureService.getTranslationOptions(store.get('stt').bibleApiKey);
+  ipcMain.handle(IPC.SCRIPTURE.GET_TRANSLATIONS, async (_event, apiKey?: string) => {
+    return scriptureService.getTranslationOptions(
+      apiKey ?? store.get('stt').bibleApiKey,
+      apiKey !== undefined,
+    );
   });
 
   ipcMain.handle(IPC.SCRIPTURE.IMPORT_SERMON_NOTES, async () => {
@@ -149,13 +155,34 @@ function registerScriptureHandlers(): void {
   });
 
   ipcMain.handle(IPC.SCRIPTURE.LIST_SERMON_PLANS, () => sermonPlanStore.list());
-  ipcMain.handle(IPC.SCRIPTURE.SAVE_SERMON_PLAN, (_event, plan) => sermonPlanStore.save(plan));
-  ipcMain.handle(IPC.SCRIPTURE.DELETE_SERMON_PLAN, (_event, planId: string) => sermonPlanStore.delete(planId));
+
+  // Every playlist edit in the Scripture tab funnels through save/delete, so
+  // refreshing here is all that keeps the live index from going stale.
+  ipcMain.handle(IPC.SCRIPTURE.SAVE_SERMON_PLAN, (_event, plan) => {
+    const saved = sermonPlanStore.save(plan);
+    livePlanService.refresh(saved.id);
+    return saved;
+  });
+
+  ipcMain.handle(IPC.SCRIPTURE.DELETE_SERMON_PLAN, (_event, planId: string) => {
+    sermonPlanStore.delete(planId);
+    livePlanService.handleDeleted(planId);
+  });
+
+  ipcMain.handle(IPC.SCRIPTURE.GET_LIVE_PLAN, () => livePlanService.getState());
+
+  ipcMain.handle(
+    IPC.SCRIPTURE.SET_LIVE_PLAN,
+    (_event, planId: string | null) => livePlanService.setPlan(planId),
+  );
 
   ipcMain.handle(
     IPC.SCRIPTURE.SET_TRANSLATION,
     async (_event, translation: string) => {
       scriptureService.setDefaultTranslation(translation);
+      orchestrator.setScriptureTranslation(
+        translation as AppSettings["scripture"]["defaultTranslation"],
+      );
       await store.set("scripture", {
         ...store.get("scripture"),
         defaultTranslation: translation,
@@ -167,6 +194,7 @@ function registerScriptureHandlers(): void {
     IPC.SCRIPTURE.SET_AUTO_MODE,
     async (_event, enabled: boolean) => {
       scriptureService.setAutoMode(enabled);
+      orchestrator.setAutoMode(enabled);
       await store.set("scripture", {
         ...store.get("scripture"),
         autoMode: enabled,
@@ -174,10 +202,44 @@ function registerScriptureHandlers(): void {
     },
   );
 
+  // ── Offline API.Bible cache ────────────────────────────────────────────────
+  // Every id crossing this boundary is validated against the list the saved key
+  // is authorized for; the renderer never sees the key, cache path, or ciphertext.
+
+  ipcMain.handle(IPC.SCRIPTURE.LIST_OFFLINE_TRANSLATIONS, async () =>
+    hasDownloadManager() ? await getDownloadManager().listOfflineTranslations() : [],
+  );
+
+  // Resolves once the download has *started*; chapter-by-chapter progress is
+  // pushed, so the renderer stays responsive (and can pause) while it runs.
+  ipcMain.handle(IPC.SCRIPTURE.DOWNLOAD_TRANSLATION, async (_event, bibleId: string) => {
+    await scriptureService.ensureAuthorizedBibleId(bibleId, store.get("stt").bibleApiKey);
+    await getDownloadManager().startDownloadInBackground(bibleId);
+  });
+
+  ipcMain.handle(IPC.SCRIPTURE.PAUSE_TRANSLATION_DOWNLOAD, (_event, bibleId: string) => {
+    getDownloadManager().pauseDownload(bibleId);
+  });
+
+  ipcMain.handle(IPC.SCRIPTURE.REFRESH_OFFLINE_TRANSLATION, async (_event, bibleId: string) => {
+    await scriptureService.ensureAuthorizedBibleId(bibleId, store.get("stt").bibleApiKey);
+    await getDownloadManager().refreshInBackground(bibleId);
+  });
+
+  // Removal must keep working after access is revoked, so it validates against
+  // what is cached rather than against the live authorization list.
+  ipcMain.handle(IPC.SCRIPTURE.REMOVE_OFFLINE_TRANSLATION, (_event, bibleId: string) => {
+    const manager = getDownloadManager();
+    const known = manager.hasCachedTranslation(bibleId);
+    if (!known) throw new Error("That Bible has no cached content to remove.");
+    manager.removeTranslation(bibleId);
+  });
+
   ipcMain.handle(
     IPC.SCRIPTURE.SET_CONFIDENCE,
     async (_event, threshold: number) => {
       scriptureService.setConfidenceThreshold(threshold);
+      orchestrator.setConfidenceThreshold(threshold);
       await store.set("scripture", {
         ...store.get("scripture"),
         confidenceThreshold: threshold,
@@ -237,6 +299,20 @@ function registerLyricsHandlers(): void {
     return lyricsService.search(query);
   });
 
+  ipcMain.handle(IPC.LYRICS.SEARCH_ONLINE, async (_event, query: string) => {
+    return lyricsService.searchOnline(query);
+  });
+
+  ipcMain.handle(
+    IPC.LYRICS.PREVIEW_ONLINE,
+    async (
+      _event,
+      source: { provider: import("@shared/ipc").LyricsProvider; url: string; title: string; artist: string },
+    ) => {
+      return lyricsService.previewOnline(source);
+    },
+  );
+
   ipcMain.handle(IPC.LYRICS.IMPORT, async (_event, source) => {
     return lyricsService.importSong(source);
   });
@@ -269,6 +345,36 @@ function registerLyricsHandlers(): void {
     IPC.LYRICS.ADD_TO_PLAYLIST,
     async (_event, songId: string, playlistId: string) => {
       lyricsService.addToPlaylist(songId, playlistId);
+    },
+  );
+
+  ipcMain.handle(
+    IPC.LYRICS.TRANSLATE,
+    async (
+      _event,
+      sections: import("@shared/ipc").LyricsSongSection[],
+      options?: {
+        target?: string;
+        sourceLanguage?: string;
+        title?: string;
+        artist?: string;
+      },
+    ) => {
+      const lyrics = store.get("lyrics");
+      const stt = store.get("stt");
+      const provider = stt.llmProvider === "deepseek" ? "deepseek" : "anthropic";
+      const llmKey =
+        provider === "deepseek" ? stt.deepseekApiKey?.trim() : stt.anthropicApiKey?.trim();
+      const { translateSections } = await import("../services/lyrics/translate");
+      return translateSections(sections, {
+        apiKey: lyrics.googleTranslateApiKey ?? "",
+        braveApiKey: lyrics.braveApiKey,
+        target: options?.target ?? "en",
+        sourceLanguage: options?.sourceLanguage ?? "auto",
+        title: options?.title,
+        artist: options?.artist,
+        llm: llmKey ? { provider, apiKey: llmKey } : null,
+      });
     },
   );
 }
@@ -352,6 +458,15 @@ function registerSettingsHandlers(): void {
       } else {
         store.set(key, value);
       }
+      if (key === "scripture") {
+        const scripture = value as AppSettings["scripture"];
+        scriptureService.setDefaultTranslation(scripture.defaultTranslation);
+        scriptureService.setAutoMode(scripture.autoMode);
+        scriptureService.setConfidenceThreshold(scripture.confidenceThreshold);
+        orchestrator.setScriptureTranslation(scripture.defaultTranslation);
+        orchestrator.setAutoMode(scripture.autoMode);
+        orchestrator.setConfidenceThreshold(scripture.confidenceThreshold);
+      }
       log.debug("Setting updated", { key });
     },
   );
@@ -377,9 +492,19 @@ function wireEventBroadcasting(): void {
     broadcast(IPC.TRANSCRIPTION.INTERIM, result);
   });
 
+  livePlanService.onChange((state) => {
+    broadcast(IPC.SCRIPTURE.LIVE_PLAN_CHANGED, state);
+  });
+
   scriptureService.onSuggestion((suggestion) => {
     broadcast(IPC.SCRIPTURE.SUGGESTION, suggestion);
   });
+
+  if (hasDownloadManager()) {
+    getDownloadManager().onProgress((progress) => {
+      broadcast(IPC.SCRIPTURE.OFFLINE_DOWNLOAD_PROGRESS, progress);
+    });
+  }
 
   orchestrator.onStatus((status) => {
     broadcast(IPC.ORCHESTRATOR.STATUS, status);
@@ -394,9 +519,50 @@ function wireEventBroadcasting(): void {
   });
 }
 
+// ─── Startup bootstrap ────────────────────────────────────────────────────────
+
+function registerAppHandlers(): void {
+  // One round trip for everything the first render needs. Only local resources
+  // are awaited — API.Bible authorization, audio devices, NDI, and the
+  // ProPresenter connection hydrate in the background afterwards.
+  ipcMain.handle(IPC.APP.BOOTSTRAP, async (event) => {
+    const sender = event.sender;
+    const snapshot = await runBootstrap(
+      {
+        settings: async () => ({
+          ...store.store,
+          overlay: normalizeOverlaySettings(store.get("overlay")),
+        }),
+        orchestrator: async () => orchestrator.getStatus(),
+        propresenter: async () => proPresenterService.getStatus(),
+        transcription: async () => sttService.getHistory(),
+        // Cached/local availability only: passing no key keeps this off the network.
+        translations: () => scriptureService.getTranslationOptions(),
+        sermonPlans: async () => sermonPlanStore.list(),
+        livePlan: async () => livePlanService.getState(),
+        lyrics: async () => lyricsService.getLibrary(),
+      },
+      {
+        onProgress: (progress) => {
+          if (!sender.isDestroyed()) sender.send(IPC.APP.BOOTSTRAP_PROGRESS, progress);
+        },
+      },
+    );
+    if (snapshot.errors.length > 0) {
+      log.warn("[Bootstrap] Completed with failures", snapshot.errors);
+    } else {
+      log.info("[Bootstrap] Completed");
+    }
+    return snapshot;
+  });
+}
+
 // ─── Entry point ──────────────────────────────────────────────────────────────
 
 export function registerIpcHandlers(): void {
+  // Restore the persisted reference playlist before any transcript can arrive.
+  livePlanService.init();
+  registerAppHandlers();
   registerProPresenterHandlers();
   registerAudioHandlers();
   registerScriptureHandlers();

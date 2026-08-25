@@ -9,6 +9,11 @@ export function formatOverlayReference(
   return showTranslation ? `${reference} (${translation})` : reference;
 }
 
+/** Card header reference; translation is already displayed in its own badge. */
+export function formatCardReference(reference: string): string {
+  return reference;
+}
+
 /**
  * Verse body text as shown on the live overlay — verse numbers when enabled
  * for multi-verse payloads, optional maxVerses truncation.

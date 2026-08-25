@@ -30,8 +30,37 @@
       // Populated by the main process via
       // webContents.executeJavaScript('window.__setContent(...)') with the
       // output of renderOverlayHTML() (src/lib/overlay-template.ts).
+      function fitVerse() {
+        var box = document.querySelector('.pa-verse-box');
+        var verse = document.querySelector('.pa-verse');
+        if (!box || !verse || box.getAttribute('data-auto-fit') !== 'true') return;
+        var min = 12;
+        var max = parseFloat(box.getAttribute('data-max-font-px') || '200') || 200;
+        var lo = min;
+        var hi = max;
+        var best = min;
+        function overflows(px) {
+          verse.style.fontSize = px + 'px';
+          return verse.scrollHeight > box.clientHeight + 1 || verse.scrollWidth > box.clientWidth + 1;
+        }
+        if (overflows(min)) {
+          verse.style.fontSize = min + 'px';
+          return;
+        }
+        while (lo <= hi) {
+          var mid = Math.floor((lo + hi) / 2);
+          if (!overflows(mid)) {
+            best = mid;
+            lo = mid + 1;
+          } else {
+            hi = mid - 1;
+          }
+        }
+        verse.style.fontSize = best + 'px';
+      }
       window.__setContent = function (html) {
         document.getElementById('root').innerHTML = html;
+        fitVerse();
       };
     </script>
   </body>

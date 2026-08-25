@@ -72,16 +72,34 @@ export async function readSermonDocument(filePath: string): Promise<string> {
   throw new Error('Unsupported document. Choose a DOCX, PDF, TXT, MD, or RTF file.')
 }
 
-interface SermonPlanSchema { plans: SermonPlan[] }
+interface SermonPlanSchema {
+  plans: SermonPlan[]
+  /** Playlist referenced by live transcription. null = none. */
+  livePlanId: string | null
+}
 
 class SermonPlanStore {
   private readonly store = new Store<SermonPlanSchema>({
     name: 'proautomate-sermon-plans',
-    defaults: { plans: [] },
+    defaults: { plans: [], livePlanId: null },
   })
 
   list(): SermonPlan[] {
     return this.store.get('plans').sort((a, b) => b.updatedAt - a.updatedAt)
+  }
+
+  get(id: string): SermonPlan | null {
+    return this.store.get('plans').find((plan) => plan.id === id) ?? null
+  }
+
+  // electron-store shallow-merges `defaults`, so installs that predate this key
+  // read back undefined — never assume the field exists.
+  getLivePlanId(): string | null {
+    return this.store.get('livePlanId') ?? null
+  }
+
+  setLivePlanId(id: string | null): void {
+    this.store.set('livePlanId', id)
   }
 
   save(plan: SermonPlan): SermonPlan {
@@ -96,6 +114,7 @@ class SermonPlanStore {
 
   delete(id: string): void {
     this.store.set('plans', this.store.get('plans').filter((plan) => plan.id !== id))
+    if (this.getLivePlanId() === id) this.setLivePlanId(null)
   }
 }
 

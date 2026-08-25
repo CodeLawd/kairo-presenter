@@ -8,6 +8,7 @@ import {
   isLikelyPhraseQuery,
   normalizeScriptureQuery,
   resolveSubmittedScriptureQuery,
+  shouldLiveSuggestScriptureQuery,
 } from '../src/lib/scripture-query'
 import type { ScriptureResult } from '../src/lib/ipc'
 
@@ -48,6 +49,14 @@ test('classifies remembered verse words but not references as phrase queries', (
   assert.equal(isLikelyPhraseQuery('jos 1 5 9'), false)
   assert.equal(isLikelyPhraseQuery('John'), false)
   assert.equal(isLikelyPhraseQuery('12 4 8'), false)
+})
+
+test('live-suggests phrases and numeric references while typing', () => {
+  assert.equal(shouldLiveSuggestScriptureQuery('love is patient'), true)
+  assert.equal(shouldLiveSuggestScriptureQuery('John 3:16'), true)
+  assert.equal(shouldLiveSuggestScriptureQuery('rom 8'), true)
+  assert.equal(shouldLiveSuggestScriptureQuery('Jo'), false)
+  assert.equal(shouldLiveSuggestScriptureQuery('John'), false)
 })
 
 test('returns the normalized value that Enter must submit immediately', () => {

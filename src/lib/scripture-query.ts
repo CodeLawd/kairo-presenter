@@ -94,6 +94,22 @@ export function isLikelyPhraseQuery(input: string): boolean {
   return words.length >= 3 && words.join('').length >= 8
 }
 
+/**
+ * Whether the Operator / Scripture search box should fetch live matches
+ * while typing (references and remembered phrases — not bare book stubs).
+ */
+export function shouldLiveSuggestScriptureQuery(input: string): boolean {
+  const normalized = input.trim().replace(/\s+/g, ' ')
+  if (normalized.length < 3) return false
+  if (isLikelyPhraseQuery(normalized)) return true
+  if (normalizeScriptureQuery(normalized)) return true
+  const book = findBookPrefix(normalized)
+  // "John 3", "rom 8:28", "1 cor 13" — need a book plus numbers (or a long full book name).
+  if (book && book.remainder.length > 0) return true
+  if (book && book.book.length >= 5 && !book.remainder) return false
+  return false
+}
+
 export function resolveSubmittedScriptureQuery(input: string): string {
   return normalizeScriptureQuery(input) ?? input.trim()
 }

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  formatCardReference,
   formatOverlayReference,
   formatOverlayVerseText,
 } from '../src/lib/overlay-content'
@@ -8,6 +9,10 @@ import {
 test('formats overlay reference with optional translation suffix', () => {
   assert.equal(formatOverlayReference('John 3:16', 'KJV', true), 'John 3:16 (KJV)')
   assert.equal(formatOverlayReference('John 3:16', 'KJV', false), 'John 3:16')
+})
+
+test('formats a card reference without repeating its translation badge', () => {
+  assert.equal(formatCardReference('Romans 8:10'), 'Romans 8:10')
 })
 
 test('formats overlay verse text with numbers and maxVerses truncation', () => {

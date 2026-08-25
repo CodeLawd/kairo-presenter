@@ -1,9 +1,6 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
 import {
   Layers,
-  Type,
-  BookOpen,
-  LayoutTemplate,
   Radio,
   Send,
   Trash2,
@@ -35,16 +32,24 @@ import {
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { useAppStore } from '@/stores/useAppStore'
 import { renderOverlayHTML } from '@shared/overlay-template'
-import { DEFAULT_OVERLAY_SETTINGS, normalizeOverlaySettings } from '@shared/overlay-defaults'
-import type { AppSettings, CustomOverlayTheme, OverlayTheme, NdiStatus, PPVideoInputInfo } from '@shared/ipc'
+import { DEFAULT_OVERLAY_SETTINGS, normalizeOverlaySettings, normalizeOverlayTheme } from '@shared/overlay-defaults'
+import type { AppSettings, CustomOverlayTheme, OverlayBox, OverlayTextStyle, OverlayTheme, NdiStatus, PPVideoInputInfo } from '@shared/ipc'
 import { createCustomTheme } from '@shared/theme-library'
+import { applyLayoutPreset, placeReferenceAgainstVerse, clampOverlayBox } from '@shared/overlay-boxes'
+import { applyOverlayAutoFit } from '@shared/overlay-fit'
 import { clampPaneWidth, scaleToFit } from '@/lib/paneSizing'
+import { OverlayCanvas, type OverlayLayerId } from './OverlayCanvas'
+import { ThemeTypePanel } from './ThemeTypePanel'
+import { ThemeLayoutPanel } from './ThemeLayoutPanel'
+import { useBootstrapStore } from '@/bootstrap/useBootstrapStore'
 
 // ─── Sample content for the WYSIWYG preview ────────────────────────────────────
 
 const SAMPLE_REFERENCE = 'John 3:16 (KJV)'
 const SAMPLE_TEXT =
   'For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.'
+const SAMPLE_TEXT_LONG =
+  'For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life. For God sent not his Son into the world to condemn the world; but that the world through him might be saved. He that believeth on him is not condemned: but he that believeth not is condemned already, because he hath not believed in the name of the only begotten Son of God.'
 
 type TestStatus = 'idle' | 'testing' | 'ok' | 'fail'
 type InspectorTab = 'style' | 'type' | 'layout' | 'output'
@@ -119,6 +124,16 @@ function Slider({
   )
 }
 
+function expandHex(value: string): string | null {
+  const trimmed = value.trim()
+  if (/^#[0-9a-fA-F]{6}$/.test(trimmed)) return trimmed.toLowerCase()
+  if (/^#[0-9a-fA-F]{3}$/.test(trimmed)) {
+    const [, r, g, b] = trimmed
+    return `#${r}${r}${g}${g}${b}${b}`.toLowerCase()
+  }
+  return null
+}
+
 function ColorField({
   label,
   value,
@@ -128,25 +143,25 @@ function ColorField({
   value: string
   onChange: (v: string) => void
 }): React.ReactElement {
-  const isHex6 = /^#[0-9a-fA-F]{6}$/.test(value)
+  const swatch = expandHex(value) ?? '#000000'
   return (
-    <div>
+    <div className="min-w-0 w-full">
       <label className="label">{label}</label>
       <div className="relative">
         <input
           type="color"
-          value={isHex6 ? value : '#000000'}
+          value={swatch}
           onChange={(e) => onChange(e.target.value)}
           className="absolute left-2 top-1/2 z-10 h-6 w-6 -translate-y-1/2 cursor-pointer rounded-md border border-surface-border bg-surface p-0.5"
           aria-label={`${label} color swatch`}
-          title={isHex6 ? undefined : 'Swatch only supports 6-digit hex — edit the text field for rgba()'}
+          title={expandHex(value) ? undefined : 'Swatch writes 6-digit hex — edit the text field for rgba()'}
         />
         <input
           type="text"
           value={value}
           onChange={(e) => onChange(e.target.value)}
           spellCheck={false}
-          className="input h-9 pl-11 font-mono text-xs"
+          className="input h-9 w-full pl-11 font-mono text-xs"
           placeholder="#rrggbb or rgba(...)"
           aria-label={`${label} value`}
         />
@@ -217,38 +232,44 @@ function SectionCard({
   )
 }
 
-// ─── Font stacks offered in the picker (theme.verse/reference.fontFamily is free text) ─
-
-const FONT_STACKS = [
-  { label: 'Helvetica Neue', value: "'Helvetica Neue', Arial, sans-serif" },
-  { label: 'Georgia (serif)', value: "Georgia, 'Times New Roman', serif" },
-  { label: 'Avenir Next', value: "'Avenir Next', Avenir, sans-serif" },
-  { label: 'Futura', value: "Futura, 'Trebuchet MS', sans-serif" },
-  { label: 'Courier (mono)', value: "'Courier New', Courier, monospace" },
-]
+// ─── Built-in themes ──────────────────────────────────────────────────────────
 
 const BUILT_IN_THEMES: Array<{ id: string; name: string; theme: OverlayTheme }> = [
   { id: 'broadcast', name: 'Broadcast', theme: DEFAULT_OVERLAY_SETTINGS.theme },
   {
     id: 'warm-paper',
     name: 'Warm paper',
-    theme: {
-      ...DEFAULT_OVERLAY_SETTINGS.theme,
-      background: { ...DEFAULT_OVERLAY_SETTINGS.theme.background, type: 'color', color: '#e8dfcf' },
-      verse: { ...DEFAULT_OVERLAY_SETTINGS.theme.verse, fontFamily: "Georgia, 'Times New Roman', serif", color: '#201d19', shadow: false, align: 'left' },
-      reference: { ...DEFAULT_OVERLAY_SETTINGS.theme.reference, color: '#8b4b32', position: 'above' },
-      layout: { ...DEFAULT_OVERLAY_SETTINGS.theme.layout, position: 'center', backdropBox: false, maxWidthPct: 72 },
-    },
+    theme: applyLayoutPreset(
+      {
+        ...DEFAULT_OVERLAY_SETTINGS.theme,
+        background: { ...DEFAULT_OVERLAY_SETTINGS.theme.background, type: 'color', color: '#e8dfcf' },
+        verse: {
+          ...DEFAULT_OVERLAY_SETTINGS.theme.verse,
+          fontFamily: "Georgia, 'Times New Roman', serif",
+          color: '#201d19',
+          align: 'left',
+          shadow: { ...DEFAULT_OVERLAY_SETTINGS.theme.verse.shadow, enabled: false },
+        },
+        reference: { ...DEFAULT_OVERLAY_SETTINGS.theme.reference, color: '#8b4b32', position: 'above' },
+        layout: { ...DEFAULT_OVERLAY_SETTINGS.theme.layout, backdropBox: false },
+      },
+      'center',
+      72
+    ),
   },
   {
     id: 'midnight',
     name: 'Midnight',
-    theme: {
-      ...DEFAULT_OVERLAY_SETTINGS.theme,
-      background: { ...DEFAULT_OVERLAY_SETTINGS.theme.background, type: 'gradient', color: '#07111f', color2: '#18324b', angleDeg: 135 },
-      reference: { ...DEFAULT_OVERLAY_SETTINGS.theme.reference, color: '#f2a36f' },
-      layout: { ...DEFAULT_OVERLAY_SETTINGS.theme.layout, position: 'center', backdropBox: false, maxWidthPct: 76 },
-    },
+    theme: applyLayoutPreset(
+      {
+        ...DEFAULT_OVERLAY_SETTINGS.theme,
+        background: { ...DEFAULT_OVERLAY_SETTINGS.theme.background, type: 'gradient', color: '#07111f', color2: '#18324b', angleDeg: 135 },
+        reference: { ...DEFAULT_OVERLAY_SETTINGS.theme.reference, color: '#f2a36f' },
+        layout: { ...DEFAULT_OVERLAY_SETTINGS.theme.layout, backdropBox: false },
+      },
+      'center',
+      76
+    ),
   },
 ]
 
@@ -263,6 +284,8 @@ export default function ThemeEditor(): React.ReactElement {
   const [selectedThemeId, setSelectedThemeId] = useState<string | null>(null)
   const [themeName, setThemeName] = useState('')
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>('style')
+  const [selectedLayer, setSelectedLayer] = useState<OverlayLayerId | null>('verse')
+  const [sampleLength, setSampleLength] = useState<'short' | 'long'>('short')
   const [loading, setLoading] = useState(true)
   const [saved, setSaved] = useState(false)
   const [ndiStatus, setNdiStatus] = useState<NdiStatus>({ available: false, sending: false, ppInputConfigured: false })
@@ -273,25 +296,26 @@ export default function ThemeEditor(): React.ReactElement {
   const ppState = useAppStore((s) => s.ppState)
   const ppConnected = ppState === 'connected'
 
-  // Load overlay settings on mount.
+  // Overlay and theme library come from the startup snapshot, kept current by
+  // Settings and by this editor's own saves.
   useEffect(() => {
-    Promise.all([window.api.settings.get('overlay'), window.api.settings.get('themeLibrary')]).then(([stored, library]) => {
-      const normalized = normalizeOverlaySettings(stored)
-      setOverlay(normalized)
-      setDraftTheme(structuredClone(normalized.theme))
-      setThemeLibrary(library)
-      const matching = library.find((item) => JSON.stringify(item.theme) === JSON.stringify(normalized.theme))
-      if (matching) {
-        setSelectedThemeId(matching.id)
-        setThemeName(matching.name)
-      }
-      setLoading(false)
-    })
+    const { overlay: stored, themeLibrary: library } = useBootstrapStore.getState().settings
+    const normalized = normalizeOverlaySettings(stored)
+    setOverlay(normalized)
+    setDraftTheme(structuredClone(normalized.theme))
+    setThemeLibrary(library)
+    const matching = library.find((item) => JSON.stringify(item.theme) === JSON.stringify(normalized.theme))
+    if (matching) {
+      setSelectedThemeId(matching.id)
+      setThemeName(matching.name)
+    }
+    setLoading(false)
   }, [])
 
   // Preview renders a real 1920×1080 frame scaled down to the panel width, so
   // proportions (font px vs frame) match the NDI output exactly.
   const previewFrameRef = useRef<HTMLDivElement>(null)
+  const previewInnerRef = useRef<HTMLDivElement>(null)
   const [previewScale, setPreviewScale] = useState(0.2)
   useEffect(() => {
     const el = previewFrameRef.current
@@ -334,6 +358,8 @@ export default function ThemeEditor(): React.ReactElement {
   const persist = useCallback(
     (next: AppSettings['overlay']) => {
       setOverlay(next)
+      const store = useBootstrapStore.getState()
+      store.patchSettings('overlay', { ...store.settings.overlay, ...next })
       window.api.settings
         .set('overlay', {
           mode: next.mode,
@@ -355,6 +381,10 @@ export default function ThemeEditor(): React.ReactElement {
     []
   )
 
+  const updateBox = (id: OverlayLayerId, box: OverlayBox): void => {
+    updateTheme(id, { box: clampOverlayBox(box) })
+  }
+
   const setMode = (mode: AppSettings['overlay']['mode']): void => persist({ ...overlay, mode })
 
   const handlePickMedia = useCallback(
@@ -371,29 +401,37 @@ export default function ThemeEditor(): React.ReactElement {
 
   const persistLibrary = useCallback((next: CustomOverlayTheme[]) => {
     setThemeLibrary(next)
-    void window.api.settings.set('themeLibrary', next)
-  }, [])
+    useBootstrapStore.getState().patchSettings('themeLibrary', next)
+    void window.api.settings.set('themeLibrary', next).then(flashSaved)
+  }, [flashSaved])
 
   const selectTheme = (id: string, name: string, theme: OverlayTheme): void => {
     setSelectedThemeId(id)
     setThemeName(name)
-    setDraftTheme(structuredClone(theme))
+    setDraftTheme(structuredClone(normalizeOverlayTheme(theme)))
   }
 
+  /** Persist draft into the theme library only — does not push to live output. */
   const saveAsTheme = (): void => {
-    const savedTheme = createCustomTheme(themeName || 'Untitled theme', draftTheme)
+    const savedTheme = createCustomTheme(themeName.trim() || 'Untitled theme', draftTheme)
     persistLibrary([...themeLibrary, savedTheme])
     setSelectedThemeId(savedTheme.id)
     setThemeName(savedTheme.name)
   }
 
+  /** Update the selected custom theme in the library — does not push to live output. */
   const saveThemeChanges = (): void => {
-    if (!selectedThemeId || selectedThemeId.startsWith('builtin:')) return
+    if (!selectedThemeId || selectedThemeId.startsWith('builtin:')) {
+      saveAsTheme()
+      return
+    }
     const next = themeLibrary.map((item) => item.id === selectedThemeId
       ? { ...item, name: themeName.trim() || item.name, updatedAt: Date.now(), theme: structuredClone(draftTheme) }
       : item)
     persistLibrary(next)
   }
+
+  const isCustomThemeSelected = Boolean(selectedThemeId && !selectedThemeId.startsWith('builtin:'))
 
   const duplicateTheme = (): void => {
     const copy = createCustomTheme(`${themeName || 'Theme'} copy`, draftTheme)
@@ -402,12 +440,17 @@ export default function ThemeEditor(): React.ReactElement {
     setThemeName(copy.name)
   }
 
-  const deleteTheme = (): void => {
-    if (!selectedThemeId || selectedThemeId.startsWith('builtin:')) return
-    if (!window.confirm(`Delete “${themeName || 'Untitled theme'}”? This cannot be undone.`)) return
-    persistLibrary(themeLibrary.filter((item) => item.id !== selectedThemeId))
-    setSelectedThemeId(null)
-    setThemeName('')
+  const deleteTheme = (themeId = selectedThemeId, name = themeName): void => {
+    if (!themeId || themeId.startsWith('builtin:')) return
+    const label = name.trim() || themeLibrary.find((item) => item.id === themeId)?.name || 'Untitled theme'
+    if (!window.confirm(`Delete “${label}”? This cannot be undone.`)) return
+    const next = themeLibrary.filter((item) => item.id !== themeId)
+    persistLibrary(next)
+    if (selectedThemeId === themeId) {
+      setSelectedThemeId(null)
+      setThemeName('')
+      setDraftTheme(structuredClone(overlay.theme))
+    }
   }
 
   const applyToOutput = (): void => persist({ ...overlay, theme: structuredClone(draftTheme) })
@@ -452,6 +495,16 @@ export default function ThemeEditor(): React.ReactElement {
     }
   }
 
+  const theme = draftTheme
+  const previewText = sampleLength === 'long' ? SAMPLE_TEXT_LONG : SAMPLE_TEXT
+  const previewHtml = renderOverlayHTML(theme, SAMPLE_REFERENCE, previewText)
+
+  useLayoutEffect(() => {
+    const root = previewInnerRef.current
+    if (!root || !theme.layout.autoFitText) return
+    applyOverlayAutoFit(root)
+  }, [previewHtml, theme.layout.autoFitText])
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -463,9 +516,7 @@ export default function ThemeEditor(): React.ReactElement {
     )
   }
 
-  const theme = draftTheme
   const hasDraftChanges = JSON.stringify(draftTheme) !== JSON.stringify(overlay.theme)
-  const previewHtml = renderOverlayHTML(theme, SAMPLE_REFERENCE, SAMPLE_TEXT)
 
   return (
     <ResizablePanelGroup orientation="horizontal" className="h-full overflow-hidden">
@@ -525,6 +576,7 @@ export default function ThemeEditor(): React.ReactElement {
                   theme={item.theme}
                   selected={selectedThemeId === item.id}
                   onClick={() => selectTheme(item.id, item.name, item.theme)}
+                  onDelete={() => deleteTheme(item.id, item.name)}
                 />
               ))}
               {themeLibrary.length === 0 && <p className="text-xs text-slate-500 py-3">No saved themes yet.</p>}
@@ -557,23 +609,34 @@ export default function ThemeEditor(): React.ReactElement {
               <div className="mt-1 flex items-center gap-1">
                 <input
                   id="theme-name"
-                  className="min-w-0 flex-1 border-0 bg-transparent p-0 text-base font-semibold text-white outline-none placeholder:text-slate-600 disabled:text-slate-300"
+                  className="min-w-0 flex-1 border-0 bg-transparent p-0 text-base font-semibold text-white outline-none placeholder:text-slate-600"
                   value={themeName}
-                  placeholder="Unsaved theme"
-                  disabled={!selectedThemeId || selectedThemeId.startsWith('builtin:')}
+                  placeholder="Untitled theme"
                   onChange={(event) => setThemeName(event.target.value)}
                   aria-label="Theme name"
                 />
-                {selectedThemeId && !selectedThemeId.startsWith('builtin:') && (
+                {isCustomThemeSelected && (
                   <Button
                     variant="ghost"
                     size="icon"
                     className="shrink-0 text-slate-500 hover:text-teal-300"
                     onClick={saveThemeChanges}
                     aria-label="Save theme changes"
-                    title="Save theme changes"
+                    title="Save theme to library (does not change live output)"
                   >
                     <Save size={14} aria-hidden="true" />
+                  </Button>
+                )}
+                {isCustomThemeSelected && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="shrink-0 text-slate-500 hover:text-rose-300"
+                    onClick={() => deleteTheme()}
+                    aria-label="Delete theme"
+                    title="Delete theme from library"
+                  >
+                    <Trash2 size={14} aria-hidden="true" />
                   </Button>
                 )}
                 <DropdownMenu>
@@ -586,10 +649,10 @@ export default function ThemeEditor(): React.ReactElement {
                     <DropdownMenuItem onSelect={duplicateTheme}>
                       <Copy size={13} /> Duplicate
                     </DropdownMenuItem>
-                    {selectedThemeId && !selectedThemeId.startsWith('builtin:') && (
+                    {isCustomThemeSelected && (
                       <>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem variant="destructive" onSelect={deleteTheme}>
+                        <DropdownMenuItem variant="destructive" onSelect={() => deleteTheme()}>
                           <Trash2 size={13} /> Delete
                         </DropdownMenuItem>
                       </>
@@ -788,217 +851,54 @@ export default function ThemeEditor(): React.ReactElement {
             )}
           </SectionCard>}
 
-          {/* ── Verse text ───────────────────────────────────────────────────── */}
-          {inspectorTab === 'type' && <>
-          <SectionCard icon={Type} title="Verse text">
-            <div>
-              <label className="label">Font</label>
-              <select
-                className="input"
-                value={theme.verse.fontFamily}
-                onChange={(e) => updateTheme('verse', { fontFamily: e.target.value })}
-              >
-                {FONT_STACKS.map((f) => (
-                  <option key={f.value} value={f.value}>
-                    {f.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className={cn('grid gap-4', theme.layout.position === 'full' && theme.layout.autoFitText ? 'grid-cols-1' : 'grid-cols-2')}>
-              {!(theme.layout.position === 'full' && theme.layout.autoFitText) && (
-                <Slider
-                  label="Size"
-                  value={theme.verse.fontSizePx}
-                  onChange={(fontSizePx) => updateTheme('verse', { fontSizePx })}
-                  min={12}
-                  max={200}
-                  unit="px"
-                />
-              )}
-              <Slider
-                label="Weight"
-                value={theme.verse.fontWeight}
-                onChange={(fontWeight) => updateTheme('verse', { fontWeight })}
-                min={100}
-                max={900}
-                step={100}
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <ColorField label="Color" value={theme.verse.color} onChange={(color) => updateTheme('verse', { color })} />
-              <Slider
-                label="Line height"
-                value={theme.verse.lineHeight}
-                onChange={(lineHeight) => updateTheme('verse', { lineHeight })}
-                min={0.9}
-                max={2.5}
-                step={0.05}
-                format={(v) => v.toFixed(2)}
-              />
-            </div>
-            <div className="flex items-center justify-between gap-4">
-              <SegmentedControl
-                label="Alignment"
-                value={theme.verse.align}
-                options={[
-                  { value: 'left', label: 'Left' },
-                  { value: 'center', label: 'Center' },
-                  { value: 'right', label: 'Right' },
-                ]}
-                onChange={(align) => updateTheme('verse', { align })}
-              />
-              <div>
-                <label className="label">Drop shadow</label>
-                <Toggle checked={theme.verse.shadow} onChange={(shadow) => updateTheme('verse', { shadow })} />
-              </div>
-            </div>
-          </SectionCard>
-
-          {/* ── Reference ────────────────────────────────────────────────────── */}
-          <SectionCard icon={BookOpen} title="Reference">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-bold text-white tracking-tight">Show reference</p>
-                <p className="text-[10px] text-slate-500 mt-0.5 leading-relaxed">
-                  Display the book/chapter/verse label alongside the verse text
-                </p>
-              </div>
-              <Toggle checked={theme.reference.show} onChange={(show) => updateTheme('reference', { show })} />
-            </div>
-
-            {theme.reference.show && <div className="space-y-4">
-              <div className="border-t border-surface-border/50" />
-              <SegmentedControl
-                label="Position"
-                value={theme.reference.position}
-                options={[
-                  { value: 'above', label: 'Above verse' },
-                  { value: 'below', label: 'Below verse' },
-                ]}
-                onChange={(position) => updateTheme('reference', { position })}
-              />
-              <div>
-                <label className="label">Font</label>
-                <select
-                  className="input"
-                  value={theme.reference.fontFamily}
-                  onChange={(e) => updateTheme('reference', { fontFamily: e.target.value })}
-                >
-                  {FONT_STACKS.map((f) => (
-                    <option key={f.value} value={f.value}>
-                      {f.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <Slider
-                  label="Size"
-                  value={theme.reference.fontSizePx}
-                  onChange={(fontSizePx) => updateTheme('reference', { fontSizePx })}
-                  min={12}
-                  max={200}
-                  unit="px"
-                />
-                <Slider
-                  label="Weight"
-                  value={theme.reference.fontWeight}
-                  onChange={(fontWeight) => updateTheme('reference', { fontWeight })}
-                  min={100}
-                  max={900}
-                  step={100}
-                />
-              </div>
-              <div className="flex items-center justify-between gap-4">
-                <ColorField
-                  label="Color"
-                  value={theme.reference.color}
-                  onChange={(color) => updateTheme('reference', { color })}
-                />
-                <div>
-                  <label className="label">Uppercase</label>
-                  <Toggle
-                    checked={theme.reference.uppercase}
-                    onChange={(uppercase) => updateTheme('reference', { uppercase })}
-                  />
-                </div>
-              </div>
-            </div>}
-          </SectionCard>
-          </>}
+          {/* ── Type (Scripture / Reference + Effects) ───────────────────────── */}
+          {inspectorTab === 'type' && (
+            <ThemeTypePanel
+              theme={theme}
+              selectedLayer={selectedLayer === 'reference' ? 'reference' : 'verse'}
+              onSelectLayer={setSelectedLayer}
+              onUpdateLayer={(id, partial) => updateTheme(id, partial as Partial<OverlayTextStyle>)}
+              onUpdateReferenceMeta={(partial) => {
+                if (partial.position) {
+                  setDraftTheme((current) => ({
+                    ...current,
+                    reference: {
+                      ...current.reference,
+                      ...partial,
+                      box: placeReferenceAgainstVerse(
+                        current.verse.box,
+                        current.reference.box,
+                        partial.position ?? current.reference.position
+                      ),
+                    },
+                  }))
+                  return
+                }
+                updateTheme('reference', partial)
+              }}
+              onAutoFitChange={(autoFitText) => updateTheme('layout', { autoFitText })}
+            />
+          )}
 
           {/* ── Layout ───────────────────────────────────────────────────────── */}
-          {inspectorTab === 'layout' && <SectionCard icon={LayoutTemplate} title="Layout">
-            <SegmentedControl
-              label="Position preset"
-              value={theme.layout.position}
-              options={[
-                { value: 'lower-third', label: 'Lower third' },
-                { value: 'center', label: 'Center' },
-                { value: 'top', label: 'Top' },
-                { value: 'full', label: 'Fullscreen' },
-              ]}
-              onChange={(position) => updateTheme('layout', { position })}
+          {inspectorTab === 'layout' && (
+            <ThemeLayoutPanel
+              theme={theme}
+              selectedLayer={selectedLayer === 'reference' ? 'reference' : 'verse'}
+              onSelectLayer={setSelectedLayer}
+              onApplyPreset={(position) => {
+                setDraftTheme((current) => applyLayoutPreset(current, position))
+                setSelectedLayer('verse')
+              }}
+              onUpdateLayout={(partial) => updateTheme('layout', partial)}
+              onUpdateBox={updateBox}
+              onUpdatePresetWidth={(maxWidthPct) => {
+                setDraftTheme((current) =>
+                  applyLayoutPreset(current, current.layout.position, maxWidthPct)
+                )
+              }}
             />
-            {theme.layout.position === 'full' && (
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-bold text-white tracking-tight">Auto-fit text</p>
-                  <p className="text-[10px] text-slate-500 mt-0.5 leading-relaxed">
-                    Size the verse automatically to fill the screen — longer passages shrink,
-                    short ones grow. Overrides the verse Size slider.
-                  </p>
-                </div>
-                <Toggle
-                  checked={theme.layout.autoFitText}
-                  onChange={(autoFitText) => updateTheme('layout', { autoFitText })}
-                />
-              </div>
-            )}
-            <div className={cn('grid gap-4', theme.layout.position === 'full' ? 'grid-cols-1' : 'grid-cols-2')}>
-              {theme.layout.position !== 'full' && (
-                <Slider
-                  label="Max width"
-                  value={theme.layout.maxWidthPct}
-                  onChange={(maxWidthPct) => updateTheme('layout', { maxWidthPct })}
-                  min={20}
-                  max={100}
-                  unit="%"
-                />
-              )}
-              <Slider
-                label="Padding"
-                value={theme.layout.paddingPx}
-                onChange={(paddingPx) => updateTheme('layout', { paddingPx })}
-                min={0}
-                max={200}
-                unit="px"
-              />
-            </div>
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-bold text-white tracking-tight">Backdrop box</p>
-              <Toggle
-                checked={theme.layout.backdropBox}
-                onChange={(backdropBox) => updateTheme('layout', { backdropBox })}
-              />
-            </div>
-            {theme.layout.backdropBox && <div className="grid grid-cols-2 gap-4">
-              <ColorField
-                label="Backdrop color"
-                value={theme.layout.backdropColor}
-                onChange={(backdropColor) => updateTheme('layout', { backdropColor })}
-              />
-              <Slider
-                label="Corner radius"
-                value={theme.layout.backdropRadiusPx}
-                onChange={(backdropRadiusPx) => updateTheme('layout', { backdropRadiusPx })}
-                min={0}
-                max={64}
-                unit="px"
-              />
-            </div>}
-          </SectionCard>}
+          )}
         </div>
       </div>
       </ResizablePanel>
@@ -1042,39 +942,85 @@ export default function ThemeEditor(): React.ReactElement {
                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest font-sans">Preview</p>
                 <p className="text-xs text-slate-400 mt-1">John 3:16 · 1920 × 1080</p>
               </div>
-              {hasDraftChanges && <span className="text-[10px] font-semibold text-orange-300 bg-orange-400/10 px-2 py-1 rounded-md">Unapplied changes</span>}
+              <div className="flex items-center gap-2">
+                <div className="flex rounded-md border border-surface-border/60 p-0.5">
+                  {(['short', 'long'] as const).map((len) => (
+                    <button
+                      key={len}
+                      type="button"
+                      onClick={() => setSampleLength(len)}
+                      className={cn(
+                        'rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider',
+                        sampleLength === len ? 'bg-teal-500/20 text-teal-300' : 'text-slate-500 hover:text-slate-300'
+                      )}
+                    >
+                      {len}
+                    </button>
+                  ))}
+                </div>
+                {hasDraftChanges && <span className="text-[10px] font-semibold text-orange-300 bg-orange-400/10 px-2 py-1 rounded-md">Unapplied changes</span>}
+              </div>
             </div>
             <div
               ref={previewFrameRef}
-              className="relative w-full aspect-video rounded-xl bg-[repeating-conic-gradient(#1a1a1a_0%_25%,#0d0d0d_0%_50%)] bg-[length:16px_16px] border border-surface-border/50 overflow-hidden"
+              className="relative isolate aspect-video w-full overflow-hidden rounded-xl border border-surface-border/50 bg-[repeating-conic-gradient(#1a1a1a_0%_25%,#0d0d0d_0%_50%)] bg-[length:16px_16px]"
             >
               <div
+                ref={previewInnerRef}
+                className="pointer-events-none absolute left-0 top-0 origin-top-left"
                 style={{
                   width: 1920,
                   height: 1080,
                   transform: `scale(${previewScale})`,
-                  transformOrigin: 'top left',
                 }}
                 // eslint-disable-next-line react/no-danger
                 dangerouslySetInnerHTML={{ __html: previewHtml }}
               />
+              <OverlayCanvas
+                theme={theme}
+                selected={selectedLayer}
+                onSelect={setSelectedLayer}
+                onBoxChange={updateBox}
+              />
             </div>
             <p className="text-[10px] text-slate-500 mt-2 leading-relaxed">
-              Pixel-exact preview. Changes remain private until applied to output.
+              Drag the verse or reference on the canvas. Resize from the corners. Turn on Fit text to box so long passages stay inside the frame.
             </p>
           </div>
 
-          <div className="order-2 flex items-center gap-2">
-            <button className="btn-primary flex-1 flex items-center justify-center gap-2" onClick={applyToOutput} disabled={!hasDraftChanges}>
-              <MonitorPlay size={14} /> Apply to output
-            </button>
+          <div className="order-2 flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <button
+                className="btn-secondary flex-1 flex items-center justify-center gap-2"
+                onClick={saveThemeChanges}
+                title={
+                  isCustomThemeSelected
+                    ? 'Save this theme to My themes (does not change live output)'
+                    : 'Save draft as a new theme in My themes (does not change live output)'
+                }
+              >
+                <Save size={14} />
+                {isCustomThemeSelected ? 'Save theme' : 'Save as theme'}
+              </button>
+              <button
+                className="btn-primary flex-1 flex items-center justify-center gap-2"
+                onClick={applyToOutput}
+                disabled={!hasDraftChanges}
+                title="Push the current draft to live NDI / message output"
+              >
+                <MonitorPlay size={14} /> Apply to output
+              </button>
+            </div>
             <button
-              className="btn-secondary flex items-center gap-2"
+              className="btn-secondary flex items-center justify-center gap-2"
               onClick={() => setDraftTheme(structuredClone(overlay.theme))}
               disabled={!hasDraftChanges}
             >
-              <RotateCcw size={13} /> Discard
+              <RotateCcw size={13} /> Discard draft
             </button>
+            <p className="text-[10px] text-slate-500 leading-relaxed">
+              Save stores the theme in your library. Apply pushes it to the live output.
+            </p>
           </div>
 
           {/* Test / clear */}
@@ -1144,13 +1090,15 @@ function ThemeTile({
   theme,
   selected,
   onClick,
+  onDelete,
 }: {
   name: string
   theme: OverlayTheme
   selected: boolean
   onClick: () => void
+  onDelete?: () => void
 }): React.ReactElement {
-  const html = renderOverlayHTML(theme, 'John 3:16', 'For God so loved the world…')
+  const html = renderOverlayHTML(normalizeOverlayTheme(theme), 'John 3:16', 'For God so loved the world…')
   const frameRef = useRef<HTMLSpanElement>(null)
   const [scale, setScale] = useState(0.08)
   useEffect(() => {
@@ -1163,28 +1111,49 @@ function ThemeTile({
     return () => observer.disconnect()
   }, [])
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={selected}
+    <div
       className={cn(
-        'w-full rounded-lg p-1 text-left border transition-all duration-200',
+        'group relative w-full rounded-lg border p-1 text-left transition-all duration-200',
         selected
-          ? 'bg-teal-500/10 border-teal-500/50 shadow-[0_0_0_1px_rgb(var(--control-accent)/0.12)]'
-          : 'bg-surface border-surface-border/60 hover:border-slate-500'
+          ? 'border-teal-500/50 bg-teal-500/10 shadow-[0_0_0_1px_rgb(var(--control-accent)/0.12)]'
+          : 'border-surface-border/60 bg-surface hover:border-slate-500'
       )}
     >
-      <span ref={frameRef} className="block relative w-full aspect-video rounded-md overflow-hidden bg-surface-tertiary">
-        <span
-          className="block absolute left-0 top-0"
-          style={{ width: 1920, height: 1080, transform: `scale(${scale})`, transformOrigin: 'top left' }}
-          // eslint-disable-next-line react/no-danger
-          dangerouslySetInnerHTML={{ __html: html }}
-        />
-      </span>
-      <span className={cn('block truncate px-1.5 pb-1 pt-1.5 text-[11px] font-semibold', selected ? 'text-orange-300' : 'text-slate-300')}>
-        {name}
-      </span>
-    </button>
+      <button
+        type="button"
+        onClick={onClick}
+        aria-pressed={selected}
+        className="w-full text-left"
+      >
+        <span ref={frameRef} className="relative block aspect-video w-full overflow-hidden rounded-md bg-surface-tertiary">
+          <span
+            className="absolute left-0 top-0 block"
+            style={{ width: 1920, height: 1080, transform: `scale(${scale})`, transformOrigin: 'top left' }}
+            // eslint-disable-next-line react/no-danger
+            dangerouslySetInnerHTML={{ __html: html }}
+          />
+        </span>
+        <span className={cn('block truncate px-1.5 pb-1 pt-1.5 text-[11px] font-semibold', selected ? 'text-orange-300' : 'text-slate-300')}>
+          {name}
+        </span>
+      </button>
+      {onDelete && (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation()
+            onDelete()
+          }}
+          className={cn(
+            'absolute right-1.5 top-1.5 rounded-md bg-black/55 p-1 text-zinc-300 opacity-0 backdrop-blur-sm transition-opacity hover:bg-rose-950/80 hover:text-rose-300 group-hover:opacity-100 focus-visible:opacity-100',
+            selected && 'opacity-100'
+          )}
+          aria-label={`Delete ${name}`}
+          title="Delete theme"
+        >
+          <Trash2 size={12} aria-hidden="true" />
+        </button>
+      )}
+    </div>
   )
 }

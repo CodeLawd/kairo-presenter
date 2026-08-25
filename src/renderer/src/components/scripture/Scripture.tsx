@@ -22,9 +22,9 @@ import {
   expandScriptureResult,
   getAdjacentVerseQueries,
   getBookCompletion,
-  isLikelyPhraseQuery,
   normalizeScriptureQuery,
   resolveSubmittedScriptureQuery,
+  shouldLiveSuggestScriptureQuery,
 } from "@shared/scripture-query";
 import { PlaylistSidebar } from "./PlaylistSidebar";
 import { PlanReviewPanel } from "./PlanReviewPanel";
@@ -52,6 +52,13 @@ import {
   translationFallbackOrder,
 } from "@shared/sermon-plan-resolve";
 import type { AppSettings } from "@shared/ipc";
+import { useBootstrapStore } from "@/bootstrap/useBootstrapStore";
+import { shouldShowApiBibleWarning } from "@/bootstrap/bootstrap-state";
+import {
+  API_BIBLE_ATTRIBUTION,
+  getScriptureCacheNotice,
+  shouldShowApiBibleAttribution,
+} from "@shared/scripture-offline-state";
 
 function mapCardStatus(
   rows: ResultRow[],
@@ -74,9 +81,20 @@ export default function Scripture(): React.ReactElement {
   const [rows, setRows] = useState<ResultRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [translation, setTranslation] = useState<ScriptureTranslation>("NKJV");
-  const [translations, setTranslations] = useState<ScriptureTranslationOption[]>([]);
-  const [plans, setPlans] = useState<SermonPlan[]>([]);
+  // Startup data comes from the shared bootstrap snapshot, so switching tabs
+  // never shows an empty state while a first-mount IPC read resolves.
+  const bootstrapSettings = useBootstrapStore((s) => s.settings);
+  const bootstrapTranslations = useBootstrapStore((s) => s.translations);
+  const bootstrapPlans = useBootstrapStore((s) => s.sermonPlans);
+  const apiBibleAuth = useBootstrapStore((s) => s.apiBibleAuth);
+  const bootstrapPhase = useBootstrapStore((s) => s.phase);
+
+  const [translation, setTranslation] = useState<ScriptureTranslation>(
+    bootstrapSettings.scripture.defaultTranslation,
+  );
+  const [translations, setTranslations] =
+    useState<ScriptureTranslationOption[]>(bootstrapTranslations);
+  const [plans, setPlans] = useState<SermonPlan[]>(bootstrapPlans);
   const [activePlan, setActivePlan] = useState<SermonPlan | null>(null);
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const [cardsSource, setCardsSource] = useState<"search" | "plan" | null>(null);
@@ -99,9 +117,9 @@ export default function Scripture(): React.ReactElement {
   const [focusHighlight, setFocusHighlight] = useState(false);
   const [cardZoom, setCardZoom] = useState(CARD_ZOOM_DEFAULT);
   const [overlay, setOverlay] = useState<AppSettings["overlay"]>(
-    DEFAULT_OVERLAY_SETTINGS,
+    bootstrapSettings.overlay ?? DEFAULT_OVERLAY_SETTINGS,
   );
-  const [plansReady, setPlansReady] = useState(false);
+  const [plansReady, setPlansReady] = useState(true);
 
   const scriptureActivePlanId = useAppStore((s) => s.scriptureActivePlanId);
   const setScriptureViewState = useAppStore((s) => s.setScriptureViewState);
@@ -178,31 +196,20 @@ export default function Scripture(): React.ReactElement {
     scrollToPlanItem(itemId);
   }, [persistPlanView, rows, scrollToPlanItem, selectedPlanId]);
 
+  // Keep in step with the shared snapshot as other screens refresh it.
   useEffect(() => {
-    void Promise.all([
-      window.api.settings.get("scripture"),
-      window.api.settings.get("overlay"),
-      window.api.scripture.getTranslations(),
-      window.api.scripture.listSermonPlans(),
-    ])
-      .then(([settings, storedOverlay, options, savedPlans]) => {
-        setTranslation(settings.defaultTranslation);
-        setOverlay(normalizeOverlaySettings(storedOverlay));
-        setTranslations(options);
-        setPlans(savedPlans);
-        // Do not auto-select a playlist — first visit stays with no active state
-        setPlansReady(true);
-      })
-      .catch((loadError) => {
-        const message = (loadError as Error).message;
-        setError(
-          message.includes("No handler registered")
-            ? "ProAutomate has been updated. Restart the app once to finish loading the new Scripture tools."
-            : message,
-        );
-        setPlansReady(true);
-      });
-  }, []);
+    setTranslations(bootstrapTranslations);
+  }, [bootstrapTranslations]);
+
+  useEffect(() => {
+    setOverlay(normalizeOverlaySettings(bootstrapSettings.overlay));
+  }, [bootstrapSettings.overlay]);
+
+  // Playlist edits here are the source of truth: publish them so the toolbar
+  // and a later remount of this tab never restore stale startup data.
+  useEffect(() => {
+    useBootstrapStore.getState().setSermonPlans(plans);
+  }, [plans]);
 
   // When header CLEAR (or Operator clear) empties PP, drop Live badges in the UI
   useEffect(() => {
@@ -235,7 +242,7 @@ export default function Scripture(): React.ReactElement {
 
   useEffect(() => {
     const requestId = ++suggestionRequestRef.current;
-    if (!isLikelyPhraseQuery(query)) {
+    if (!shouldLiveSuggestScriptureQuery(query)) {
       setSearchSuggestions([]);
       setSuggestionsOpen(false);
       return;
@@ -304,7 +311,14 @@ export default function Scripture(): React.ReactElement {
           setError('No results. Try a reference like “John 3:16” or “Romans 8:28”.');
         }
       } catch (err) {
-        setError((err as Error).message || "Search failed");
+        // Cache/expiry states get an explanation of what to do next; other
+        // failures keep their original wording.
+        const notice = getScriptureCacheNotice(err);
+        setError(
+          notice
+            ? `${notice.message} ${notice.hint}`
+            : (err as Error).message || "Search failed",
+        );
         setRows([]);
       } finally {
         setLoading(false);
@@ -329,6 +343,11 @@ export default function Scripture(): React.ReactElement {
     async (next: ScriptureTranslation): Promise<void> => {
       setTranslation(next);
       await window.api.scripture.setTranslation(next);
+      const store = useBootstrapStore.getState();
+      store.patchSettings('scripture', {
+        ...store.settings.scripture,
+        defaultTranslation: next,
+      });
     },
     [],
   );
@@ -1079,7 +1098,7 @@ export default function Scripture(): React.ReactElement {
             inputRef={inputRef}
             onQueryChange={(value) => {
               setQuery(value);
-              if (isLikelyPhraseQuery(value)) setSuggestionsOpen(true);
+              if (shouldLiveSuggestScriptureQuery(value)) setSuggestionsOpen(true);
             }}
             onTranslationChange={(value) => void handleTranslationChange(value)}
             onSearch={() => void handleSearch()}
@@ -1095,13 +1114,34 @@ export default function Scripture(): React.ReactElement {
             onPreviewSuggestion={previewSuggestion}
           />
 
-          {translation === "NKJV" &&
+          {shouldShowApiBibleWarning(
+            apiBibleAuth,
+            Boolean(bootstrapSettings.stt.bibleApiKey),
+            bootstrapPhase === 'ready' || bootstrapPhase === 'ready-with-warnings',
+          ) &&
+            translation === "NKJV" &&
             !translations.find((item) => item.id === "NKJV")?.available && (
               <div className="flex gap-2 rounded-lg border border-yellow-500/25 bg-yellow-500/5 px-3.5 py-3 text-xs text-yellow-400">
                 <AlertCircle size={14} className="shrink-0" />
                 NKJV is the default, but its text requires an API.Bible key authorized for
                 NKJV. Add the key in Settings → API Keys.
               </div>
+            )}
+
+          {rows.length > 0 &&
+            shouldShowApiBibleAttribution(
+              translations.find((option) => option.id === translation),
+            ) && (
+              <p className="px-1 text-[10px] text-slate-500">
+                <a
+                  href={API_BIBLE_ATTRIBUTION.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="hover:text-slate-300"
+                >
+                  {API_BIBLE_ATTRIBUTION.label}
+                </a>
+              </p>
             )}
 
           {error && (

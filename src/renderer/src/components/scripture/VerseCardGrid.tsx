@@ -43,8 +43,8 @@ export function VerseCardGrid({
 }: VerseCardGridProps): React.ReactElement {
   let flatIndex = 0;
   const activeLocation = locateFlatCard(rows, activeCardIndex);
-  const focusedRowKey =
-    focusHighlight && activeLocation
+  const highlightedRowKey =
+    (focusHighlight || cueHighlight) && activeLocation
       ? (rows[activeLocation.rowIndex]?.planItemId ??
         rows[activeLocation.rowIndex]?.id ??
         null)
@@ -82,7 +82,12 @@ export function VerseCardGrid({
         });
 
         const rowKey = row.planItemId ?? row.id;
-        const rowFocused = focusedRowKey === rowKey;
+        const rowHighlighted = highlightedRowKey === rowKey;
+        const rowIsLive =
+          cueHighlight &&
+          activeLocation !== null &&
+          (rows[activeLocation.rowIndex]?.planItemId ??
+            rows[activeLocation.rowIndex]?.id) === rowKey;
 
         return (
           <section
@@ -93,16 +98,16 @@ export function VerseCardGrid({
             }}
             data-plan-item={row.planItemId ?? undefined}
             className={cn(
-              "min-w-0 space-y-2 scroll-mt-3 rounded-xl transition-all",
-              rowFocused &&
-                "bg-teal-500/[0.06] ring-1 ring-teal-400/40 shadow-[inset_0_0_0_1px_rgba(45,212,191,0.12)] p-2 -mx-1",
+              "min-w-0 space-y-2 scroll-mt-3 rounded-xl border border-transparent pl-3 transition-all",
+              rowHighlighted &&
+                "border-surface-border/40 border-l-[3px] border-l-teal-400/90",
             )}
           >
             <div className="flex flex-wrap items-baseline gap-2 px-0.5">
               <p
                 className={cn(
                   "truncate text-xs font-semibold",
-                  rowFocused ? "text-teal-300" : "text-slate-300",
+                  rowHighlighted ? "text-teal-200" : "text-slate-300",
                 )}
               >
                 {row.reference}
@@ -112,6 +117,11 @@ export function VerseCardGrid({
               </span>
               {row.note && (
                 <span className="text-[10px] text-yellow-500/90">{row.note}</span>
+              )}
+              {rowIsLive && (
+                <span className="rounded-full bg-teal-500/20 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-teal-300">
+                  Live
+                </span>
               )}
             </div>
             <div

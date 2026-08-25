@@ -31,6 +31,12 @@ const defaults: AppSettings = {
     confidenceThreshold: 0.7,
     debounceInterval: 8,
     contextWindowSize: 90,
+    offlineDownloadBibleIds: [],
+  },
+  lyrics: {
+    braveApiKey: '',
+    googleTranslateApiKey: '',
+    glossColor: '#D4A017',
   },
   display: {
     theme: 'dark',
@@ -56,6 +62,31 @@ const migrations = new Store<{ nkjvDefaultV1: boolean; customThemeLibraryV1: boo
 if (!migrations.get('nkjvDefaultV1')) {
   store.set('scripture', { ...store.get('scripture'), defaultTranslation: 'NKJV' })
   migrations.set('nkjvDefaultV1', true)
+}
+
+// Same shallow-merge caveat as `overlay` below: a stored `scripture` object
+// written before the offline cache shipped has no `offlineDownloadBibleIds`,
+// so heal the shape on every launch (a no-op once present).
+{
+  const scripture = store.get('scripture')
+  if (!Array.isArray(scripture.offlineDownloadBibleIds)) {
+    store.set('scripture', { ...scripture, offlineDownloadBibleIds: [] })
+  }
+}
+
+{
+  const lyrics = store.get('lyrics')
+  const next = { ...lyrics }
+  let dirty = false
+  if (typeof lyrics.googleTranslateApiKey !== 'string') {
+    next.googleTranslateApiKey = ''
+    dirty = true
+  }
+  if (typeof lyrics.glossColor !== 'string' || !/^#[0-9a-fA-F]{3,8}$/.test(lyrics.glossColor.trim())) {
+    next.glossColor = '#D4A017'
+    dirty = true
+  }
+  if (dirty) store.set('lyrics', next)
 }
 
 // D3 migration — electron-store shallow-Object.assign's `defaults` at startup;

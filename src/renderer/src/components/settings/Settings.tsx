@@ -16,8 +16,6 @@ import {
   RefreshCw,
   Sun,
   Moon,
-  Plus,
-  Minus,
   AlertCircle,
   ChevronRight,
   MonitorPlay,
@@ -31,7 +29,10 @@ import { Slider } from '@/components/ui/slider'
 import { useAppStore } from '@/stores/useAppStore'
 import { applyAppTheme } from '@/lib/appTheme'
 import { DEFAULT_OVERLAY_SETTINGS, normalizeOverlaySettings } from '@shared/overlay-defaults'
-import type { AppSettings, AudioDevice, AudioLevel, ScriptureTranslation } from '@shared/ipc'
+import type { AppSettings, AudioDevice, AudioLevel, ScriptureTranslation, ScriptureTranslationOption } from '@shared/ipc'
+import { OfflineBibleManager } from './OfflineBibleManager'
+import { DEFAULT_SETTINGS } from '@/lib/defaultSettings'
+import { useBootstrapStore } from '@/bootstrap/useBootstrapStore'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -45,32 +46,32 @@ type UpdateFn = <K extends keyof AppSettings>(section: K, partial: Partial<AppSe
 const SECTION_NAV: { id: Section; label: string; hint: string; icon: LucideIcon }[] = [
   { id: 'propresenter', label: 'ProPresenter', hint: 'Connection & API', icon: Server },
   { id: 'audio', label: 'Audio', hint: 'Input device & levels', icon: Mic },
-  { id: 'apikeys', label: 'API Keys', hint: 'Deepgram, Claude, Bible', icon: Key },
+  { id: 'apikeys', label: 'API Keys', hint: 'Deepgram, Claude, Bible, Brave', icon: Key },
   { id: 'scripture', label: 'Scripture', hint: 'Detection & display', icon: BookOpen },
   { id: 'overlay', label: 'Overlay', hint: 'Message template & styling', icon: MonitorPlay },
-  { id: 'general', label: 'General', hint: 'Theme & font sizes', icon: SlidersHorizontal },
+  { id: 'general', label: 'General', hint: 'Theme, fonts & lyrics color', icon: SlidersHorizontal },
 ]
 
-const TRANSLATIONS: ScriptureTranslation[] = ['NKJV', 'KJV', 'BSB', 'WEB', 'ASV', 'OEB', 'NIV', 'NLT', 'NASB', 'MSG', 'AMPC', 'TPT']
 
-const DEFAULT_SETTINGS: AppSettings = {
-  propresenter: { host: 'localhost', port: 50000, password: '' },
-  audio: { deviceId: '' },
-  stt: { provider: 'none', apiKey: '', anthropicApiKey: '', deepseekApiKey: '', llmProvider: 'anthropic', bibleApiKey: '', language: 'en-US' },
-  scripture: {
-    defaultTranslation: 'NKJV',
-    showVerseNumbers: true,
-    autoMode: false,
-    confidenceThreshold: 0.7,
-    debounceInterval: 8,
-    contextWindowSize: 90,
-  },
-  display: { theme: 'dark', fontSize: 16, transcriptionFontSize: 18 },
-  overlay: DEFAULT_OVERLAY_SETTINGS,
-  themeLibrary: [],
+// ─── Helper: Settings group (no heavy bezel frames) ───────────────────────────
+
+function SettingsGroup({
+  children,
+  className,
+}: {
+  children: React.ReactNode
+  className?: string
+}): React.ReactElement {
+  return (
+    <div className={cn('space-y-5', className)}>
+      {children}
+    </div>
+  )
 }
 
-// ─── Helper: Toggle ───────────────────────────────────────────────────────────
+function SettingsDivider(): React.ReactElement {
+  return <div className="border-t border-surface-border/40" />
+}
 
 function Toggle({
   checked,
@@ -242,8 +243,7 @@ function ConnectionSection({
 
   return (
     <div className="space-y-6">
-      <div className="double-bezel-outer">
-        <div className="double-bezel-inner p-5 space-y-5">
+      <SettingsGroup>
           {/* Status bar */}
           <div className="flex items-center gap-3 p-3.5 rounded-xl bg-surface-secondary/40">
             <ConnectionDot status={testStatus} />
@@ -318,8 +318,7 @@ function ConnectionSection({
               Configure this in ProPresenter → Preferences → Stage Display. Leave blank if unused.
             </p>
           </div>
-        </div>
-      </div>
+      </SettingsGroup>
 
       <SaveBar sectionId="propresenter" savedSection={savedSection} onSave={onSave} />
     </div>
@@ -455,8 +454,7 @@ function AudioSection({
 
   return (
     <div className="space-y-6">
-      <div className="double-bezel-outer">
-        <div className="double-bezel-inner p-5 space-y-5">
+      <SettingsGroup>
           {/* Device selector */}
           <div>
             <label className="label">Audio Input Device</label>
@@ -508,7 +506,7 @@ function AudioSection({
                 />
               </div>
             </div>
-            <div className="bg-surface-secondary/40 border border-surface-border/40 p-4 rounded-xl space-y-2">
+            <div className="bg-surface-secondary/50 p-4 rounded-lg space-y-2">
               <LevelMeter level={displayLevel} active={testing} />
               {!testing && (
                 <p className="text-center text-[10px] text-slate-500 font-medium">
@@ -554,8 +552,7 @@ function AudioSection({
               </span>
             )}
           </div>
-        </div>
-      </div>
+      </SettingsGroup>
 
       <SaveBar sectionId="audio" savedSection={savedSection} onSave={onSave} />
     </div>
@@ -647,30 +644,24 @@ function ApiKeysSection({
     setBibleStatus('testing')
     setBibleMsg('')
     try {
-      const res = await fetch('https://api.scripture.api.bible/v1/bibles', {
-        headers: { 'api-key': key },
-      })
-      if (res.ok) {
-        setBibleStatus('ok')
-        setBibleMsg('Key valid')
-      } else if (res.status === 401 || res.status === 403) {
-        setBibleStatus('fail')
-        setBibleMsg(`Unauthorized (${res.status})`)
-      } else {
-        setBibleStatus('fail')
-        setBibleMsg(`HTTP ${res.status}`)
-      }
-    } catch {
-      const valid = key.length >= 16 && !/\s/.test(key)
-      setBibleStatus(valid ? 'ok' : 'fail')
-      setBibleMsg(valid ? 'Format looks valid' : 'Key too short or contains spaces')
+      const translations = await window.api.scripture.getTranslations(key)
+      const available = translations.filter((item) => item.available)
+      // Publish the fresh result so Scripture stops treating the key as unknown.
+      const store = useBootstrapStore.getState()
+      store.setTranslations(translations)
+      store.setApiBibleAuth('authorized')
+      setBibleStatus('ok')
+      setBibleMsg(`${available.length} translations available`)
+    } catch (error) {
+      useBootstrapStore.getState().setApiBibleAuth('unauthorized')
+      setBibleStatus('fail')
+      setBibleMsg(error instanceof Error ? error.message : 'Unable to validate key')
     }
   }
 
   return (
     <div className="space-y-6">
-      <div className="double-bezel-outer">
-        <div className="double-bezel-inner p-5 space-y-5">
+      <SettingsGroup>
           {/* Deepgram */}
           <div className="space-y-3">
             <div className="flex items-start justify-between gap-4">
@@ -843,8 +834,66 @@ function ApiKeysSection({
               name="bible-key"
             />
           </div>
-        </div>
-      </div>
+
+          <div className="border-t border-surface-border/50" />
+
+          {/* Brave Search API — lyric snippet lookup */}
+          <div className="space-y-3">
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-white tracking-tight flex items-center gap-2">
+                Brave Search API Key
+                <span className="text-[9px] font-bold text-slate-400 bg-surface-secondary border border-surface-border/50 px-1.5 py-0.5 rounded uppercase tracking-wider">
+                  optional
+                </span>
+              </p>
+              <p className="text-[10px] text-slate-500 mt-0.5 leading-relaxed">
+                Optional upgrade for online lyrics search. Without it, the app still
+                searches the web for gospel songs Genius/LRCLIB miss. A key makes
+                those lookups a bit more reliable.
+              </p>
+            </div>
+            <input
+              type="text"
+              value={settings.lyrics?.braveApiKey || ''}
+              onChange={(e) => update('lyrics', { braveApiKey: e.target.value })}
+              placeholder="Brave Search API key (optional)"
+              className="input font-mono text-sm"
+              autoComplete="off"
+              spellCheck={false}
+              aria-label="Brave Search API Key"
+              name="brave-key"
+            />
+          </div>
+
+          <div className="border-t border-surface-border/50" />
+
+          {/* Google Translate — bilingual lyric glosses */}
+          <div className="space-y-3">
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-white tracking-tight flex items-center gap-2">
+                Google Translate API Key
+                <span className="text-[9px] font-bold text-slate-400 bg-surface-secondary border border-surface-border/50 px-1.5 py-0.5 rounded uppercase tracking-wider">
+                  optional
+                </span>
+              </p>
+              <p className="text-[10px] text-slate-500 mt-0.5 leading-relaxed">
+                Cloud Translation API key for bilingual lyrics. Keeps the original
+                language and adds an English gloss in parentheses under each line.
+              </p>
+            </div>
+            <input
+              type="text"
+              value={settings.lyrics?.googleTranslateApiKey || ''}
+              onChange={(e) => update('lyrics', { googleTranslateApiKey: e.target.value })}
+              placeholder="Google Translate API key (optional)"
+              className="input font-mono text-sm"
+              autoComplete="off"
+              spellCheck={false}
+              aria-label="Google Translate API Key"
+              name="google-translate-key"
+            />
+          </div>
+      </SettingsGroup>
 
       <SaveBar sectionId="apikeys" savedSection={savedSection} onSave={onSave} />
     </div>
@@ -865,11 +914,14 @@ function ScriptureSection({
   savedSection: string | null
 }) {
   const sc = settings.scripture
+  // Availability comes from the shared snapshot, refreshed in the background
+  // once the saved API.Bible key has been validated.
+  const translations = useBootstrapStore((state) => state.translations)
+  const translationsLoading = useBootstrapStore((state) => state.apiBibleAuth === 'checking')
 
   return (
     <div className="space-y-6">
-      <div className="double-bezel-outer">
-        <div className="double-bezel-inner p-5 space-y-5">
+      <SettingsGroup>
           {/* Default translation */}
           <div>
             <label className="label">Default Bible Translation</label>
@@ -881,13 +933,23 @@ function ScriptureSection({
               }
               aria-label="Default bible translation"
             >
-              {TRANSLATIONS.map((t) => (
-                <option key={t} value={t}>
-                  {t}
+              {translations.map((translation) => (
+                <option key={translation.id} value={translation.id} disabled={!translation.available}>
+                  {translation.id} — {translation.name}{translation.available ? '' : ' (not available)'}
                 </option>
               ))}
             </select>
+            <p className="mt-2 text-[10px] text-slate-500">
+              {translationsLoading
+                ? 'Checking available Bible translations…'
+                : 'Local translations are always available. API translations reflect the Bibles enabled for your saved API.Bible key.'}
+            </p>
           </div>
+
+          <div className="border-t border-surface-border/50" />
+
+          {/* Offline API.Bible cache */}
+          <OfflineBibleManager />
 
           <div className="border-t border-surface-border/50" />
 
@@ -1005,8 +1067,7 @@ function ScriptureSection({
               </div>
             </div>
           </div>
-        </div>
-      </div>
+      </SettingsGroup>
 
       <SaveBar sectionId="scripture" savedSection={savedSection} onSave={onSave} />
     </div>
@@ -1078,8 +1139,7 @@ function OverlaySection({
 
   return (
     <div className="space-y-6">
-      <div className="double-bezel-outer">
-        <div className="double-bezel-inner p-5 space-y-5">
+      <SettingsGroup>
           {/* Template editor */}
           <div>
             <label className="label">Message Template</label>
@@ -1181,7 +1241,7 @@ function OverlaySection({
             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest font-sans mb-2">
               Approximate preview
             </p>
-            <div className="relative w-full aspect-video rounded-xl bg-black border border-surface-border/50 flex items-center justify-center overflow-hidden px-6">
+            <div className="relative w-full aspect-video rounded-lg bg-black/90 flex items-center justify-center overflow-hidden px-6">
               <p className="text-white text-center whitespace-pre-line leading-snug text-pretty font-medium">
                 {renderOverlayPreview(ov.template, ov.showTranslation)}
               </p>
@@ -1221,12 +1281,10 @@ function OverlaySection({
               </p>
             )}
           </div>
-        </div>
-      </div>
+      </SettingsGroup>
 
       {/* Guided PP theme setup */}
-      <div className="double-bezel-outer">
-        <div className="double-bezel-inner p-5 space-y-3">
+      <SettingsGroup className="space-y-3">
           <div className="flex items-center gap-2.5">
             <MonitorPlay size={15} className="text-teal-400 shrink-0" aria-hidden="true" />
             <p className="text-sm font-bold text-white tracking-tight">
@@ -1245,8 +1303,7 @@ function OverlaySection({
             </li>
             <li>Click "Send test verse" above while styling to see your changes live.</li>
           </ol>
-        </div>
-      </div>
+      </SettingsGroup>
 
       <SaveBar sectionId="overlay" savedSection={savedSection} onSave={onSave} />
     </div>
@@ -1269,55 +1326,9 @@ function GeneralSection({
   const disp = settings.display
   const isDark = disp.theme === 'dark'
 
-  function Stepper({
-    label,
-    value,
-    onChange,
-    min = 10,
-    max = 48,
-    hint,
-  }: {
-    label: string
-    value: number
-    onChange: (v: number) => void
-    min?: number
-    max?: number
-    hint?: string
-  }) {
-    return (
-      <div>
-        <label className="label">{label}</label>
-        <div className="flex items-center gap-3">
-          <button
-            className="btn-secondary w-8 h-8 flex items-center justify-center p-0 disabled:opacity-40"
-            onClick={() => onChange(Math.max(min, value - 1))}
-            disabled={value <= min}
-            aria-label={`Decrease ${label}`}
-          >
-            <Minus size={13} aria-hidden="true" />
-          </button>
-          <span className="w-20 text-center font-mono text-white tabular-nums">
-            {value}
-            <span className="text-slate-500 text-xs ml-0.5">px</span>
-          </span>
-          <button
-            className="btn-secondary w-8 h-8 flex items-center justify-center p-0 disabled:opacity-40"
-            onClick={() => onChange(Math.min(max, value + 1))}
-            disabled={value >= max}
-            aria-label={`Increase ${label}`}
-          >
-            <Plus size={13} aria-hidden="true" />
-          </button>
-        </div>
-        {hint && <p className="text-[10px] text-slate-500 mt-2 leading-relaxed">{hint}</p>}
-      </div>
-    )
-  }
-
   return (
     <div className="space-y-6">
-      <div className="double-bezel-outer">
-        <div className="double-bezel-inner p-5 space-y-5">
+      <SettingsGroup>
           {/* Theme */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -1354,49 +1365,134 @@ function GeneralSection({
             </div>
           )}
 
-          <div className="border-t border-surface-border/50" />
+          <SettingsDivider />
 
-          {/* Font sizes */}
-          <div className="space-y-5">
-            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest font-sans">
-              Font Sizes
-            </p>
+          {/* Font sizes — Theme-style compact sliders */}
+          <div className="space-y-4 rounded-xl bg-surface-secondary/35 p-4">
+            <h2 className="text-sm font-semibold tracking-tight text-white">Font sizes</h2>
 
-            <Stepper
-              label="UI Font Size"
-              value={disp.fontSize}
-              onChange={(v) => update('display', { fontSize: v })}
-              min={12}
-              max={24}
-              hint="Base interface text size"
-            />
+            <div className="space-y-4">
+              <div>
+                <div className="mb-2 flex items-center justify-between">
+                  <p className="text-[11px] font-medium text-slate-400">UI</p>
+                  <span className="text-xs font-bold font-mono text-teal-400 tabular-nums">
+                    {disp.fontSize}px
+                  </span>
+                </div>
+                <Slider
+                  min={12}
+                  max={24}
+                  step={1}
+                  value={[disp.fontSize]}
+                  onValueChange={(next) => update('display', { fontSize: next[0] })}
+                  aria-label="UI font size"
+                />
+                <p className="mt-2 text-[10px] leading-relaxed text-slate-500">
+                  Base interface text size
+                </p>
+              </div>
 
-            <div className="border-t border-surface-border/50" />
+              <div className="h-px bg-surface-border/40" />
 
-            <Stepper
-              label="Transcription Display Size"
-              value={disp.transcriptionFontSize}
-              onChange={(v) => update('display', { transcriptionFontSize: v })}
-              min={12}
-              max={48}
-              hint="Font size for the live transcription view — use larger values for easy reading across the booth"
-            />
+              <div>
+                <div className="mb-2 flex items-center justify-between">
+                  <p className="text-[11px] font-medium text-slate-400">Transcription</p>
+                  <span className="text-xs font-bold font-mono text-teal-400 tabular-nums">
+                    {disp.transcriptionFontSize}px
+                  </span>
+                </div>
+                <Slider
+                  min={12}
+                  max={48}
+                  step={1}
+                  value={[disp.transcriptionFontSize]}
+                  onValueChange={(next) => update('display', { transcriptionFontSize: next[0] })}
+                  aria-label="Transcription display size"
+                />
+                <p className="mt-2 text-[10px] leading-relaxed text-slate-500">
+                  Live transcription view — larger for booth readability
+                </p>
+              </div>
+            </div>
 
-            {/* Live preview */}
-            <div className="rounded-xl bg-surface-secondary/40 border border-surface-border/40 px-4 py-4 mt-2">
-              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-2.5 font-sans">
-                Transcription preview
+            <div className="rounded-lg bg-surface/60 px-4 py-3.5">
+              <p className="mb-2 text-[10px] font-medium uppercase tracking-wider text-slate-500">
+                Preview
               </p>
               <p
-                className="text-white leading-relaxed font-light text-pretty"
+                className="font-light leading-relaxed text-pretty text-white"
                 style={{ fontSize: disp.transcriptionFontSize }}
               >
                 “For God so loved the world that he gave his one and only Son…”
               </p>
             </div>
           </div>
-        </div>
-      </div>
+
+          <SettingsDivider />
+
+          {/* Lyrics gloss color */}
+          <div className="space-y-3">
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest font-sans">
+              Lyrics
+            </p>
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-white tracking-tight">Translation gloss color</p>
+              <p className="text-[10px] text-slate-500 mt-0.5 leading-relaxed">
+                Lines in parentheses <span className="text-slate-400">(like English glosses)</span> use
+                this color in the lyrics editor and slide preview. Default is a darker yellow.
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <input
+                type="color"
+                value={
+                  /^#[0-9a-fA-F]{6}$/.test(settings.lyrics?.glossColor || '')
+                    ? settings.lyrics.glossColor
+                    : '#D4A017'
+                }
+                onChange={(e) => update('lyrics', { glossColor: e.target.value.toUpperCase() })}
+                className="h-9 w-12 cursor-pointer rounded-md border border-surface-border/60 bg-transparent p-0.5"
+                aria-label="Gloss color"
+              />
+              <input
+                type="text"
+                value={settings.lyrics?.glossColor || '#D4A017'}
+                onChange={(e) => update('lyrics', { glossColor: e.target.value })}
+                placeholder="#D4A017"
+                className="input font-mono text-sm flex-1"
+                aria-label="Gloss color hex"
+              />
+            </div>
+            {/* Mini slide preview: original + gloss as on stage */}
+            <div
+              className="rounded-lg overflow-hidden"
+              style={{
+                background:
+                  'radial-gradient(120% 80% at 50% 20%, #1a1f2e 0%, #0c0e14 55%, #07080c 100%)',
+              }}
+              aria-label="Gloss color slide preview"
+            >
+              <div className="px-5 py-6 text-center space-y-2.5">
+                <p className="text-[15px] font-semibold text-white leading-snug tracking-tight">
+                  Onye nke di ike n&apos;aka Ya
+                </p>
+                <p
+                  className="text-[13px] font-medium italic leading-snug"
+                  style={{
+                    color: /^#[0-9a-fA-F]{6}$/.test(settings.lyrics?.glossColor || '')
+                      ? settings.lyrics.glossColor
+                      : '#D4A017',
+                  }}
+                >
+                  (The arm of the Lord does great things)
+                </p>
+              </div>
+              <p className="px-4 pb-3 text-[9px] text-slate-500 text-center uppercase tracking-wider font-sans">
+                Slide preview
+              </p>
+            </div>
+          </div>
+      </SettingsGroup>
 
       <SaveBar sectionId="general" savedSection={savedSection} onSave={onSave} />
     </div>
@@ -1413,20 +1509,26 @@ export default function Settings(): React.ReactElement {
   const [audioLevel, setAudioLevel] = useState<AudioLevel | null>(null)
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Load all settings on mount
+  // Settings arrive with the startup snapshot, so this modal opens populated.
   useEffect(() => {
-    window.api.settings.getAll().then((stored) => {
-      setSettings((prev) => ({
-        propresenter: { ...prev.propresenter, ...stored.propresenter },
-        audio: { ...prev.audio, ...stored.audio },
-        stt: { ...prev.stt, ...stored.stt },
-        scripture: { ...prev.scripture, ...stored.scripture },
-        display: { ...prev.display, ...stored.display },
-        overlay: normalizeOverlaySettings({ ...prev.overlay, ...stored.overlay }),
-        themeLibrary: stored.themeLibrary ?? prev.themeLibrary,
-      }))
-      setLoading(false)
-    })
+    const stored = useBootstrapStore.getState().settings
+    setSettings((prev) => ({
+      propresenter: { ...prev.propresenter, ...stored.propresenter },
+      audio: { ...prev.audio, ...stored.audio },
+      stt: { ...prev.stt, ...stored.stt },
+      scripture: { ...prev.scripture, ...stored.scripture },
+      lyrics: { ...prev.lyrics, ...stored.lyrics },
+      display: { ...prev.display, ...stored.display },
+      overlay: normalizeOverlaySettings({ ...prev.overlay, ...stored.overlay }),
+      themeLibrary: stored.themeLibrary ?? prev.themeLibrary,
+    }))
+    setLoading(false)
+  }, [])
+
+  // Every save publishes to the shared snapshot so other screens (and a later
+  // remount of this one) never fall back to startup values.
+  const publish = useCallback(<K extends keyof AppSettings>(section: K, value: AppSettings[K]) => {
+    useBootstrapStore.getState().patchSettings(section, value)
   }, [])
 
   // Subscribe to audio level push events
@@ -1440,16 +1542,25 @@ export default function Settings(): React.ReactElement {
     section: K,
     partial: Partial<AppSettings[K]>
   ) => {
-    const shouldPersistTheme = section === 'display' && 'theme' in partial && Boolean(partial.theme)
     if (section === 'display' && 'theme' in partial && partial.theme) {
-      const theme = partial.theme as AppSettings['display']['theme']
-      applyAppTheme(theme)
+      applyAppTheme(partial.theme as AppSettings['display']['theme'])
     }
+
     setSettings((prev) => {
       const nextSection = { ...prev[section], ...partial }
-      if (shouldPersistTheme) {
+
+      // Theme + gloss color apply immediately (persist + publish), like a live control.
+      if (section === 'display' && 'theme' in partial && partial.theme) {
         void window.api.settings.set('display', nextSection as AppSettings['display'])
       }
+      if (section === 'lyrics' && 'glossColor' in (partial as object)) {
+        const gloss = (nextSection as AppSettings['lyrics']).glossColor
+        if (typeof gloss === 'string' && /^#[0-9a-fA-F]{6}$/.test(gloss.trim())) {
+          useBootstrapStore.getState().patchSettings('lyrics', nextSection as AppSettings['lyrics'])
+          void window.api.settings.set('lyrics', nextSection as AppSettings['lyrics'])
+        }
+      }
+
       return {
         ...prev,
         [section]: nextSection,
@@ -1467,15 +1578,23 @@ export default function Settings(): React.ReactElement {
   // Per-section save handlers
   const saves: Record<Section, () => void> = {
     propresenter: () => {
+      publish('propresenter', settings.propresenter)
       window.api.settings.set('propresenter', settings.propresenter).then(() => showSaved('propresenter'))
     },
     audio: () => {
+      publish('audio', settings.audio)
       window.api.settings.set('audio', settings.audio).then(() => showSaved('audio'))
     },
     apikeys: () => {
-      window.api.settings.set('stt', settings.stt).then(() => showSaved('apikeys'))
+      publish('stt', settings.stt)
+      publish('lyrics', settings.lyrics)
+      Promise.all([
+        window.api.settings.set('stt', settings.stt),
+        window.api.settings.set('lyrics', settings.lyrics),
+      ]).then(() => showSaved('apikeys'))
     },
     scripture: () => {
+      publish('scripture', settings.scripture)
       window.api.settings.set('scripture', settings.scripture).then(() => showSaved('scripture'))
     },
     overlay: () => {
@@ -1483,6 +1602,7 @@ export default function Settings(): React.ReactElement {
       // freshly-read stored overlay, so this stale copy can't clobber the Theme
       // page's mode/theme or the ppVideoInputUuid the orchestrator persists.
       const o = settings.overlay
+      publish('overlay', settings.overlay)
       window.api.settings
         .set('overlay', {
           template: o.template,
@@ -1494,7 +1614,12 @@ export default function Settings(): React.ReactElement {
         .then(() => showSaved('overlay'))
     },
     general: () => {
-      window.api.settings.set('display', settings.display).then(() => showSaved('general'))
+      publish('display', settings.display)
+      publish('lyrics', settings.lyrics)
+      Promise.all([
+        window.api.settings.set('display', settings.display),
+        window.api.settings.set('lyrics', settings.lyrics),
+      ]).then(() => showSaved('general'))
     },
   }
 
@@ -1523,10 +1648,10 @@ export default function Settings(): React.ReactElement {
               key={id}
               onClick={() => setActiveSection(id)}
               className={cn(
-                'w-full flex items-center gap-3 px-3.5 py-3 rounded-xl text-left transition-all duration-200 border group',
+                'w-full flex items-center gap-3 px-3.5 py-3 rounded-xl text-left transition-all duration-200 group',
                 active
-                  ? 'bg-surface border-surface-border text-white shadow-sm'
-                  : 'border-transparent text-slate-400 hover:bg-surface/40 hover:text-slate-200'
+                  ? 'bg-surface text-white shadow-sm'
+                  : 'text-slate-400 hover:bg-surface/40 hover:text-slate-200'
               )}
               aria-label={`${label} Settings: ${hint}`}
             >
@@ -1554,7 +1679,7 @@ export default function Settings(): React.ReactElement {
             const Icon = nav.icon
             return (
               <div className="flex items-center gap-3.5 mb-6">
-                <div className="w-9 h-9 rounded-xl bg-surface border border-surface-border flex items-center justify-center shrink-0 shadow-[inset_0_1px_1px_rgba(255,255,255,0.03)]">
+                <div className="w-9 h-9 rounded-xl bg-surface-secondary/80 flex items-center justify-center shrink-0">
                   <Icon size={16} className="text-slate-200" aria-hidden="true" />
                 </div>
                 <div>

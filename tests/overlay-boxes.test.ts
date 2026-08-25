@@ -1,0 +1,126 @@
+import assert from 'node:assert/strict'
+import test from 'node:test'
+import {
+  applyLayoutPreset,
+  boxesForLayoutPreset,
+  clampOverlayBox,
+  moveOverlayBox,
+  placeReferenceAgainstVerse,
+  resizeOverlayBox,
+} from '../src/lib/overlay-boxes'
+import { DEFAULT_OVERLAY_THEME, normalizeOverlayTheme } from '../src/lib/overlay-defaults'
+import { estimateAutoFitVerseFontPx, renderOverlayHTML } from '../src/lib/overlay-template'
+import { largestFontThatFits } from '../src/lib/overlay-fit'
+
+test('clamps overlay boxes onto the canvas', () => {
+  const boxed = clampOverlayBox({ xPct: -10, yPct: 90, widthPct: 40, heightPct: 40 })
+  assert.equal(boxed.xPct, 0)
+  assert.ok(boxed.yPct + boxed.heightPct <= 100)
+  assert.ok(boxed.widthPct >= 8)
+})
+
+test('moves and resizes without leaving the frame', () => {
+  const start = { xPct: 10, yPct: 10, widthPct: 40, heightPct: 20 }
+  const moved = moveOverlayBox(start, 80, 80)
+  assert.equal(moved.xPct + moved.widthPct, 100)
+  assert.equal(moved.yPct + moved.heightPct, 100)
+
+  const resized = resizeOverlayBox(start, 'se', 100, 100)
+  assert.equal(resized.xPct, 10)
+  assert.equal(resized.widthPct, 90)
+  assert.equal(resized.heightPct, 90)
+})
+
+test('layout presets stack verse and reference inside the frame', () => {
+  const lower = boxesForLayoutPreset('lower-third', 'below', 82, true)
+  assert.ok(lower.verse.yPct > 50)
+  assert.ok(lower.reference.yPct > lower.verse.yPct)
+  assert.equal(lower.verse.widthPct, 82)
+
+  const full = boxesForLayoutPreset('full', 'below', 82, true)
+  assert.equal(full.verse.xPct, 0)
+  assert.equal(full.verse.widthPct, 100)
+})
+
+test('snaps the reference box above or below the verse', () => {
+  const verse = { xPct: 10, yPct: 40, widthPct: 80, heightPct: 20 }
+  const reference = { xPct: 0, yPct: 0, widthPct: 50, heightPct: 10 }
+  const below = placeReferenceAgainstVerse(verse, reference, 'below')
+  assert.equal(below.xPct, 10)
+  assert.equal(below.widthPct, 80)
+  assert.ok(below.yPct >= verse.yPct + verse.heightPct)
+})
+
+test('migrates themes that predate canvas boxes', () => {
+  const { box: _verseBox, ...verse } = DEFAULT_OVERLAY_THEME.verse
+  const { box: _refBox, ...reference } = DEFAULT_OVERLAY_THEME.reference
+  const normalized = normalizeOverlayTheme({
+    ...DEFAULT_OVERLAY_THEME,
+    verse,
+    reference,
+    layout: { ...DEFAULT_OVERLAY_THEME.layout, position: 'center' },
+  })
+  assert.ok(normalized.verse.box.widthPct > 0)
+  assert.ok(normalized.reference.box.heightPct > 0)
+  assert.equal(normalized.layout.position, 'center')
+})
+
+test('migrates legacy boolean shadow and uppercase reference', () => {
+  const { textTransform: _t, shadow: _s, ...legacyReference } = DEFAULT_OVERLAY_THEME.reference
+  const { shadow: _vs, ...legacyVerse } = DEFAULT_OVERLAY_THEME.verse
+  const normalized = normalizeOverlayTheme({
+    ...DEFAULT_OVERLAY_THEME,
+    verse: { ...legacyVerse, shadow: true },
+    reference: { ...legacyReference, uppercase: true, shadow: false },
+  })
+  assert.equal(normalized.verse.shadow.enabled, true)
+  assert.equal(normalized.reference.shadow.enabled, false)
+  assert.equal(normalized.reference.textTransform, 'uppercase')
+  assert.equal(normalized.verse.verticalAlign, 'middle')
+})
+
+test('auto-fit uses the verse box, not only fullscreen', () => {
+  const shortTheme = applyLayoutPreset(
+    {
+      ...DEFAULT_OVERLAY_THEME,
+      verse: {
+        ...DEFAULT_OVERLAY_THEME.verse,
+        fontSizePx: 120,
+        box: { xPct: 10, yPct: 10, widthPct: 80, heightPct: 20 },
+      },
+      layout: { ...DEFAULT_OVERLAY_THEME.layout, autoFitText: true, paddingPx: 8 },
+    },
+    'lower-third'
+  )
+  shortTheme.verse.box = { xPct: 10, yPct: 10, widthPct: 80, heightPct: 16 }
+  shortTheme.layout.autoFitText = true
+
+  const short = 'Jesus wept.'
+  const long =
+    'For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life. For God sent not his Son into the world to condemn the world; but that the world through him might be saved.'
+
+  const shortPx = estimateAutoFitVerseFontPx(short, shortTheme)
+  const longPx = estimateAutoFitVerseFontPx(long, shortTheme)
+  assert.ok(longPx < shortPx)
+  assert.ok(longPx <= shortTheme.verse.fontSizePx)
+  assert.ok(shortPx <= shortTheme.verse.fontSizePx)
+})
+
+test('overlay HTML places verse and reference in independent boxes', () => {
+  const html = renderOverlayHTML(DEFAULT_OVERLAY_THEME, 'John 3:16', 'For God so loved the world.')
+  assert.match(html, /pa-verse-box/)
+  assert.match(html, /pa-reference-box/)
+  assert.match(html, /left:\d/)
+  assert.doesNotMatch(html, /pa-content-box/)
+})
+
+test('largestFontThatFits binary-searches the last size that does not overflow', () => {
+  assert.equal(
+    largestFontThatFits(12, 80, (px) => px > 40),
+    40
+  )
+  assert.equal(
+    largestFontThatFits(12, 80, () => true),
+    12
+  )
+})

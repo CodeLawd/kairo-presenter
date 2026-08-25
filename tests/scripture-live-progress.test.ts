@@ -4,9 +4,11 @@ import test from "node:test";
 import type { ScriptureSuggestion } from "../src/lib/ipc";
 import {
   applyOperatorSuggestionSent,
-  findReadingProgress,
   groupScriptureSuggestions,
+  partitionOperatorSuggestionGroups,
+  findReadingProgress,
   mergeScriptureSuggestion,
+  navigateOperatorSuggestionId,
   nextAutoFollowSuggestion,
   updatePassageFollow,
 } from "../src/lib/scripture-live-progress";
@@ -247,4 +249,27 @@ test("sending a standalone verse keeps its card visible", () => {
 
   assert.deepEqual(result.suggestions.map((item) => item.id), [standalone.id]);
   assert.deepEqual([...result.sentSuggestionIds], [standalone.id]);
+});
+
+test("keeps newest detections first without reordering a clicked active passage", () => {
+  const groups = groupScriptureSuggestions([
+    { ...suggestions[0], id: "old", passageId: "old", passageReference: "Genesis 8:15" },
+    { ...suggestions[1], id: "active", passageId: "active", passageReference: "Genesis 8:16" },
+    { ...suggestions[2], id: "newer", passageId: "newer", passageReference: "Genesis 8:17" },
+    { ...suggestions[3], id: "newest", passageId: "newest", passageReference: "Genesis 8:18" },
+  ]);
+
+  const sections = partitionOperatorSuggestionGroups(groups, "active", 3);
+
+  assert.deepEqual(sections.current.map((group) => group.id), ["newest", "newer", "active"]);
+  assert.deepEqual(sections.history.map((group) => group.id), ["old"]);
+});
+
+test("operator arrow navigation moves through the visible verse order", () => {
+  const ids = ["verse-1", "verse-2", "verse-3"];
+
+  assert.equal(navigateOperatorSuggestionId(ids, null, 1), "verse-1");
+  assert.equal(navigateOperatorSuggestionId(ids, "verse-1", 1), "verse-2");
+  assert.equal(navigateOperatorSuggestionId(ids, "verse-2", -1), "verse-1");
+  assert.equal(navigateOperatorSuggestionId(ids, "verse-3", 1), "verse-3");
 });

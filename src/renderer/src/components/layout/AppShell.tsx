@@ -7,7 +7,6 @@ import {
   Palette,
   Radio,
   Settings,
-  SlidersHorizontal,
   Volume2,
 } from 'lucide-react'
 import type { NavRoute } from '@/App'
@@ -24,6 +23,8 @@ interface AppShellProps {
   currentRoute: NavRoute
   onNavigate: (route: NavRoute) => void
   onOpenSettings: () => void
+  /** Route-specific controls rendered inline in the top bar (see OperatorToolbar). */
+  toolbar?: React.ReactNode
 }
 
 function StatusItem({
@@ -60,14 +61,9 @@ export default function AppShell({
   currentRoute,
   onNavigate,
   onOpenSettings,
+  toolbar,
 }: AppShellProps): React.ReactElement {
-  const {
-    ppState,
-    audioCapturing,
-    audioDeviceName,
-    isTranscribing,
-    autoModeEnabled,
-  } = useAppStore()
+  const { ppState, audioCapturing, audioDeviceName } = useAppStore()
   const [clearing, setClearing] = useState(false)
 
   const clearOutput = async (): Promise<void> => {
@@ -108,9 +104,11 @@ export default function AppShell({
         })}
       </div>
 
-      <div className="min-w-6 flex-1" aria-hidden="true" />
+      <div className="min-w-4 flex-1" aria-hidden="true" />
 
-      <div className="flex items-center">
+      {toolbar}
+
+      <div className="ml-2 flex items-center">
         <StatusItem
           label="ProPresenter"
           detail={ppState === 'connected' ? 'Connected' : ppState === 'connecting' ? 'Connecting' : 'Offline'}
@@ -122,12 +120,6 @@ export default function AppShell({
           detail={audioDeviceName ?? (audioCapturing ? 'Capturing' : 'Idle')}
           state={audioCapturing ? 'active' : 'offline'}
           icon={Volume2}
-        />
-        <StatusItem
-          label="Automation"
-          detail={autoModeEnabled ? (isTranscribing ? 'Listening · Auto' : 'Auto armed') : 'Manual'}
-          state={autoModeEnabled ? (isTranscribing ? 'active' : 'warning') : 'offline'}
-          icon={SlidersHorizontal}
         />
       </div>
 

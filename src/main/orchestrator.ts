@@ -17,7 +17,13 @@ import { normalizeOverlaySettings } from "@shared/overlay-defaults";
 import { getOverlayDispatchOrder } from "@shared/overlay-dispatch";
 import { ScriptureDetector } from "./services/scripture/detector";
 import { subscribeExplicitScriptureDetection } from "./services/scripture/live-detection-wiring";
-import type { DetectorStats, ScriptureReference } from "./services/scripture/detector";
+import { livePlanService } from "./services/scripture/live-plan";
+import { matchPlanReference } from "@shared/sermon-plan-match";
+import {
+  canAutoPresentScriptureReference,
+  type DetectorStats,
+  type ScriptureReference,
+} from "./services/scripture/detector";
 import { BibleDatabase } from "./services/scripture/bible-db";
 import { audioService } from "./services/audio";
 import { sttService } from "./services/stt";
@@ -153,54 +159,57 @@ class Orchestrator {
       this.updateHealth("detector", "error", msg);
     }
 
-    // Create ScriptureDetector
-    if (config.llmApiKey) {
-      this.detector = new ScriptureDetector({
-        provider: config.llmProvider,
-        apiKey: config.llmApiKey,
-        model: config.scriptureModel,
-      });
+    // Create ScriptureDetector. It is built even without an LLM key so the local
+    // regex path and the live-playlist match still drive the Operator; only the
+    // buffer → LLM wiring below is gated on the key.
+    this.detector = new ScriptureDetector({
+      provider: config.llmProvider,
+      apiKey: config.llmApiKey,
+      model: config.scriptureModel,
+    });
+    this.detector.setPlanIndexProvider(() => livePlanService.getIndex());
 
-      this.detector.on("detection", (refs) => {
-        this.handleDetection(refs).catch((err) =>
-          log.error("[Orchestrator] handleDetection error", (err as Error).message),
-        );
-      });
-      this.detector.on("requestSuccess", () => {
-        resilienceManager.handleClaudeSuccess();
-      });
+    this.detector.on("detection", (refs) => {
+      this.handleDetection(refs).catch((err) =>
+        log.error("[Orchestrator] handleDetection error", (err as Error).message),
+      );
+    });
 
-      this.detector.on("stats", (stats: DetectorStats) => {
-        if (this.session) {
-          this.session.detectorCalls = stats.totalCalls;
-          this.session.avgDetectorLatencyMs = stats.averageLatencyMs;
-        }
-      });
+    this.detector.on("requestSuccess", () => {
+      resilienceManager.handleClaudeSuccess();
+    });
 
-      this.detector.on("error", (err: Error) => {
-        log.error("[Orchestrator] Detector error", err.message);
-        this.updateHealth("detector", "error", err.message);
-        this.emitStatus();
-        resilienceManager.handleClaudeError(err);
-      });
+    this.detector.on("stats", (stats: DetectorStats) => {
+      if (this.session) {
+        this.session.detectorCalls = stats.totalCalls;
+        this.session.avgDetectorLatencyMs = stats.averageLatencyMs;
+      }
+    });
 
-      this.updateHealth("detector", "ok");
-    }
+    this.detector.on("error", (err: Error) => {
+      log.error("[Orchestrator] Detector error", err.message);
+      this.updateHealth("detector", "error", err.message);
+      this.emitStatus();
+      resilienceManager.handleClaudeError(err);
+    });
+
+    if (config.llmApiKey) this.updateHealth("detector", "ok");
 
     // Configure STT
     sttService.configure(config.sttProvider, config.sttApiKey, config.sttLanguage);
 
-    // Wire buffer → detector
-    if (this.detector) {
+    // Wire buffer → detector. Only the LLM analysis needs an API key; the local
+    // explicit + playlist paths run either way.
+    if (config.llmApiKey) {
       this.bufferAnalyzeListener = (ctx: string, _ts: number) => {
         this.detector!.analyze(ctx);
       };
       sttService.buffer.on("analyzeReady", this.bufferAnalyzeListener);
-      this.explicitDetectionCleanup = subscribeExplicitScriptureDetection(
-        sttService,
-        this.detector,
-      );
     }
+    this.explicitDetectionCleanup = subscribeExplicitScriptureDetection(
+      sttService,
+      this.detector,
+    );
 
     // Start STT (connects Deepgram WebSocket)
     try {
@@ -339,6 +348,23 @@ class Orchestrator {
     scriptureService.dismissSuggestion(suggestionId);
   }
 
+  /**
+   * Keeps the running session's automation flag in sync with the Operator's
+   * toggle. Without this `cfg` only ever reflects the value captured at
+   * `start()`, so flipping Automation mid-service had no effect on auto-push.
+   */
+  setAutoMode(enabled: boolean): void {
+    if (this.cfg) this.cfg.autoMode = enabled;
+  }
+
+  setConfidenceThreshold(threshold: number): void {
+    if (this.cfg) this.cfg.confidenceThreshold = Math.max(0, Math.min(1, threshold));
+  }
+
+  setScriptureTranslation(translation: AppSettings["scripture"]["defaultTranslation"]): void {
+    if (this.cfg) this.cfg.scriptureTranslation = translation;
+  }
+
   dismissAuto(suggestionId: string): void {
     this.cancelAutoPresent(suggestionId);
     log.info("[Orchestrator] Auto-present dismissed by user", { suggestionId });
@@ -350,44 +376,26 @@ class Orchestrator {
     if (!this.cfg) return;
 
     for (const ref of refs) {
-      const translation = this.cfg.scriptureTranslation;
-      let verses: ScriptureVerse[] = [];
+      // Live sermon playlist first: its verses are already resolved, in the
+      // translation the preacher chose, so a hit skips the Bible lookup
+      // entirely. A miss — or a range the playlist only partly covers — falls
+      // through to the normal path untouched, so off-plan verses still detect.
+      const planEntries = matchPlanReference(livePlanService.getIndex(), ref);
+      const planEntry = planEntries[0] ?? null;
+      const translation = planEntry
+        ? planEntry.translation
+        : this.cfg.scriptureTranslation;
+      let verses: ScriptureVerse[] = planEntries.map((entry) => entry.verse);
 
-      if (this.db) {
+      if (verses.length === 0) {
         try {
-          if (ref.verseEnd != null) {
-            verses = this.db
-              .getVerseRange(
-                translation,
-                ref.book,
-                ref.chapter,
-                ref.verseStart,
-                ref.verseEnd,
-              )
-              .map((v) => ({
-                book: v.bookName,
-                chapter: v.chapter,
-                verse: v.verse,
-                text: v.text,
-              }));
-          } else {
-            const v = this.db.getVerse(
-              translation,
-              ref.book,
-              ref.chapter,
-              ref.verseStart,
-            );
-            if (v) {
-              verses = [
-                {
-                  book: v.bookName,
-                  chapter: v.chapter,
-                  verse: v.verse,
-                  text: v.text,
-                },
-              ];
-            }
-          }
+          const end = ref.verseEnd != null ? `-${ref.verseEnd}` : "";
+          const results = await scriptureService.search(
+            `${ref.book} ${ref.chapter}:${ref.verseStart}${end}`,
+            translation,
+            store.get("stt").bibleApiKey,
+          );
+          verses = results.flatMap((result) => result.verses);
         } catch (err) {
           log.warn("[Orchestrator] Bible lookup error", {
             book: ref.book,
@@ -397,7 +405,7 @@ class Orchestrator {
       }
 
       // One Operator suggestion per verse — never jumble a range into a single card
-      const verseItems: ScriptureVerse[] =
+      const requestedVerseItems: ScriptureVerse[] =
         verses.length > 0
           ? verses
           : ref.verseEnd != null && ref.verseEnd > ref.verseStart
@@ -420,6 +428,8 @@ class Orchestrator {
                 } satisfies ScriptureVerse,
               ];
 
+      const verseItems = requestedVerseItems;
+
       const passageId = `${ref.book.toLowerCase().replace(/\s+/g, "-")}-${ref.chapter}-${ref.verseStart}-${ref.verseEnd ?? ref.verseStart}-${Date.now()}`;
       const passageReference =
         ref.verseEnd != null && ref.verseEnd > ref.verseStart
@@ -439,6 +449,16 @@ class Orchestrator {
           passageReference,
           passageIndex: verseIndex,
           passageLength: verseItems.length,
+          ...(planEntry
+            ? {
+                planId: planEntry.planId,
+                planItemId: planEntry.planItemId,
+                planMatch:
+                  ref.detectionType === "quote"
+                    ? ("quote" as const)
+                    : ("reference" as const),
+              }
+            : {}),
         };
 
         this.pendingSuggestions.set(suggestion.id, suggestion);
@@ -449,7 +469,9 @@ class Orchestrator {
 
         if (
           this.cfg.autoMode &&
+          verseIndex === 0 &&
           verseItems.length === 1 &&
+          canAutoPresentScriptureReference(ref) &&
           ref.confidence >= (this.cfg.confidenceThreshold ?? 0.7)
         ) {
           this.scheduleAutoPresent(suggestion);
@@ -943,6 +965,7 @@ class Orchestrator {
           apiKey: this.cfg.llmApiKey,
           model: this.cfg.scriptureModel,
         });
+        this.detector.setPlanIndexProvider(() => livePlanService.getIndex());
 
         this.detector.on("detection", (refs) => {
           this.handleDetection(refs).catch((err) =>

@@ -34,6 +34,28 @@ export interface AppSettings {
     confidenceThreshold: number
     debounceInterval: number
     contextWindowSize: number
+    /**
+     * API.Bible ids whose licence has been confirmed to permit whole-translation
+     * offline download. Possession of an API key alone never implies this right.
+     */
+    offlineDownloadBibleIds: string[]
+  }
+  lyrics: {
+    /**
+     * Lets online lyrics search find songs outside Genius/LRCLIB (African gospel
+     * blogs, etc.). Optional — a free HTML fallback runs without it.
+     */
+    braveApiKey: string
+    /**
+     * Google Cloud Translation API key. Optional — powers “Translate to English”
+     * on lyrics (original kept; English gloss under each line).
+     */
+    googleTranslateApiKey: string
+    /**
+     * Color for bilingual gloss lines `(English…)` in the editor and slide preview.
+     * Default: slightly darker yellow.
+     */
+    glossColor: string
   }
   display: {
     theme: 'dark' | 'light'
@@ -72,9 +94,62 @@ export interface CustomOverlayTheme {
 }
 
 // ─── Overlay theme (phase 2 — NDI in-app renderer) ────────────────────────────
-// Schema is locked (see D-decisions in docs/plans/2026-07-08-ndi-overlay.md).
-// Defaults + the normalizer that enforces the constraints below live in
-// src/lib/overlay-defaults.ts (DEFAULT_OVERLAY_THEME / normalizeOverlaySettings).
+// Defaults + the normalizer live in src/lib/overlay-defaults.ts.
+
+/** Independent canvas box for verse or reference, in % of the 1920×1080 frame. */
+export interface OverlayBox {
+  /** Left edge, 0–100 (% of frame width). */
+  xPct: number
+  /** Top edge, 0–100 (% of frame height). */
+  yPct: number
+  /** Box width, 8–100 (% of frame width). */
+  widthPct: number
+  /** Box height, 6–100 (% of frame height). */
+  heightPct: number
+}
+
+export type OverlayTextAlign = 'left' | 'center' | 'right' | 'justify'
+export type OverlayVerticalAlign = 'top' | 'middle' | 'bottom'
+export type OverlayTextDecoration = 'none' | 'underline' | 'line-through'
+export type OverlayTextTransform = 'none' | 'uppercase' | 'capitalize' | 'lowercase'
+export type OverlayOutlinePosition = 'outside' | 'inside' | 'center'
+export type OverlayOutlineStyle = 'solid' | 'dashed' | 'dotted'
+
+export interface OverlayTextShadow {
+  enabled: boolean
+  xPx: number
+  yPx: number
+  blurPx: number
+  color: string
+  opacity: number
+}
+
+export interface OverlayTextOutline {
+  enabled: boolean
+  position: OverlayOutlinePosition
+  widthPx: number
+  style: OverlayOutlineStyle
+  color: string
+  opacity: number
+}
+
+/** Shared typography + effects for verse or reference text. */
+export interface OverlayTextStyle {
+  fontFamily: string
+  fontSizePx: number
+  fontWeight: number
+  color: string
+  colorOpacity: number
+  lineHeight: number
+  letterSpacingPx: number
+  align: OverlayTextAlign
+  verticalAlign: OverlayVerticalAlign
+  textDecoration: OverlayTextDecoration
+  textTransform: OverlayTextTransform
+  shadow: OverlayTextShadow
+  outline: OverlayTextOutline
+  box: OverlayBox
+}
 
 export interface OverlayTheme {
   background: {
@@ -90,23 +165,10 @@ export interface OverlayTheme {
     /** How image/video media fills the 1920×1080 frame. Default 'cover'. */
     mediaFit?: 'cover' | 'contain' | 'fill'
   }
-  verse: {
-    fontFamily: string     // CSS family list
-    fontSizePx: number     // 12–200
-    fontWeight: number     // 100–900
-    color: string
-    lineHeight: number     // 0.9–2.5
-    align: 'left' | 'center' | 'right'
-    shadow: boolean        // text-shadow for legibility over video
-  }
-  reference: {
+  verse: OverlayTextStyle
+  reference: OverlayTextStyle & {
     show: boolean
     position: 'above' | 'below'
-    fontFamily: string
-    fontSizePx: number
-    fontWeight: number
-    color: string
-    uppercase: boolean
   }
   layout: {
     position: 'lower-third' | 'center' | 'top' | 'full'
@@ -115,7 +177,7 @@ export interface OverlayTheme {
     backdropBox: boolean   // rounded box behind the text block
     backdropColor: string  // rgba recommended
     backdropRadiusPx: number // 0–64
-    /** 'full' position only: auto-size verse text to fill the frame (overrides verse.fontSizePx). */
+    /** Auto-size verse text to fill its box, capped by verse.fontSizePx. */
     autoFitText: boolean
   }
 }
@@ -198,6 +260,61 @@ export interface AudioError {
   message: string
 }
 
+// ─── Startup bootstrap ────────────────────────────────────────────────────────
+
+/** Local resources the app waits for before showing its interface. */
+export type BootstrapResource =
+  | 'settings'
+  | 'orchestrator'
+  | 'propresenter'
+  | 'transcription'
+  | 'translations'
+  | 'sermonPlans'
+  | 'livePlan'
+  | 'lyrics'
+
+export interface BootstrapResourceError {
+  resource: BootstrapResource
+  message: string
+}
+
+export interface BootstrapProgress {
+  completed: number
+  total: number
+  /** User-facing label, e.g. "Loading scripture playlists…". */
+  step: string
+}
+
+/**
+ * Everything the renderer needs for its first paint, loaded once at startup.
+ * Network and hardware integrations are deliberately excluded — they hydrate in
+ * the background so an unavailable one cannot hold the app hostage.
+ */
+export interface AppBootstrapSnapshot {
+  /** Null only when settings could not be read; the renderer falls back to defaults. */
+  settings: AppSettings | null
+  orchestrator: OrchestratorStatus | null
+  propresenter: ProPresenterStatus | null
+  transcription: TranscriptResult[]
+  translations: ScriptureTranslationOption[]
+  sermonPlans: SermonPlan[]
+  livePlan: LivePlanState | null
+  lyrics: LyricsSong[]
+  errors: BootstrapResourceError[]
+  completedAt: number
+}
+
+/**
+ * Whether the saved API.Bible key has been confirmed. Scripture must not warn
+ * about a missing or unauthorized key until this is `unauthorized`.
+ */
+export type ApiBibleAuthorizationState =
+  | 'unchecked'
+  | 'checking'
+  | 'authorized'
+  | 'unauthorized'
+  | 'offline'
+
 // ─── Scripture ────────────────────────────────────────────────────────────────
 
 export interface ScriptureVerse {
@@ -220,6 +337,13 @@ export interface ScriptureSuggestion {
   passageReference?: string
   passageIndex?: number
   passageLength?: number
+  /** Adjacent verse loaded proactively beyond the preacher's stated range. */
+  preloadedNext?: boolean
+  /** Playlist item this verse resolved against, when a live sermon playlist is set. */
+  planId?: string
+  planItemId?: string
+  /** How the live playlist matched: spoken citation vs. the preacher reading the text. */
+  planMatch?: 'reference' | 'quote'
 }
 
 export interface ScriptureResult {
@@ -234,6 +358,40 @@ export interface ScriptureTranslationOption {
   access: 'local' | 'api'
   available: boolean
   requiresApiKey: boolean
+}
+
+export type ApiBibleCacheStatus =
+  | 'not-downloaded'
+  | 'partial'
+  | 'downloading'
+  | 'paused'
+  | 'downloaded'
+  | 'stale'
+  | 'unavailable'
+  | 'failed'
+
+export interface ApiBibleOfflineTranslation {
+  bibleId: string
+  translation: ScriptureTranslation
+  name: string
+  copyright: string
+  status: ApiBibleCacheStatus
+  cachedChapters: number
+  totalChapters: number
+  cachedVerses: number
+  fetchedAt: number | null
+  expiresAt: number | null
+  offlineDownloadEnabled: boolean
+  error?: string
+}
+
+export interface ApiBibleDownloadProgress {
+  bibleId: string
+  status: ApiBibleCacheStatus
+  completedChapters: number
+  totalChapters: number
+  cachedVerses: number
+  error?: string
 }
 
 export interface SermonScriptureItem {
@@ -361,6 +519,15 @@ export function reorderSermonPlanItem(
   return { ...plan, items, updatedAt: movedAt }
 }
 
+/** Summary of the sermon playlist currently referenced by live transcription. */
+export interface LivePlanState {
+  planId: string | null
+  title: string | null
+  itemCount: number
+  /** Items with no resolved verse text — they cannot be matched by reading. */
+  unavailableCount: number
+}
+
 export interface SermonPlanDraft {
   title: string
   sourceFileName: string
@@ -398,6 +565,42 @@ export type LyricsImportSource =
   | { type: 'ccli'; ccliNumber: string; apiKey: string }
   | { type: 'text'; title: string; artist: string; text: string; copyright?: string }
   | { type: 'usr'; content: string; filename?: string }
+  | { type: 'online'; provider: LyricsProvider; url: string; title: string; artist: string }
+
+/** Remote catalogues the online search tier can reach. */
+export type LyricsProvider = 'genius' | 'lrclib' | 'web'
+
+export interface LyricsOnlineResult {
+  /** Stable per-provider identifier, used as a React key and for dedup. */
+  id: string
+  provider: LyricsProvider
+  title: string
+  artist: string
+  /** Provider endpoint the lyrics get fetched from on import. */
+  url: string
+  album?: string
+  releaseYear?: string
+  /**
+   * The lyric line that matched the query, when the hit came from the words
+   * rather than the title. Shown so the operator can tell at a glance why a
+   * result is in the list.
+   */
+  snippet?: string
+  /**
+   * Id of the library song this result already matches, if any. Lets the UI
+   * offer "Open" instead of importing a duplicate.
+   */
+  existingSongId?: string
+}
+
+/** Full lyrics for a search hit — fetched on click, not saved until Import. */
+export interface LyricsOnlinePreview {
+  title: string
+  artist: string
+  provider: LyricsProvider
+  url: string
+  sections: LyricsSongSection[]
+}
 
 export type LyricsSectionType =
   | 'verse'
@@ -409,12 +612,17 @@ export type LyricsSectionType =
   | 'outro'
   | 'ending'
 
-export type LyricsSource = 'usr' | 'text' | 'propresenter' | 'ccli'
+export type LyricsSource = 'usr' | 'text' | 'propresenter' | 'ccli' | 'genius' | 'lrclib' | 'web'
 
 export interface LyricsSongSection {
   type: LyricsSectionType
   label: string
   lines: string[]
+  /**
+   * Optional per-line color overrides (same length as `lines` when present).
+   * `null` / missing = use auto gloss detection + Settings gloss color.
+   */
+  lineColors?: (string | null)[]
 }
 
 export interface LyricsSong {
@@ -431,7 +639,10 @@ export interface LyricsSong {
 }
 
 export interface SongPresentOptions {
-  /** Max lines to put on a single slide. Default: 4 */
+  /**
+   * @deprecated Slides are defined by blank-line breaks in the song text.
+   * Kept so older callers still type-check; ignored by the formatter.
+   */
   linesPerSlide?: number
   /** Soft word-wrap character limit per line. Default: 40 */
   maxCharsPerLine?: number
@@ -485,14 +696,29 @@ export interface ScriptureAPI {
   /** Register a manually-built suggestion so orchestrator.approveSuggestion can present it. */
   register: (suggestion: ScriptureSuggestion) => Promise<void>
   search: (query: string, translation?: ScriptureTranslation) => Promise<ScriptureResult[]>
-  getTranslations: () => Promise<ScriptureTranslationOption[]>
+  getTranslations: (apiKey?: string) => Promise<ScriptureTranslationOption[]>
   setTranslation: (translation: ScriptureTranslation) => Promise<void>
   importSermonNotes: () => Promise<SermonPlanDraft | null>
   listSermonPlans: () => Promise<SermonPlan[]>
   saveSermonPlan: (plan: SermonPlan) => Promise<SermonPlan>
   deleteSermonPlan: (planId: string) => Promise<void>
+  /** Reads the sermon playlist currently referenced by live transcription. */
+  getLivePlan: () => Promise<LivePlanState>
+  /** Selects (or clears, with null) the live reference playlist. */
+  setLivePlan: (planId: string | null) => Promise<LivePlanState>
+  /** Returns cleanup fn. Fires when the live playlist or its contents change. */
+  onLivePlanChange: (callback: (state: LivePlanState) => void) => Unsubscribe
   setAutoMode: (enabled: boolean) => Promise<void>
   setConfidenceThreshold: (threshold: number) => Promise<void>
+  /** Cache state for every API.Bible translation the saved key can reach. */
+  listOfflineTranslations: () => Promise<ApiBibleOfflineTranslation[]>
+  downloadTranslation: (bibleId: string) => Promise<void>
+  pauseTranslationDownload: (bibleId: string) => Promise<void>
+  refreshOfflineTranslation: (bibleId: string) => Promise<void>
+  /** Deletes cached licensed text; the API key and app settings are untouched. */
+  removeOfflineTranslation: (bibleId: string) => Promise<void>
+  /** Returns cleanup fn. Fires as chapters are downloaded or refreshed. */
+  onOfflineDownloadProgress: (callback: (value: ApiBibleDownloadProgress) => void) => Unsubscribe
 }
 
 export interface TranscriptionAPI {
@@ -506,6 +732,21 @@ export interface TranscriptionAPI {
 
 export interface LyricsAPI {
   search: (query: string) => Promise<LyricsSong[]>
+  /**
+   * Searches remote catalogues by title, artist, or a fragment of the lyrics.
+   * Results are annotated with `existingSongId` when the library already has a match.
+   */
+  searchOnline: (query: string) => Promise<LyricsOnlineResult[]>
+  /**
+   * Fetches full lyrics for a search hit without writing to the library.
+   * Used so the operator can confirm the song before Import.
+   */
+  previewOnline: (source: {
+    provider: LyricsProvider
+    url: string
+    title: string
+    artist: string
+  }) => Promise<LyricsOnlinePreview>
   import: (source: LyricsImportSource) => Promise<LyricsSong>
   getLibrary: () => Promise<LyricsSong[]>
   getSong: (id: string) => Promise<LyricsSong | null>
@@ -514,6 +755,20 @@ export interface LyricsAPI {
   toggleFavorite: (id: string) => Promise<boolean>
   sendToProPresenter: (songId: string, options?: SongPresentOptions) => Promise<void>
   addToPlaylist: (songId: string, playlistId: string) => Promise<void>
+  /**
+   * Translates singable lines to English and inserts `(gloss)` under each line.
+   * Prefers Anthropic/DeepSeek when configured; otherwise Google Translate.
+   * `sourceLanguage`: 'auto' | 'yo' | 'ig' | 'ha' | …
+   */
+  translateSections: (
+    sections: LyricsSongSection[],
+    options?: {
+      target?: string
+      sourceLanguage?: string
+      title?: string
+      artist?: string
+    }
+  ) => Promise<LyricsSongSection[]>
 }
 
 // ─── NDI ───────────────────────────────────────────────────────────────────────
@@ -637,7 +892,15 @@ export interface OrchestratorAPI {
   onPendingAuto: (callback: (pending: PendingAutoPresent) => void) => Unsubscribe
 }
 
+export interface AppAPI {
+  /** Loads every local resource the first render needs, in one round trip. */
+  bootstrap: () => Promise<AppBootstrapSnapshot>
+  /** Returns cleanup fn. Fires as each bootstrap resource settles. */
+  onBootstrapProgress: (callback: (progress: BootstrapProgress) => void) => Unsubscribe
+}
+
 export interface ProAutomateAPI {
+  app: AppAPI
   propresenter: ProPresenterAPI
   audio: AudioAPI
   scripture: ScriptureAPI
@@ -674,6 +937,10 @@ export const IPC = {
     LEVEL:          'audio:level',                  // push
     ERROR:          'audio:error',                  // push
   },
+  APP: {
+    BOOTSTRAP:          'app:bootstrap',          // invoke
+    BOOTSTRAP_PROGRESS: 'app:bootstrapProgress',  // push
+  },
   SCRIPTURE: {
     APPROVE:                'scripture:approve',                 // invoke
     DISMISS:                'scripture:dismiss',                 // invoke
@@ -685,6 +952,15 @@ export const IPC = {
     LIST_SERMON_PLANS:      'scripture:listSermonPlans',         // invoke
     SAVE_SERMON_PLAN:       'scripture:saveSermonPlan',          // invoke
     DELETE_SERMON_PLAN:     'scripture:deleteSermonPlan',        // invoke
+    GET_LIVE_PLAN:          'scripture:getLivePlan',             // invoke
+    SET_LIVE_PLAN:          'scripture:setLivePlan',             // invoke
+    LIVE_PLAN_CHANGED:      'scripture:livePlanChanged',         // push
+    LIST_OFFLINE_TRANSLATIONS:   'scripture:listOfflineTranslations',   // invoke
+    DOWNLOAD_TRANSLATION:        'scripture:downloadTranslation',       // invoke
+    PAUSE_TRANSLATION_DOWNLOAD:  'scripture:pauseTranslationDownload',   // invoke
+    REFRESH_OFFLINE_TRANSLATION: 'scripture:refreshOfflineTranslation',  // invoke
+    REMOVE_OFFLINE_TRANSLATION:  'scripture:removeOfflineTranslation',   // invoke
+    OFFLINE_DOWNLOAD_PROGRESS:   'scripture:offlineDownloadProgress',    // push
     SET_AUTO_MODE:          'scripture:setAutoMode',             // invoke
     SET_CONFIDENCE:         'scripture:setConfidenceThreshold',  // invoke
     SUGGESTION:             'scripture:suggestion',              // push
@@ -697,6 +973,8 @@ export const IPC = {
   },
   LYRICS: {
     SEARCH:          'lyrics:search',               // invoke
+    SEARCH_ONLINE:   'lyrics:searchOnline',         // invoke
+    PREVIEW_ONLINE:  'lyrics:previewOnline',        // invoke
     IMPORT:          'lyrics:import',               // invoke
     GET_LIBRARY:     'lyrics:getLibrary',           // invoke
     GET_SONG:        'lyrics:getSong',              // invoke
@@ -705,6 +983,7 @@ export const IPC = {
     TOGGLE_FAVORITE: 'lyrics:toggleFavorite',       // invoke
     SEND_TO_PP:      'lyrics:sendToProPresenter',   // invoke
     ADD_TO_PLAYLIST: 'lyrics:addToPlaylist',        // invoke
+    TRANSLATE:       'lyrics:translate',            // invoke
   },
   SETTINGS: {
     GET:            'settings:get',                 // invoke

@@ -8,7 +8,13 @@
 // clamped/validated by `normalizeOverlaySettings` (src/lib/overlay-defaults.ts)
 // — this module does not re-validate them, only the two free-text strings.
 
-import type { OverlayTheme } from './ipc'
+import type {
+  OverlayTextOutline,
+  OverlayTextShadow,
+  OverlayTextStyle,
+  OverlayTheme,
+} from './ipc'
+import { overlayBoxStyle } from './overlay-boxes'
 
 // ─── Escaping ───────────────────────────────────────────────────────────────────
 
@@ -36,6 +42,61 @@ export const PA_MEDIA_URL_PREFIX = 'pa-media://media/'
 
 export function overlayMediaUrl(absPath: string): string {
   return `${PA_MEDIA_URL_PREFIX}${encodeURIComponent(absPath)}`
+}
+
+// ─── Color helpers ──────────────────────────────────────────────────────────────
+
+function hexToRgb(color: string): { r: number; g: number; b: number } | null {
+  const hex = color.trim()
+  const short = /^#([0-9a-fA-F]{3})$/.exec(hex)
+  if (short) {
+    const [r, g, b] = short[1].split('')
+    return {
+      r: parseInt(r + r, 16),
+      g: parseInt(g + g, 16),
+      b: parseInt(b + b, 16),
+    }
+  }
+  const full = /^#([0-9a-fA-F]{6})$/.exec(hex)
+  if (full) {
+    return {
+      r: parseInt(full[1].slice(0, 2), 16),
+      g: parseInt(full[1].slice(2, 4), 16),
+      b: parseInt(full[1].slice(4, 6), 16),
+    }
+  }
+  const rgb = /^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/.exec(hex)
+  if (rgb) {
+    return { r: Number(rgb[1]), g: Number(rgb[2]), b: Number(rgb[3]) }
+  }
+  return null
+}
+
+export function colorWithOpacity(color: string, opacity: number): string {
+  const rgb = hexToRgb(color)
+  if (!rgb) return color
+  const a = Math.min(1, Math.max(0, opacity))
+  return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${a})`
+}
+
+function shadowCss(shadow: OverlayTextShadow): string {
+  if (!shadow.enabled) return ''
+  const color = colorWithOpacity(shadow.color, shadow.opacity)
+  return `text-shadow:${shadow.xPx}px ${shadow.yPx}px ${shadow.blurPx}px ${color};`
+}
+
+function outlineCss(outline: OverlayTextOutline): string {
+  if (!outline.enabled || outline.widthPx <= 0) return ''
+  const color = colorWithOpacity(outline.color, outline.opacity)
+  // CSS text-stroke is the portable solid outline; dashed/dotted fall back to solid.
+  const width =
+    outline.position === 'inside'
+      ? Math.max(0.5, outline.widthPx * 0.55)
+      : outline.widthPx
+  return [
+    `-webkit-text-stroke:${width}px ${color};`,
+    'paint-order:stroke fill;',
+  ].join(' ')
 }
 
 // ─── CSS builders ───────────────────────────────────────────────────────────────
@@ -67,52 +128,39 @@ function backgroundLayerHTML(theme: OverlayTheme): string {
   return `<div class="pa-bg" style="${style}"></div>`
 }
 
-function layoutPositionStyle(position: OverlayTheme['layout']['position']): string {
-  switch (position) {
-    case 'top':
-      return 'align-items:flex-start; justify-content:center; padding-top:4%;'
-    case 'center':
-      return 'align-items:center; justify-content:center;'
-    case 'full':
-      // Full-bleed: the content box IS the frame; it stretches edge to edge.
-      return 'align-items:stretch; justify-content:stretch;'
-    case 'lower-third':
-    default:
-      return 'align-items:flex-end; justify-content:center; padding-bottom:6%;'
-  }
-}
-
-function verseStyle(verse: OverlayTheme['verse'], fontSizePx: number): string {
+function textStyleCss(style: OverlayTextStyle, fontSizePx: number): string {
+  const decoration = style.textDecoration === 'none' ? 'none' : style.textDecoration
+  const transform = style.textTransform === 'none' ? 'none' : style.textTransform
   return [
-    `font-family:${verse.fontFamily};`,
+    `font-family:${style.fontFamily};`,
     `font-size:${fontSizePx}px;`,
-    `font-weight:${verse.fontWeight};`,
-    `color:${verse.color};`,
-    `line-height:${verse.lineHeight};`,
-    `text-align:${verse.align};`,
+    `font-weight:${style.fontWeight};`,
+    `color:${colorWithOpacity(style.color, style.colorOpacity)};`,
+    `line-height:${style.lineHeight};`,
+    `letter-spacing:${style.letterSpacingPx}px;`,
+    `text-align:${style.align};`,
+    `text-decoration:${decoration};`,
+    `text-transform:${transform};`,
     'white-space:normal;',
-    verse.shadow ? 'text-shadow:0 2px 10px rgba(0,0,0,0.7), 0 0 2px rgba(0,0,0,0.6);' : '',
+    shadowCss(style.shadow),
+    outlineCss(style.outline),
   ].join(' ')
 }
 
-// ─── Auto-fit (full-bleed) ──────────────────────────────────────────────────────
-// Pure estimate — no DOM measurement is possible here (this module renders to a
-// string consumed by two different renderers). Character width is approximated
-// as a fraction of the font size; the factor is deliberately conservative so the
-// real render errs toward fitting. Because BOTH the preview and the NDI window
-// render from the same computed px, WYSIWYG still holds exactly.
+// ─── Auto-fit (verse box) ───────────────────────────────────────────────────────
+// Pure estimate — no DOM measurement is possible here. Character width is
+// approximated as a fraction of the font size; the factor is conservative so
+// the real render errs toward fitting. DOM fit in overlay.html / ThemeEditor
+// then snaps to the true size.
 
 const AVG_CHAR_WIDTH_FACTOR = 0.55
-const MIN_AUTO_FIT_PX = 24
+const MIN_AUTO_FIT_PX = 12
 const MAX_AUTO_FIT_PX = 200
-/** Vertical slack for the reference row (line-height + gap) when it shares the frame. */
-const REFERENCE_ROW_FACTOR = 1.6
-const REFERENCE_ROW_GAP_PX = 24
 
 /**
- * Largest verse font size (px) whose estimated wrapped height fits the frame,
- * accounting for padding and the reference row. Used when
- * `layout.position === 'full' && layout.autoFitText`.
+ * Largest verse font size (px) whose estimated wrapped height fits the verse
+ * box. Used when `layout.autoFitText` is on, for any layout position.
+ * Capped by `verse.fontSizePx` so the Size slider remains a maximum.
  */
 export function estimateAutoFitVerseFontPx(
   text: string,
@@ -120,12 +168,10 @@ export function estimateAutoFitVerseFontPx(
   frameWidth = 1920,
   frameHeight = 1080
 ): number {
-  const { verse, reference, layout } = theme
-  const usableW = Math.max(120, frameWidth - layout.paddingPx * 2)
-  const referenceH = reference.show
-    ? reference.fontSizePx * REFERENCE_ROW_FACTOR + REFERENCE_ROW_GAP_PX
-    : 0
-  const usableH = Math.max(80, frameHeight - layout.paddingPx * 2 - referenceH)
+  const { verse, layout } = theme
+  const box = verse.box
+  const usableW = Math.max(80, (frameWidth * box.widthPct) / 100 - layout.paddingPx * 2)
+  const usableH = Math.max(48, (frameHeight * box.heightPct) / 100 - layout.paddingPx * 2)
 
   const paragraphs = text
     .split('\n')
@@ -139,7 +185,7 @@ export function estimateAutoFitVerseFontPx(
     .reduce((max, w) => Math.max(max, w.length), 1)
 
   const fits = (sizePx: number): boolean => {
-    const charW = sizePx * AVG_CHAR_WIDTH_FACTOR
+    const charW = sizePx * AVG_CHAR_WIDTH_FACTOR + Math.abs(verse.letterSpacingPx) * 0.35
     if (longestWord * charW > usableW) return false
     const charsPerLine = Math.max(1, Math.floor(usableW / charW))
     let lines = 0
@@ -149,8 +195,10 @@ export function estimateAutoFitVerseFontPx(
     return lines * sizePx * verse.lineHeight <= usableH
   }
 
-  let lo = MIN_AUTO_FIT_PX
-  let hi = MAX_AUTO_FIT_PX
+  const loFloor = MIN_AUTO_FIT_PX
+  const hiCap = Math.min(MAX_AUTO_FIT_PX, verse.fontSizePx)
+  let lo = loFloor
+  let hi = hiCap
   if (!fits(lo)) return lo
   while (lo < hi) {
     const mid = Math.floor((lo + hi + 1) / 2)
@@ -158,17 +206,6 @@ export function estimateAutoFitVerseFontPx(
     else hi = mid - 1
   }
   return lo
-}
-
-function referenceStyle(reference: OverlayTheme['reference']): string {
-  return [
-    `font-family:${reference.fontFamily};`,
-    `font-size:${reference.fontSizePx}px;`,
-    `font-weight:${reference.fontWeight};`,
-    `color:${reference.color};`,
-    reference.uppercase ? 'text-transform:uppercase;' : '',
-    'letter-spacing:0.02em;',
-  ].join(' ')
 }
 
 // ─── Renderer ───────────────────────────────────────────────────────────────────
@@ -179,6 +216,33 @@ function referenceStyle(reference: OverlayTheme['reference']): string {
  * `frameWidth`/`frameHeight` matter only to the auto-fit estimate; both real
  * consumers (NDI overlay window and Theme editor preview) render at 1920×1080.
  */
+function textBoxChrome(theme: OverlayTheme, style: OverlayTextStyle, edgeToEdge: boolean): string {
+  const { layout } = theme
+  const justify =
+    style.verticalAlign === 'top'
+      ? 'flex-start'
+      : style.verticalAlign === 'bottom'
+        ? 'flex-end'
+        : 'center'
+  const radius = edgeToEdge ? 0 : layout.backdropRadiusPx
+  const parts = [
+    `padding:${layout.paddingPx}px;`,
+    'display:flex;',
+    'flex-direction:column;',
+    'align-items:stretch;',
+    `justify-content:${justify};`,
+  ]
+  if (layout.backdropBox) {
+    parts.push(`background:${layout.backdropColor};`)
+    parts.push(`border-radius:${radius}px;`)
+  }
+  return parts.join(' ')
+}
+
+function isEdgeToEdgeBox(box: OverlayTheme['verse']['box']): boolean {
+  return box.xPct <= 0.5 && box.yPct <= 0.5 && box.widthPct >= 99 && box.heightPct >= 99
+}
+
 export function renderOverlayHTML(
   theme: OverlayTheme,
   reference: string,
@@ -190,53 +254,32 @@ export function renderOverlayHTML(
   const safeReference = escapeAndBreak(reference)
 
   const { verse, reference: ref, layout } = theme
-  const isFull = layout.position === 'full'
 
-  const verseFontPx =
-    isFull && layout.autoFitText
-      ? estimateAutoFitVerseFontPx(text, theme, frameWidth, frameHeight)
-      : verse.fontSizePx
+  const verseFontPx = layout.autoFitText
+    ? estimateAutoFitVerseFontPx(text, theme, frameWidth, frameHeight)
+    : verse.fontSizePx
+
+  const verseBox = verse.box
+  const refBox = ref.box
+  const verseChrome = textBoxChrome(theme, verse, isEdgeToEdgeBox(verseBox))
+  const refChrome = textBoxChrome(theme, ref, isEdgeToEdgeBox(refBox))
+
+  const verseBlock = `<div class="pa-verse-box" data-auto-fit="${layout.autoFitText ? 'true' : 'false'}" data-max-font-px="${verse.fontSizePx}" style="${overlayBoxStyle(verseBox)} ${verseChrome}">
+      <div class="pa-verse" style="${textStyleCss(verse, verseFontPx)} width:100%;">${safeText}</div>
+    </div>`
 
   const referenceBlock = ref.show
-    ? `<div class="pa-reference" style="${referenceStyle(ref)}">${safeReference}</div>`
+    ? `<div class="pa-reference-box" style="${overlayBoxStyle(refBox)} ${refChrome}">
+      <div class="pa-reference" style="${textStyleCss(ref, ref.fontSizePx)} width:100%;">${safeReference}</div>
+    </div>`
     : ''
-
-  const verseBlock = `<div class="pa-verse" style="${verseStyle(verse, verseFontPx)}">${safeText}</div>`
-
-  const contentInner =
-    ref.position === 'above'
-      ? `${referenceBlock}${verseBlock}`
-      : `${verseBlock}${referenceBlock}`
-
-  const boxStyleParts = isFull
-    ? [
-        // True full-bleed: box fills the frame; children stretch so text-align
-        // governs horizontal placement; the column centers vertically.
-        'flex:1;',
-        'max-width:100%;',
-        `padding:${layout.paddingPx}px;`,
-        'display:flex;',
-        'flex-direction:column;',
-        'align-items:stretch;',
-        'justify-content:center;',
-        `gap:${REFERENCE_ROW_GAP_PX}px;`,
-        'overflow:hidden;',
-      ]
-    : [`max-width:${layout.maxWidthPct}%;`, `padding:${layout.paddingPx}px;`]
-  if (layout.backdropBox) {
-    boxStyleParts.push(`background:${layout.backdropColor};`)
-    // An edge-to-edge box with rounded corners leaks the background at the
-    // corners — full-bleed always renders square.
-    boxStyleParts.push(`border-radius:${isFull ? 0 : layout.backdropRadiusPx}px;`)
-  }
 
   return `
     <div class="pa-overlay-root" style="position:absolute; inset:0;">
       ${backgroundLayerHTML(theme)}
-      <div class="pa-layer" style="position:absolute; inset:0; display:flex; ${layoutPositionStyle(layout.position)}">
-        <div class="pa-content-box" style="${boxStyleParts.join(' ')}">
-          ${contentInner}
-        </div>
+      <div class="pa-layer" style="position:absolute; inset:0;">
+        ${verseBlock}
+        ${referenceBlock}
       </div>
     </div>
   `.trim()

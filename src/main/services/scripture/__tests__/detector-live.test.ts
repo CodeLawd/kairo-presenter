@@ -2,7 +2,35 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { ScriptureReference } from "../detector";
-import { matchExplicitScriptures, ScriptureDetector } from "../detector";
+import {
+  canAutoPresentScriptureReference,
+  matchExplicitScriptures,
+  ScriptureDetector,
+} from "../detector";
+
+test("keeps chapter-only AI guesses reviewable but blocks automatic presentation", () => {
+  const refs: ScriptureReference[] = [
+    {
+      book: "Matthew",
+      chapter: 6,
+      verseStart: 1,
+      confidence: 0.8,
+      detectionType: "partial",
+      sourceText: "Matthew chapter six",
+    },
+    {
+      book: "Matthew",
+      chapter: 6,
+      verseStart: 33,
+      confidence: 0.98,
+      detectionType: "explicit",
+      sourceText: "Matthew six thirty three",
+    },
+  ];
+
+  assert.equal(canAutoPresentScriptureReference(refs[0]), false);
+  assert.equal(canAutoPresentScriptureReference(refs[1]), true);
+});
 
 test("emits a spoken explicit range synchronously before AI analysis", () => {
   const detector = new ScriptureDetector({
@@ -195,4 +223,19 @@ test("does not emit a premature single verse while an interim range is forming",
     [["Psalms", 139, 23, 24]],
   );
   detector.destroy();
+});
+
+test("normalizes hybrid digit-word numbers produced by STT", () => {
+  const cases = [
+    "Matthew 2four 14",
+    "Matthew twenty4 fourteen",
+  ];
+
+  for (const text of cases) {
+    const refs = matchExplicitScriptures(text);
+    assert.deepEqual(
+      refs.map((ref) => [ref.book, ref.chapter, ref.verseStart, ref.verseEnd]),
+      [["Matthew", 24, 14, undefined]],
+    );
+  }
 });

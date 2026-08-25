@@ -12,29 +12,79 @@
 // renderer Settings/Theme pages on hydration — must route stored `overlay`
 // through this before using it.
 
-import type { AppSettings, OverlayTheme } from './ipc'
+import type {
+  AppSettings,
+  OverlayBox,
+  OverlayTextOutline,
+  OverlayTextShadow,
+  OverlayTextStyle,
+  OverlayTheme,
+} from './ipc'
+import { boxesForLayoutPreset, clampOverlayBox } from './overlay-boxes'
 
 // ─── Theme defaults (schema locked — see docs/plans/2026-07-08-ndi-overlay.md) ─
 
+const DEFAULT_BOXES = boxesForLayoutPreset('lower-third', 'below', 82, true)
+
+export const DEFAULT_TEXT_SHADOW: OverlayTextShadow = {
+  enabled: true,
+  xPx: 0,
+  yPx: 4,
+  blurPx: 12,
+  color: '#000000',
+  opacity: 0.7,
+}
+
+export const DEFAULT_TEXT_OUTLINE: OverlayTextOutline = {
+  enabled: false,
+  position: 'outside',
+  widthPx: 0,
+  style: 'solid',
+  color: '#000000',
+  opacity: 1,
+}
+
+const DEFAULT_VERSE_STYLE: OverlayTextStyle = {
+  fontFamily: "'Helvetica Neue', Arial, sans-serif",
+  fontSizePx: 54,
+  fontWeight: 600,
+  color: '#ffffff',
+  colorOpacity: 1,
+  lineHeight: 1.35,
+  letterSpacingPx: 0,
+  align: 'center',
+  verticalAlign: 'middle',
+  textDecoration: 'none',
+  textTransform: 'none',
+  shadow: { ...DEFAULT_TEXT_SHADOW },
+  outline: { ...DEFAULT_TEXT_OUTLINE },
+  box: DEFAULT_BOXES.verse,
+}
+
+const DEFAULT_REFERENCE_STYLE: OverlayTextStyle = {
+  fontFamily: "'Helvetica Neue', Arial, sans-serif",
+  fontSizePx: 32,
+  fontWeight: 700,
+  color: '#5eead4',
+  colorOpacity: 1,
+  lineHeight: 1.25,
+  letterSpacingPx: 0.32,
+  align: 'center',
+  verticalAlign: 'middle',
+  textDecoration: 'none',
+  textTransform: 'none',
+  shadow: { ...DEFAULT_TEXT_SHADOW, enabled: false, yPx: 2, blurPx: 8 },
+  outline: { ...DEFAULT_TEXT_OUTLINE },
+  box: DEFAULT_BOXES.reference,
+}
+
 export const DEFAULT_OVERLAY_THEME: OverlayTheme = {
   background: { type: 'transparent', color: '#0b1220', opacity: 1, mediaFit: 'cover' },
-  verse: {
-    fontFamily: "'Helvetica Neue', Arial, sans-serif",
-    fontSizePx: 54,
-    fontWeight: 600,
-    color: '#ffffff',
-    lineHeight: 1.35,
-    align: 'center',
-    shadow: true,
-  },
+  verse: DEFAULT_VERSE_STYLE,
   reference: {
+    ...DEFAULT_REFERENCE_STYLE,
     show: true,
     position: 'below',
-    fontFamily: "'Helvetica Neue', Arial, sans-serif",
-    fontSizePx: 32,
-    fontWeight: 700,
-    color: '#5eead4',
-    uppercase: false,
   },
   layout: {
     position: 'lower-third',
@@ -108,6 +158,85 @@ function safeEnum<T extends string>(v: unknown, allowed: readonly T[], fallback:
   return typeof v === 'string' && (allowed as readonly string[]).includes(v) ? (v as T) : fallback
 }
 
+function normalizeBox(raw: unknown, fallback: OverlayBox): OverlayBox {
+  const r = asObject(raw)
+  return clampOverlayBox({
+    xPct: clampNum(r.xPct, 0, 100, fallback.xPct),
+    yPct: clampNum(r.yPct, 0, 100, fallback.yPct),
+    widthPct: clampNum(r.widthPct, 8, 100, fallback.widthPct),
+    heightPct: clampNum(r.heightPct, 6, 100, fallback.heightPct),
+  })
+}
+
+function normalizeShadow(raw: unknown, fallback: OverlayTextShadow): OverlayTextShadow {
+  // Legacy: `shadow: true | false`
+  if (typeof raw === 'boolean') {
+    return { ...fallback, enabled: raw }
+  }
+  const r = asObject(raw)
+  return {
+    enabled: safeBool(r.enabled, fallback.enabled),
+    xPx: clampNum(r.xPx, -40, 40, fallback.xPx),
+    yPx: clampNum(r.yPx, -40, 40, fallback.yPx),
+    blurPx: clampNum(r.blurPx, 0, 80, fallback.blurPx),
+    color: safeColor(r.color, fallback.color),
+    opacity: clampNum(r.opacity, 0, 1, fallback.opacity),
+  }
+}
+
+function normalizeOutline(raw: unknown, fallback: OverlayTextOutline): OverlayTextOutline {
+  const r = asObject(raw)
+  return {
+    enabled: safeBool(r.enabled, fallback.enabled),
+    position: safeEnum(r.position, ['outside', 'inside', 'center'] as const, fallback.position),
+    widthPx: clampNum(r.widthPx, 0, 24, fallback.widthPx),
+    style: safeEnum(r.style, ['solid', 'dashed', 'dotted'] as const, fallback.style),
+    color: safeColor(r.color, fallback.color),
+    opacity: clampNum(r.opacity, 0, 1, fallback.opacity),
+  }
+}
+
+function normalizeTextStyle(
+  raw: unknown,
+  fallback: OverlayTextStyle,
+  boxFallback: OverlayBox,
+  legacy?: { uppercase?: unknown; shadow?: unknown }
+): OverlayTextStyle {
+  const r = asObject(raw)
+  const legacyUpper = safeBool(legacy?.uppercase ?? r.uppercase, false)
+  const textTransform =
+    'textTransform' in r
+      ? safeEnum(
+          r.textTransform,
+          ['none', 'uppercase', 'capitalize', 'lowercase'] as const,
+          fallback.textTransform
+        )
+      : legacyUpper
+        ? 'uppercase'
+        : fallback.textTransform
+
+  return {
+    fontFamily: safeFontFamily(r.fontFamily, fallback.fontFamily),
+    fontSizePx: clampNum(r.fontSizePx, 12, 200, fallback.fontSizePx),
+    fontWeight: clampNum(r.fontWeight, 100, 900, fallback.fontWeight),
+    color: safeColor(r.color, fallback.color),
+    colorOpacity: clampNum(r.colorOpacity, 0, 1, fallback.colorOpacity),
+    lineHeight: clampNum(r.lineHeight, 0.9, 2.5, fallback.lineHeight),
+    letterSpacingPx: clampNum(r.letterSpacingPx, -4, 20, fallback.letterSpacingPx),
+    align: safeEnum(r.align, ['left', 'center', 'right', 'justify'] as const, fallback.align),
+    verticalAlign: safeEnum(r.verticalAlign, ['top', 'middle', 'bottom'] as const, fallback.verticalAlign),
+    textDecoration: safeEnum(
+      r.textDecoration,
+      ['none', 'underline', 'line-through'] as const,
+      fallback.textDecoration
+    ),
+    textTransform,
+    shadow: normalizeShadow(r.shadow ?? legacy?.shadow, fallback.shadow),
+    outline: normalizeOutline(r.outline, fallback.outline),
+    box: normalizeBox(r.box, boxFallback),
+  }
+}
+
 // ─── Theme normalizer ──────────────────────────────────────────────────────────
 
 export function normalizeOverlayTheme(raw: unknown): OverlayTheme {
@@ -115,9 +244,19 @@ export function normalizeOverlayTheme(raw: unknown): OverlayTheme {
   const d = DEFAULT_OVERLAY_THEME
 
   const bg = asObject(r.background) as Partial<OverlayTheme['background']>
-  const verse = asObject(r.verse) as Partial<OverlayTheme['verse']>
-  const reference = asObject(r.reference) as Partial<OverlayTheme['reference']>
+  const verse = asObject(r.verse)
+  const reference = asObject(r.reference)
   const layout = asObject(r.layout) as Partial<OverlayTheme['layout']>
+
+  const position = safeEnum(
+    layout.position,
+    ['lower-third', 'center', 'top', 'full'] as const,
+    d.layout.position
+  )
+  const maxWidthPct = clampNum(layout.maxWidthPct, 20, 100, d.layout.maxWidthPct)
+  const refShow = safeBool(reference.show, d.reference.show)
+  const refPosition = safeEnum(reference.position, ['above', 'below'] as const, d.reference.position)
+  const presetBoxes = boxesForLayoutPreset(position, refPosition, maxWidthPct, refShow)
 
   return {
     background: {
@@ -138,31 +277,18 @@ export function normalizeOverlayTheme(raw: unknown): OverlayTheme {
           : undefined,
       mediaFit: safeEnum(bg.mediaFit, ['cover', 'contain', 'fill'] as const, 'cover'),
     },
-    verse: {
-      fontFamily: safeFontFamily(verse.fontFamily, d.verse.fontFamily),
-      fontSizePx: clampNum(verse.fontSizePx, 12, 200, d.verse.fontSizePx),
-      fontWeight: clampNum(verse.fontWeight, 100, 900, d.verse.fontWeight),
-      color: safeColor(verse.color, d.verse.color),
-      lineHeight: clampNum(verse.lineHeight, 0.9, 2.5, d.verse.lineHeight),
-      align: safeEnum(verse.align, ['left', 'center', 'right'] as const, d.verse.align),
-      shadow: safeBool(verse.shadow, d.verse.shadow),
-    },
+    verse: normalizeTextStyle(verse, d.verse, presetBoxes.verse, { shadow: verse.shadow }),
     reference: {
-      show: safeBool(reference.show, d.reference.show),
-      position: safeEnum(reference.position, ['above', 'below'] as const, d.reference.position),
-      fontFamily: safeFontFamily(reference.fontFamily, d.reference.fontFamily),
-      fontSizePx: clampNum(reference.fontSizePx, 12, 200, d.reference.fontSizePx),
-      fontWeight: clampNum(reference.fontWeight, 100, 900, d.reference.fontWeight),
-      color: safeColor(reference.color, d.reference.color),
-      uppercase: safeBool(reference.uppercase, d.reference.uppercase),
+      ...normalizeTextStyle(reference, d.reference, presetBoxes.reference, {
+        uppercase: reference.uppercase,
+        shadow: reference.shadow,
+      }),
+      show: refShow,
+      position: refPosition,
     },
     layout: {
-      position: safeEnum(
-        layout.position,
-        ['lower-third', 'center', 'top', 'full'] as const,
-        d.layout.position
-      ),
-      maxWidthPct: clampNum(layout.maxWidthPct, 20, 100, d.layout.maxWidthPct),
+      position,
+      maxWidthPct,
       paddingPx: clampNum(layout.paddingPx, 0, 200, d.layout.paddingPx),
       backdropBox: safeBool(layout.backdropBox, d.layout.backdropBox),
       backdropColor: safeColor(layout.backdropColor, d.layout.backdropColor),

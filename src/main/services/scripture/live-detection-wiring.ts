@@ -13,7 +13,12 @@ export function subscribeExplicitScriptureDetection(
   detector: ScriptureDetector,
 ): () => void {
   const analyzeFinal = (result: TranscriptResult): void => {
-    detector.analyzeExplicit(result.text, true, false);
+    // Explicit citations run first so they claim the dedup slot with the
+    // authoritative range; the plan-quote path only covers reading that was
+    // never announced. Interims stay citation-only — half-sentences would
+    // retrigger the quote matcher on every partial update.
+    if (detector.analyzeExplicit(result.text, true, false)) return;
+    detector.analyzePlanQuote(result.text);
   };
   const analyzeInterim = (result: InterimResult): void => {
     detector.analyzeExplicit(result.text, true, true);

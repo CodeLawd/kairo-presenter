@@ -42,7 +42,8 @@ export interface PPPlaylistItem {
 
 export interface PPPlaylist {
   id: PPItemId
-  items: PPPlaylistItem[]
+  /** Present on GET /v1/playlist/{id}; often omitted on the /v1/playlists index. */
+  items?: PPPlaylistItem[]
 }
 
 // ─── Slides & Presentations ───────────────────────────────────────────────────
