@@ -60,12 +60,8 @@ export function VerseThemePreview({
       ref={cardRef}
       type="button"
       className={cn(
-        "group relative shrink-0 overflow-hidden rounded-xl border text-left shadow-sm transition-all focus-visible:outline-none",
-        isLive
-          ? "border-teal-400/80 ring-2 ring-teal-400/25 shadow-glow-teal/10"
-          : isFocused
-            ? "border-teal-400/50 ring-1 ring-teal-400/20"
-            : "border-surface-border/70 hover:border-surface-border",
+        "group relative shrink-0 overflow-hidden rounded-xl border border-surface-border/70 text-left shadow-sm transition-all hover:border-surface-border focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-surface-border",
+        (isLive || isFocused) && "border-surface-border",
       )}
       style={{ width, height }}
       onClick={onSelect}

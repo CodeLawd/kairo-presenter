@@ -871,6 +871,49 @@ export default function Scripture(): React.ReactElement {
           }
         }
 
+        const newCard = {
+          result: adjacent,
+          sendStatus: "idle" as const,
+          planItemId,
+        };
+
+        if (cardsSource === "search") {
+          const insertCardAt =
+            direction === "next" ? activeRow.cards.length : 0;
+          const updatedRows = rows.map((row, idx) => {
+            if (idx !== location.rowIndex) return row;
+            const cards =
+              direction === "next"
+                ? [...row.cards, newCard]
+                : [newCard, ...row.cards];
+            const combined = combineScriptureResults(
+              cards.map((card) => card.result),
+            );
+            return {
+              ...row,
+              reference: combined?.reference ?? row.reference,
+              cards,
+            };
+          });
+          const newFlatIndex = flatIndexAt(
+            updatedRows,
+            location.rowIndex,
+            insertCardAt,
+          );
+          setRows(updatedRows);
+          setActiveCardIndex(newFlatIndex);
+          setCueHighlight(true);
+          setFocusHighlight(true);
+          requestAnimationFrame(() => {
+            cardRefs.current[newFlatIndex]?.scrollIntoView({
+              behavior: "smooth",
+              block: "nearest",
+            });
+          });
+          setAddedAllToPlan(null);
+          return;
+        }
+
         const nextRow = createResultRow(adjacent, {
           id: planItemId ?? `adj-${adjacent.reference}-${Date.now()}`,
           planItemId,
@@ -944,6 +987,7 @@ export default function Scripture(): React.ReactElement {
         };
         await window.api.scripture.register(suggestion);
         await window.api.scripture.approve(suggestion.id);
+        useAppStore.getState().markLiveOutput(card.result.reference);
         setRows((prev) => mapCardStatus(prev, idx, "sent"));
         setTimeout(() => {
           setRows((prev) => mapCardStatus(prev, idx, "idle"));
@@ -1221,7 +1265,7 @@ export default function Scripture(): React.ReactElement {
                   verse{cards.length !== 1 ? "s" : ""} · theme preview
                   {cardsSource === "plan"
                     ? " · Previous / Next adds more · arrows send"
-                    : " · arrows send · Enter goes live"}
+                    : " · Previous / Next fills the row · arrows send · Enter goes live"}
                 </p>
               </div>
             )}

@@ -2,7 +2,6 @@ import { VerseThemePreview } from "./VerseThemePreview";
 import type { OverlayTheme } from "@shared/ipc";
 import type { ResultRow } from "./types";
 import { locateFlatCard } from "./types";
-import { cn } from "@/lib/utils";
 
 export interface VerseCardGridProps {
   rows: ResultRow[];
@@ -43,12 +42,6 @@ export function VerseCardGrid({
 }: VerseCardGridProps): React.ReactElement {
   let flatIndex = 0;
   const activeLocation = locateFlatCard(rows, activeCardIndex);
-  const highlightedRowKey =
-    (focusHighlight || cueHighlight) && activeLocation
-      ? (rows[activeLocation.rowIndex]?.planItemId ??
-        rows[activeLocation.rowIndex]?.id ??
-        null)
-      : null;
 
   return (
     <div
@@ -82,7 +75,6 @@ export function VerseCardGrid({
         });
 
         const rowKey = row.planItemId ?? row.id;
-        const rowHighlighted = highlightedRowKey === rowKey;
         const rowIsLive =
           cueHighlight &&
           activeLocation !== null &&
@@ -97,19 +89,10 @@ export function VerseCardGrid({
               else rowRefs.current.delete(rowKey);
             }}
             data-plan-item={row.planItemId ?? undefined}
-            className={cn(
-              "min-w-0 space-y-2 scroll-mt-3 rounded-xl border border-transparent pl-3 transition-all",
-              rowHighlighted &&
-                "border-surface-border/40 border-l-[3px] border-l-teal-400/90",
-            )}
+            className="min-w-0 space-y-2 scroll-mt-3"
           >
             <div className="flex flex-wrap items-baseline gap-2 px-0.5">
-              <p
-                className={cn(
-                  "truncate text-xs font-semibold",
-                  rowHighlighted ? "text-teal-200" : "text-slate-300",
-                )}
-              >
+              <p className="truncate text-xs font-semibold text-slate-300">
                 {row.reference}
               </p>
               <span className="shrink-0 text-[10px] text-slate-600">

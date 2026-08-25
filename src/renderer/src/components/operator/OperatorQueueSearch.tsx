@@ -4,7 +4,6 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
-  expandScriptureResult,
   getBookCompletion,
   resolveSubmittedScriptureQuery,
   shouldLiveSuggestScriptureQuery,
@@ -15,7 +14,7 @@ export interface OperatorQueueSearchProps {
   translation: ScriptureTranslation
   inputRef?: React.Ref<HTMLInputElement>
   disabled?: boolean
-  /** Called with one card per verse (ranges are expanded). */
+  /** Stages search hits as-is — ranges stay one queue row (e.g. John 1:2–5). */
   onEnqueue: (results: ScriptureResult[]) => void
 }
 
@@ -75,9 +74,9 @@ export function OperatorQueueSearch({
 
   const stageResults = useCallback(
     (results: ScriptureResult[]): void => {
-      const expanded = results.flatMap((result) => expandScriptureResult(result))
-      if (expanded.length === 0) return
-      onEnqueue(expanded)
+      if (results.length === 0) return
+      // Keep ranges intact (John 1:2–5 → one queue row with all verses).
+      onEnqueue(results)
       setQuery('')
       setSuggestions([])
       setSuggestionsOpen(false)

@@ -4,6 +4,7 @@ import log from "electron-log/main";
 import type { AppSettings, OrchestratorConfig, ResilienceStatus } from "@shared/ipc";
 import { IPC } from "@shared/ipc";
 import { normalizeOverlaySettings } from "@shared/overlay-defaults";
+import { normalizeThemeLibrary } from "@shared/theme-library";
 import { store } from "../db";
 import { proPresenterService } from "../services/propresenter";
 import { audioService } from "../services/audio";
@@ -438,6 +439,9 @@ function registerNdiHandlers(): void {
 function registerSettingsHandlers(): void {
   ipcMain.handle(IPC.SETTINGS.GET, (_event, key: keyof AppSettings) => {
     if (key === "overlay") return normalizeOverlaySettings(store.get("overlay"));
+    if (key === "themeLibrary") {
+      return normalizeThemeLibrary(store.get("themeLibrary"), store.get("overlay").theme);
+    }
     return store.get(key);
   });
 
@@ -455,6 +459,11 @@ function registerSettingsHandlers(): void {
           ...(value as Partial<AppSettings["overlay"]>),
         });
         store.set("overlay", merged);
+      } else if (key === "themeLibrary") {
+        store.set(
+          "themeLibrary",
+          normalizeThemeLibrary(value, store.get("overlay").theme),
+        );
       } else {
         store.set(key, value);
       }
@@ -472,7 +481,11 @@ function registerSettingsHandlers(): void {
   );
 
   ipcMain.handle(IPC.SETTINGS.GET_ALL, () => {
-    return { ...store.store, overlay: normalizeOverlaySettings(store.get("overlay")) };
+    return {
+      ...store.store,
+      overlay: normalizeOverlaySettings(store.get("overlay")),
+      themeLibrary: normalizeThemeLibrary(store.get("themeLibrary"), store.get("overlay").theme),
+    };
   });
 }
 
@@ -532,6 +545,7 @@ function registerAppHandlers(): void {
         settings: async () => ({
           ...store.store,
           overlay: normalizeOverlaySettings(store.get("overlay")),
+          themeLibrary: normalizeThemeLibrary(store.get("themeLibrary"), store.get("overlay").theme),
         }),
         orchestrator: async () => orchestrator.getStatus(),
         propresenter: async () => proPresenterService.getStatus(),

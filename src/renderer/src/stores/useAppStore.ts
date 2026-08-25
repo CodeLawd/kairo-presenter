@@ -39,8 +39,17 @@ interface AppState {
   scriptureActiveCardInRow: number
   /** How the item was highlighted when leaving. */
   scriptureHighlightMode: 'none' | 'focus' | 'live'
+  /** Reference currently on ProAutomate output — drives the header LIVE badge. */
+  liveOutputLabel: string | null
   /** Bumps when PP output is cleared so Scripture can drop Live badges. */
   scriptureOutputClearToken: number
+  /** Last opened song in the Lyrics library — restored when returning to the tab. */
+  lyricsSelectedSongId: string | null
+  lyricsFilter: 'all' | 'favorites' | 'recent'
+  lyricsSortBy: 'title' | 'artist' | 'recent' | 'added'
+  /** Last selected theme in the Theme editor — restored when returning to the tab. */
+  themeSelectedId: string | null
+  themeSelectedName: string
 
   // ── Session ───────────────────────────────────────────────────────────────
   sessionStartTime: number
@@ -72,7 +81,17 @@ interface AppState {
     mode?: 'none' | 'focus' | 'live'
   }) => void
   clearScriptureViewState: () => void
+  markLiveOutput: (label: string) => void
   clearScriptureLiveOutput: () => void
+  setLyricsViewState: (state: {
+    selectedSongId?: string | null
+    filter?: 'all' | 'favorites' | 'recent'
+    sortBy?: 'title' | 'artist' | 'recent' | 'added'
+  }) => void
+  setThemeViewState: (state: {
+    selectedId?: string | null
+    selectedName?: string
+  }) => void
 
   // ── Legacy setters ────────────────────────────────────────────────────────
   setProPresenterConnected: (connected: boolean) => void
@@ -114,7 +133,13 @@ export const useAppStore = create<AppState>((set) => ({
   scriptureActiveItemId: null,
   scriptureActiveCardInRow: 0,
   scriptureHighlightMode: 'none',
+  liveOutputLabel: null,
   scriptureOutputClearToken: 0,
+  lyricsSelectedSongId: null,
+  lyricsFilter: 'all',
+  lyricsSortBy: 'title',
+  themeSelectedId: null,
+  themeSelectedName: '',
 
   // ── Session ───────────────────────────────────────────────────────────────
   sessionStartTime: Date.now(),
@@ -199,13 +224,39 @@ export const useAppStore = create<AppState>((set) => ({
       scriptureActiveItemId: null,
       scriptureActiveCardInRow: 0,
       scriptureHighlightMode: 'none',
+      liveOutputLabel: null,
+    }),
+
+  markLiveOutput: (label) =>
+    set({
+      liveOutputLabel: label.trim() || null,
+      scriptureHighlightMode: 'live',
     }),
 
   clearScriptureLiveOutput: () =>
     set((state) => ({
       scriptureOutputClearToken: state.scriptureOutputClearToken + 1,
+      liveOutputLabel: null,
       scriptureHighlightMode:
         state.scriptureHighlightMode === 'live' ? 'focus' : state.scriptureHighlightMode,
+    })),
+
+  setLyricsViewState: (state) =>
+    set((current) => ({
+      lyricsSelectedSongId:
+        state.selectedSongId !== undefined
+          ? state.selectedSongId
+          : current.lyricsSelectedSongId,
+      lyricsFilter: state.filter !== undefined ? state.filter : current.lyricsFilter,
+      lyricsSortBy: state.sortBy !== undefined ? state.sortBy : current.lyricsSortBy,
+    })),
+
+  setThemeViewState: (state) =>
+    set((current) => ({
+      themeSelectedId:
+        state.selectedId !== undefined ? state.selectedId : current.themeSelectedId,
+      themeSelectedName:
+        state.selectedName !== undefined ? state.selectedName : current.themeSelectedName,
     })),
 
   // ── Legacy ────────────────────────────────────────────────────────────────

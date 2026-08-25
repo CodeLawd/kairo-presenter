@@ -280,9 +280,14 @@ export default function ThemeEditor(): React.ReactElement {
   const inspectorWidth = storedPaneWidth('theme-inspector-width', 330, INSPECTOR_MIN, INSPECTOR_MAX)
   const [overlay, setOverlay] = useState<AppSettings['overlay']>(DEFAULT_OVERLAY_SETTINGS)
   const [draftTheme, setDraftTheme] = useState<OverlayTheme>(DEFAULT_OVERLAY_SETTINGS.theme)
-  const [themeLibrary, setThemeLibrary] = useState<CustomOverlayTheme[]>([])
-  const [selectedThemeId, setSelectedThemeId] = useState<string | null>(null)
-  const [themeName, setThemeName] = useState('')
+  const [themeLibrary, setThemeLibrary] = useState<CustomOverlayTheme[]>(() => {
+    const library = useBootstrapStore.getState().settings.themeLibrary
+    return Array.isArray(library) ? library : []
+  })
+  const selectedThemeId = useAppStore((s) => s.themeSelectedId)
+  const themeSelectedName = useAppStore((s) => s.themeSelectedName)
+  const setThemeViewState = useAppStore((s) => s.setThemeViewState)
+  const [themeName, setThemeName] = useState(themeSelectedName)
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>('style')
   const [selectedLayer, setSelectedLayer] = useState<OverlayLayerId | null>('verse')
   const [sampleLength, setSampleLength] = useState<'short' | 'long'>('short')
@@ -296,21 +301,77 @@ export default function ThemeEditor(): React.ReactElement {
   const ppState = useAppStore((s) => s.ppState)
   const ppConnected = ppState === 'connected'
 
-  // Overlay and theme library come from the startup snapshot, kept current by
-  // Settings and by this editor's own saves.
+  // Reload from disk on mount so HMR / a stale bootstrap snapshot cannot wipe
+  // the My themes list. Also restore the last selected custom/builtin theme.
   useEffect(() => {
-    const { overlay: stored, themeLibrary: library } = useBootstrapStore.getState().settings
-    const normalized = normalizeOverlaySettings(stored)
-    setOverlay(normalized)
-    setDraftTheme(structuredClone(normalized.theme))
-    setThemeLibrary(library)
-    const matching = library.find((item) => JSON.stringify(item.theme) === JSON.stringify(normalized.theme))
-    if (matching) {
-      setSelectedThemeId(matching.id)
-      setThemeName(matching.name)
+    let cancelled = false
+    ;(async () => {
+      const boot = useBootstrapStore.getState().settings
+      let storedOverlay = normalizeOverlaySettings(boot.overlay)
+      let library = Array.isArray(boot.themeLibrary) ? boot.themeLibrary : []
+
+      try {
+        const [diskLibrary, diskOverlay] = await Promise.all([
+          window.api.settings.get('themeLibrary'),
+          window.api.settings.get('overlay'),
+        ])
+        if (cancelled) return
+        if (Array.isArray(diskLibrary)) {
+          library = diskLibrary
+          useBootstrapStore.getState().patchSettings('themeLibrary', diskLibrary)
+        }
+        if (diskOverlay) {
+          storedOverlay = normalizeOverlaySettings(diskOverlay)
+          useBootstrapStore.getState().patchSettings('overlay', {
+            ...useBootstrapStore.getState().settings.overlay,
+            ...storedOverlay,
+          })
+        }
+      } catch {
+        // Bootstrap snapshot is enough if IPC fails mid-session.
+      }
+      if (cancelled) return
+
+      setOverlay(storedOverlay)
+      setThemeLibrary(library)
+
+      const rememberedId = useAppStore.getState().themeSelectedId
+      const rememberedName = useAppStore.getState().themeSelectedName
+      const fromLibrary = rememberedId
+        ? library.find((item) => item.id === rememberedId)
+        : undefined
+      const fromBuiltin = rememberedId?.startsWith('builtin:')
+        ? BUILT_IN_THEMES.find((item) => `builtin:${item.id}` === rememberedId)
+        : undefined
+
+      if (fromLibrary) {
+        setDraftTheme(structuredClone(normalizeOverlayTheme(fromLibrary.theme)))
+        setThemeName(fromLibrary.name)
+        setThemeViewState({ selectedId: fromLibrary.id, selectedName: fromLibrary.name })
+      } else if (fromBuiltin) {
+        setDraftTheme(structuredClone(normalizeOverlayTheme(fromBuiltin.theme)))
+        setThemeName(fromBuiltin.name)
+        setThemeViewState({ selectedId: rememberedId, selectedName: fromBuiltin.name })
+      } else {
+        const matching = library.find(
+          (item) => JSON.stringify(item.theme) === JSON.stringify(storedOverlay.theme),
+        )
+        if (matching) {
+          setDraftTheme(structuredClone(normalizeOverlayTheme(matching.theme)))
+          setThemeName(matching.name)
+          setThemeViewState({ selectedId: matching.id, selectedName: matching.name })
+        } else {
+          setDraftTheme(structuredClone(storedOverlay.theme))
+          if (rememberedName) setThemeName(rememberedName)
+        }
+      }
+
+      setLoading(false)
+    })()
+    return () => {
+      cancelled = true
     }
-    setLoading(false)
-  }, [])
+  }, [setThemeViewState])
 
   // Preview renders a real 1920×1080 frame scaled down to the panel width, so
   // proportions (font px vs frame) match the NDI output exactly.
@@ -406,7 +467,7 @@ export default function ThemeEditor(): React.ReactElement {
   }, [flashSaved])
 
   const selectTheme = (id: string, name: string, theme: OverlayTheme): void => {
-    setSelectedThemeId(id)
+    setThemeViewState({ selectedId: id, selectedName: name })
     setThemeName(name)
     setDraftTheme(structuredClone(normalizeOverlayTheme(theme)))
   }
@@ -415,7 +476,7 @@ export default function ThemeEditor(): React.ReactElement {
   const saveAsTheme = (): void => {
     const savedTheme = createCustomTheme(themeName.trim() || 'Untitled theme', draftTheme)
     persistLibrary([...themeLibrary, savedTheme])
-    setSelectedThemeId(savedTheme.id)
+    setThemeViewState({ selectedId: savedTheme.id, selectedName: savedTheme.name })
     setThemeName(savedTheme.name)
   }
 
@@ -425,10 +486,13 @@ export default function ThemeEditor(): React.ReactElement {
       saveAsTheme()
       return
     }
+    const nextName = themeName.trim() || themeLibrary.find((item) => item.id === selectedThemeId)?.name || 'Untitled theme'
     const next = themeLibrary.map((item) => item.id === selectedThemeId
-      ? { ...item, name: themeName.trim() || item.name, updatedAt: Date.now(), theme: structuredClone(draftTheme) }
+      ? { ...item, name: nextName, updatedAt: Date.now(), theme: structuredClone(draftTheme) }
       : item)
     persistLibrary(next)
+    setThemeViewState({ selectedId: selectedThemeId, selectedName: nextName })
+    setThemeName(nextName)
   }
 
   const isCustomThemeSelected = Boolean(selectedThemeId && !selectedThemeId.startsWith('builtin:'))
@@ -436,7 +500,7 @@ export default function ThemeEditor(): React.ReactElement {
   const duplicateTheme = (): void => {
     const copy = createCustomTheme(`${themeName || 'Theme'} copy`, draftTheme)
     persistLibrary([...themeLibrary, copy])
-    setSelectedThemeId(copy.id)
+    setThemeViewState({ selectedId: copy.id, selectedName: copy.name })
     setThemeName(copy.name)
   }
 
@@ -447,13 +511,25 @@ export default function ThemeEditor(): React.ReactElement {
     const next = themeLibrary.filter((item) => item.id !== themeId)
     persistLibrary(next)
     if (selectedThemeId === themeId) {
-      setSelectedThemeId(null)
+      setThemeViewState({ selectedId: null, selectedName: '' })
       setThemeName('')
       setDraftTheme(structuredClone(overlay.theme))
     }
   }
 
-  const applyToOutput = (): void => persist({ ...overlay, theme: structuredClone(draftTheme) })
+  const applyToOutput = (): void => {
+    // Keep the selected custom theme in sync with what went live so leaving the
+    // tab and coming back still shows the saved look.
+    if (selectedThemeId && !selectedThemeId.startsWith('builtin:')) {
+      const nextName = themeName.trim() || themeLibrary.find((item) => item.id === selectedThemeId)?.name || 'Untitled theme'
+      const next = themeLibrary.map((item) => item.id === selectedThemeId
+        ? { ...item, name: nextName, updatedAt: Date.now(), theme: structuredClone(draftTheme) }
+        : item)
+      persistLibrary(next)
+      setThemeViewState({ selectedId: selectedThemeId, selectedName: nextName })
+    }
+    persist({ ...overlay, theme: structuredClone(draftTheme) })
+  }
 
   // PP video inputs for the manual NDI binding picker. PP names inputs
   // "Input N" and never exposes the NDI source name, so auto-discovery can't
@@ -612,7 +688,11 @@ export default function ThemeEditor(): React.ReactElement {
                   className="min-w-0 flex-1 border-0 bg-transparent p-0 text-base font-semibold text-white outline-none placeholder:text-slate-600"
                   value={themeName}
                   placeholder="Untitled theme"
-                  onChange={(event) => setThemeName(event.target.value)}
+                  onChange={(event) => {
+                    const next = event.target.value
+                    setThemeName(next)
+                    if (selectedThemeId) setThemeViewState({ selectedName: next })
+                  }}
                   aria-label="Theme name"
                 />
                 {isCustomThemeSelected && (

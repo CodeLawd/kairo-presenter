@@ -67,6 +67,7 @@ import { DEFAULT_GLOSS_COLOR, normalizeGlossColor, resolveLyricLineColor } from 
 import { isGlossLine } from '@shared/lyrics-translate'
 import { formatOnlineLyricsError } from '@shared/lyrics-online-error'
 import { useBootstrapStore } from '@/bootstrap/useBootstrapStore'
+import { useAppStore } from '@/stores/useAppStore'
 import { useSettings } from '@/hooks/useSettings'
 
 // ─── Local types ──────────────────────────────────────────────────────────────
@@ -1598,8 +1599,25 @@ export default function Lyrics(): React.ReactElement {
   /** undefined = paint off; string = apply; null = clear override */
   const [paintColor, setPaintColor] = useState<string | null | undefined>(undefined)
 
+  // ── Selection + library chrome (session-persisted across tab switches) ───────
+  const selectedId = useAppStore((s) => s.lyricsSelectedSongId)
+  const filter = useAppStore((s) => s.lyricsFilter)
+  const sortBy = useAppStore((s) => s.lyricsSortBy)
+  const setLyricsViewState = useAppStore((s) => s.setLyricsViewState)
+  const setSelectedId = useCallback(
+    (id: string | null) => setLyricsViewState({ selectedSongId: id }),
+    [setLyricsViewState]
+  )
+  const setFilter = useCallback(
+    (next: FilterType) => setLyricsViewState({ filter: next }),
+    [setLyricsViewState]
+  )
+  const setSortBy = useCallback(
+    (next: SortType) => setLyricsViewState({ sortBy: next }),
+    [setLyricsViewState]
+  )
+
   // ── Selection + editor ───────────────────────────────────────────────────────
-  const [selectedId, setSelectedId] = useState<string | null>(null)
   const [editMode, setEditMode] = useState(false)
   const [editState, setEditState] = useState<EditState | null>(null)
   const [isNewSong, setIsNewSong] = useState(false)
@@ -1615,10 +1633,8 @@ export default function Lyrics(): React.ReactElement {
   const sendTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const playlistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // ── Search/filter/sort ───────────────────────────────────────────────────────
+  // ── Search (ephemeral — not restored across visits) ──────────────────────────
   const [query, setQuery] = useState('')
-  const [filter, setFilter] = useState<FilterType>('all')
-  const [sortBy, setSortBy] = useState<SortType>('title')
 
   /** Full-text hits from the main process, which also searches the lyric body. */
   const [ftsMatches, setFtsMatches] = useState<LyricsSong[] | null>(null)
@@ -1711,6 +1727,13 @@ export default function Lyrics(): React.ReactElement {
   useEffect(() => {
     useBootstrapStore.getState().setLyrics(songs)
   }, [songs])
+
+  // Drop a stale selection if the song was deleted or the library reloaded.
+  useEffect(() => {
+    if (selectedId && !songs.some((song) => song.id === selectedId)) {
+      setSelectedId(null)
+    }
+  }, [songs, selectedId, setSelectedId])
 
   // ── Timer cleanup on unmount ─────────────────────────────────────────────────
   useEffect(() => {
@@ -1824,7 +1847,7 @@ export default function Lyrics(): React.ReactElement {
     setSendStatus('idle')
     setSendError(null)
     setTranslateError(null)
-  }, [editMode])
+  }, [editMode, setSelectedId])
 
   // ── Edit mode ────────────────────────────────────────────────────────────────
   const handleEdit = useCallback((): void => {

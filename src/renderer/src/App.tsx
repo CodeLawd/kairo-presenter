@@ -117,10 +117,9 @@ function AudioPipeline(): null {
   return null
 }
 
-const views: Record<Exclude<NavRoute, 'operator'>, React.ReactNode> = {
+const views: Record<Exclude<NavRoute, 'operator' | 'theme'>, React.ReactNode> = {
   scripture: <Scripture />,
   lyrics: <Lyrics />,
-  theme: <ThemeEditor />,
 }
 
 export default function App(): React.ReactElement {
@@ -214,15 +213,21 @@ export default function App(): React.ReactElement {
         toolbar={route === 'operator' ? <OperatorToolbar /> : undefined}
       />
       <main className="relative flex-1 min-h-0 overflow-hidden bg-surface-secondary w-full flex flex-col">
-        {/* Keep the live Operator mounted across navigation. Unmounting it used
-            to discard transcript, detections, queue, follow state, and scroll. */}
+        {/* Keep Operator and Theme mounted across navigation so live session
+            state and the theme library/draft survive tab switches. */}
         <div
           className={`${route === 'operator' ? 'flex' : 'hidden'} min-h-0 w-full flex-1 flex-col overflow-hidden [&>*]:min-h-0 [&>*]:flex-1`}
           aria-hidden={route !== 'operator'}
         >
           <Operator />
         </div>
-        {route !== 'operator' && (
+        <div
+          className={`${route === 'theme' ? 'flex' : 'hidden'} min-h-0 w-full flex-1 flex-col overflow-hidden [&>*]:min-h-0 [&>*]:flex-1`}
+          aria-hidden={route !== 'theme'}
+        >
+          <ThemeEditor />
+        </div>
+        {route !== 'operator' && route !== 'theme' && (
           <div key={route} className="flex min-h-0 w-full flex-1 flex-col overflow-hidden [&>*]:min-h-0 [&>*]:flex-1">
             {views[route]}
           </div>

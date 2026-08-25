@@ -63,14 +63,26 @@ export default function AppShell({
   onOpenSettings,
   toolbar,
 }: AppShellProps): React.ReactElement {
-  const { ppState, audioCapturing, audioDeviceName } = useAppStore()
+  const { ppState, audioCapturing, audioDeviceName, liveOutputLabel, isTranscribing } =
+    useAppStore()
   const [clearing, setClearing] = useState(false)
+  /** Session is live while the transcript pipeline runs; show output ref when one is up. */
+  const isLive = isTranscribing || Boolean(liveOutputLabel?.trim())
+  const liveDetail = liveOutputLabel?.trim() || (isTranscribing ? 'Listening' : null)
 
   const clearOutput = async (): Promise<void> => {
     if (clearing) return
     setClearing(true)
     try {
-      await window.api.propresenter.clearAll()
+      // Mechanism-aware clear (NDI / message / library) — clearAll alone leaves
+      // overlays on screen when the last push was not a presentation layer.
+      if (ppState === 'connected') {
+        await window.api.propresenter.clearOverlay()
+      }
+      useAppStore.getState().clearScriptureLiveOutput()
+    } catch (err) {
+      console.error(err)
+      // Still drop local LIVE state so the booth UI matches “nothing on output”.
       useAppStore.getState().clearScriptureLiveOutput()
     } finally {
       setClearing(false)
@@ -124,16 +136,49 @@ export default function AppShell({
       </div>
 
       <div className="no-drag ml-2 flex items-center gap-1 border-l border-surface-border pl-2">
-        <div className="flex h-8 items-center gap-2 rounded border border-zinc-800 px-2.5 text-[11px] font-semibold text-zinc-500" title="No content is currently marked live by ProAutomate">
-          <span className="h-1.5 w-1.5 rounded-full bg-zinc-600" aria-hidden="true" />
-          LIVE
+        <div
+          className={[
+            'flex h-8 max-w-[10rem] items-center gap-2 rounded border px-2.5 text-[11px] font-semibold',
+            isLive
+              ? 'border-teal-500/40 bg-teal-500/10 text-teal-300'
+              : 'border-zinc-800 text-zinc-500',
+          ].join(' ')}
+          title={
+            liveOutputLabel?.trim()
+              ? `Live on output: ${liveOutputLabel}`
+              : isTranscribing
+                ? 'Live transcript running — listening for scripture'
+                : 'Start the Operator pipeline to go live'
+          }
+          aria-live="polite"
+        >
+          <span
+            className={[
+              'h-1.5 w-1.5 shrink-0 rounded-full',
+              isLive ? 'bg-teal-400 animate-pulse' : 'bg-zinc-600',
+            ].join(' ')}
+            aria-hidden="true"
+          />
+          <span className="min-w-0 truncate">{liveDetail ?? 'LIVE'}</span>
         </div>
         <button
           type="button"
-          onClick={clearOutput}
-          disabled={clearing || ppState !== 'connected'}
-          className="flex h-8 items-center gap-1.5 rounded border border-zinc-800 px-2.5 text-[11px] font-semibold text-zinc-400 transition-colors duration-150 hover:border-rose-900 hover:bg-rose-950/30 hover:text-rose-300 disabled:cursor-not-allowed disabled:opacity-40"
-          aria-label="Clear output"
+          onClick={() => void clearOutput()}
+          disabled={clearing}
+          className={[
+            'flex h-8 items-center gap-1.5 rounded border px-2.5 text-[11px] font-semibold transition-colors duration-150',
+            'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-rose-400',
+            isLive || ppState === 'connected'
+              ? 'border-rose-900/50 text-rose-300 hover:border-rose-700 hover:bg-rose-950/40'
+              : 'border-zinc-800 text-zinc-500 hover:border-rose-900 hover:bg-rose-950/30 hover:text-rose-300',
+            'disabled:cursor-not-allowed disabled:opacity-40',
+          ].join(' ')}
+          aria-label="Clear live output"
+          title={
+            ppState === 'connected'
+              ? 'Clear ProPresenter / NDI overlay and local LIVE state'
+              : 'Clear local LIVE state (connect ProPresenter to clear the booth output)'
+          }
         >
           <Eraser size={13} aria-hidden="true" />
           {clearing ? 'CLEARING' : 'CLEAR'}

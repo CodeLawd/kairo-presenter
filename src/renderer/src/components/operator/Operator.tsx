@@ -223,6 +223,7 @@ export default function Operator(): React.ReactElement {
     setAutoMode,
     confidenceThreshold,
     audioLevel,
+    scriptureOutputClearToken,
   } = useAppStore();
 
   // Transcript states
@@ -286,6 +287,17 @@ export default function Operator(): React.ReactElement {
     reference: string;
     text: string;
   } | null>(null);
+
+  const goLive = useCallback((reference: string, text: string): void => {
+    setActiveProjection({ reference, text });
+    useAppStore.getState().markLiveOutput(reference);
+  }, []);
+
+  // Header CLEAR (and other clear paths) bump this token — drop the local preview.
+  useEffect(() => {
+    if (scriptureOutputClearToken === 0) return;
+    setActiveProjection(null);
+  }, [scriptureOutputClearToken]);
   const suggestionGroups = useMemo(
     () => groupScriptureSuggestions(suggestions),
     [suggestions],
@@ -430,6 +442,7 @@ export default function Operator(): React.ReactElement {
       reference: candidate.reference,
       text: candidate.verses.map((verse) => verse.text).join(" "),
     });
+    useAppStore.getState().markLiveOutput(candidate.reference);
     window.api.scripture
       .register(candidate)
       .then(() => window.api.orchestrator.approveSuggestion(candidate.id))
@@ -585,14 +598,12 @@ export default function Operator(): React.ReactElement {
       // Split reference and verse if stored together, or default back
       const match = currentSlide.match(/^(.*?\d+:\d+)\s*[\r\n]+([\s\S]+)$/);
       if (match) {
-        setActiveProjection({ reference: match[1], text: match[2] });
+        goLive(match[1], match[2]);
       } else {
-        setActiveProjection({ reference: "Projected", text: currentSlide });
+        goLive("Projected", currentSlide);
       }
-    } else {
-      setActiveProjection(null);
     }
-  }, [currentSlide]);
+  }, [currentSlide, goLive]);
 
   // ── Load Init History & Health On Mount ──────────────────────────────────────
 
@@ -712,10 +723,10 @@ export default function Operator(): React.ReactElement {
       return setTimeout(() => {
         const sug = suggestions.find((s) => s.id === item.suggestionId);
         if (sug) {
-          setActiveProjection({
-            reference: sug.reference,
-            text: sug.verses.map((v) => v.text).join(" "),
-          });
+          goLive(
+            sug.reference,
+            sug.verses.map((v) => v.text).join(" "),
+          );
           const sent = new Set(sentSuggestionIdsRef.current).add(sug.id);
           sentSuggestionIdsRef.current = sent;
           setSentSuggestionIds(sent);
@@ -768,6 +779,7 @@ export default function Operator(): React.ReactElement {
             reference: sug.reference,
             text: sug.verses.map((v) => v.text).join(" "),
           });
+          useAppStore.getState().markLiveOutput(sug.reference);
         }
         const sentState = applyOperatorSuggestionSent(
           suggestions,
@@ -874,17 +886,17 @@ export default function Operator(): React.ReactElement {
       try {
         await window.api.scripture.register(entry);
         await window.api.orchestrator.approveSuggestion(entry.id);
-        setActiveProjection({
-          reference: entry.reference,
-          text: entry.verses.map((verse) => verse.text).join(" "),
-        });
+        goLive(
+          entry.reference,
+          entry.verses.map((verse) => verse.text).join(" "),
+        );
       } catch (err) {
         console.error(err);
       } finally {
         setQueueBusyId(null);
       }
     },
-    [],
+    [goLive],
   );
 
   const handleClearDetections = useCallback((): void => {
@@ -930,17 +942,20 @@ export default function Operator(): React.ReactElement {
 
   const handleClearProjection = useCallback(async (): Promise<void> => {
     try {
-      await window.api.propresenter.clearAll();
-      setActiveProjection(null);
-      useAppStore.getState().clearScriptureLiveOutput();
+      await window.api.propresenter.clearOverlay();
     } catch (err) {
       console.error(err);
+    } finally {
+      setActiveProjection(null);
+      useAppStore.getState().clearScriptureLiveOutput();
     }
   }, []);
 
   const enqueueSearchResults = useCallback(
     (results: ScriptureResult[]): void => {
       for (const result of results) {
+        const verseCount = result.verses.length
+        const isRange = verseCount > 1
         addToQueue({
           id: `manual-${result.reference}-${Date.now()}`,
           reference: result.reference,
@@ -949,6 +964,14 @@ export default function Operator(): React.ReactElement {
           confidence: 1,
           source: "manual",
           triggerText: result.reference,
+          ...(isRange
+            ? {
+                passageId: `queue-${result.reference}-${Date.now()}`,
+                passageReference: result.reference,
+                passageIndex: 0,
+                passageLength: verseCount,
+              }
+            : {}),
         });
       }
     },
@@ -1716,6 +1739,11 @@ export default function Operator(): React.ReactElement {
                               <span className="ml-1.5 font-normal text-slate-600">
                                 {entry.translation}
                               </span>
+                              {entry.verses.length > 1 && (
+                                <span className="ml-1.5 font-normal text-slate-600">
+                                  · {entry.verses.length} verses
+                                </span>
+                              )}
                             </p>
                             <p className="mt-0.5 line-clamp-2 text-[10px] leading-snug text-slate-500">
                               {entry.verses
