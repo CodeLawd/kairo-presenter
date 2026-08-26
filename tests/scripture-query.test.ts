@@ -7,6 +7,7 @@ import {
   getBookCompletion,
   isLikelyPhraseQuery,
   normalizeScriptureQuery,
+  reloadPassagesInTranslation,
   resolveSubmittedScriptureQuery,
   shouldLiveSuggestScriptureQuery,
 } from '../src/lib/scripture-query'
@@ -104,10 +105,68 @@ test('combines loaded verses into one same-chapter passage result', () => {
   assert.deepEqual(passage?.verses.map((verse) => verse.verse), [2, 9])
 })
 
-test('combines a cross-chapter queue into one passage result', () => {
-  const loaded: ScriptureResult[] = [
-    { reference: 'Psalms 1:6', translation: 'KJV', verses: [{ book: 'Psalms', chapter: 1, verse: 6, text: 'Six' }] },
-    { reference: 'Psalms 2:3', translation: 'KJV', verses: [{ book: 'Psalms', chapter: 2, verse: 3, text: 'Three' }] },
+test('reloads loaded passages in a new translation and keeps misses', async () => {
+  const passages: ScriptureResult[] = [
+    {
+      reference: 'John 3:16',
+      translation: 'KJV',
+      verses: [{ book: 'John', chapter: 3, verse: 16, text: 'For God so loved' }],
+    },
+    {
+      reference: 'Romans 8:28',
+      translation: 'KJV',
+      verses: [{ book: 'Romans', chapter: 8, verse: 28, text: 'And we know' }],
+    },
   ]
-  assert.equal(combineScriptureResults(loaded)?.reference, 'Psalms 1:6–2:3')
+  const { results, unavailable } = await reloadPassagesInTranslation(
+    passages,
+    'NIV',
+    async (query, translation) => {
+      if (query !== 'John 3:16') return []
+      return [
+        {
+          reference: 'John 3:16',
+          translation,
+          verses: [{ book: 'John', chapter: 3, verse: 16, text: 'For God so loved NIV' }],
+        },
+      ]
+    },
+  )
+  assert.equal(results[0]?.translation, 'NIV')
+  assert.equal(results[0]?.verses[0]?.text, 'For God so loved NIV')
+  assert.equal(results[1]?.translation, 'KJV')
+  assert.deepEqual(unavailable, ['Romans 8:28'])
+})
+
+test('reloads an expanded range by its combined reference', async () => {
+  const passage: ScriptureResult = {
+    reference: 'John 3:16–17',
+    translation: 'KJV',
+    verses: [
+      { book: 'John', chapter: 3, verse: 16, text: 'Sixteen KJV' },
+      { book: 'John', chapter: 3, verse: 17, text: 'Seventeen KJV' },
+    ],
+  }
+  const queried: string[] = []
+  const { results, unavailable } = await reloadPassagesInTranslation(
+    [passage],
+    'ESV',
+    async (query, translation) => {
+      queried.push(query)
+      return [
+        {
+          reference: query,
+          translation,
+          verses: [
+            { book: 'John', chapter: 3, verse: 16, text: 'Sixteen ESV' },
+            { book: 'John', chapter: 3, verse: 17, text: 'Seventeen ESV' },
+          ],
+        },
+      ]
+    },
+  )
+  assert.deepEqual(queried, ['John 3:16–17'])
+  assert.equal(results[0]?.translation, 'ESV')
+  assert.equal(results[0]?.verses[1]?.text, 'Seventeen ESV')
+  assert.deepEqual(unavailable, [])
 })

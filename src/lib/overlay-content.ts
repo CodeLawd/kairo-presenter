@@ -41,3 +41,19 @@ export function formatOverlayVerseText(
   }
   return lines.join("\n");
 }
+
+/**
+ * Fills a `{Reference}` / `{Text}` token template. One renderer for every
+ * destination that substitutes tokens itself (the PP messages layer does its own
+ * substitution server-side; this covers the stage message and the Settings
+ * preview of the same template).
+ */
+export function renderOverlayTemplate(
+  template: string,
+  tokens: { reference: string; text: string },
+): string {
+  return template
+    .replaceAll("{Reference}", tokens.reference)
+    .replaceAll("{Text}", tokens.text)
+    .trim();
+}

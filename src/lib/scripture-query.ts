@@ -1,4 +1,4 @@
-import type { ScriptureResult } from './ipc'
+import type { ScriptureResult, ScriptureTranslation } from './ipc'
 
 export interface BookCompletion {
   value: string
@@ -157,4 +157,38 @@ export function getAdjacentVerseQueries(
   if (verse > 1) return [`${book} ${chapter}:${verse - 1}`]
   if (chapter <= 1) return []
   return [`${book} ${chapter - 1}:1–999`]
+}
+
+/**
+ * Re-looks-up each loaded (not playlist) passage in a new translation.
+ * Passages with no text in that Bible stay as-is and are listed in `unavailable`.
+ */
+export async function reloadPassagesInTranslation(
+  passages: ScriptureResult[],
+  translation: ScriptureTranslation,
+  search: (
+    query: string,
+    translation: ScriptureTranslation,
+  ) => Promise<ScriptureResult[]>,
+): Promise<{ results: ScriptureResult[]; unavailable: string[] }> {
+  const results: ScriptureResult[] = []
+  const unavailable: string[] = []
+
+  for (const passage of passages) {
+    try {
+      const hits = await search(passage.reference, translation)
+      const hit = hits.find((item) => item.verses.length > 0)
+      if (!hit) {
+        unavailable.push(passage.reference)
+        results.push(passage)
+        continue
+      }
+      results.push(hit)
+    } catch {
+      unavailable.push(passage.reference)
+      results.push(passage)
+    }
+  }
+
+  return { results, unavailable }
 }

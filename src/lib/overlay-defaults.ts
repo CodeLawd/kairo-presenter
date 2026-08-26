@@ -15,12 +15,15 @@
 import type {
   AppSettings,
   OverlayBox,
+  OverlayOutput,
+  OverlayOutputKind,
   OverlayTextOutline,
   OverlayTextShadow,
   OverlayTextStyle,
   OverlayTheme,
 } from './ipc'
 import { boxesForLayoutPreset, clampOverlayBox } from './overlay-boxes'
+import { MAX_NDI_OUTPUTS, OVERLAY_OUTPUT_KINDS } from './overlay-outputs'
 
 // ─── Theme defaults (schema locked — see docs/plans/2026-07-08-ndi-overlay.md) ─
 
@@ -97,14 +100,57 @@ export const DEFAULT_OVERLAY_THEME: OverlayTheme = {
   },
 }
 
+// ─── Output defaults (phase 3) ─────────────────────────────────────────────────
+
+const DEFAULT_TEMPLATE = '{Reference}\n{Text}'
+
+/**
+ * Builds one output with every field populated. Callers pass only what differs —
+ * this is the single place that knows the full shape, so adding a field to
+ * `OverlayOutput` cannot silently leave holes in stored data.
+ */
+export function makeOverlayOutput(
+  id: string,
+  kind: OverlayOutputKind,
+  patch: Partial<OverlayOutput> = {}
+): OverlayOutput {
+  return {
+    id,
+    name: id,
+    kind,
+    enabled: false,
+    order: 0,
+    fallbackOnly: false,
+    lookId: '',
+    themeId: null,
+    theme: structuredClone(DEFAULT_OVERLAY_THEME),
+    ppVideoInputUuid: '',
+    template: DEFAULT_TEMPLATE,
+    ...patch,
+  }
+}
+
+/**
+ * Fresh-install outputs — literally the `auto` migration, so a new user and an
+ * upgrading `auto` user cannot drift apart.
+ */
+const DEFAULT_OVERLAY_OUTPUTS: OverlayOutput[] = migrateLegacyOutputs({
+  mode: 'auto',
+  ppVideoInputUuid: '',
+  theme: DEFAULT_OVERLAY_THEME,
+  template: DEFAULT_TEMPLATE,
+})
+
 export const DEFAULT_OVERLAY_SETTINGS: AppSettings['overlay'] = {
   // — phase 1 —
-  template: '{Reference}\n{Text}',
+  template: DEFAULT_TEMPLATE,
   showTranslation: true,
   showVerseNumbers: true,
   maxVerses: 0,
   autoClearSec: 0,
-  // — phase 2 —
+  // — phase 3 —
+  outputs: DEFAULT_OVERLAY_OUTPUTS,
+  // — phase 2 (legacy, migrated into `outputs`) —
   mode: 'auto',
   ppVideoInputUuid: '',
   theme: DEFAULT_OVERLAY_THEME,
@@ -298,20 +344,129 @@ export function normalizeOverlayTheme(raw: unknown): OverlayTheme {
   }
 }
 
+// ─── Output normalizer + legacy migration (phase 3) ────────────────────────────
+
+interface LegacyOverlayFields {
+  mode: AppSettings['overlay']['mode']
+  ppVideoInputUuid: string
+  theme: OverlayTheme
+  template: string
+}
+
+/**
+ * Rebuilds the `outputs` list from a pre-phase-3 store so no shipped behaviour
+ * regresses. The legacy modes differed only in which of the two
+ * presentation-layer mechanisms they were allowed to use:
+ *
+ *   auto    → NDI, then library, then the message overlay
+ *   ndi     → NDI only (library never searched), message overlay as fallback
+ *   message → library, then the message overlay (NDI never used)
+ *
+ * `order` reproduces that precedence (NDI ahead of library, matching the shipped
+ * `getOverlayDispatchOrder`), and the last-resort message overlay is marked
+ * `fallbackOnly` — see that field's doc comment for why the flag has to exist.
+ */
+function migrateLegacyOutputs(legacy: LegacyOverlayFields): OverlayOutput[] {
+  return [
+    makeOverlayOutput('main', 'ndi', {
+      name: 'Main screen (rendered)',
+      order: 0,
+      enabled: legacy.mode !== 'message',
+      theme: legacy.theme,
+      ppVideoInputUuid: legacy.ppVideoInputUuid,
+    }),
+    makeOverlayOutput('library', 'library', {
+      name: 'ProPresenter library match',
+      order: 1,
+      enabled: legacy.mode !== 'ndi',
+    }),
+    makeOverlayOutput('lower-third', 'message', {
+      name: 'Lower third (PP messages)',
+      enabled: true,
+      fallbackOnly: true,
+      template: legacy.template,
+    }),
+    // Always present, always off — discoverable in the Outputs UI without
+    // changing what an upgrading user's screens show on first launch.
+    makeOverlayOutput('stage', 'stage', {
+      name: 'Pastor / stage screen',
+      template: legacy.template,
+    }),
+  ]
+}
+
+/**
+ * Heals a stored `outputs` array. Invariants: unique non-empty ids, known
+ * `kind`, every theme clamped, and at most `MAX_NDI_OUTPUTS` *enabled* `ndi`
+ * outputs — a second simultaneous NDI feed needs a sender pool that does not
+ * exist yet, so extras are force-disabled. They are kept, not deleted: the
+ * operator configured them, and `NdiOutputStatus.reason` can explain why one is
+ * inert far better than losing their work at next launch can.
+ *
+ * Falls back to `migrateLegacyOutputs` when the array is missing or ends up
+ * empty, so the store can never reach a state with nowhere to push.
+ */
+export function normalizeOverlayOutputs(raw: unknown, legacy: LegacyOverlayFields): OverlayOutput[] {
+  if (!Array.isArray(raw)) return migrateLegacyOutputs(legacy)
+
+  const seenIds = new Set<string>()
+  let ndiEnabled = 0
+  const normalized: OverlayOutput[] = []
+
+  for (const item of raw) {
+    const r = asObject(item)
+    const id = safeString(r.id, '').trim()
+    if (!id || seenIds.has(id)) continue
+    seenIds.add(id)
+
+    const kind = safeEnum(r.kind, OVERLAY_OUTPUT_KINDS, 'message')
+    let enabled = safeBool(r.enabled, false)
+    if (kind === 'ndi' && enabled) {
+      if (ndiEnabled >= MAX_NDI_OUTPUTS) enabled = false
+      else ndiEnabled++
+    }
+
+    normalized.push({
+      id,
+      name: safeString(r.name, id).trim() || id,
+      kind,
+      enabled,
+      order: clampNum(r.order, 0, 999, normalized.length),
+      fallbackOnly: safeBool(r.fallbackOnly, false),
+      lookId: safeString(r.lookId, '').trim(),
+      themeId: typeof r.themeId === 'string' && r.themeId ? r.themeId : null,
+      theme: normalizeOverlayTheme(r.theme),
+      ppVideoInputUuid: safeString(r.ppVideoInputUuid, '').trim(),
+      template: safeString(r.template, legacy.template),
+    })
+  }
+
+  return normalized.length > 0 ? normalized : migrateLegacyOutputs(legacy)
+}
+
 // ─── Overlay settings normalizer (D3) ──────────────────────────────────────────
 
 export function normalizeOverlaySettings(raw: unknown): AppSettings['overlay'] {
   const r = asObject(raw) as Partial<AppSettings['overlay']>
   const d = DEFAULT_OVERLAY_SETTINGS
 
+  const template = safeString(r.template, d.template)
+  const mode = safeEnum(r.mode, ['auto', 'ndi', 'message'] as const, d.mode)
+  const ppVideoInputUuid = safeString(r.ppVideoInputUuid, d.ppVideoInputUuid)
+  const theme = normalizeOverlayTheme(r.theme)
+
   return {
-    template: safeString(r.template, d.template),
+    template,
     showTranslation: safeBool(r.showTranslation, d.showTranslation),
     showVerseNumbers: safeBool(r.showVerseNumbers, d.showVerseNumbers),
     maxVerses: nonNegNumber(r.maxVerses, d.maxVerses),
     autoClearSec: nonNegNumber(r.autoClearSec, d.autoClearSec),
-    mode: safeEnum(r.mode, ['auto', 'ndi', 'message'] as const, d.mode),
-    ppVideoInputUuid: safeString(r.ppVideoInputUuid, d.ppVideoInputUuid),
-    theme: normalizeOverlayTheme(r.theme),
+    outputs: normalizeOverlayOutputs(r.outputs, { mode, ppVideoInputUuid, theme, template }),
+    // Legacy fields are preserved verbatim rather than deleted: the store keeps
+    // healing itself on every launch, so dropping them would re-run the
+    // migration against defaults if an older build ever wrote the file again.
+    mode,
+    ppVideoInputUuid,
+    theme,
   }
 }

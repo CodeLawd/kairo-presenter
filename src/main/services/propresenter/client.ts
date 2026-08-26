@@ -20,6 +20,7 @@ import type {
   PPMessage,
   PPMessageToken,
   PPVideoInput,
+  PPLookSummary,
 } from './types'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -884,51 +885,79 @@ export class ProPresenterClient extends EventEmitter {
 
   // ─── Video inputs (NDI overlay, phase 2) ───────────────────────────────────
 
-  async getVideoInputs(): Promise<PPVideoInput[]> {
+  /**
+   * Fetches a PP collection as normalized {id, name} pairs. PP nests the
+   * identifier under `id` on some builds and flattens it on others, and wraps
+   * the collection in `items` on some endpoints — that tolerance is expressed
+   * once here rather than once per endpoint.
+   */
+  private async getIdNameList(path: string, label: string): Promise<Array<{ id: string; name: string }>> {
     try {
-      const { data } = await this.http.get<any>('/v1/video_inputs')
+      const { data } = await this.http.get<any>(path)
       const raw: any[] = Array.isArray(data) ? data : (data?.items ?? [])
-      return raw.map((item) => ({
-        uuid: item.uuid ?? item.id?.uuid ?? '',
-        name: item.name ?? item.id?.name ?? '',
-      }))
+      return raw
+        .map((item) => ({
+          id: item.uuid ?? item.id?.uuid ?? (typeof item.id === 'string' ? item.id : ''),
+          name: item.name ?? item.id?.name ?? '',
+        }))
+        .filter((entry) => entry.id !== '')
     } catch (err) {
-      this.logAxiosError('getVideoInputs', err)
+      this.logAxiosError(label, err)
       return []
     }
   }
 
   /**
-   * TODO(M0 — unverified): the trigger endpoint shape below has not been
-   * confirmed against a live PP instance with an NDI video input configured
-   * (requires a user-assisted step in ProPresenter's UI — see M0 steps 3-4 in
-   * docs/plans/2026-07-08-ndi-overlay.md). We implement the expected REST
-   * shape — `GET /v1/video_inputs/{uuid}/trigger`, matching every other PP19
-   * trigger endpoint in this file — as primary, with a POST fallback if PP
-   * responds 404/405. Whichever call succeeds is logged so the real shape can
-   * be recorded back into the plan once verified live against ProPresenter.
+   * Triggers a PP resource. The GET-then-POST-on-404/405 shape is the expected
+   * PP19 REST convention but has NOT been confirmed against a live instance for
+   * either caller (see M0 in docs/plans/2026-07-08-ndi-overlay.md) — the winning
+   * verb is logged so the real shape can be recorded once observed. Written once
+   * so verifying it fixes every trigger at the same time.
    */
-  async triggerVideoInput(uuid: string): Promise<boolean> {
-    const path = `/v1/video_inputs/${encodeURIComponent(uuid)}/trigger`
+  private async triggerResource(path: string, label: string, ctx: object): Promise<boolean> {
     try {
       await this.http.get(path)
-      log.info('[PP] Video input triggered (GET)', { uuid })
+      log.info(`[PP] ${label} triggered (GET)`, ctx)
       return true
     } catch (err) {
       const status = (err as AxiosError).response?.status
       if (status === 404 || status === 405) {
         try {
           await this.http.post(path)
-          log.info('[PP] Video input triggered (POST fallback)', { uuid })
+          log.info(`[PP] ${label} triggered (POST fallback)`, ctx)
           return true
         } catch (postErr) {
-          this.logAxiosError('triggerVideoInput(POST fallback)', postErr)
+          this.logAxiosError(`${label} trigger (POST fallback)`, postErr)
           return false
         }
       }
-      this.logAxiosError('triggerVideoInput', err)
+      this.logAxiosError(`${label} trigger`, err)
       return false
     }
+  }
+
+  async getVideoInputs(): Promise<PPVideoInput[]> {
+    const entries = await this.getIdNameList('/v1/video_inputs', 'getVideoInputs')
+    return entries.map((entry) => ({ uuid: entry.id, name: entry.name }))
+  }
+
+  async triggerVideoInput(uuid: string): Promise<boolean> {
+    return this.triggerResource(
+      `/v1/video_inputs/${encodeURIComponent(uuid)}/trigger`,
+      'Video input',
+      { uuid }
+    )
+  }
+
+  // ─── Looks (phase 3) ───────────────────────────────────────────────────────
+
+  /** PP's configured Looks — a Look decides which layers each screen shows. */
+  async getLooks(): Promise<PPLookSummary[]> {
+    return this.getIdNameList('/v1/looks', 'getLooks')
+  }
+
+  async triggerLook(id: string): Promise<boolean> {
+    return this.triggerResource(`/v1/look/${encodeURIComponent(id)}/trigger`, 'Look', { id })
   }
 
   // ─── Status ────────────────────────────────────────────────────────────────

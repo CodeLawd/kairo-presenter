@@ -60,6 +60,7 @@ export function ScriptureSearchBar({
     <div className="flex gap-3">
       <Select
         value={translation}
+        disabled={loading}
         onValueChange={(value) =>
           onTranslationChange(value as ScriptureTranslation)
         }

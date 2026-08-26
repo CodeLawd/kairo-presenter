@@ -4,6 +4,9 @@ export interface ApiBibleSummary {
   id: string
   abbreviation?: string
   abbreviationLocal?: string
+  name?: string
+  nameLocal?: string
+  type?: string
 }
 
 interface ApiBibleContentNode {
@@ -26,19 +29,101 @@ export interface ParsedApiBibleVerse {
   text: string
 }
 
+const CATALOG_IDS = new Set([
+  'NKJV', 'KJV', 'BSB', 'WEB', 'ASV', 'OEB',
+  'NIV', 'NLT', 'NASB', 'MSG', 'AMPC', 'TPT', 'ESV', 'CSB',
+])
+
+/** Forms API.Bible actually ships that are not our catalog ids. */
+const ABBREVIATION_ALIASES: Record<string, string> = {
+  NIVUK: 'NIV', NIV11: 'NIV', NIV2011: 'NIV', NIV84: 'NIV',
+  NASB95: 'NASB', NASB1995: 'NASB', NASB20: 'NASB', NASB2020: 'NASB',
+  MESSAGE: 'MSG', THEMESSAGE: 'MSG',
+  AMP: 'AMPC', AMPLIFIED: 'AMPC', AMPLIFIEDCLASSIC: 'AMPC',
+  PASSION: 'TPT', THEPASSIONTRANSLATION: 'TPT',
+}
+
+/**
+ * Official English text ids published by API.Bible. Used when a key is
+ * authorized for that edition but the abbreviation string is unhelpful.
+ */
+const PREFERRED_BIBLE_IDS: Record<string, string> = {
+  '78a9f6124f344018-01': 'NIV',
+  'a761ca71e0b3ddcf-01': 'NASB',
+  'a556c5305ee15c3f-01': 'CSB',
+}
+
+/** Longer names first so “New King James” does not collapse to KJV. */
+const NAME_PATTERNS: Array<[RegExp, string]> = [
+  [/new king james/i, 'NKJV'],
+  [/king james/i, 'KJV'],
+  [/new international/i, 'NIV'],
+  [/new living/i, 'NLT'],
+  [/new american standard/i, 'NASB'],
+  [/english standard/i, 'ESV'],
+  [/christian standard/i, 'CSB'],
+  [/\bthe message\b/i, 'MSG'],
+  [/passion translation/i, 'TPT'],
+  [/amplified bible,?\s*classic/i, 'AMPC'],
+  [/\bamplified\b/i, 'AMPC'],
+  [/world english/i, 'WEB'],
+  [/american standard/i, 'ASV'],
+  [/berean standard/i, 'BSB'],
+  [/open english/i, 'OEB'],
+]
+
 function normalizeAbbreviation(value: string | undefined): string {
   return (value ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '')
 }
 
-export function buildApiBibleIdMap(bibles: ApiBibleSummary[]): Map<string, string> {
-  const result = new Map<string, string>()
-  for (const bible of bibles) {
-    const local = normalizeAbbreviation(bible.abbreviationLocal)
-    const fallback = normalizeAbbreviation(bible.abbreviation)
-    if (local) result.set(local, bible.id)
-    if (fallback) result.set(fallback, bible.id)
+function catalogIdFromAbbreviation(value: string | undefined): { id: string; exact: boolean } | null {
+  const normalized = normalizeAbbreviation(value)
+  if (!normalized) return null
+  if (CATALOG_IDS.has(normalized)) return { id: normalized, exact: true }
+
+  const withoutLanguage = normalized.replace(/^(ENG|EN)(?=[A-Z])/, '')
+  if (withoutLanguage !== normalized) {
+    if (CATALOG_IDS.has(withoutLanguage)) return { id: withoutLanguage, exact: true }
+    const aliased = ABBREVIATION_ALIASES[withoutLanguage]
+    if (aliased) return { id: aliased, exact: false }
   }
-  return result
+
+  const aliased = ABBREVIATION_ALIASES[normalized]
+  return aliased ? { id: aliased, exact: false } : null
+}
+
+function catalogIdFromName(value: string | undefined): string | null {
+  if (!value) return null
+  for (const [pattern, id] of NAME_PATTERNS) {
+    if (pattern.test(value)) return id
+  }
+  return null
+}
+
+export function buildApiBibleIdMap(bibles: ApiBibleSummary[]): Map<string, string> {
+  const best = new Map<string, { bibleId: string; score: number }>()
+  const consider = (catalogId: string, bibleId: string, score: number): void => {
+    const current = best.get(catalogId)
+    if (!current || score > current.score) best.set(catalogId, { bibleId, score })
+  }
+
+  for (const bible of bibles) {
+    if (bible.type && bible.type !== 'text') continue
+
+    const preferred = PREFERRED_BIBLE_IDS[bible.id]
+    if (preferred) consider(preferred, bible.id, 85)
+
+    const local = catalogIdFromAbbreviation(bible.abbreviationLocal)
+    if (local) consider(local.id, bible.id, local.exact ? 100 : 80)
+
+    const fallback = catalogIdFromAbbreviation(bible.abbreviation)
+    if (fallback) consider(fallback.id, bible.id, fallback.exact ? 90 : 70)
+
+    const named = catalogIdFromName(bible.nameLocal) ?? catalogIdFromName(bible.name)
+    if (named) consider(named, bible.id, 40)
+  }
+
+  return new Map([...best.entries()].map(([id, value]) => [id, value.bibleId]))
 }
 
 function normalizeVerseId(value: string | undefined): string | null {

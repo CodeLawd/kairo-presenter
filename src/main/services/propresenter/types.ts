@@ -179,6 +179,18 @@ export interface PPVideoInput {
   name: string
 }
 
+// ─── Looks (phase 3 — per-screen layer visibility) ─────────────────────────────
+
+/**
+ * Normalized shape of a `GET /v1/looks` entry. A Look is what actually decides
+ * which layers each configured screen shows, so it is the only lever this app
+ * has over "pastor sees X, main screen sees Y".
+ */
+export interface PPLookSummary {
+  id: string
+  name: string
+}
+
 // ─── Connection events ────────────────────────────────────────────────────────
 
 export type PPConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error'

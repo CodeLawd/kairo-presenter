@@ -1,9 +1,15 @@
 import { ipcMain, BrowserWindow, systemPreferences, dialog } from "electron";
 import type { OpenDialogOptions } from "electron";
 import log from "electron-log/main";
-import type { AppSettings, OrchestratorConfig, ResilienceStatus } from "@shared/ipc";
+import type {
+  AppSettings,
+  NdiOutputStatus,
+  OrchestratorConfig,
+  ResilienceStatus,
+} from "@shared/ipc";
 import { IPC } from "@shared/ipc";
 import { normalizeOverlaySettings } from "@shared/overlay-defaults";
+import { findNdiOutput } from "@shared/overlay-outputs";
 import { normalizeThemeLibrary } from "@shared/theme-library";
 import { store } from "../db";
 import { proPresenterService } from "../services/propresenter";
@@ -82,6 +88,11 @@ function registerProPresenterHandlers(): void {
 
   ipcMain.handle(IPC.PROPRESENTER.CLEAR_OVERLAY, async () => {
     return orchestrator.clearOverlay();
+  });
+
+  ipcMain.handle(IPC.PROPRESENTER.GET_LOOKS, async () => {
+    if (proPresenterService.getStatus().state !== "connected") return [];
+    return proPresenterService.rawClient.getLooks();
   });
 }
 
@@ -402,16 +413,34 @@ function registerNdiHandlers(): void {
   ipcMain.handle(IPC.NDI.GET_STATUS, async () => {
     const ndiStatus = ndiService.getStatus();
     const overlay = normalizeOverlaySettings(store.get("overlay"));
+    const connected = proPresenterService.getStatus().state === "connected";
+    const ndiOutput = findNdiOutput(overlay.outputs);
 
     let ppInputConfigured = false;
-    if (proPresenterService.getStatus().state === "connected") {
+    if (connected && ndiOutput) {
       const inputs = await proPresenterService.rawClient.getVideoInputs();
-      ppInputConfigured = overlay.ppVideoInputUuid
-        ? inputs.some((i) => i.uuid === overlay.ppVideoInputUuid)
+      ppInputConfigured = ndiOutput.ppVideoInputUuid
+        ? inputs.some((i) => i.uuid === ndiOutput.ppVideoInputUuid)
         : inputs.some((i) => i.name.includes("ProAutomate"));
     }
 
-    return { ...ndiStatus, ppInputConfigured };
+    // Per-output readiness, so the Outputs UI can say WHICH destination is not
+    // going to fire rather than just "NDI unavailable".
+    const outputs: NdiOutputStatus[] = overlay.outputs
+      .filter((o) => o.enabled)
+      .map((o) => {
+        if (!connected) return { id: o.id, ready: false, reason: "ProPresenter not connected" };
+        if (o.kind !== "ndi") return { id: o.id, ready: true };
+        if (!ndiStatus.available) {
+          return { id: o.id, ready: false, reason: "NDI sender unavailable" };
+        }
+        if (!ppInputConfigured) {
+          return { id: o.id, ready: false, reason: "no ProPresenter video input bound" };
+        }
+        return { id: o.id, ready: true };
+      });
+
+    return { ...ndiStatus, ppInputConfigured, outputs };
   });
 
   ipcMain.handle(IPC.NDI.GET_VIDEO_INPUTS, async () => {

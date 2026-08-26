@@ -63,6 +63,7 @@ export function VerseCardGrid({
               maxVerses={maxVerses}
               width={cardMinWidth}
               height={cardHeight}
+              isActive={idx === activeCardIndex}
               isFocused={focusHighlight && idx === activeCardIndex && !cueHighlight}
               isLive={cueHighlight && idx === activeCardIndex}
               sendStatus={card.sendStatus}

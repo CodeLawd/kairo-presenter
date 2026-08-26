@@ -47,6 +47,8 @@ interface AppState {
   lyricsSelectedSongId: string | null
   lyricsFilter: 'all' | 'favorites' | 'recent'
   lyricsSortBy: 'title' | 'artist' | 'recent' | 'added'
+  /** Which output the Operator's live-output panel is previewing. */
+  operatorPreviewOutputId: string | null
   /** Last selected theme in the Theme editor — restored when returning to the tab. */
   themeSelectedId: string | null
   themeSelectedName: string
@@ -88,6 +90,7 @@ interface AppState {
     filter?: 'all' | 'favorites' | 'recent'
     sortBy?: 'title' | 'artist' | 'recent' | 'added'
   }) => void
+  setOperatorPreviewOutputId: (id: string | null) => void
   setThemeViewState: (state: {
     selectedId?: string | null
     selectedName?: string
@@ -138,6 +141,7 @@ export const useAppStore = create<AppState>((set) => ({
   lyricsSelectedSongId: null,
   lyricsFilter: 'all',
   lyricsSortBy: 'title',
+  operatorPreviewOutputId: null,
   themeSelectedId: null,
   themeSelectedName: '',
 
@@ -250,6 +254,8 @@ export const useAppStore = create<AppState>((set) => ({
       lyricsFilter: state.filter !== undefined ? state.filter : current.lyricsFilter,
       lyricsSortBy: state.sortBy !== undefined ? state.sortBy : current.lyricsSortBy,
     })),
+
+  setOperatorPreviewOutputId: (id) => set({ operatorPreviewOutputId: id }),
 
   setThemeViewState: (state) =>
     set((current) => ({

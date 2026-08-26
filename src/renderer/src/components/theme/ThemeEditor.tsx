@@ -14,11 +14,15 @@ import {
   Save,
   RotateCcw,
   MoreHorizontal,
+  ListChecks,
   type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
+import OutputsPanel from './OutputsPanel'
+import SetupChecklist from './SetupChecklist'
+import { findNdiOutput, liveOverlayTheme } from '@shared/overlay-outputs'
 import { Slider as SliderPrimitive } from '@/components/ui/slider'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -33,7 +37,7 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/componen
 import { useAppStore } from '@/stores/useAppStore'
 import { renderOverlayHTML } from '@shared/overlay-template'
 import { DEFAULT_OVERLAY_SETTINGS, normalizeOverlaySettings, normalizeOverlayTheme } from '@shared/overlay-defaults'
-import type { AppSettings, CustomOverlayTheme, OverlayBox, OverlayTextStyle, OverlayTheme, NdiStatus, PPVideoInputInfo } from '@shared/ipc'
+import type { AppSettings, CustomOverlayTheme, OverlayBox, OverlayTextStyle, OverlayTheme, NdiStatus, PPLook, PPVideoInputInfo } from '@shared/ipc'
 import { createCustomTheme } from '@shared/theme-library'
 import { applyLayoutPreset, placeReferenceAgainstVerse, clampOverlayBox } from '@shared/overlay-boxes'
 import { applyOverlayAutoFit } from '@shared/overlay-fit'
@@ -293,7 +297,7 @@ export default function ThemeEditor(): React.ReactElement {
   const [sampleLength, setSampleLength] = useState<'short' | 'long'>('short')
   const [loading, setLoading] = useState(true)
   const [saved, setSaved] = useState(false)
-  const [ndiStatus, setNdiStatus] = useState<NdiStatus>({ available: false, sending: false, ppInputConfigured: false })
+  const [ndiStatus, setNdiStatus] = useState<NdiStatus>({ available: false, sending: false, ppInputConfigured: false, outputs: [] })
   const [testStatus, setTestStatus] = useState<TestStatus>('idle')
   const [testMsg, setTestMsg] = useState('')
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -353,15 +357,16 @@ export default function ThemeEditor(): React.ReactElement {
         setThemeName(fromBuiltin.name)
         setThemeViewState({ selectedId: rememberedId, selectedName: fromBuiltin.name })
       } else {
+        const liveTheme = liveOverlayTheme(storedOverlay)
         const matching = library.find(
-          (item) => JSON.stringify(item.theme) === JSON.stringify(storedOverlay.theme),
+          (item) => JSON.stringify(item.theme) === JSON.stringify(liveTheme),
         )
         if (matching) {
           setDraftTheme(structuredClone(normalizeOverlayTheme(matching.theme)))
           setThemeName(matching.name)
           setThemeViewState({ selectedId: matching.id, selectedName: matching.name })
         } else {
-          setDraftTheme(structuredClone(storedOverlay.theme))
+          setDraftTheme(structuredClone(liveTheme))
           if (rememberedName) setThemeName(rememberedName)
         }
       }
@@ -394,8 +399,13 @@ export default function ThemeEditor(): React.ReactElement {
     const poll = (): void => {
       window.api.ndi
         .getStatus()
-        .then((s) => {
-          if (!cancelled) setNdiStatus(s)
+        .then((next) => {
+          // Bail when nothing changed: this fires every 4s, and storing a fresh
+          // object re-renders the preview and every theme tile — each one a full
+          // renderOverlayHTML that recreates the DOM and restarts background video.
+          if (!cancelled) {
+            setNdiStatus((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next))
+          }
         })
         .catch(() => {})
     }
@@ -422,11 +432,7 @@ export default function ThemeEditor(): React.ReactElement {
       const store = useBootstrapStore.getState()
       store.patchSettings('overlay', { ...store.settings.overlay, ...next })
       window.api.settings
-        .set('overlay', {
-          mode: next.mode,
-          ppVideoInputUuid: next.ppVideoInputUuid,
-          theme: next.theme,
-        })
+        .set('overlay', { outputs: next.outputs, theme: next.theme })
         .then(flashSaved)
     },
     [flashSaved]
@@ -445,8 +451,6 @@ export default function ThemeEditor(): React.ReactElement {
   const updateBox = (id: OverlayLayerId, box: OverlayBox): void => {
     updateTheme(id, { box: clampOverlayBox(box) })
   }
-
-  const setMode = (mode: AppSettings['overlay']['mode']): void => persist({ ...overlay, mode })
 
   const handlePickMedia = useCallback(
     async (kind: 'image' | 'video'): Promise<void> => {
@@ -513,11 +517,17 @@ export default function ThemeEditor(): React.ReactElement {
     if (selectedThemeId === themeId) {
       setThemeViewState({ selectedId: null, selectedName: '' })
       setThemeName('')
-      setDraftTheme(structuredClone(overlay.theme))
+      setDraftTheme(structuredClone(liveOverlayTheme(overlay)))
     }
   }
 
-  const applyToOutput = (): void => {
+  /**
+   * Writes the draft theme onto one output. Themes are per-output now, so
+   * "apply" needs a target — `applyToOutput` sends it to the NDI output (the
+   * only kind this app renders itself), and the Outputs panel can target one
+   * explicitly.
+   */
+  const applyDraftThemeToOutput = (outputId: string): void => {
     // Keep the selected custom theme in sync with what went live so leaving the
     // tab and coming back still shows the saved look.
     if (selectedThemeId && !selectedThemeId.startsWith('builtin:')) {
@@ -528,7 +538,27 @@ export default function ThemeEditor(): React.ReactElement {
       persistLibrary(next)
       setThemeViewState({ selectedId: selectedThemeId, selectedName: nextName })
     }
-    persist({ ...overlay, theme: structuredClone(draftTheme) })
+
+    const themeId = selectedThemeId && !selectedThemeId.startsWith('builtin:') ? selectedThemeId : null
+    persist({
+      ...overlay,
+      outputs: overlay.outputs.map((output) =>
+        output.id === outputId
+          ? { ...output, themeId, theme: structuredClone(draftTheme) }
+          : output
+      ),
+      // The legacy field still feeds verse-card previews elsewhere in the app.
+      theme: structuredClone(draftTheme),
+    })
+  }
+
+  const applyToOutput = (): void => {
+    const target = findNdiOutput(overlay.outputs)
+    if (!target) {
+      window.alert('No rendered (NDI) output exists yet — add one on the Output tab first.')
+      return
+    }
+    applyDraftThemeToOutput(target.id)
   }
 
   // PP video inputs for the manual NDI binding picker. PP names inputs
@@ -544,6 +574,19 @@ export default function ThemeEditor(): React.ReactElement {
   useEffect(() => {
     refreshVideoInputs()
   }, [refreshVideoInputs])
+
+  // PP Looks — a Look is what decides which layers each screen shows, so it is
+  // the only lever this app has over per-screen routing.
+  const [looks, setLooks] = useState<PPLook[]>([])
+  const refreshLooks = useCallback((): void => {
+    window.api.propresenter
+      .getLooks()
+      .then(setLooks)
+      .catch(() => setLooks([]))
+  }, [])
+  useEffect(() => {
+    refreshLooks()
+  }, [refreshLooks])
 
   const handleSendTest = async (): Promise<void> => {
     setTestStatus('testing')
@@ -592,7 +635,8 @@ export default function ThemeEditor(): React.ReactElement {
     )
   }
 
-  const hasDraftChanges = JSON.stringify(draftTheme) !== JSON.stringify(overlay.theme)
+  const liveTheme = liveOverlayTheme(overlay)
+  const hasDraftChanges = JSON.stringify(draftTheme) !== JSON.stringify(liveTheme)
 
   return (
     <ResizablePanelGroup orientation="horizontal" className="h-full overflow-hidden">
@@ -769,64 +813,33 @@ export default function ThemeEditor(): React.ReactElement {
           </TabsList>
           </Tabs>
 
-          {/* ── Output mode ─────────────────────────────────────────────────── */}
-          {inspectorTab === 'output' && <SectionCard icon={Radio} title="Output mode">
-            <div className="grid grid-cols-3 gap-2">
-              {(
-                [
-                  { value: 'auto', label: 'Auto' },
-                  { value: 'ndi', label: 'NDI' },
-                  { value: 'message', label: 'Message' },
-                ] as const
-              ).map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => setMode(opt.value)}
-                  className={cn(
-                    'px-2 py-2 rounded-lg border text-center transition-all',
-                    overlay.mode === opt.value
-                      ? 'bg-teal-500/15 border-teal-500/40 text-teal-300'
-                      : 'btn-secondary'
-                  )}
-                  aria-pressed={overlay.mode === opt.value}
-                >
-                  <span className="text-xs font-bold">{opt.label}</span>
-                </button>
-              ))}
-            </div>
-            <p className="text-[11px] leading-relaxed text-slate-500">
-              {overlay.mode === 'auto' && 'Uses NDI when available, then falls back to a ProPresenter message.'}
-              {overlay.mode === 'ndi' && 'Always uses the custom rendered NDI output.'}
-              {overlay.mode === 'message' && 'Uses ProPresenter’s native message layer.'}
-            </p>
+          {/* ── Setup checklist ──────────────────────────────────────────────── */}
+          {inspectorTab === 'output' && <SectionCard icon={ListChecks} title="Setup">
+            <SetupChecklist
+              ppConnected={ppConnected}
+              ndiStatus={ndiStatus}
+              outputs={overlay.outputs}
+              looks={looks}
+              onSendTest={handleSendTest}
+              testStatus={testStatus}
+              testMsg={testMsg}
+            />
+          </SectionCard>}
 
-            {/* NDI video-input binding — PP hides NDI source names, so the user picks manually */}
-            {overlay.mode !== 'message' && (
-              <div className="mt-3">
-                <label className="label" htmlFor="pa-video-input-picker">ProPresenter video input (NDI)</label>
-                <div className="flex items-center gap-2">
-                  <select
-                    id="pa-video-input-picker"
-                    className="input flex-1"
-                    value={overlay.ppVideoInputUuid}
-                    onChange={(e) => persist({ ...overlay, ppVideoInputUuid: e.target.value })}
-                  >
-                    <option value="">— not bound —</option>
-                    {videoInputs.map((vi) => (
-                      <option key={vi.uuid} value={vi.uuid}>{vi.name}</option>
-                    ))}
-                  </select>
-                  <button type="button" className="btn-secondary px-3 py-2 text-xs" onClick={refreshVideoInputs}>
-                    Refresh
-                  </button>
-                </div>
-                <p className="text-[10px] text-slate-500 mt-1.5 leading-snug">
-                  Pick the PP Video Input you created for the "ProAutomate Scripture" NDI source.
-                  PP labels inputs "Input N" — check PP's Video Inputs list if unsure.
-                </p>
-              </div>
-            )}
+          {/* ── Outputs ──────────────────────────────────────────────────────── */}
+          {inspectorTab === 'output' && <SectionCard icon={Radio} title="Outputs">
+            <OutputsPanel
+              outputs={overlay.outputs}
+              onChange={(outputs) => persist({ ...overlay, outputs })}
+              videoInputs={videoInputs}
+              onRefreshVideoInputs={refreshVideoInputs}
+              looks={looks}
+              onRefreshLooks={refreshLooks}
+              themeLibrary={themeLibrary}
+              status={ndiStatus.outputs}
+              onApplyDraftTheme={applyDraftThemeToOutput}
+              hasDraftChanges={hasDraftChanges}
+            />
           </SectionCard>}
 
           {/* ── Background ───────────────────────────────────────────────────── */}
@@ -1003,13 +1016,13 @@ export default function ThemeEditor(): React.ReactElement {
               {!ndiStatus.available && (
                 <p className="text-[10px] text-yellow-400 flex items-start gap-1.5 leading-relaxed">
                   <AlertCircle size={11} className="shrink-0 mt-0.5" aria-hidden="true" />
-                  NDI sender unavailable — falling back to message overlay when selected in auto/ndi mode.
+                  NDI sender unavailable — the rendered output cannot push. Other enabled outputs are unaffected.
                 </p>
               )}
               {ndiStatus.available && !ndiStatus.ppInputConfigured && (
                 <p className="text-[10px] text-yellow-400 flex items-start gap-1.5 leading-relaxed">
                   <AlertCircle size={11} className="shrink-0 mt-0.5" aria-hidden="true" />
-                  In ProPresenter: Video Inputs → add NDI source named "ProAutomate Scripture".
+                  In ProPresenter: add a Video Input for the "ProAutomate Scripture" NDI source, then bind it on the Output tab.
                 </p>
               )}
             </div>
@@ -1093,7 +1106,7 @@ export default function ThemeEditor(): React.ReactElement {
             </div>
             <button
               className="btn-secondary flex items-center justify-center gap-2"
-              onClick={() => setDraftTheme(structuredClone(overlay.theme))}
+              onClick={() => setDraftTheme(structuredClone(liveTheme))}
               disabled={!hasDraftChanges}
             >
               <RotateCcw size={13} /> Discard draft

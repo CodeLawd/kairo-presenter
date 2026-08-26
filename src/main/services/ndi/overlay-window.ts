@@ -23,6 +23,8 @@ const OSR_FRAME_RATE_VIDEO = 24
 class OverlayWindow {
   private win: BrowserWindow | null = null
   private creating: Promise<BrowserWindow> | null = null
+  /** Which output last rendered here — see showScripture. */
+  private lastOutputId: string | null = null
 
   private async ensureWindow(): Promise<BrowserWindow> {
     if (this.win && !this.win.isDestroyed()) return this.win
@@ -74,8 +76,28 @@ class OverlayWindow {
     return win
   }
 
-  async showScripture(reference: string, text: string, theme: OverlayTheme): Promise<void> {
+  /**
+   * Renders one output's slide. `outputId` is not used to route anything — this
+   * window and its NDI sender are singletons — it exists so the one-NDI-output
+   * assumption is visible AT the place that depends on it. If a second output
+   * ever reaches here, it is silently overwriting the first one's frame, and
+   * this warning is the only thing that will say so.
+   */
+  async showScripture(
+    outputId: string,
+    reference: string,
+    text: string,
+    theme: OverlayTheme
+  ): Promise<void> {
     if (!ndiService.getStatus().available) return
+    if (this.lastOutputId !== null && this.lastOutputId !== outputId) {
+      log.warn('[NDI] Overlay window reused by a second output — frames will overwrite', {
+        previous: this.lastOutputId,
+        next: outputId,
+      })
+    }
+    this.lastOutputId = outputId
+
     const win = await this.ensureWindow()
     if (win.isDestroyed()) return
     const isVideoBg = theme.background.type === 'video' && !!theme.background.mediaPath
@@ -86,6 +108,7 @@ class OverlayWindow {
 
   /** Blanks the overlay window content AND resets the NDI sender's repeating frame. */
   async clear(): Promise<void> {
+    this.lastOutputId = null
     ndiService.clearFrame()
     if (this.win && !this.win.isDestroyed()) {
       try {

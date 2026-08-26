@@ -29,6 +29,8 @@ import {
   DEFAULT_OVERLAY_SETTINGS,
   normalizeOverlaySettings,
 } from "@shared/overlay-defaults";
+import { liveOverlayTheme } from "@shared/overlay-outputs";
+import { LiveOutputPreview } from "./LiveOutputPreview";
 import {
   applyOperatorSuggestionSent,
   findReadingProgress,
@@ -382,6 +384,15 @@ export default function Operator(): React.ReactElement {
     },
     [previewWidth, transcriptWidth],
   );
+  // Only enabled outputs are worth previewing — a disabled one shows nothing on
+  // any screen, so offering it as a tab would be a lie.
+  const previewOutputs = useMemo(
+    () => overlay.outputs.filter((output) => output.enabled),
+    [overlay.outputs],
+  );
+  const previewOutputId = useAppStore((s) => s.operatorPreviewOutputId);
+  const setPreviewOutputId = useAppStore((s) => s.setOperatorPreviewOutputId);
+
   const livePreviewResult = useMemo(() => {
     if (!activeProjection) return null;
     const detected = suggestions.find(
@@ -1437,12 +1448,13 @@ export default function Operator(): React.ReactElement {
                                 translation: s.translation,
                                 verses: s.verses,
                               }}
-                              theme={overlay.theme}
+                              theme={liveOverlayTheme(overlay)}
                               showTranslation={overlay.showTranslation}
                               showVerseNumbers={overlay.showVerseNumbers}
                               maxVerses={1}
                               width={OPERATOR_CARD_WIDTH}
                               height={OPERATOR_CARD_HEIGHT}
+                              isActive={isReading || selectedSuggestionId === s.id}
                               isFocused={isReading || isUpNext || selectedSuggestionId === s.id}
                               isLive={isLive}
                               sendStatus={isLive ? "sent" : "idle"}
@@ -1607,40 +1619,17 @@ export default function Operator(): React.ReactElement {
               <p className="text-xs font-semibold text-slate-300">
                 Live output
               </p>
-              <p className="text-[10px] text-slate-500">
-                Selected theme · ProPresenter
-              </p>
+              <p className="text-[10px] text-slate-500">ProPresenter</p>
             </div>
-            {livePreviewResult ? (
-              <VerseThemePreview
-                result={livePreviewResult}
-                theme={overlay.theme}
-                showTranslation={overlay.showTranslation}
-                showVerseNumbers={overlay.showVerseNumbers}
-                maxVerses={1}
-                width={liveOutputPreviewWidth}
-                height={liveOutputPreviewHeight}
-                isFocused={false}
-                isLive
-                sendStatus="sent"
-                onSelect={() => undefined}
-                cardRef={() => undefined}
-              />
-            ) : (
-              <div
-                className="flex flex-col items-center justify-center rounded-xl border border-dashed border-surface-border bg-surface text-slate-500"
-                style={{
-                  width: liveOutputPreviewWidth,
-                  height: liveOutputPreviewHeight,
-                }}
-              >
-                <BookOpenCheck size={20} className="mb-2 text-slate-600" />
-                <p className="text-xs font-semibold">Nothing is live</p>
-                <p className="mt-0.5 text-[10px] text-slate-600">
-                  Send a verse to preview it here
-                </p>
-              </div>
-            )}
+            <LiveOutputPreview
+              outputs={previewOutputs}
+              selectedOutputId={previewOutputId}
+              onSelectOutput={setPreviewOutputId}
+              result={livePreviewResult}
+              overlay={overlay}
+              width={liveOutputPreviewWidth}
+              height={liveOutputPreviewHeight}
+            />
             <div className="grid grid-cols-3 gap-1.5">
               {[
                 { label: "PP", status: ppStatus, error: ppError },

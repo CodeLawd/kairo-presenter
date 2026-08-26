@@ -74,12 +74,15 @@ export interface AppSettings {
     maxVerses: number
     /** Auto-clear overlay after N seconds; 0 = manual clear only */
     autoClearSec: number
-    // — phase 2 (new) —
-    /** Output mode — see D1 truth table in docs/plans/2026-07-08-ndi-overlay.md */
+    // — phase 3 (new) — one entry per destination; see OverlayOutput below.
+    outputs: OverlayOutput[]
+    // — phase 2 (legacy — migrated into `outputs`, kept only so the migration
+    //   in normalizeOverlaySettings can still read a pre-phase-3 store) —
+    /** @deprecated Replaced by `outputs`. */
     mode: 'auto' | 'ndi' | 'message'
-    /** Persisted after discovery (D7) — the bound PP video-input uuid for the NDI source. */
+    /** @deprecated Replaced by the `ndi` output's `ppVideoInputUuid`. */
     ppVideoInputUuid: string
-    /** In-app rendered theme used by the NDI overlay window and its WYSIWYG preview. */
+    /** @deprecated Replaced by the `ndi` output's `theme`. */
     theme: OverlayTheme
   }
   themeLibrary: CustomOverlayTheme[]
@@ -180,6 +183,57 @@ export interface OverlayTheme {
     /** Auto-size verse text to fill its box, capped by verse.fontSizePx. */
     autoFitText: boolean
   }
+}
+
+// ─── Overlay outputs (phase 3 — one push, many destinations) ──────────────────
+// ProPresenter has no "send this to screen 2" API. The routing primitive is the
+// LAYER, and a Look decides which layers each screen shows. So a destination is
+// a (PP layer, content, styling) triple. Defaults, normalizer and the layer map
+// live in src/lib/overlay-outputs.ts.
+
+export type OverlayOutputKind = 'ndi' | 'library' | 'message' | 'stage'
+
+/** The ProPresenter layer an output writes to. Two outputs on the same layer compete. */
+export type OverlayLayer = 'presentation' | 'messages' | 'stage'
+
+export interface OverlayOutput {
+  id: string
+  /** Operator-facing label — "Main screen", "Pastor confidence", "Lobby lower third". */
+  name: string
+  kind: OverlayOutputKind
+  enabled: boolean
+  /** Order within its layer group — lower runs first. */
+  order: number
+  /**
+   * Push only if every non-fallback output failed. This is how the legacy
+   * `auto`/`ndi`/`message` modes' last-resort message overlay survives the move
+   * to fan-out: it is a different layer, so without this it would fire
+   * *alongside* a successful presentation-layer push instead of instead of it.
+   */
+  fallbackOnly: boolean
+  /** PP Look to trigger before pushing; '' leaves the operator's Look alone. */
+  lookId: string
+  // — kind: 'ndi' —
+  /** Source theme in `themeLibrary`, or null when `theme` is a one-off. Display only. */
+  themeId: string | null
+  /** Resolved copy — rendering never depends on the library still holding `themeId`. */
+  theme: OverlayTheme
+  /** Persisted after discovery — the bound PP video-input uuid for the NDI source. */
+  ppVideoInputUuid: string
+  // — kind: 'message' | 'stage' —
+  /** Token template; same {Reference}/{Text} syntax as the legacy `overlay.template`. */
+  template: string
+}
+
+/** Per-output result of one fan-out push. */
+export interface OverlayDispatchResult {
+  outputId: string
+  name: string
+  kind: OverlayOutputKind
+  layer: OverlayLayer
+  ok: boolean
+  /** Why it failed, when `ok` is false. */
+  reason?: string
 }
 
 // ─── ProPresenter ─────────────────────────────────────────────────────────────
@@ -670,10 +724,18 @@ export interface ProPresenterAPI {
   getPlaylists: () => Promise<ProPresenterPlaylist[]>
   /** Pushes a sample verse (John 3:16 KJV) through the scripture overlay path using current overlay settings. */
   testOverlay: () => Promise<boolean>
-  /** Clears the scripture message and the whole messages layer. */
+  /** Clears every layer this app most recently pushed to. */
   clearOverlay: () => Promise<boolean>
+  /** PP Looks — a Look defines which layers are visible on which screens. */
+  getLooks: () => Promise<PPLook[]>
   /** Returns cleanup fn — call when component unmounts. */
   onStatusChange: (callback: (status: ProPresenterStatus) => void) => Unsubscribe
+}
+
+/** One entry from PP's `GET /v1/looks`. */
+export interface PPLook {
+  id: string
+  name: string
 }
 
 export interface AudioAPI {
@@ -780,6 +842,15 @@ export interface NdiStatus {
   sending: boolean
   /** A PP video input (bound uuid, or discovered by name) is currently present in PP's /v1/video_inputs list. */
   ppInputConfigured: boolean
+  /** Readiness of each enabled output, keyed by output id. */
+  outputs: NdiOutputStatus[]
+}
+
+export interface NdiOutputStatus {
+  id: string
+  /** False when this output cannot currently push — see `reason`. */
+  ready: boolean
+  reason?: string
 }
 
 /** One entry from PP's `GET /v1/video_inputs` — PP names these "Input N", it does NOT expose the NDI source name. */
@@ -927,6 +998,7 @@ export const IPC = {
     GET_PLAYLISTS:  'propresenter:getPlaylists',    // invoke
     TEST_OVERLAY:   'propresenter:testOverlay',     // invoke
     CLEAR_OVERLAY:  'propresenter:clearOverlay',    // invoke
+    GET_LOOKS:      'propresenter:getLooks',        // invoke — PPLook[]
     STATUS_CHANGE:  'propresenter:statusChange',    // push
   },
   AUDIO: {
@@ -1008,7 +1080,7 @@ export const IPC = {
     STATUS_CHANGE: 'resilience:statusChange',     // push (ResilienceStatus)
   },
   NDI: {
-    GET_STATUS:         'ndi:getStatus',         // invoke — { available, sending, ppInputConfigured }
+    GET_STATUS:         'ndi:getStatus',         // invoke — { available, sending, ppInputConfigured, outputs }
     GET_VIDEO_INPUTS:   'ndi:getVideoInputs',    // invoke — PPVideoInputInfo[]
     PICK_OVERLAY_MEDIA: 'ndi:pickOverlayMedia',  // invoke — native file dialog → absolute path | null
   },

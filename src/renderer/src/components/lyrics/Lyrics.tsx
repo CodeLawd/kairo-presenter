@@ -1617,6 +1617,16 @@ export default function Lyrics(): React.ReactElement {
     [setLyricsViewState]
   )
 
+  /**
+   * A song that was just imported and must be opened in the editor pane once it
+   * lands in `songs`. Selection lives in the Zustand store while `songs` is
+   * React state, so the two updates are not guaranteed to commit in the same
+   * render — setting the id directly can be undone by the stale-selection effect
+   * below, which would see the new id against the old list. Handing the id to an
+   * effect keyed on `songs` makes the open deterministic.
+   */
+  const pendingOpenIdRef = useRef<string | null>(null)
+
   // ── Selection + editor ───────────────────────────────────────────────────────
   const [editMode, setEditMode] = useState(false)
   const [editState, setEditState] = useState<EditState | null>(null)
@@ -1728,8 +1738,26 @@ export default function Lyrics(): React.ReactElement {
     useBootstrapStore.getState().setLyrics(songs)
   }, [songs])
 
-  // Drop a stale selection if the song was deleted or the library reloaded.
+  // Open a freshly imported song as soon as it is actually in the library, so
+  // importing always lands you on the song rather than just adding a row.
   useEffect(() => {
+    const pendingId = pendingOpenIdRef.current
+    if (!pendingId) return
+    if (!songs.some((song) => song.id === pendingId)) return
+
+    pendingOpenIdRef.current = null
+    setSelectedId(pendingId)
+    setEditMode(false)
+    setWebPreviewResult(null)
+    setWebPreviewData(null)
+    setWebPreviewError(null)
+  }, [songs, setSelectedId])
+
+  // Drop a stale selection if the song was deleted or the library reloaded.
+  // Never while an import is waiting to open — that selection is about to
+  // become valid, and clearing it here is what closed the pane on import.
+  useEffect(() => {
+    if (pendingOpenIdRef.current) return
     if (selectedId && !songs.some((song) => song.id === selectedId)) {
       setSelectedId(null)
     }
@@ -2128,7 +2156,8 @@ export default function Lyrics(): React.ReactElement {
       const exists = prev.some((s) => s.id === song.id)
       return exists ? prev.map((s) => s.id === song.id ? song : s) : [song, ...prev]
     })
-    setSelectedId(song.id)
+    // Opened by the pending-open effect once `songs` has committed.
+    pendingOpenIdRef.current = song.id
   }, [])
 
   // ── Online suggestions ───────────────────────────────────────────────────────
@@ -2181,10 +2210,9 @@ export default function Lyrics(): React.ReactElement {
         const exists = prev.some((s) => s.id === song.id)
         return exists ? prev.map((s) => (s.id === song.id ? song : s)) : [song, ...prev]
       })
-      setSelectedId(song.id)
-      setWebPreviewResult(null)
-      setWebPreviewData(null)
-      setWebPreviewError(null)
+      // Opened by the pending-open effect once `songs` has committed; that
+      // effect also drops the web preview so the song view takes the pane.
+      pendingOpenIdRef.current = song.id
       setQuery('')
       setSendStatus('idle')
       setSendError(null)

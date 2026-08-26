@@ -19,6 +19,8 @@ export interface VerseThemePreviewProps {
   maxVerses: number;
   width: number;
   height: number;
+  /** Currently selected card in the loaded passage / playlist. */
+  isActive?: boolean;
   /** Focused from sidebar — visual ring only, not on output. */
   isFocused: boolean;
   /** Live on ProPresenter / last sent cue. */
@@ -35,6 +37,7 @@ export function VerseThemePreview({
   maxVerses,
   width,
   height,
+  isActive = false,
   isFocused,
   isLive,
   sendStatus,
@@ -60,16 +63,19 @@ export function VerseThemePreview({
       ref={cardRef}
       type="button"
       className={cn(
-        "group relative shrink-0 overflow-hidden rounded-xl border border-surface-border/70 text-left shadow-sm transition-all hover:border-surface-border focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-surface-border",
-        (isLive || isFocused) && "border-surface-border",
+        "group relative shrink-0 rounded-xl border text-left shadow-sm transition-all focus-visible:outline-none",
+        isActive
+          ? "border-teal-400 ring-2 ring-teal-400/70"
+          : "border-surface-border/70 hover:border-slate-500 focus-visible:ring-1 focus-visible:ring-surface-border",
       )}
       style={{ width, height }}
       onClick={onSelect}
-      aria-pressed={isLive || isFocused}
+      aria-pressed={isActive || isLive || isFocused}
+      aria-current={isActive ? "true" : undefined}
       aria-label={`Send ${result.reference} live`}
     >
       <div
-        className="relative h-full w-full overflow-hidden bg-[repeating-conic-gradient(#1a1a1a_0%_25%,#0d0d0d_0%_50%)] bg-[length:12px_12px]"
+        className="relative h-full w-full overflow-hidden rounded-[10px] bg-[repeating-conic-gradient(#1a1a1a_0%_25%,#0d0d0d_0%_50%)] bg-[length:12px_12px]"
         aria-hidden={!html}
       >
         {html ? (

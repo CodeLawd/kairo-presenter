@@ -3,7 +3,7 @@ import { join, resolve } from 'path'
 import { pathToFileURL } from 'url'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import log from 'electron-log/main'
-import { normalizeOverlaySettings } from '@shared/overlay-defaults'
+import { configuredMediaPaths } from '@shared/overlay-outputs'
 import { PA_MEDIA_URL_PREFIX } from '@shared/overlay-template'
 import { registerIpcHandlers } from './ipc'
 import { initDatabase, store } from './db'
@@ -38,13 +38,15 @@ function registerPaMediaProtocol(): void {
         decodeURIComponent(request.url.slice(PA_MEDIA_URL_PREFIX.length))
       )
 
-      // Allowlist: only the currently-configured background media file is
+      // Allowlist: only background media the user has already configured is
       // servable — the scheme must not become an arbitrary-file-read bridge.
-      const overlay = normalizeOverlaySettings(store.get('overlay'))
-      const allowed = overlay.theme.background.mediaPath
-        ? resolve(overlay.theme.background.mediaPath)
-        : null
-      if ((!allowed || requested !== allowed) && !isPickedOverlayMediaAllowed(requested)) {
+      // Saved library themes count too, so the Theme editor can preview a stored
+      // theme in a later session (the picked-media allowlist only survives the
+      // session in which the file was chosen).
+      const allowed = new Set(
+        configuredMediaPaths(store.get('overlay'), store.get('themeLibrary')).map((p) => resolve(p))
+      )
+      if (!allowed.has(requested) && !isPickedOverlayMediaAllowed(requested)) {
         log.warn('[pa-media] Blocked non-configured path', { requested })
         return new Response('Forbidden', { status: 403 })
       }

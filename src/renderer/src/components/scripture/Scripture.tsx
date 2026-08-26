@@ -23,6 +23,7 @@ import {
   getAdjacentVerseQueries,
   getBookCompletion,
   normalizeScriptureQuery,
+  reloadPassagesInTranslation,
   resolveSubmittedScriptureQuery,
   shouldLiveSuggestScriptureQuery,
 } from "@shared/scripture-query";
@@ -47,6 +48,7 @@ import {
   DEFAULT_OVERLAY_SETTINGS,
   normalizeOverlaySettings,
 } from "@shared/overlay-defaults";
+import { liveOverlayTheme } from "@shared/overlay-outputs";
 import {
   resolveSermonPlanItems,
   translationFallbackOrder,
@@ -134,6 +136,10 @@ export default function Scripture(): React.ReactElement {
 
   const inputRef = useRef<HTMLInputElement>(null);
   const suggestionRequestRef = useRef(0);
+  const suppressSuggestionsQueryRef = useRef<string | null>(null);
+  const translationRef = useRef(translation);
+  const translationReloadRef = useRef(0);
+  translationRef.current = translation;
   const gridRef = useRef<HTMLDivElement>(null);
   const mainScrollRef = useRef<HTMLDivElement>(null);
   const cardRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -242,7 +248,10 @@ export default function Scripture(): React.ReactElement {
 
   useEffect(() => {
     const requestId = ++suggestionRequestRef.current;
-    if (!shouldLiveSuggestScriptureQuery(query)) {
+    if (
+      suppressSuggestionsQueryRef.current === query.trim() ||
+      !shouldLiveSuggestScriptureQuery(query)
+    ) {
       setSearchSuggestions([]);
       setSuggestionsOpen(false);
       return;
@@ -271,6 +280,10 @@ export default function Scripture(): React.ReactElement {
     async (submittedQuery?: string): Promise<void> => {
       const q = (submittedQuery ?? query).trim();
       if (!q) return;
+      suppressSuggestionsQueryRef.current = q;
+      suggestionRequestRef.current += 1;
+      setSuggestionsOpen(false);
+      setSearchSuggestions([]);
       setLoading(true);
       setError(null);
       try {
@@ -297,6 +310,16 @@ export default function Scripture(): React.ReactElement {
               }
             }
           }
+        }
+        const targetTranslation = translationRef.current;
+        if (targetTranslation !== translation && results.length > 0) {
+          const reloaded = await reloadPassagesInTranslation(
+            results,
+            targetTranslation,
+            (lookupQuery, lookupTranslation) =>
+              window.api.scripture.search(lookupQuery, lookupTranslation),
+          );
+          results = reloaded.results;
         }
         setRows(
           results.map((result, index) =>
@@ -328,6 +351,8 @@ export default function Scripture(): React.ReactElement {
   );
 
   const previewSuggestion = useCallback((result: ScriptureResult): void => {
+    suppressSuggestionsQueryRef.current = result.reference;
+    suggestionRequestRef.current += 1;
     setQuery(result.reference);
     setRows([createResultRow(result, { id: `suggest-${result.reference}` })]);
     setCardsSource("search");
@@ -341,6 +366,7 @@ export default function Scripture(): React.ReactElement {
 
   const handleTranslationChange = useCallback(
     async (next: ScriptureTranslation): Promise<void> => {
+      translationRef.current = next;
       setTranslation(next);
       await window.api.scripture.setTranslation(next);
       const store = useBootstrapStore.getState();
@@ -348,8 +374,88 @@ export default function Scripture(): React.ReactElement {
         ...store.settings.scripture,
         defaultTranslation: next,
       });
+
+      // Playlist items keep the translation they were saved with.
+      if (cardsSource !== "search" || rows.length === 0) return;
+      if (
+        rows.every((row) =>
+          row.cards.every((card) => card.result.translation === next),
+        )
+      ) {
+        return;
+      }
+
+      const requestId = ++translationReloadRef.current;
+      const activeLocation = locateFlatCard(rows, activeCardIndex);
+      const activeReference = activeLocation
+        ? rows[activeLocation.rowIndex]?.cards[activeLocation.cardIndex]?.result
+            .reference
+        : null;
+      const passages = rows
+        .map((row) =>
+          combineScriptureResults(row.cards.map((card) => card.result)),
+        )
+        .filter((result): result is ScriptureResult => result !== null);
+
+      setLoading(true);
+      setError(null);
+      try {
+        const { results, unavailable } = await reloadPassagesInTranslation(
+          passages,
+          next,
+          (lookupQuery, lookupTranslation) =>
+            window.api.scripture.search(lookupQuery, lookupTranslation),
+        );
+        if (requestId !== translationReloadRef.current) return;
+
+        const updated = results.map((result, index) =>
+          createResultRow(result, {
+            id: rows[index]?.id ?? `search-${index}-${result.reference}`,
+          }),
+        );
+        setRows(updated);
+
+        if (activeReference) {
+          const nextIndex = findFlatCardIndex(
+            updated,
+            (card) => card.result.reference === activeReference,
+          );
+          setActiveCardIndex(
+            nextIndex >= 0
+              ? nextIndex
+              : Math.min(
+                  activeCardIndex,
+                  Math.max(0, flattenResultRows(updated).length - 1),
+                ),
+          );
+        }
+
+        if (unavailable.length > 0) {
+          setError(
+            `${next} text unavailable for ${unavailable.join(", ")}. Those verses still show the previous translation.`,
+          );
+        } else {
+          const fallback = results.find((result) => result.translation !== next);
+          if (fallback) {
+            setError(
+              `${next} text unavailable — showing ${fallback.translation}. Change translation in the dropdown when the Bible is available.`,
+            );
+          }
+        }
+      } catch (err) {
+        if (requestId !== translationReloadRef.current) return;
+        const notice = getScriptureCacheNotice(err);
+        setError(
+          notice
+            ? `${notice.message} ${notice.hint}`
+            : (err as Error).message ||
+              "Could not reload the loaded verses in the new translation.",
+        );
+      } finally {
+        if (requestId === translationReloadRef.current) setLoading(false);
+      }
     },
-    [],
+    [activeCardIndex, cardsSource, rows],
   );
 
   const openPlan = useCallback(async (plan: SermonPlan): Promise<void> => {
@@ -753,6 +859,10 @@ export default function Scripture(): React.ReactElement {
       if (e.key === "Enter") {
         e.preventDefault();
         const submittedQuery = resolveSubmittedScriptureQuery(query);
+        suppressSuggestionsQueryRef.current = submittedQuery;
+        suggestionRequestRef.current += 1;
+        setSuggestionsOpen(false);
+        setSearchSuggestions([]);
         setQuery(submittedQuery);
         void handleSearch(submittedQuery);
       }
@@ -1141,6 +1251,7 @@ export default function Scripture(): React.ReactElement {
             activeSuggestion={activeSuggestion}
             inputRef={inputRef}
             onQueryChange={(value) => {
+              if (value !== query) suppressSuggestionsQueryRef.current = null;
               setQuery(value);
               if (shouldLiveSuggestScriptureQuery(value)) setSuggestionsOpen(true);
             }}
@@ -1152,6 +1263,7 @@ export default function Scripture(): React.ReactElement {
             }}
             onKeyDown={handleKeyDown}
             onFocus={() => {
+              if (suppressSuggestionsQueryRef.current === query.trim()) return;
               if (searchSuggestions.length > 0) setSuggestionsOpen(true);
             }}
             onActiveSuggestionChange={setActiveSuggestion}
@@ -1278,7 +1390,7 @@ export default function Scripture(): React.ReactElement {
                 focusHighlight={focusHighlight}
                 cardMinWidth={cardMinWidth}
                 cardHeight={cardHeight}
-                theme={overlay.theme}
+                theme={liveOverlayTheme(overlay)}
                 showTranslation={overlay.showTranslation}
                 showVerseNumbers={overlay.showVerseNumbers}
                 maxVerses={overlay.maxVerses}

@@ -33,6 +33,7 @@ import type {
   ResilienceStatus,
   NdiStatus,
   PPVideoInputInfo,
+  PPLook,
   Unsubscribe,
 } from '@shared/ipc'
 import { IPC } from '@shared/ipc'
@@ -84,6 +85,10 @@ const propresenter: ProAutomateAPI['propresenter'] = {
 
   clearOverlay(): Promise<boolean> {
     return ipcRenderer.invoke(IPC.PROPRESENTER.CLEAR_OVERLAY)
+  },
+
+  getLooks(): Promise<PPLook[]> {
+    return ipcRenderer.invoke(IPC.PROPRESENTER.GET_LOOKS)
   },
 
   onStatusChange(callback: (status: ProPresenterStatus) => void): Unsubscribe {

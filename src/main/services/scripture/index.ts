@@ -14,6 +14,7 @@ import { buildApiBibleIdMap } from './api-bible'
 import { ApiBibleClient } from './api-bible-client'
 import { ApiBibleLookup, type ApiBibleLookupCache } from './api-bible-lookup'
 import type { ApiBibleCache } from './api-bible-cache'
+import { resolveReferenceLookup } from './reference-search'
 
 type SuggestionCallback = (suggestion: ScriptureSuggestion) => void
 
@@ -126,29 +127,37 @@ export class ScriptureService {
 
     const localIds = this.db.getAllTranslations().map((item) => item.id.toUpperCase())
     const preferredIsLocal = localIds.includes(translation.toUpperCase())
-    const tryTranslations = [
-      translation,
-      ...localIds.filter((id) => id !== translation.toUpperCase()),
-    ]
 
     const ref = this.parseReference(query)
     if (ref) {
-      for (const tx of tryTranslations) {
-        const verses = await this.lookupVerses(
-          ref.book,
-          ref.chapter,
-          ref.verseStart,
-          ref.verseEnd,
-          tx as typeof translation,
-        )
-        if (verses.length > 0) {
-          const bookName = this.db.resolveBookName(ref.book)?.name ?? ref.book
-          const end = ref.verseEnd ? `–${ref.verseEnd}` : ''
-          const reference = `${bookName} ${ref.chapter}:${ref.verseStart}${end}`
-          return [{ reference, verses, translation: tx as typeof translation }]
+      const toLocalResult = (
+        verses: ScriptureVerse[],
+        tx: string,
+      ): ScriptureResult => {
+        const bookName = this.db!.resolveBookName(ref.book)?.name ?? ref.book
+        const end = ref.verseEnd ? `–${ref.verseEnd}` : ''
+        return {
+          reference: `${bookName} ${ref.chapter}:${ref.verseStart}${end}`,
+          verses,
+          translation: tx as typeof translation,
         }
       }
-      if (apiKey) return this.lookupFromApiBible(ref, translation, apiKey)
+      return resolveReferenceLookup({
+        requested: translation,
+        localIds,
+        lookupLocal: (tx) =>
+          this.lookupVerses(
+            ref.book,
+            ref.chapter,
+            ref.verseStart,
+            ref.verseEnd,
+            tx as typeof translation,
+          ),
+        lookupApi: apiKey
+          ? () => this.lookupFromApiBible(ref, translation, apiKey)
+          : null,
+        toLocalResult,
+      })
     }
 
     // Phrase / keyword search: prefer the configured API.Bible translation
@@ -292,6 +301,10 @@ export class ScriptureService {
     const bibles = await this.getClient(apiKey).listBibles()
     this.apiBibleIds = buildApiBibleIdMap(bibles)
     this.apiBibleIdsKey = apiKey
+    log.info('[Scripture] API.Bible translations authorized', {
+      count: this.apiBibleIds.size,
+      ids: [...this.apiBibleIds.keys()],
+    })
   }
 
   /** Resolves the API.Bible id authorized for a translation, loading the list once. */
@@ -439,6 +452,8 @@ const TRANSLATION_CATALOG: Array<[ScriptureTranslation, string, 'local' | 'api']
   ['MSG', 'The Message', 'api'],
   ['AMPC', 'Amplified Bible, Classic Edition', 'api'],
   ['TPT', 'The Passion Translation', 'api'],
+  ['ESV', 'English Standard Version', 'api'],
+  ['CSB', 'Christian Standard Bible', 'api'],
 ]
 
 /** Used when OS encryption is unavailable: lookups still work, nothing persists. */
