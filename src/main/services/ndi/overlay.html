@@ -22,6 +22,15 @@
         box-sizing: border-box;
         -webkit-font-smoothing: antialiased;
       }
+      .pa-verse-box,
+      .pa-verse {
+        min-height: 0;
+        min-width: 0;
+      }
+      .pa-verse,
+      .pa-verse-text {
+        overflow-wrap: break-word;
+      }
     </style>
   </head>
   <body>
@@ -34,14 +43,17 @@
         var box = document.querySelector('.pa-verse-box');
         var verse = document.querySelector('.pa-verse');
         if (!box || !verse || box.getAttribute('data-auto-fit') !== 'true') return;
+        var text = verse.querySelector('.pa-verse-text') || verse;
         var min = 12;
-        var max = parseFloat(box.getAttribute('data-max-font-px') || '200') || 200;
+        var max = parseFloat(box.getAttribute('data-max-font-px') || '240') || 240;
         var lo = min;
         var hi = max;
         var best = min;
         function overflows(px) {
           verse.style.fontSize = px + 'px';
-          return verse.scrollHeight > box.clientHeight + 1 || verse.scrollWidth > box.clientWidth + 1;
+          var h = Math.max(1, Math.min(verse.clientHeight, box.clientHeight));
+          var w = Math.max(1, Math.min(verse.clientWidth, box.clientWidth));
+          return text.scrollHeight > h + 1 || text.scrollWidth > w + 1;
         }
         if (overflows(min)) {
           verse.style.fontSize = min + 'px';
@@ -61,6 +73,19 @@
       window.__setContent = function (html) {
         document.getElementById('root').innerHTML = html;
         fitVerse();
+      };
+      // Color / loop tweaks must not rebuild the slide — that restarts the video.
+      window.__patchBackground = function (filter, loop) {
+        var bg = document.querySelector('.pa-bg');
+        if (bg) {
+          if (filter) bg.style.filter = filter;
+          else bg.style.removeProperty('filter');
+        }
+        var video = document.querySelector('.pa-bg video');
+        if (video) {
+          video.loop = !!loop;
+          if (loop && video.ended) video.play();
+        }
       };
     </script>
   </body>

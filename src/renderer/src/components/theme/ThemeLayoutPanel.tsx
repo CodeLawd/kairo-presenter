@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { ChevronDown, Eye, EyeOff } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { OverlayBox, OverlayTheme } from '@shared/ipc'
+import type { OverlayBox, OverlayContentKind, OverlayTheme } from '@shared/ipc'
 import { colorWithOpacity } from '@shared/overlay-template'
 import type { OverlayLayerId } from './OverlayCanvas'
+import { overlayLayerLabel } from '@shared/overlay-outputs'
 
 function expandHex(value: string): string | null {
   const trimmed = value.trim()
@@ -196,44 +197,6 @@ function CollapsibleSection({
   )
 }
 
-function RowToggle({
-  title,
-  description,
-  checked,
-  onChange,
-}: {
-  title: string
-  description?: string
-  checked: boolean
-  onChange: (checked: boolean) => void
-}): React.ReactElement {
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <div className="min-w-0">
-        <p className="text-[12px] font-semibold text-zinc-200">{title}</p>
-        {description && <p className="text-[10px] leading-relaxed text-zinc-500">{description}</p>}
-      </div>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={checked}
-        onClick={() => onChange(!checked)}
-        className={cn(
-          'relative h-5 w-9 shrink-0 rounded-full transition-colors',
-          checked ? 'bg-orange-500' : 'bg-zinc-700'
-        )}
-      >
-        <span
-          className={cn(
-            'absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white transition-transform',
-            checked && 'translate-x-4'
-          )}
-        />
-      </button>
-    </div>
-  )
-}
-
 function CompactSlider({
   label,
   value,
@@ -275,6 +238,7 @@ function CompactSlider({
 
 interface ThemeLayoutPanelProps {
   theme: OverlayTheme
+  contentKind: OverlayContentKind
   selectedLayer: OverlayLayerId
   onSelectLayer: (id: OverlayLayerId) => void
   onApplyPreset: (position: OverlayTheme['layout']['position']) => void
@@ -285,6 +249,7 @@ interface ThemeLayoutPanelProps {
 
 export function ThemeLayoutPanel({
   theme,
+  contentKind,
   selectedLayer,
   onSelectLayer,
   onApplyPreset,
@@ -339,13 +304,6 @@ export function ThemeLayoutPanel({
           </p>
         </div>
 
-        <RowToggle
-          title="Fit text to box"
-          description="Verse size auto-fills its box. Type → Size becomes a maximum."
-          checked={theme.layout.autoFitText}
-          onChange={(autoFitText) => onUpdateLayout({ autoFitText })}
-        />
-
         <div className={cn('grid gap-2', theme.layout.position === 'full' ? 'grid-cols-1' : 'grid-cols-2')}>
           {theme.layout.position !== 'full' && (
             <CompactSlider
@@ -373,8 +331,8 @@ export function ThemeLayoutPanel({
       <CollapsibleSection title="Selected box" open={boxOpen} onOpenChange={setBoxOpen}>
         <div className="flex gap-1 rounded-md bg-zinc-800/40 p-0.5">
           {([
-            { id: 'verse' as const, label: 'Scripture' },
-            { id: 'reference' as const, label: 'Reference' },
+            { id: 'verse' as const, label: overlayLayerLabel(contentKind, 'verse') },
+            { id: 'reference' as const, label: overlayLayerLabel(contentKind, 'reference') },
           ]).map((item) => (
             <button
               key={item.id}

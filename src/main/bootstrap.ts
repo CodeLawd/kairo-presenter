@@ -6,6 +6,7 @@ import type {
   BootstrapResourceError,
   LivePlanState,
   LyricsSong,
+  OnboardingState,
   OrchestratorStatus,
   ProPresenterStatus,
   ScriptureTranslationOption,
@@ -25,6 +26,7 @@ export interface BootstrapLoaders {
   sermonPlans: () => Promise<SermonPlan[]>
   livePlan: () => Promise<LivePlanState>
   lyrics: () => Promise<LyricsSong[]>
+  onboarding: () => Promise<OnboardingState>
 }
 
 export interface BootstrapStep {
@@ -47,6 +49,7 @@ export const BOOTSTRAP_STEPS: BootstrapStep[] = [
   { resource: 'sermonPlans', label: 'scripture playlists' },
   { resource: 'livePlan', label: 'live playlist' },
   { resource: 'lyrics', label: 'song library' },
+  { resource: 'onboarding', label: 'setup progress' },
 ]
 
 export interface RunBootstrapOptions {
@@ -64,6 +67,15 @@ const EMPTY: Record<BootstrapResource, unknown> = {
   sermonPlans: [],
   livePlan: null,
   lyrics: [],
+  // A failed read must not strand the operator in a wizard they already
+  // finished, so the neutral value is "nothing left to do".
+  onboarding: {
+    completedSteps: [],
+    skippedSteps: [],
+    currentStep: 'account',
+    completedAt: 0,
+    source: 'legacy',
+  } satisfies OnboardingState,
 }
 
 /**
@@ -139,6 +151,7 @@ export async function runBootstrap(
     sermonPlans: read('sermonPlans'),
     livePlan: read('livePlan'),
     lyrics: read('lyrics'),
+    onboarding: read('onboarding'),
     errors,
     completedAt: Date.now(),
   }

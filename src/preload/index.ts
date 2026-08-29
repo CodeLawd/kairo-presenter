@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import type {
+  MediaLibrary,
   AppBootstrapSnapshot,
   ApiBibleDownloadProgress,
   BootstrapProgress,
@@ -296,6 +297,10 @@ const lyrics: ProAutomateAPI['lyrics'] = {
     return ipcRenderer.invoke(IPC.LYRICS.SEND_TO_PP, songId, options)
   },
 
+  pushSlide(songId: string, slideIndex: number): Promise<void> {
+    return ipcRenderer.invoke(IPC.LYRICS.PUSH_SLIDE, songId, slideIndex)
+  },
+
   addToPlaylist(songId: string, playlistId: string): Promise<void> {
     return ipcRenderer.invoke(IPC.LYRICS.ADD_TO_PLAYLIST, songId, playlistId)
   },
@@ -407,7 +412,75 @@ const ndi: ProAutomateAPI['ndi'] = {
 
 // ─── Expose ───────────────────────────────────────────────────────────────────
 
-const api: ProAutomateAPI = { app: appApi, propresenter, audio, scripture, transcription, lyrics, settings, orchestrator, resilience, ndi }
+const media: ProAutomateAPI['media'] = {
+  getLibrary() {
+    return ipcRenderer.invoke(IPC.MEDIA.GET_LIBRARY)
+  },
+  chooseFolder() {
+    return ipcRenderer.invoke(IPC.MEDIA.CHOOSE_FOLDER)
+  },
+  rescan() {
+    return ipcRenderer.invoke(IPC.MEDIA.RESCAN)
+  },
+  createFolder(name: string) {
+    return ipcRenderer.invoke(IPC.MEDIA.CREATE_FOLDER, name)
+  },
+  push(itemId: string) {
+    return ipcRenderer.invoke(IPC.MEDIA.PUSH, itemId)
+  },
+  clear() {
+    return ipcRenderer.invoke(IPC.MEDIA.CLEAR)
+  },
+  createPlaylist(name: string) {
+    return ipcRenderer.invoke(IPC.MEDIA.CREATE_PLAYLIST, name)
+  },
+  renamePlaylist(id: string, name: string) {
+    return ipcRenderer.invoke(IPC.MEDIA.RENAME_PLAYLIST, id, name)
+  },
+  deletePlaylist(id: string) {
+    return ipcRenderer.invoke(IPC.MEDIA.DELETE_PLAYLIST, id)
+  },
+  setPlaylistItems(id: string, itemIds: string[]) {
+    return ipcRenderer.invoke(IPC.MEDIA.SET_PLAYLIST_ITEMS, id, itemIds)
+  },
+  addMediaToPlaylist(playlistId: string) {
+    return ipcRenderer.invoke(IPC.MEDIA.ADD_MEDIA_TO_PLAYLIST, playlistId)
+  },
+  setPlayback(itemId, playback) {
+    return ipcRenderer.invoke(IPC.MEDIA.SET_PLAYBACK, itemId, playback)
+  },
+  onLibraryChange(callback) {
+    const listener = (_e: unknown, library: MediaLibrary): void => callback(library)
+    ipcRenderer.on(IPC.MEDIA.LIBRARY, listener)
+    return () => ipcRenderer.removeListener(IPC.MEDIA.LIBRARY, listener)
+  },
+}
+
+const onboarding: ProAutomateAPI['onboarding'] = {
+  getState() {
+    return ipcRenderer.invoke(IPC.ONBOARDING.GET_STATE)
+  },
+  completeStep(step) {
+    return ipcRenderer.invoke(IPC.ONBOARDING.COMPLETE_STEP, step)
+  },
+  skipStep(step) {
+    return ipcRenderer.invoke(IPC.ONBOARDING.SKIP_STEP, step)
+  },
+  setCurrentStep(step) {
+    return ipcRenderer.invoke(IPC.ONBOARDING.SET_CURRENT, step)
+  },
+  finish() {
+    return ipcRenderer.invoke(IPC.ONBOARDING.FINISH)
+  },
+  reset() {
+    return ipcRenderer.invoke(IPC.ONBOARDING.RESET)
+  },
+  onStateChange(callback) {
+    return subscribe(IPC.ONBOARDING.STATE, callback)
+  },
+}
+
+const api: ProAutomateAPI = { app: appApi, propresenter, audio, scripture, transcription, lyrics, settings, orchestrator, resilience, ndi, media, onboarding }
 
 if (process.contextIsolated) {
   try {

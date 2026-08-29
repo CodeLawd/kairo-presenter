@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import {
   Layers,
   Radio,
@@ -22,7 +22,17 @@ import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import OutputsPanel from './OutputsPanel'
 import SetupChecklist from './SetupChecklist'
-import { findNdiOutput, liveOverlayTheme } from '@shared/overlay-outputs'
+import {
+  contentKindLabel,
+  findNdiOutput,
+  overlayLayerLabel,
+  hasContentOverride,
+  liveOverlayTheme,
+  OVERLAY_CONTENT_KINDS,
+  setContentOverride,
+  themeForContentKind,
+  withContentPatch,
+} from '@shared/overlay-outputs'
 import { Slider as SliderPrimitive } from '@/components/ui/slider'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -36,12 +46,12 @@ import {
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { useAppStore } from '@/stores/useAppStore'
 import { renderOverlayHTML } from '@shared/overlay-template'
-import { DEFAULT_OVERLAY_SETTINGS, normalizeOverlaySettings, normalizeOverlayTheme } from '@shared/overlay-defaults'
-import type { AppSettings, CustomOverlayTheme, OverlayBox, OverlayTextStyle, OverlayTheme, NdiStatus, PPLook, PPVideoInputInfo } from '@shared/ipc'
-import { createCustomTheme } from '@shared/theme-library'
+import { DEFAULT_OVERLAY_SETTINGS, DEFAULT_OVERLAY_THEME, normalizeOverlaySettings, normalizeOverlayTheme } from '@shared/overlay-defaults'
+import type { AppSettings, CustomOverlayTheme, OverlayBox, OverlayContentKind, OverlayTextStyle, OverlayTheme, NdiStatus, PPLook, PPVideoInputInfo } from '@shared/ipc'
+import { createCustomTheme, nextUntitledThemeName, themesForKind, updateLibraryTheme } from '@shared/theme-library'
 import { applyLayoutPreset, placeReferenceAgainstVerse, clampOverlayBox } from '@shared/overlay-boxes'
-import { applyOverlayAutoFit } from '@shared/overlay-fit'
-import { clampPaneWidth, scaleToFit } from '@/lib/paneSizing'
+import { clampPaneWidth } from '@/lib/paneSizing'
+import { ScaledOverlayPreview } from '@/components/overlay/ScaledOverlayPreview'
 import { OverlayCanvas, type OverlayLayerId } from './OverlayCanvas'
 import { ThemeTypePanel } from './ThemeTypePanel'
 import { ThemeLayoutPanel } from './ThemeLayoutPanel'
@@ -54,6 +64,29 @@ const SAMPLE_TEXT =
   'For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.'
 const SAMPLE_TEXT_LONG =
   'For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life. For God sent not his Son into the world to condemn the world; but that the world through him might be saved. He that believeth on him is not condemned: but he that believeth not is condemned already, because he hath not believed in the name of the only begotten Son of God.'
+
+// Lyrics push a slide, not a passage — the reference line is the section label
+// and the body is a couplet, so previewing one against the verse sample would
+// flatter a theme that is actually far too small on stage.
+const SAMPLE_LYRIC_REFERENCE = 'Amazing Grace — Verse 1'
+const SAMPLE_LYRIC_TEXT = 'Amazing grace, how sweet the sound\nThat saved a wretch like me'
+const SAMPLE_LYRIC_TEXT_LONG =
+  'Amazing grace, how sweet the sound\nThat saved a wretch like me\nI once was lost, but now am found\nWas blind, but now I see'
+
+interface SampleContent {
+  reference: string
+  short: string
+  long: string
+}
+
+const SAMPLES: Record<OverlayContentKind, SampleContent> = {
+  scripture: { reference: SAMPLE_REFERENCE, short: SAMPLE_TEXT, long: SAMPLE_TEXT_LONG },
+  lyrics: {
+    reference: SAMPLE_LYRIC_REFERENCE,
+    short: SAMPLE_LYRIC_TEXT,
+    long: SAMPLE_LYRIC_TEXT_LONG,
+  },
+}
 
 type TestStatus = 'idle' | 'testing' | 'ok' | 'fail'
 type InspectorTab = 'style' | 'type' | 'layout' | 'output'
@@ -238,11 +271,17 @@ function SectionCard({
 
 // ─── Built-in themes ──────────────────────────────────────────────────────────
 
-const BUILT_IN_THEMES: Array<{ id: string; name: string; theme: OverlayTheme }> = [
-  { id: 'broadcast', name: 'Broadcast', theme: DEFAULT_OVERLAY_SETTINGS.theme },
+const BUILT_IN_THEMES: Array<{
+  id: string
+  name: string
+  kind: OverlayContentKind
+  theme: OverlayTheme
+}> = [
+  { id: 'broadcast', name: 'Broadcast', kind: 'scripture', theme: DEFAULT_OVERLAY_SETTINGS.theme },
   {
     id: 'warm-paper',
     name: 'Warm paper',
+    kind: 'scripture',
     theme: applyLayoutPreset(
       {
         ...DEFAULT_OVERLAY_SETTINGS.theme,
@@ -264,6 +303,7 @@ const BUILT_IN_THEMES: Array<{ id: string; name: string; theme: OverlayTheme }> 
   {
     id: 'midnight',
     name: 'Midnight',
+    kind: 'scripture',
     theme: applyLayoutPreset(
       {
         ...DEFAULT_OVERLAY_SETTINGS.theme,
@@ -275,7 +315,66 @@ const BUILT_IN_THEMES: Array<{ id: string; name: string; theme: OverlayTheme }> 
       76
     ),
   },
+
+  // ── Lyrics ────────────────────────────────────────────────────────────────
+  // Lyric slides are read at a glance from the back of a room, so these start
+  // full-frame with a transparent background — the motion background belongs to
+  // ProPresenter's media layer underneath, not baked into our frame.
+  {
+    id: 'lyrics-stage',
+    name: 'Stage lyrics',
+    kind: 'lyrics',
+    theme: applyLayoutPreset(
+      {
+        ...DEFAULT_OVERLAY_SETTINGS.theme,
+        background: { ...DEFAULT_OVERLAY_SETTINGS.theme.background, type: 'transparent' },
+        verse: {
+          ...DEFAULT_OVERLAY_SETTINGS.theme.verse,
+          fontSizePx: 96,
+          fontWeight: 700,
+          align: 'center',
+          verticalAlign: 'middle',
+          lineHeight: 1.25,
+        },
+        reference: { ...DEFAULT_OVERLAY_SETTINGS.theme.reference, show: false },
+        layout: {
+          ...DEFAULT_OVERLAY_SETTINGS.theme.layout,
+          backdropBox: false,
+          autoFitText: true,
+        },
+      },
+      'full',
+      92
+    ),
+  },
+  {
+    id: 'lyrics-lower',
+    name: 'Lyrics lower third',
+    kind: 'lyrics',
+    theme: applyLayoutPreset(
+      {
+        ...DEFAULT_OVERLAY_SETTINGS.theme,
+        background: { ...DEFAULT_OVERLAY_SETTINGS.theme.background, type: 'transparent' },
+        verse: {
+          ...DEFAULT_OVERLAY_SETTINGS.theme.verse,
+          fontSizePx: 64,
+          fontWeight: 600,
+          align: 'center',
+          verticalAlign: 'bottom',
+        },
+        reference: { ...DEFAULT_OVERLAY_SETTINGS.theme.reference, show: false },
+        layout: { ...DEFAULT_OVERLAY_SETTINGS.theme.layout, autoFitText: true },
+      },
+      'lower-third',
+      84
+    ),
+  },
 ]
+
+/** Built-in starters for one content kind. */
+function builtInsForKind(kind: OverlayContentKind): typeof BUILT_IN_THEMES {
+  return BUILT_IN_THEMES.filter((item) => item.kind === kind)
+}
 
 // ─── Main page ──────────────────────────────────────────────────────────────────
 
@@ -293,6 +392,17 @@ export default function ThemeEditor(): React.ReactElement {
   const setThemeViewState = useAppStore((s) => s.setThemeViewState)
   const [themeName, setThemeName] = useState(themeSelectedName)
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>('style')
+  /** Which kind of push the editor is currently styling. */
+  const [contentKind, setContentKind] = useState<OverlayContentKind>('scripture')
+  /**
+   * The theme each kind was last pointed at, so flipping the toggle returns you
+   * to the lyric theme you were building rather than to whatever scripture is
+   * using. Only the active kind is mirrored into the app store.
+   */
+  const kindSelectionRef = useRef<Record<OverlayContentKind, { id: string | null; name: string }>>({
+    scripture: { id: null, name: '' },
+    lyrics: { id: null, name: '' },
+  })
   const [selectedLayer, setSelectedLayer] = useState<OverlayLayerId | null>('verse')
   const [sampleLength, setSampleLength] = useState<'short' | 'long'>('short')
   const [loading, setLoading] = useState(true)
@@ -349,19 +459,26 @@ export default function ThemeEditor(): React.ReactElement {
         : undefined
 
       if (fromLibrary) {
-        setDraftTheme(structuredClone(normalizeOverlayTheme(fromLibrary.theme)))
+        // A remembered lyric theme must reopen the editor in lyrics mode.
+        setContentKind(fromLibrary.kind)
+        kindSelectionRef.current[fromLibrary.kind] = { id: fromLibrary.id, name: fromLibrary.name }
+        setDraftTheme(themeForContentKind(structuredClone(normalizeOverlayTheme(fromLibrary.theme)), fromLibrary.kind))
         setThemeName(fromLibrary.name)
         setThemeViewState({ selectedId: fromLibrary.id, selectedName: fromLibrary.name })
       } else if (fromBuiltin) {
-        setDraftTheme(structuredClone(normalizeOverlayTheme(fromBuiltin.theme)))
+        setContentKind(fromBuiltin.kind)
+        kindSelectionRef.current[fromBuiltin.kind] = { id: rememberedId, name: fromBuiltin.name }
+        setDraftTheme(themeForContentKind(structuredClone(normalizeOverlayTheme(fromBuiltin.theme)), fromBuiltin.kind))
         setThemeName(fromBuiltin.name)
         setThemeViewState({ selectedId: rememberedId, selectedName: fromBuiltin.name })
       } else {
-        const liveTheme = liveOverlayTheme(storedOverlay)
+        const liveTheme = liveOverlayTheme(storedOverlay, 'scripture')
         const matching = library.find(
-          (item) => JSON.stringify(item.theme) === JSON.stringify(liveTheme),
+          (item) =>
+            item.kind === 'scripture' && JSON.stringify(item.theme) === JSON.stringify(liveTheme),
         )
         if (matching) {
+          kindSelectionRef.current.scripture = { id: matching.id, name: matching.name }
           setDraftTheme(structuredClone(normalizeOverlayTheme(matching.theme)))
           setThemeName(matching.name)
           setThemeViewState({ selectedId: matching.id, selectedName: matching.name })
@@ -378,20 +495,8 @@ export default function ThemeEditor(): React.ReactElement {
     }
   }, [setThemeViewState])
 
-  // Preview renders a real 1920×1080 frame scaled down to the panel width, so
-  // proportions (font px vs frame) match the NDI output exactly.
-  const previewFrameRef = useRef<HTMLDivElement>(null)
-  const previewInnerRef = useRef<HTMLDivElement>(null)
-  const [previewScale, setPreviewScale] = useState(0.2)
-  useEffect(() => {
-    const el = previewFrameRef.current
-    if (!el) return
-    const update = (): void => setPreviewScale(scaleToFit(el.clientWidth, 1920))
-    update()
-    const ro = new ResizeObserver(update)
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [loading])
+  // Preview paints a real 1920×1080 frame scaled into the panel. OverlayCanvas
+  // sits on the same aspect-video slot so box handles line up with the pixels.
 
   // Poll NDI status (availability + sender + PP video-input binding).
   useEffect(() => {
@@ -438,6 +543,11 @@ export default function ThemeEditor(): React.ReactElement {
     [flashSaved]
   )
 
+  // Lyrics has no Style tab — leaving it selected would render an empty panel.
+  useEffect(() => {
+    if (contentKind === 'lyrics' && inspectorTab === 'style') setInspectorTab('type')
+  }, [contentKind, inspectorTab])
+
   const updateTheme = useCallback(
     <K extends keyof OverlayTheme>(section: K, partial: Partial<OverlayTheme[K]>) => {
       setDraftTheme((current) => ({
@@ -451,6 +561,16 @@ export default function ThemeEditor(): React.ReactElement {
   const updateBox = (id: OverlayLayerId, box: OverlayBox): void => {
     updateTheme(id, { box: clampOverlayBox(box) })
   }
+
+  /**
+   * Removing a box from the canvas hides that layer. The box itself is kept so
+   * turning the layer back on restores its position rather than resetting it.
+   */
+  const hideLayer = useCallback((id: OverlayLayerId): void => {
+    if (id !== 'reference') return
+    setDraftTheme((current) => ({ ...current, reference: { ...current.reference, show: false } }))
+    setSelectedLayer('verse')
+  }, [])
 
   const handlePickMedia = useCallback(
     async (kind: 'image' | 'video'): Promise<void> => {
@@ -470,18 +590,45 @@ export default function ThemeEditor(): React.ReactElement {
     void window.api.settings.set('themeLibrary', next).then(flashSaved)
   }, [flashSaved])
 
-  const selectTheme = (id: string, name: string, theme: OverlayTheme): void => {
+  const selectTheme = (
+    id: string,
+    name: string,
+    theme: OverlayTheme,
+    kind: OverlayContentKind = contentKind,
+  ): void => {
+    // Picking from the other group moves the editor there — a lyric theme
+    // opened in scripture mode would edit and apply to the wrong output slot.
+    if (kind !== contentKind) {
+      kindSelectionRef.current[contentKind] = { id: selectedThemeId, name: themeName }
+      setContentKind(kind)
+    }
+    kindSelectionRef.current[kind] = { id, name }
     setThemeViewState({ selectedId: id, selectedName: name })
     setThemeName(name)
-    setDraftTheme(structuredClone(normalizeOverlayTheme(theme)))
+    setDraftTheme(themeForContentKind(structuredClone(normalizeOverlayTheme(theme)), kind))
   }
 
   /** Persist draft into the theme library only — does not push to live output. */
   const saveAsTheme = (): void => {
-    const savedTheme = createCustomTheme(themeName.trim() || 'Untitled theme', draftTheme)
+    const savedTheme = createCustomTheme(themeName.trim() || 'Untitled theme', draftTheme, contentKind)
     persistLibrary([...themeLibrary, savedTheme])
+    kindSelectionRef.current[contentKind] = { id: savedTheme.id, name: savedTheme.name }
     setThemeViewState({ selectedId: savedTheme.id, selectedName: savedTheme.name })
     setThemeName(savedTheme.name)
+  }
+
+  /** Start a blank theme for the current kind — plus is create, not save. */
+  const createNewTheme = (): void => {
+    const name = nextUntitledThemeName(themeLibrary, contentKind)
+    const theme = themeForContentKind(structuredClone(DEFAULT_OVERLAY_THEME), contentKind)
+    const created = createCustomTheme(name, theme, contentKind)
+    persistLibrary([...themeLibrary, created])
+    kindSelectionRef.current[contentKind] = { id: created.id, name: created.name }
+    setThemeViewState({ selectedId: created.id, selectedName: created.name })
+    setThemeName(created.name)
+    // Clone the stored snapshot, not the object createCustomTheme copied from,
+    // so later Type/Layout edits cannot alias the library row.
+    setDraftTheme(structuredClone(created.theme))
   }
 
   /** Update the selected custom theme in the library — does not push to live output. */
@@ -491,10 +638,7 @@ export default function ThemeEditor(): React.ReactElement {
       return
     }
     const nextName = themeName.trim() || themeLibrary.find((item) => item.id === selectedThemeId)?.name || 'Untitled theme'
-    const next = themeLibrary.map((item) => item.id === selectedThemeId
-      ? { ...item, name: nextName, updatedAt: Date.now(), theme: structuredClone(draftTheme) }
-      : item)
-    persistLibrary(next)
+    persistLibrary(updateLibraryTheme(themeLibrary, selectedThemeId, { name: nextName, theme: draftTheme }))
     setThemeViewState({ selectedId: selectedThemeId, selectedName: nextName })
     setThemeName(nextName)
   }
@@ -502,8 +646,9 @@ export default function ThemeEditor(): React.ReactElement {
   const isCustomThemeSelected = Boolean(selectedThemeId && !selectedThemeId.startsWith('builtin:'))
 
   const duplicateTheme = (): void => {
-    const copy = createCustomTheme(`${themeName || 'Theme'} copy`, draftTheme)
+    const copy = createCustomTheme(`${themeName || 'Theme'} copy`, draftTheme, contentKind)
     persistLibrary([...themeLibrary, copy])
+    kindSelectionRef.current[contentKind] = { id: copy.id, name: copy.name }
     setThemeViewState({ selectedId: copy.id, selectedName: copy.name })
     setThemeName(copy.name)
   }
@@ -515,9 +660,11 @@ export default function ThemeEditor(): React.ReactElement {
     const next = themeLibrary.filter((item) => item.id !== themeId)
     persistLibrary(next)
     if (selectedThemeId === themeId) {
-      setThemeViewState({ selectedId: null, selectedName: '' })
-      setThemeName('')
-      setDraftTheme(structuredClone(liveOverlayTheme(overlay)))
+      kindSelectionRef.current[contentKind] = { id: null, name: '' }
+      const picked = pickThemeForKind(contentKind)
+      setThemeViewState({ selectedId: picked.id, selectedName: picked.name })
+      setThemeName(picked.name)
+      setDraftTheme(themeForContentKind(structuredClone(normalizeOverlayTheme(picked.theme)), contentKind))
     }
   }
 
@@ -532,24 +679,95 @@ export default function ThemeEditor(): React.ReactElement {
     // tab and coming back still shows the saved look.
     if (selectedThemeId && !selectedThemeId.startsWith('builtin:')) {
       const nextName = themeName.trim() || themeLibrary.find((item) => item.id === selectedThemeId)?.name || 'Untitled theme'
-      const next = themeLibrary.map((item) => item.id === selectedThemeId
-        ? { ...item, name: nextName, updatedAt: Date.now(), theme: structuredClone(draftTheme) }
-        : item)
-      persistLibrary(next)
+      persistLibrary(updateLibraryTheme(themeLibrary, selectedThemeId, { name: nextName, theme: draftTheme }))
       setThemeViewState({ selectedId: selectedThemeId, selectedName: nextName })
     }
 
     const themeId = selectedThemeId && !selectedThemeId.startsWith('builtin:') ? selectedThemeId : null
     persist({
       ...overlay,
-      outputs: overlay.outputs.map((output) =>
-        output.id === outputId
-          ? { ...output, themeId, theme: structuredClone(draftTheme) }
-          : output
-      ),
-      // The legacy field still feeds verse-card previews elsewhere in the app.
-      theme: structuredClone(draftTheme),
+      outputs: overlay.outputs.map((output) => {
+        if (output.id !== outputId) return output
+        // Applying a lyrics theme is itself the intent to stop inheriting, so
+        // the override is switched on rather than the apply silently landing on
+        // the scripture theme.
+        const target = setContentOverride(output, contentKind, true)
+        return withContentPatch(target, contentKind, { themeId, theme: structuredClone(draftTheme) })
+      }),
+      // The legacy field still feeds verse-card previews elsewhere in the app,
+      // which are scripture-only — a lyrics theme must not overwrite it.
+      theme: contentKind === 'scripture' ? structuredClone(draftTheme) : overlay.theme,
     })
+  }
+
+  /**
+   * Flips the editor between scripture and lyrics. The draft is per-kind, so
+   * switching loads that kind's live theme — and unapplied work would be lost,
+   * hence the confirm.
+   */
+  const selectContentKind = (next: OverlayContentKind): void => {
+    if (next === contentKind) return
+    if (
+      hasDraftChanges &&
+      !window.confirm(
+        `Switch to ${contentKindLabel(next)}? Unapplied changes to the ${contentKindLabel(contentKind).toLowerCase()} theme will be lost.`,
+      )
+    ) return
+
+    kindSelectionRef.current[contentKind] = { id: selectedThemeId, name: themeName }
+    setContentKind(next)
+
+    const picked = pickThemeForKind(next)
+    setThemeViewState({ selectedId: picked.id, selectedName: picked.name })
+    setThemeName(picked.name)
+    setDraftTheme(themeForContentKind(structuredClone(normalizeOverlayTheme(picked.theme)), next))
+  }
+
+  /**
+   * What to show when the editor lands on `kind`. In order: whatever that kind
+   * was last pointed at, then its configured live theme (only when an override
+   * actually exists — inheriting scripture is not a lyrics theme), then its
+   * first saved theme, then its first built-in starter.
+   */
+  const pickThemeForKind = (
+    kind: OverlayContentKind,
+  ): { id: string | null; name: string; theme: OverlayTheme } => {
+    const remembered = kindSelectionRef.current[kind]
+    if (remembered.id) {
+      const fromLibrary = themeLibrary.find((item) => item.id === remembered.id)
+      if (fromLibrary) return { id: fromLibrary.id, name: fromLibrary.name, theme: fromLibrary.theme }
+      const builtin = builtInsForKind(kind).find((item) => `builtin:${item.id}` === remembered.id)
+      if (builtin) return { id: remembered.id, name: builtin.name, theme: builtin.theme }
+    }
+
+    if (kind === 'scripture' || overlay.outputs.some((o) => hasContentOverride(o, kind))) {
+      const live = liveOverlayTheme(overlay, kind)
+      const matching = themeLibrary.find(
+        (item) => item.kind === kind && JSON.stringify(item.theme) === JSON.stringify(live),
+      )
+      return matching
+        ? { id: matching.id, name: matching.name, theme: matching.theme }
+        : { id: null, name: remembered.name, theme: live }
+    }
+
+    const saved = themeLibrary.find((item) => item.kind === kind)
+    if (saved) return { id: saved.id, name: saved.name, theme: saved.theme }
+
+    const [starter] = builtInsForKind(kind)
+    return starter
+      ? { id: `builtin:${starter.id}`, name: starter.name, theme: starter.theme }
+      : { id: null, name: '', theme: DEFAULT_OVERLAY_SETTINGS.theme }
+  }
+
+  /**
+   * Turns the lyrics override on or off across every output at once. Per-output
+   * granularity would mean a lyric push styled one way on the main screen and
+   * another on stage for no reason an operator would ask for.
+   */
+  const setKindOverride = (on: boolean): void => {
+    const outputs = overlay.outputs.map((output) => setContentOverride(output, contentKind, on))
+    persist({ ...overlay, outputs })
+    if (!on) setDraftTheme(structuredClone(liveOverlayTheme({ ...overlay, outputs }, contentKind)))
   }
 
   const applyToOutput = (): void => {
@@ -615,14 +833,9 @@ export default function ThemeEditor(): React.ReactElement {
   }
 
   const theme = draftTheme
-  const previewText = sampleLength === 'long' ? SAMPLE_TEXT_LONG : SAMPLE_TEXT
-  const previewHtml = renderOverlayHTML(theme, SAMPLE_REFERENCE, previewText)
-
-  useLayoutEffect(() => {
-    const root = previewInnerRef.current
-    if (!root || !theme.layout.autoFitText) return
-    applyOverlayAutoFit(root)
-  }, [previewHtml, theme.layout.autoFitText])
+  const sample = SAMPLES[contentKind]
+  const previewText = sampleLength === 'long' ? sample.long : sample.short
+  const previewHtml = renderOverlayHTML(theme, sample.reference, previewText)
 
   if (loading) {
     return (
@@ -635,7 +848,17 @@ export default function ThemeEditor(): React.ReactElement {
     )
   }
 
-  const liveTheme = liveOverlayTheme(overlay)
+  // Style is only the Background section, and a song theme has no background to
+  // configure — so the tab is absent rather than empty for lyrics.
+  const inspectorTabs = (
+    contentKind === 'lyrics'
+      ? ([['type', 'Type'], ['layout', 'Layout'], ['output', 'Output']] as const)
+      : ([['style', 'Style'], ['type', 'Type'], ['layout', 'Layout'], ['output', 'Output']] as const)
+  ) as ReadonlyArray<readonly [InspectorTab, string]>
+
+  const liveTheme = liveOverlayTheme(overlay, contentKind)
+  // Any output carrying the override counts — `setKindOverride` writes them all.
+  const kindOverrideOn = overlay.outputs.some((output) => hasContentOverride(output, contentKind))
   const hasDraftChanges = JSON.stringify(draftTheme) !== JSON.stringify(liveTheme)
 
   return (
@@ -661,47 +884,80 @@ export default function ThemeEditor(): React.ReactElement {
             variant="outline"
             size="icon"
             className="shrink-0 text-slate-400 hover:text-teal-300"
-            onClick={saveAsTheme}
-            aria-label="Save draft as a new theme"
-            title="Save as new theme"
+            onClick={createNewTheme}
+            aria-label="New theme"
+            title="New theme"
           >
             <Plus size={14} aria-hidden="true" />
           </Button>
         </div>
-        <div className="space-y-6">
-          <div>
-            <p className="label">Built in</p>
-            <div className="space-y-2">
-              {BUILT_IN_THEMES.map((item) => (
-                <ThemeTile
-                  key={item.id}
-                  name={item.name}
-                  theme={item.theme}
-                  selected={selectedThemeId === `builtin:${item.id}`}
-                  onClick={() => selectTheme(`builtin:${item.id}`, item.name, item.theme)}
-                />
-              ))}
-            </div>
-          </div>
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <p className="label mb-0">My themes</p>
-              <span className="text-[10px] text-slate-500 tabular-nums">{themeLibrary.length}</span>
-            </div>
-            <div className="space-y-2">
-              {themeLibrary.map((item) => (
-                <ThemeTile
-                  key={item.id}
-                  name={item.name}
-                  theme={item.theme}
-                  selected={selectedThemeId === item.id}
-                  onClick={() => selectTheme(item.id, item.name, item.theme)}
-                  onDelete={() => deleteTheme(item.id, item.name)}
-                />
-              ))}
-              {themeLibrary.length === 0 && <p className="text-xs text-slate-500 py-3">No saved themes yet.</p>}
-            </div>
-          </div>
+        {/* Grouped by what the theme is for. The active kind leads; clicking
+            into the other group moves the whole editor there. */}
+        <div className="space-y-7">
+          {[contentKind, ...OVERLAY_CONTENT_KINDS.filter((k) => k !== contentKind)].map((kind) => {
+            const saved = themesForKind(themeLibrary, kind)
+            const builtIns = builtInsForKind(kind)
+            const active = kind === contentKind
+            return (
+              <div key={kind} className={cn('space-y-4', !active && 'opacity-60 hover:opacity-100 transition-opacity')}>
+                <div className="flex items-center justify-between gap-2 px-1">
+                  <p className={cn(
+                    'text-[10px] font-bold uppercase tracking-[0.16em]',
+                    active ? 'text-teal-400' : 'text-slate-500'
+                  )}>
+                    {contentKindLabel(kind)}
+                  </p>
+                  <span className="text-[10px] text-slate-500 tabular-nums">{saved.length}</span>
+                </div>
+
+                <div>
+                  <p className="label">Built in</p>
+                  <div className="space-y-2">
+                    {builtIns.map((item) => (
+                      <ThemeTile
+                        key={item.id}
+                        name={item.name}
+                        theme={
+                          kind === contentKind && selectedThemeId === `builtin:${item.id}`
+                            ? draftTheme
+                            : item.theme
+                        }
+                        kind={kind}
+                        selected={selectedThemeId === `builtin:${item.id}`}
+                        onClick={() => selectTheme(`builtin:${item.id}`, item.name, item.theme, kind)}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <p className="label">My themes</p>
+                  <div className="space-y-2">
+                    {saved.map((item) => (
+                      <ThemeTile
+                        key={item.id}
+                        name={item.name}
+                        theme={
+                          kind === contentKind && selectedThemeId === item.id
+                            ? draftTheme
+                            : item.theme
+                        }
+                        kind={kind}
+                        selected={selectedThemeId === item.id}
+                        onClick={() => selectTheme(item.id, item.name, item.theme, kind)}
+                        onDelete={() => deleteTheme(item.id, item.name)}
+                      />
+                    ))}
+                    {saved.length === 0 && (
+                      <p className="text-xs text-slate-500 py-3">
+                        No saved {contentKindLabel(kind).toLowerCase()} themes yet.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )
+          })}
         </div>
       </aside>
       </ResizablePanel>
@@ -723,9 +979,51 @@ export default function ThemeEditor(): React.ReactElement {
       >
       <div className="h-full overflow-y-auto">
         <div className="w-full p-4 space-y-4">
+          {/* ── What this theme styles ───────────────────────────────────────── */}
+          <div className="space-y-2">
+            <div className="flex rounded-md border border-surface-border/60 p-0.5" role="group" aria-label="Content type">
+              {OVERLAY_CONTENT_KINDS.map((kind) => (
+                <button
+                  key={kind}
+                  type="button"
+                  onClick={() => selectContentKind(kind)}
+                  aria-pressed={contentKind === kind}
+                  className={cn(
+                    'flex-1 rounded px-2 py-1 text-[11px] font-bold uppercase tracking-wider transition-colors',
+                    contentKind === kind
+                      ? 'bg-teal-500/20 text-teal-300'
+                      : 'text-slate-500 hover:text-slate-300'
+                  )}
+                >
+                  {contentKindLabel(kind)}
+                </button>
+              ))}
+            </div>
+
+            {contentKind !== 'scripture' && (
+              <div className="flex items-start justify-between gap-3 rounded-lg bg-surface-secondary/35 px-3 py-2">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold text-slate-200">Separate {contentKindLabel(contentKind).toLowerCase()} theme</p>
+                  <p className="mt-0.5 text-[10px] leading-relaxed text-slate-500">
+                    {kindOverrideOn
+                      ? 'Lyric pushes use this theme and template.'
+                      : 'Off — lyric pushes reuse the scripture theme.'}
+                  </p>
+                </div>
+                <Switch
+                  checked={kindOverrideOn}
+                  onCheckedChange={setKindOverride}
+                  aria-label={`Use a separate ${contentKindLabel(contentKind).toLowerCase()} theme`}
+                />
+              </div>
+            )}
+          </div>
+
           <div className="flex items-center justify-between">
             <div className="min-w-0 flex-1">
-              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Editing theme</p>
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">
+                Editing {contentKindLabel(contentKind).toLowerCase()} theme
+              </p>
               <div className="mt-1 flex items-center gap-1">
                 <input
                   id="theme-name"
@@ -795,13 +1093,11 @@ export default function ThemeEditor(): React.ReactElement {
           </div>
 
           <Tabs value={inspectorTab} onValueChange={(value) => setInspectorTab(value as InspectorTab)}>
-          <TabsList className="grid h-9 w-full grid-cols-4" aria-label="Theme controls">
-            {([
-              ['style', 'Style'],
-              ['type', 'Type'],
-              ['layout', 'Layout'],
-              ['output', 'Output'],
-            ] as const).map(([id, label]) => (
+          <TabsList
+            className={cn('grid h-9 w-full', inspectorTabs.length === 4 ? 'grid-cols-4' : 'grid-cols-3')}
+            aria-label="Theme controls"
+          >
+            {inspectorTabs.map(([id, label]) => (
               <TabsTrigger
                 key={id}
                 value={id}
@@ -812,6 +1108,13 @@ export default function ThemeEditor(): React.ReactElement {
             ))}
           </TabsList>
           </Tabs>
+
+          {contentKind === 'lyrics' && (
+            <p className="rounded-lg bg-surface-secondary/40 px-3 py-2 text-[10px] leading-relaxed text-slate-400">
+              A song theme sets type and placement only. Backgrounds change every song, so they are
+              pushed live from the Media section instead of being saved into the theme.
+            </p>
+          )}
 
           {/* ── Setup checklist ──────────────────────────────────────────────── */}
           {inspectorTab === 'output' && <SectionCard icon={ListChecks} title="Setup">
@@ -831,6 +1134,7 @@ export default function ThemeEditor(): React.ReactElement {
             <OutputsPanel
               outputs={overlay.outputs}
               onChange={(outputs) => persist({ ...overlay, outputs })}
+              contentKind={contentKind}
               videoInputs={videoInputs}
               onRefreshVideoInputs={refreshVideoInputs}
               looks={looks}
@@ -948,6 +1252,7 @@ export default function ThemeEditor(): React.ReactElement {
           {inspectorTab === 'type' && (
             <ThemeTypePanel
               theme={theme}
+              contentKind={contentKind}
               selectedLayer={selectedLayer === 'reference' ? 'reference' : 'verse'}
               onSelectLayer={setSelectedLayer}
               onUpdateLayer={(id, partial) => updateTheme(id, partial as Partial<OverlayTextStyle>)}
@@ -977,6 +1282,7 @@ export default function ThemeEditor(): React.ReactElement {
           {inspectorTab === 'layout' && (
             <ThemeLayoutPanel
               theme={theme}
+              contentKind={contentKind}
               selectedLayer={selectedLayer === 'reference' ? 'reference' : 'verse'}
               onSelectLayer={setSelectedLayer}
               onApplyPreset={(position) => {
@@ -1033,7 +1339,7 @@ export default function ThemeEditor(): React.ReactElement {
             <div className="flex items-center justify-between mb-2">
               <div>
                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest font-sans">Preview</p>
-                <p className="text-xs text-slate-400 mt-1">John 3:16 · 1920 × 1080</p>
+                <p className="text-xs text-slate-400 mt-1">{sample.reference} · 1920 × 1080</p>
               </div>
               <div className="flex items-center gap-2">
                 <div className="flex rounded-md border border-surface-border/60 p-0.5">
@@ -1054,30 +1360,24 @@ export default function ThemeEditor(): React.ReactElement {
                 {hasDraftChanges && <span className="text-[10px] font-semibold text-orange-300 bg-orange-400/10 px-2 py-1 rounded-md">Unapplied changes</span>}
               </div>
             </div>
-            <div
-              ref={previewFrameRef}
-              className="relative isolate aspect-video w-full overflow-hidden rounded-xl border border-surface-border/50 bg-[repeating-conic-gradient(#1a1a1a_0%_25%,#0d0d0d_0%_50%)] bg-[length:16px_16px]"
-            >
-              <div
-                ref={previewInnerRef}
-                className="pointer-events-none absolute left-0 top-0 origin-top-left"
-                style={{
-                  width: 1920,
-                  height: 1080,
-                  transform: `scale(${previewScale})`,
-                }}
-                // eslint-disable-next-line react/no-danger
-                dangerouslySetInnerHTML={{ __html: previewHtml }}
+            <div className="relative isolate overflow-hidden rounded-xl border border-surface-border/50">
+              <ScaledOverlayPreview
+                html={previewHtml}
+                autoFit={theme.layout.autoFitText}
               />
               <OverlayCanvas
                 theme={theme}
+                contentKind={contentKind}
                 selected={selectedLayer}
                 onSelect={setSelectedLayer}
                 onBoxChange={updateBox}
+                onDeleteLayer={hideLayer}
               />
             </div>
             <p className="text-[10px] text-slate-500 mt-2 leading-relaxed">
-              Drag the verse or reference on the canvas. Resize from the corners. Turn on Fit text to box so long passages stay inside the frame.
+              Drag a box on the canvas. Resize from the corners. Select the{' '}
+              {overlayLayerLabel(contentKind, 'reference').toLowerCase()} and press Delete (or its ×) to hide it.
+              Turn on Type → Fit to box so long verses shrink to the box. Short verses stay a natural size.
             </p>
           </div>
 
@@ -1181,28 +1481,21 @@ function StatusRow({ label, ok }: { label: string; ok: boolean }): React.ReactEl
 function ThemeTile({
   name,
   theme,
+  kind,
   selected,
   onClick,
   onDelete,
 }: {
   name: string
   theme: OverlayTheme
+  kind: OverlayContentKind
   selected: boolean
   onClick: () => void
   onDelete?: () => void
 }): React.ReactElement {
-  const html = renderOverlayHTML(normalizeOverlayTheme(theme), 'John 3:16', 'For God so loved the world…')
-  const frameRef = useRef<HTMLSpanElement>(null)
-  const [scale, setScale] = useState(0.08)
-  useEffect(() => {
-    const frame = frameRef.current
-    if (!frame) return
-    const update = (): void => setScale(scaleToFit(frame.clientWidth, 1920))
-    update()
-    const observer = new ResizeObserver(update)
-    observer.observe(frame)
-    return () => observer.disconnect()
-  }, [])
+  const previewTheme = normalizeOverlayTheme(theme)
+  const sample = SAMPLES[kind]
+  const html = renderOverlayHTML(previewTheme, sample.reference, sample.short)
   return (
     <div
       className={cn(
@@ -1218,14 +1511,12 @@ function ThemeTile({
         aria-pressed={selected}
         className="w-full text-left"
       >
-        <span ref={frameRef} className="relative block aspect-video w-full overflow-hidden rounded-md bg-surface-tertiary">
-          <span
-            className="absolute left-0 top-0 block"
-            style={{ width: 1920, height: 1080, transform: `scale(${scale})`, transformOrigin: 'top left' }}
-            // eslint-disable-next-line react/no-danger
-            dangerouslySetInnerHTML={{ __html: html }}
+        <div className="overflow-hidden rounded-md">
+          <ScaledOverlayPreview
+            html={html}
+            autoFit={previewTheme.layout.autoFitText}
           />
-        </span>
+        </div>
         <span className={cn('block truncate px-1.5 pb-1 pt-1.5 text-[11px] font-semibold', selected ? 'text-orange-300' : 'text-slate-300')}>
           {name}
         </span>

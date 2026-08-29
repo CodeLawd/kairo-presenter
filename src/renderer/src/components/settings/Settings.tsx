@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import {
-  Server,
   Mic,
   Key,
   BookOpen,
@@ -33,6 +32,7 @@ import type { AppSettings, AudioDevice, AudioLevel, ScriptureTranslation, Script
 import { OfflineBibleManager } from './OfflineBibleManager'
 import { DEFAULT_SETTINGS } from '@/lib/defaultSettings'
 import { useBootstrapStore } from '@/bootstrap/useBootstrapStore'
+import ProPresenterMark from '@/components/brand/ProPresenterMark'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -43,8 +43,8 @@ type UpdateFn = <K extends keyof AppSettings>(section: K, partial: Partial<AppSe
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const SECTION_NAV: { id: Section; label: string; hint: string; icon: LucideIcon }[] = [
-  { id: 'propresenter', label: 'ProPresenter', hint: 'Connection & API', icon: Server },
+const SECTION_NAV: { id: Section; label: string; hint: string; icon?: LucideIcon }[] = [
+  { id: 'propresenter', label: 'ProPresenter', hint: 'Connection & API' },
   { id: 'audio', label: 'Audio', hint: 'Input device & levels', icon: Mic },
   { id: 'apikeys', label: 'API Keys', hint: 'Deepgram, Claude, Bible, Brave', icon: Key },
   { id: 'scripture', label: 'Scripture', hint: 'Detection & display', icon: BookOpen },
@@ -71,6 +71,23 @@ function SettingsGroup({
 
 function SettingsDivider(): React.ReactElement {
   return <div className="border-t border-surface-border/40" />
+}
+
+function SectionGlyph({
+  section,
+  icon: Icon,
+  size,
+  className,
+}: {
+  section: Section
+  icon?: LucideIcon
+  size: number
+  className?: string
+}): React.ReactElement {
+  if (section === 'propresenter' || !Icon) {
+    return <ProPresenterMark size={size} className={className} />
+  }
+  return <Icon size={size} className={className} aria-hidden="true" />
 }
 
 function Toggle({
@@ -223,17 +240,17 @@ function ConnectionSection({
     setTestMsg('Connecting…')
     try {
       await window.api.propresenter.connect({ host: pp.host, port: pp.port, password: pp.password })
-      await new Promise((r) => setTimeout(r, 2000))
-      const s = await window.api.propresenter.getStatus()
+      let s = await window.api.propresenter.getStatus()
+      if (s.state === 'connecting') {
+        await new Promise((r) => setTimeout(r, 2000))
+        s = await window.api.propresenter.getStatus()
+      }
       if (s.state === 'connected') {
         setTestStatus('ok')
         setTestMsg(`Connected · ${s.host}:${s.port}`)
-      } else if (s.state === 'connecting') {
-        setTestStatus('fail')
-        setTestMsg('Timed out — check IP and port')
       } else {
         setTestStatus('fail')
-        setTestMsg(`State: ${s.state}`)
+        setTestMsg('No response — check IP, port, and that both Macs are on the same network')
       }
     } catch (err) {
       setTestStatus('fail')
@@ -1521,6 +1538,8 @@ export default function Settings(): React.ReactElement {
       display: { ...prev.display, ...stored.display },
       overlay: normalizeOverlaySettings({ ...prev.overlay, ...stored.overlay }),
       themeLibrary: stored.themeLibrary ?? prev.themeLibrary,
+      media: { ...prev.media, ...stored.media },
+      church: { ...prev.church, ...stored.church },
     }))
     setLoading(false)
   }, [])
@@ -1641,8 +1660,9 @@ export default function Settings(): React.ReactElement {
         <p className="px-3 pb-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest font-sans">
           Settings
         </p>
-        {SECTION_NAV.map(({ id, label, hint, icon: Icon }) => {
+        {SECTION_NAV.map(({ id, label, hint, icon }) => {
           const active = activeSection === id
+          const isPp = id === 'propresenter'
           return (
             <button
               key={id}
@@ -1655,10 +1675,17 @@ export default function Settings(): React.ReactElement {
               )}
               aria-label={`${label} Settings: ${hint}`}
             >
-              <Icon
-                size={15}
-                className={active ? 'text-slate-200 shrink-0' : 'shrink-0 text-slate-500 group-hover:text-slate-300'}
-                aria-hidden="true"
+              <SectionGlyph
+                section={id}
+                icon={icon}
+                size={isPp ? 16 : 15}
+                className={
+                  isPp
+                    ? 'shrink-0'
+                    : active
+                      ? 'text-slate-200 shrink-0'
+                      : 'shrink-0 text-slate-500 group-hover:text-slate-300'
+                }
               />
               <div className="min-w-0 flex-1">
                 <p className="text-xs font-bold leading-none truncate font-sans">{label}</p>
@@ -1676,11 +1703,15 @@ export default function Settings(): React.ReactElement {
           {/* Section header */}
           {(() => {
             const nav = SECTION_NAV.find((s) => s.id === activeSection)!
-            const Icon = nav.icon
             return (
               <div className="flex items-center gap-3.5 mb-6">
                 <div className="w-9 h-9 rounded-xl bg-surface-secondary/80 flex items-center justify-center shrink-0">
-                  <Icon size={16} className="text-slate-200" aria-hidden="true" />
+                  <SectionGlyph
+                    section={nav.id}
+                    icon={nav.icon}
+                    size={nav.id === 'propresenter' ? 20 : 16}
+                    className={nav.id === 'propresenter' ? undefined : 'text-slate-200'}
+                  />
                 </div>
                 <div>
                   <h1 className="text-lg font-bold text-white leading-none tracking-tight font-sans">{nav.label}</h1>

@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type {
+  OverlayContentKind,
   OverlayTextAlign,
   OverlayTextDecoration,
   OverlayTextOutline,
@@ -21,6 +22,7 @@ import type {
   OverlayVerticalAlign,
 } from '@shared/ipc'
 import type { OverlayLayerId } from './OverlayCanvas'
+import { overlayLayerLabel } from '@shared/overlay-outputs'
 
 const FONT_STACKS: Array<{ label: string; value: string }> = [
   { label: 'Helvetica Neue', value: "'Helvetica Neue', Arial, sans-serif" },
@@ -324,21 +326,18 @@ function CollapsibleSection({
 
 function TextFormatFields({
   style,
-  sizeMode,
+  showSize,
   onChange,
-  onSizeModeChange,
 }: {
   style: OverlayTextStyle
-  sizeMode: 'auto' | 'fixed'
+  showSize: boolean
   onChange: (partial: Partial<OverlayTextStyle>) => void
-  onSizeModeChange?: (mode: 'auto' | 'fixed') => void
 }): React.ReactElement {
   const weight = nearestWeight(style.fontWeight)
-  const sizeValue = sizeMode === 'auto' ? 'auto' : String(style.fontSizePx)
+  const sizeValue = String(style.fontSizePx)
   const sizeOptions = [
-    ...(onSizeModeChange ? [{ label: 'Auto', value: 'auto' }] : []),
     ...SIZE_PRESETS.map((px) => ({ label: `${px}`, value: String(px) })),
-    ...(!SIZE_PRESETS.includes(style.fontSizePx) && sizeMode === 'fixed'
+    ...(!SIZE_PRESETS.includes(style.fontSizePx)
       ? [{ label: `${style.fontSizePx}`, value: String(style.fontSizePx) }]
       : []),
   ]
@@ -352,26 +351,21 @@ function TextFormatFields({
         onChange={(fontFamily) => onChange({ fontFamily })}
       />
 
-      <div className="grid grid-cols-2 gap-2">
+      <div className={cn('grid gap-2', showSize ? 'grid-cols-2' : 'grid-cols-1')}>
         <CompactSelect
           label="Weight"
           value={String(weight)}
           options={WEIGHTS.map((item) => ({ label: item.label, value: String(item.value) }))}
           onChange={(next) => onChange({ fontWeight: Number(next) })}
         />
-        <CompactSelect
-          label="Size"
-          value={sizeValue}
-          options={sizeOptions}
-          onChange={(next) => {
-            if (next === 'auto') {
-              onSizeModeChange?.('auto')
-              return
-            }
-            onSizeModeChange?.('fixed')
-            onChange({ fontSizePx: Number(next) })
-          }}
-        />
+        {showSize && (
+          <CompactSelect
+            label="Size"
+            value={sizeValue}
+            options={sizeOptions}
+            onChange={(next) => onChange({ fontSizePx: Number(next) })}
+          />
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-2">
@@ -596,6 +590,8 @@ function EffectsFields({
 
 interface ThemeTypePanelProps {
   theme: OverlayTheme
+  /** Names the two layers — "Reference" means nothing on a lyric slide. */
+  contentKind: OverlayContentKind
   selectedLayer: OverlayLayerId
   onSelectLayer: (id: OverlayLayerId) => void
   onUpdateLayer: (id: OverlayLayerId, partial: Partial<OverlayTextStyle>) => void
@@ -605,6 +601,7 @@ interface ThemeTypePanelProps {
 
 export function ThemeTypePanel({
   theme,
+  contentKind,
   selectedLayer,
   onSelectLayer,
   onUpdateLayer,
@@ -614,14 +611,15 @@ export function ThemeTypePanel({
   const [scriptureOpen, setScriptureOpen] = useState(true)
   const [effectsOpen, setEffectsOpen] = useState(true)
   const layer = selectedLayer === 'reference' ? theme.reference : theme.verse
-  const title = selectedLayer === 'reference' ? 'Reference' : 'Scripture'
+  const title = overlayLayerLabel(contentKind, selectedLayer === 'reference' ? 'reference' : 'verse')
+  const referenceLabel = overlayLayerLabel(contentKind, 'reference')
 
   return (
     <div className="space-y-5">
       <div className="flex gap-1 rounded-md bg-zinc-800/40 p-0.5">
         {([
-          { id: 'verse' as const, label: 'Scripture' },
-          { id: 'reference' as const, label: 'Reference' },
+          { id: 'verse' as const, label: overlayLayerLabel(contentKind, 'verse') },
+          { id: 'reference' as const, label: referenceLabel },
         ]).map((item) => (
           <button
             key={item.id}
@@ -642,14 +640,16 @@ export function ThemeTypePanel({
         ))}
       </div>
 
-      {selectedLayer === 'reference' && (
+      {/* Visible on both layer tabs — hiding this line is the most common edit
+          and burying it under the layer it removes made it unfindable. */}
+      {(
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-[12px] font-semibold text-zinc-200">Show reference</p>
+            <p className="text-[12px] font-semibold text-zinc-200">Show {referenceLabel.toLowerCase()}</p>
             <p className="text-[10px] text-zinc-500">
               {theme.reference.show
-                ? 'Hide to drop the citation from output'
-                : 'Turn on to show the Bible reference again'}
+                ? `Hide to drop the ${referenceLabel.toLowerCase()} from output`
+                : `Turn on to show the ${referenceLabel.toLowerCase()} again`}
             </p>
           </div>
           <button
@@ -673,15 +673,37 @@ export function ThemeTypePanel({
       )}
 
       <CollapsibleSection title={title} open={scriptureOpen} onOpenChange={setScriptureOpen}>
+        {selectedLayer === 'verse' && (
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[12px] font-semibold text-zinc-200">Fit to box</p>
+              <p className="text-[10px] leading-relaxed text-zinc-500">
+                Fits long verses into the box. Short lines stay a natural size.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={theme.layout.autoFitText}
+              onClick={() => onAutoFitChange(!theme.layout.autoFitText)}
+              className={cn(
+                'relative h-5 w-9 shrink-0 rounded-full transition-colors',
+                theme.layout.autoFitText ? 'bg-orange-500' : 'bg-zinc-700'
+              )}
+            >
+              <span
+                className={cn(
+                  'absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white transition-transform',
+                  theme.layout.autoFitText && 'translate-x-4'
+                )}
+              />
+            </button>
+          </div>
+        )}
         <TextFormatFields
           style={layer}
-          sizeMode={selectedLayer === 'verse' && theme.layout.autoFitText ? 'auto' : 'fixed'}
+          showSize={selectedLayer !== 'verse' || !theme.layout.autoFitText}
           onChange={(partial) => onUpdateLayer(selectedLayer, partial)}
-          onSizeModeChange={
-            selectedLayer === 'verse'
-              ? (mode) => onAutoFitChange(mode === 'auto')
-              : undefined
-          }
         />
         {selectedLayer === 'reference' && theme.reference.show && (
           <CompactSelect

@@ -13,7 +13,7 @@
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
     "test": "tsx --test tests/*.test.ts",
-    "test:main": "ELECTRON_RUN_AS_NODE=1 electron ./node_modules/tsx/dist/cli.mjs --test src/main/__tests__/*.test.ts src/main/services/scripture/__tests__/*.test.ts",
+    "test:main": "ELECTRON_RUN_AS_NODE=1 electron ./node_modules/tsx/dist/cli.mjs --test src/main/__tests__/*.test.ts src/main/services/scripture/__tests__/*.test.ts src/main/services/propresenter/__tests__/*.test.ts",
     "seed:bible": "npx tsx scripts/seed-bible.ts",
     "seed:bible:all": "npx tsx scripts/seed-bible.ts --translations KJV,BBE"
   },

@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { BookOpenCheck, ChevronDown, MonitorOff } from "lucide-react";
 import { VerseThemePreview } from "@/components/scripture/VerseThemePreview";
 import {
@@ -5,8 +6,18 @@ import {
   formatOverlayVerseText,
   renderOverlayTemplate,
 } from "@shared/overlay-content";
+import { renderOverlayHTML } from "@shared/overlay-template";
+import { ScaledOverlayPreview } from "@/components/overlay/ScaledOverlayPreview";
+import { themeOwnsBackground, themeWithLiveMedia } from "@shared/media-playback";
 import { layerLabel, layerOfKind } from "@shared/overlay-outputs";
-import type { AppSettings, OverlayOutput, ScriptureResult } from "@shared/ipc";
+import type {
+  AppSettings,
+  MediaItem,
+  MediaPlayback,
+  OverlayOutput,
+  OverlayTheme,
+  ScriptureResult,
+} from "@shared/ipc";
 
 // ─── Per-kind preview fidelity ─────────────────────────────────────────────────
 // Only `ndi` is rendered by this app, so only `ndi` can be shown WYSIWYG. The
@@ -28,6 +39,8 @@ interface LiveOutputPreviewProps {
   onSelectOutput: (outputId: string) => void;
   /** Verse currently live, or null when nothing has been sent. */
   result: ScriptureResult | null;
+  /** Background currently live from the media dock. */
+  liveMedia?: { item: MediaItem; playback: MediaPlayback } | null;
   overlay: AppSettings["overlay"];
   width: number;
   height: number;
@@ -38,6 +51,7 @@ export function LiveOutputPreview({
   selectedOutputId,
   onSelectOutput,
   result,
+  liveMedia = null,
   overlay,
   width,
   height,
@@ -52,6 +66,7 @@ export function LiveOutputPreview({
       <PreviewBody
         output={selected}
         result={result}
+        liveMedia={liveMedia}
         overlay={overlay}
         width={width}
         height={height}
@@ -100,17 +115,27 @@ export function LiveOutputPreview({
 function PreviewBody({
   output,
   result,
+  liveMedia,
   overlay,
   width,
   height,
 }: {
   output: OverlayOutput | null;
   result: ScriptureResult | null;
+  liveMedia: { item: MediaItem; playback: MediaPlayback } | null;
   overlay: AppSettings["overlay"];
   width: number;
   height: number;
 }): React.ReactElement {
-  if (!output) {
+  // Same rule the push takes (orchestrator `withLiveBackground`): a verse on a
+  // theme that owns its background keeps it, even while the dock loop runs.
+  const theme = output
+    ? result && themeOwnsBackground(output.theme)
+      ? output.theme
+      : themeWithLiveMedia(output.theme, liveMedia?.item ?? null, liveMedia?.playback)
+    : null;
+
+  if (!output || !theme) {
     return (
       <EmptyFrame width={width} height={height} icon={MonitorOff} title="No outputs enabled">
         Turn one on in Theme → Output
@@ -118,38 +143,50 @@ function PreviewBody({
     );
   }
 
-  if (!result) {
+  if (!result && !liveMedia) {
     return (
       <EmptyFrame width={width} height={height} icon={BookOpenCheck} title="Nothing is live">
-        Send a verse to preview it here
+        Send a verse or click a background
       </EmptyFrame>
     );
   }
 
   // The one destination this app renders itself, so the preview is the output.
   if (output.kind === "ndi") {
-    return (
-      <VerseThemePreview
-        result={result}
-        theme={output.theme}
-        showTranslation={overlay.showTranslation}
-        showVerseNumbers={overlay.showVerseNumbers}
-        maxVerses={1}
-        width={width}
-        height={height}
-        isFocused={false}
-        isLive
-        sendStatus="sent"
-        onSelect={() => undefined}
-        cardRef={() => undefined}
-      />
-    );
+    if (result) {
+      return (
+        <VerseThemePreview
+          result={result}
+          theme={theme}
+          showTranslation={overlay.showTranslation}
+          showVerseNumbers={overlay.showVerseNumbers}
+          maxVerses={1}
+          width={width}
+          height={height}
+          isFocused={false}
+          isLive
+          sendStatus="sent"
+          chrome={false}
+          onSelect={() => undefined}
+          cardRef={() => undefined}
+        />
+      );
+    }
+    return <BackgroundPreview theme={theme} width={width} height={height} />;
   }
 
   if (output.kind === "library") {
     return (
       <EmptyFrame width={width} height={height} icon={MonitorOff} title="ProPresenter slide">
         Triggered from your library — this app never sees its design
+      </EmptyFrame>
+    );
+  }
+
+  if (!result) {
+    return (
+      <EmptyFrame width={width} height={height} icon={MonitorOff} title="Background is on NDI">
+        This output does not show dock backgrounds
       </EmptyFrame>
     );
   }
@@ -179,6 +216,32 @@ function PreviewBody({
       <pre className="whitespace-pre-wrap break-words font-sans text-[11px] leading-relaxed text-slate-200">
         {body}
       </pre>
+    </div>
+  );
+}
+
+function BackgroundPreview({
+  theme,
+  width,
+  height,
+}: {
+  theme: OverlayTheme;
+  width: number;
+  height: number;
+}): React.ReactElement {
+  const html = useMemo(() => renderOverlayHTML(theme, "", ""), [theme]);
+
+  return (
+    <div
+      className="relative overflow-hidden rounded-xl border border-teal-400/40 bg-black"
+      style={{ width, height }}
+    >
+      <ScaledOverlayPreview
+        html={html}
+        autoFit={false}
+        width={width}
+        height={height}
+      />
     </div>
   );
 }

@@ -15,6 +15,7 @@ import type {
   OverlayTheme,
 } from './ipc'
 import { overlayBoxStyle } from './overlay-boxes'
+import { mediaFilterCss, normalizeMediaPlayback } from './media-playback'
 
 // ─── Escaping ───────────────────────────────────────────────────────────────────
 
@@ -106,12 +107,21 @@ function backgroundLayerHTML(theme: OverlayTheme): string {
 
   if ((bg.type === 'image' || bg.type === 'video') && bg.mediaPath) {
     const src = escapeHtml(overlayMediaUrl(bg.mediaPath))
+    const playback = normalizeMediaPlayback({
+      loop: bg.mediaLoop,
+      hue: bg.hue,
+      saturation: bg.saturation,
+      brightness: bg.brightness,
+      contrast: bg.contrast,
+    })
+    const filter = mediaFilterCss(playback)
     const mediaStyle = `width:100%; height:100%; object-fit:${bg.mediaFit ?? 'cover'}; display:block;`
     const media =
       bg.type === 'video'
-        ? `<video src="${src}" style="${mediaStyle}" autoplay loop muted playsinline></video>`
+        ? `<video src="${src}" style="${mediaStyle}" autoplay${playback.loop ? ' loop' : ''} muted playsinline></video>`
         : `<img src="${src}" style="${mediaStyle}" alt="">`
-    return `<div class="pa-bg" style="position:absolute; inset:0; opacity:${bg.opacity}; overflow:hidden;">${media}</div>`
+    const filterStyle = filter ? ` filter:${filter};` : ''
+    return `<div class="pa-bg" style="position:absolute; inset:0; opacity:${bg.opacity}; overflow:hidden;${filterStyle}">${media}</div>`
   }
 
   let style: string
@@ -142,6 +152,7 @@ function textStyleCss(style: OverlayTextStyle, fontSizePx: number): string {
     `text-decoration:${decoration};`,
     `text-transform:${transform};`,
     'white-space:normal;',
+    'overflow-wrap:break-word;',
     shadowCss(style.shadow),
     outlineCss(style.outline),
   ].join(' ')
@@ -154,19 +165,22 @@ function textStyleCss(style: OverlayTextStyle, fontSizePx: number): string {
 // then snaps to the true size.
 
 const AVG_CHAR_WIDTH_FACTOR = 0.55
-const MIN_AUTO_FIT_PX = 12
-const MAX_AUTO_FIT_PX = 200
+export const MIN_AUTO_FIT_PX = 12
+/** Safety ceiling — smart fill caps well below this. */
+export const MAX_AUTO_FIT_PX = 240
 
 /**
- * Largest verse font size (px) whose estimated wrapped height fits the verse
- * box. Used when `layout.autoFitText` is on, for any layout position.
- * Capped by `verse.fontSizePx` so the Size slider remains a maximum.
+ * Typical projected verse. Short lines ("Jesus wept.") grow only up to the
+ * size this would use in the same box, so they stay a verse — not a billboard.
  */
-export function estimateAutoFitVerseFontPx(
+export const SMART_FILL_REFERENCE =
+  'For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.'
+
+function estimateBoxFillFontPx(
   text: string,
   theme: OverlayTheme,
-  frameWidth = 1920,
-  frameHeight = 1080
+  frameWidth: number,
+  frameHeight: number
 ): number {
   const { verse, layout } = theme
   const box = verse.box
@@ -195,10 +209,8 @@ export function estimateAutoFitVerseFontPx(
     return lines * sizePx * verse.lineHeight <= usableH
   }
 
-  const loFloor = MIN_AUTO_FIT_PX
-  const hiCap = Math.min(MAX_AUTO_FIT_PX, verse.fontSizePx)
-  let lo = loFloor
-  let hi = hiCap
+  let lo = MIN_AUTO_FIT_PX
+  let hi = MAX_AUTO_FIT_PX
   if (!fits(lo)) return lo
   while (lo < hi) {
     const mid = Math.floor((lo + hi + 1) / 2)
@@ -206,6 +218,21 @@ export function estimateAutoFitVerseFontPx(
     else hi = mid - 1
   }
   return lo
+}
+
+/**
+ * Font size for Fit to box: shrinks until the text fits, but never larger
+ * than a typical verse in this box (smart fill).
+ */
+export function estimateAutoFitVerseFontPx(
+  text: string,
+  theme: OverlayTheme,
+  frameWidth = 1920,
+  frameHeight = 1080
+): number {
+  const forThis = estimateBoxFillFontPx(text, theme, frameWidth, frameHeight)
+  const typical = estimateBoxFillFontPx(SMART_FILL_REFERENCE, theme, frameWidth, frameHeight)
+  return Math.min(forThis, typical)
 }
 
 // ─── Renderer ───────────────────────────────────────────────────────────────────
@@ -231,12 +258,41 @@ function textBoxChrome(theme: OverlayTheme, style: OverlayTextStyle, edgeToEdge:
     'flex-direction:column;',
     'align-items:stretch;',
     `justify-content:${justify};`,
+    // Flex items default to min-height:auto (content size). Without this, a
+    // huge estimated font grows the box and DOM auto-fit never shrinks.
+    'min-height:0;',
+    'min-width:0;',
   ]
   if (layout.backdropBox) {
     parts.push(`background:${layout.backdropColor};`)
     parts.push(`border-radius:${radius}px;`)
   }
   return parts.join(' ')
+}
+
+function verseFillCss(style: OverlayTextStyle, autoFit: boolean): string {
+  const wrap = 'overflow-wrap:break-word;'
+  if (!autoFit) return `width:100%;${wrap}`
+  const justify =
+    style.verticalAlign === 'top'
+      ? 'flex-start'
+      : style.verticalAlign === 'bottom'
+        ? 'flex-end'
+        : 'center'
+  return [
+    'width:100%;',
+    'height:100%;',
+    'max-height:100%;',
+    'max-width:100%;',
+    'min-height:0;',
+    'min-width:0;',
+    'overflow:hidden;',
+    'box-sizing:border-box;',
+    'display:flex;',
+    'flex-direction:column;',
+    `justify-content:${justify};`,
+    wrap,
+  ].join(' ')
 }
 
 function isEdgeToEdgeBox(box: OverlayTheme['verse']['box']): boolean {
@@ -264,20 +320,22 @@ export function renderOverlayHTML(
   const verseChrome = textBoxChrome(theme, verse, isEdgeToEdgeBox(verseBox))
   const refChrome = textBoxChrome(theme, ref, isEdgeToEdgeBox(refBox))
 
-  const verseBlock = `<div class="pa-verse-box" data-auto-fit="${layout.autoFitText ? 'true' : 'false'}" data-max-font-px="${verse.fontSizePx}" style="${overlayBoxStyle(verseBox)} ${verseChrome}">
-      <div class="pa-verse" style="${textStyleCss(verse, verseFontPx)} width:100%;">${safeText}</div>
+  const verseBlock = text.trim()
+    ? `<div class="pa-verse-box" data-auto-fit="${layout.autoFitText ? 'true' : 'false'}" data-max-font-px="${verseFontPx}" style="${overlayBoxStyle(verseBox)} ${verseChrome}">
+      <div class="pa-verse" style="${textStyleCss(verse, verseFontPx)} ${verseFillCss(verse, layout.autoFitText)}"><div class="pa-verse-text" style="width:100%;max-width:100%;overflow-wrap:break-word;">${safeText}</div></div>
     </div>`
+    : ''
 
-  const referenceBlock = ref.show
+  const referenceBlock = ref.show && reference.trim()
     ? `<div class="pa-reference-box" style="${overlayBoxStyle(refBox)} ${refChrome}">
       <div class="pa-reference" style="${textStyleCss(ref, ref.fontSizePx)} width:100%;">${safeReference}</div>
     </div>`
     : ''
 
   return `
-    <div class="pa-overlay-root" style="position:absolute; inset:0;">
+    <div class="pa-overlay-root" style="position:absolute;inset:0;overflow:hidden;box-sizing:border-box;">
       ${backgroundLayerHTML(theme)}
-      <div class="pa-layer" style="position:absolute; inset:0;">
+      <div class="pa-layer" style="position:absolute;inset:0;overflow:hidden;">
         ${verseBlock}
         ${referenceBlock}
       </div>

@@ -19,4 +19,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   display: { theme: 'dark', fontSize: 16, transcriptionFontSize: 18 },
   overlay: DEFAULT_OVERLAY_SETTINGS,
   themeLibrary: [],
+  media: { folder: '', playlists: [] },
+  church: { name: '', timezone: '', role: '', serviceTimes: [] },
 }

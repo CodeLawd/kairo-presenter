@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { AlertTriangle, RefreshCw, X } from 'lucide-react'
 import AppShell from '@/components/layout/AppShell'
+import MediaDock from '@/components/media/MediaDock'
 import OperatorToolbar from '@/components/operator/OperatorToolbar'
 import Scripture from '@/components/scripture/Scripture'
 import Lyrics from '@/components/lyrics/Lyrics'
@@ -9,17 +10,52 @@ import ThemeEditor from '@/components/theme/ThemeEditor'
 import Settings from '@/components/settings/Settings'
 import { useAppStore } from '@/stores/useAppStore'
 import { LoadingScreen } from '@/bootstrap/LoadingScreen'
+import PpConnectGate from '@/components/setup/PpConnectGate'
+import OnboardingWizard from '@/components/onboarding/OnboardingWizard'
 import {
   BOOTSTRAP_MIN_VISIBLE_MS,
   describeBootstrapWarning,
 } from '@/bootstrap/bootstrap-state'
 import { hydrateIntegrations, useBootstrapStore } from '@/bootstrap/useBootstrapStore'
+import {
+  ppLaunchOutcomeFromStatus,
+  shouldOfferPpConnectGate,
+  type PpLaunchOutcome,
+} from '@shared/pp-connect-gate'
+import { shouldOfferOnboarding } from '@shared/cloud/onboarding'
 
 export type NavRoute =
   | 'scripture'
   | 'lyrics'
   | 'operator'
   | 'theme'
+
+/**
+ * One silent handshake per renderer session. Shared so Strict Mode's remount
+ * reuses the in-flight result instead of starting a second connect.
+ */
+let ppLaunchProbe: Promise<PpLaunchOutcome> | null = null
+
+function probePpOnLaunch(): Promise<PpLaunchOutcome> {
+  if (ppLaunchProbe) return ppLaunchProbe
+  ppLaunchProbe = (async () => {
+    if (useAppStore.getState().ppState === 'connected') return 'connected'
+    const pp = useBootstrapStore.getState().settings.propresenter
+    try {
+      await window.api.propresenter.connect({
+        host: pp.host,
+        port: pp.port,
+        password: pp.password,
+      })
+      const status = await window.api.propresenter.getStatus()
+      useAppStore.getState().setPPStatus(status)
+      return ppLaunchOutcomeFromStatus(status.state)
+    } catch {
+      return 'unavailable'
+    }
+  })()
+  return ppLaunchProbe
+}
 
 // ─── Persistent audio pipeline (lives at app root, not tied to any route) ──────
 
@@ -125,11 +161,18 @@ const views: Record<Exclude<NavRoute, 'operator' | 'theme'>, React.ReactNode> = 
 export default function App(): React.ReactElement {
   const [route, setRoute] = useState<NavRoute>('operator')
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [ppGateResolved, setPpGateResolved] = useState(false)
+  const [onboardingDismissed, setOnboardingDismissed] = useState(false)
+  const [ppLaunch, setPpLaunch] = useState<PpLaunchOutcome>('pending')
 
   const phase = useBootstrapStore((s) => s.phase)
   const progress = useBootstrapStore((s) => s.progress)
   const errors = useBootstrapStore((s) => s.errors)
   const warningDismissed = useBootstrapStore((s) => s.warningDismissed)
+  const ppSettings = useBootstrapStore((s) => s.settings.propresenter)
+  const onboarding = useBootstrapStore((s) => s.onboarding)
+  const ppState = useAppStore((s) => s.ppState)
+  const ppVersion = useAppStore((s) => s.ppVersion)
   const [minDurationElapsed, setMinDurationElapsed] = useState(false)
   const [loaderMounted, setLoaderMounted] = useState(true)
 
@@ -144,6 +187,11 @@ export default function App(): React.ReactElement {
   const bootstrapped = phase === 'ready' || phase === 'ready-with-warnings'
   const ready = bootstrapped && minDurationElapsed
 
+  // Setup only ever appears over a fully loaded app, and only until it is
+  // answered — a finished or dismissed wizard never comes back on its own.
+  const onboardingOpen =
+    ready && shouldOfferOnboarding({ state: onboarding, dismissedThisSession: onboardingDismissed })
+
   // Cross-fade: the loader stays mounted, transparent, for one transition.
   useEffect(() => {
     if (!ready) return
@@ -156,6 +204,19 @@ export default function App(): React.ReactElement {
     if (!ready) return
     void hydrateIntegrations()
   }, [ready])
+
+  // Silent handshake as soon as saved host/port exist. The connect modal is
+  // only for a failed attempt — if ProPresenter is already up, skip it.
+  useEffect(() => {
+    if (!bootstrapped) return
+    let cancelled = false
+    void probePpOnLaunch().then((outcome) => {
+      if (!cancelled) setPpLaunch(outcome)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [bootstrapped])
 
   // Listen to Escape key to close settings modal
   useEffect(() => {
@@ -233,6 +294,34 @@ export default function App(): React.ReactElement {
           </div>
         )}
       </main>
+
+      {/* Background dock — docked under every live-output tab so a background can
+          be changed mid-song without leaving the song. Hidden on Theme, where a
+          pushed background would fight the theme preview. */}
+      {route !== 'theme' && <MediaDock />}
+
+      {onboardingOpen && (
+        <OnboardingWizard
+          onDismiss={() => {
+            setOnboardingDismissed(true)
+            // The wizard asks for the ProPresenter host itself, so the launch
+            // gate must not ask again the moment it closes.
+            setPpGateResolved(true)
+          }}
+        />
+      )}
+
+      {!onboardingOpen &&
+        shouldOfferPpConnectGate({ sessionResolved: ppGateResolved, launch: ppLaunch }) && (
+        <PpConnectGate
+          initialHost={ppSettings.host}
+          initialPort={ppSettings.port}
+          password={ppSettings.password}
+          ppState={ppState}
+          ppVersion={ppVersion}
+          onResolved={() => setPpGateResolved(true)}
+        />
+      )}
 
       {/* Settings Modal Overlay */}
       {settingsOpen && (

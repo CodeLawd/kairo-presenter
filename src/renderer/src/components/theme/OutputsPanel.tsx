@@ -3,9 +3,21 @@ import { AlertTriangle, Check, Plus, Trash2 } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 import { makeOverlayOutput } from '@shared/overlay-defaults'
-import { groupOutputsByLayer, layerLabel, layerOfKind, MAX_NDI_OUTPUTS } from '@shared/overlay-outputs'
+import { themesForKind } from '@shared/theme-library'
+import {
+  contentKindLabel,
+  groupOutputsByLayer,
+  hasContentOverride,
+  layerLabel,
+  layerOfKind,
+  MAX_NDI_OUTPUTS,
+  outputTemplateFor,
+  outputThemeIdFor,
+  withContentPatch,
+} from '@shared/overlay-outputs'
 import type {
   CustomOverlayTheme,
+  OverlayContentKind,
   NdiOutputStatus,
   OverlayOutput,
   OverlayOutputKind,
@@ -38,6 +50,8 @@ const NEW_OUTPUT_KINDS: OverlayOutputKind[] = ['stage', 'message', 'library', 'n
 interface OutputsPanelProps {
   outputs: OverlayOutput[]
   onChange: (next: OverlayOutput[]) => void
+  /** Which push the panel is configuring — templates and themes are per-kind. */
+  contentKind: OverlayContentKind
   videoInputs: PPVideoInputInfo[]
   onRefreshVideoInputs: () => void
   looks: PPLook[]
@@ -52,6 +66,7 @@ interface OutputsPanelProps {
 export default function OutputsPanel({
   outputs,
   onChange,
+  contentKind,
   videoInputs,
   onRefreshVideoInputs,
   looks,
@@ -118,6 +133,7 @@ export default function OutputsPanel({
           looks={looks}
           onRefreshLooks={onRefreshLooks}
           themeLibrary={themeLibrary}
+          contentKind={contentKind}
           onUpdate={(patch) => update(output.id, patch)}
           onRemove={() => remove(output)}
           onApplyDraftTheme={() => onApplyDraftTheme(output.id)}
@@ -155,6 +171,7 @@ interface OutputRowProps {
   looks: PPLook[]
   onRefreshLooks: () => void
   themeLibrary: CustomOverlayTheme[]
+  contentKind: OverlayContentKind
   onUpdate: (patch: Partial<OverlayOutput>) => void
   onRemove: () => void
   onApplyDraftTheme: () => void
@@ -169,6 +186,7 @@ function OutputRow({
   looks,
   onRefreshLooks,
   themeLibrary,
+  contentKind,
   onUpdate,
   onRemove,
   onApplyDraftTheme,
@@ -176,6 +194,7 @@ function OutputRow({
 }: OutputRowProps): React.ReactElement {
   const layer = layerOfKind(output.kind)
   const notReady = output.enabled && status && !status.ready
+  const inherits = contentKind !== 'scripture' && !hasContentOverride(output, contentKind)
 
   return (
     <div
@@ -234,6 +253,7 @@ function OutputRow({
           videoInputs={videoInputs}
           onRefreshVideoInputs={onRefreshVideoInputs}
           themeLibrary={themeLibrary}
+          contentKind={contentKind}
           onApplyDraftTheme={onApplyDraftTheme}
           hasDraftChanges={hasDraftChanges}
         />
@@ -241,15 +261,21 @@ function OutputRow({
 
       {/* — kind: message | stage — */}
       {(output.kind === 'message' || output.kind === 'stage') && (
-        <Field label="Template" htmlFor={`${output.id}-template`}>
+        <Field
+          label={contentKind === 'scripture' ? 'Template' : `${contentKindLabel(contentKind)} template`}
+          htmlFor={`${output.id}-template`}
+        >
           <DeferredTextarea
             id={`${output.id}-template`}
             className="input min-h-[52px] w-full resize-y font-mono text-[11px]"
-            value={output.template}
-            onCommit={(template) => onUpdate({ template })}
+            value={outputTemplateFor(output, contentKind)}
+            onCommit={(template) => onUpdate(withContentPatch(output, contentKind, { template }))}
+            disabled={inherits}
           />
           <p className="mt-1 text-[10px] text-slate-500">
-            Tokens: <code>{'{Reference}'}</code> and <code>{'{Text}'}</code>.
+            {inherits
+              ? `Inheriting the scripture template — turn on the separate ${contentKindLabel(contentKind).toLowerCase()} theme to edit.`
+              : <>Tokens: <code>{'{Reference}'}</code> and <code>{'{Text}'}</code>.</>}
           </p>
         </Field>
       )}
@@ -364,6 +390,7 @@ function NdiOutputFields({
   videoInputs,
   onRefreshVideoInputs,
   themeLibrary,
+  contentKind,
   onApplyDraftTheme,
   hasDraftChanges,
 }: {
@@ -372,25 +399,39 @@ function NdiOutputFields({
   videoInputs: PPVideoInputInfo[]
   onRefreshVideoInputs: () => void
   themeLibrary: CustomOverlayTheme[]
+  contentKind: OverlayContentKind
   onApplyDraftTheme: () => void
   hasDraftChanges: boolean
 }): React.ReactElement {
+  const inherits = contentKind !== 'scripture' && !hasContentOverride(output, contentKind)
   return (
     <>
-      <Field label="Theme" htmlFor={`${output.id}-theme`}>
+      <Field
+        label={contentKind === 'scripture' ? 'Theme' : `${contentKindLabel(contentKind)} theme`}
+        htmlFor={`${output.id}-theme`}
+      >
         <div className="flex items-center gap-2">
           <select
             id={`${output.id}-theme`}
             className="input flex-1"
-            value={output.themeId ?? ''}
+            value={outputThemeIdFor(output, contentKind) ?? ''}
+            disabled={inherits}
             onChange={(e) => {
               const themeId = e.target.value
               const found = themeLibrary.find((item) => item.id === themeId)
-              onUpdate(found ? { themeId, theme: structuredClone(found.theme) } : { themeId: null })
+              onUpdate(
+                withContentPatch(
+                  output,
+                  contentKind,
+                  found ? { themeId, theme: structuredClone(found.theme) } : { themeId: null },
+                ),
+              )
             }}
           >
-            <option value="">— custom (edited here) —</option>
-            {themeLibrary.map((item) => (
+            <option value="">{inherits ? '— inherits scripture —' : '— custom (edited here) —'}</option>
+            {/* Only themes saved for this kind — a lower-third verse look is not
+                an option for a lyric slide. */}
+            {themesForKind(themeLibrary, contentKind).map((item) => (
               <option key={item.id} value={item.id}>{item.name}</option>
             ))}
           </select>

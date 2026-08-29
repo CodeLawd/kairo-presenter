@@ -17,6 +17,7 @@ import type {
   OverlayBox,
   OverlayOutput,
   OverlayOutputKind,
+  OverlayOutputVariant,
   OverlayTextOutline,
   OverlayTextShadow,
   OverlayTextStyle,
@@ -126,6 +127,7 @@ export function makeOverlayOutput(
     theme: structuredClone(DEFAULT_OVERLAY_THEME),
     ppVideoInputUuid: '',
     template: DEFAULT_TEMPLATE,
+    lyrics: null,
     ...patch,
   }
 }
@@ -322,6 +324,11 @@ export function normalizeOverlayTheme(raw: unknown): OverlayTheme {
           ? bg.mediaPath.trim()
           : undefined,
       mediaFit: safeEnum(bg.mediaFit, ['cover', 'contain', 'fill'] as const, 'cover'),
+      mediaLoop: safeBool(bg.mediaLoop, false),
+      hue: clampNum(bg.hue, -180, 180, 0),
+      saturation: clampNum(bg.saturation, 0, 2, 1),
+      brightness: clampNum(bg.brightness, 0.25, 1.75, 1),
+      contrast: clampNum(bg.contrast, 0.25, 1.75, 1),
     },
     verse: normalizeTextStyle(verse, d.verse, presetBoxes.verse, { shadow: verse.shadow }),
     reference: {
@@ -406,6 +413,21 @@ function migrateLegacyOutputs(legacy: LegacyOverlayFields): OverlayOutput[] {
  * Falls back to `migrateLegacyOutputs` when the array is missing or ends up
  * empty, so the store can never reach a state with nowhere to push.
  */
+/**
+ * A content-kind override, or null when the output has none. Absent/invalid is
+ * null rather than a filled-in default: "no override" has to survive a round
+ * trip through the store, otherwise every output would silently grow one.
+ */
+function normalizeOutputVariant(raw: unknown, fallbackTemplate: string): OverlayOutputVariant | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = asObject(raw)
+  return {
+    themeId: typeof r.themeId === 'string' && r.themeId ? r.themeId : null,
+    theme: normalizeOverlayTheme(r.theme),
+    template: safeString(r.template, fallbackTemplate),
+  }
+}
+
 export function normalizeOverlayOutputs(raw: unknown, legacy: LegacyOverlayFields): OverlayOutput[] {
   if (!Array.isArray(raw)) return migrateLegacyOutputs(legacy)
 
@@ -438,6 +460,7 @@ export function normalizeOverlayOutputs(raw: unknown, legacy: LegacyOverlayField
       theme: normalizeOverlayTheme(r.theme),
       ppVideoInputUuid: safeString(r.ppVideoInputUuid, '').trim(),
       template: safeString(r.template, legacy.template),
+      lyrics: normalizeOutputVariant(r.lyrics, legacy.template),
     })
   }
 

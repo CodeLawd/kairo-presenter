@@ -45,6 +45,16 @@ const defaults: AppSettings = {
   },
   overlay: DEFAULT_OVERLAY_SETTINGS,
   themeLibrary: [],
+  media: {
+    folder: '',
+    playlists: [],
+  },
+  church: {
+    name: '',
+    timezone: '',
+    role: '',
+    serviceTimes: [],
+  },
 }
 
 export const store = new Store<AppSettings>({
@@ -52,9 +62,13 @@ export const store = new Store<AppSettings>({
   defaults,
 })
 
-const migrations = new Store<{ nkjvDefaultV1: boolean; customThemeLibraryV1: boolean }>({
+export const migrations = new Store<{
+  nkjvDefaultV1: boolean
+  customThemeLibraryV1: boolean
+  cloudOnboardingV1: boolean
+}>({
   name: 'proautomate-migrations',
-  defaults: { nkjvDefaultV1: false, customThemeLibraryV1: false },
+  defaults: { nkjvDefaultV1: false, customThemeLibraryV1: false, cloudOnboardingV1: false },
 })
 
 // Product decision: NKJV is the default. Apply once for existing installs whose
@@ -87,6 +101,21 @@ if (!migrations.get('nkjvDefaultV1')) {
     dirty = true
   }
   if (dirty) store.set('lyrics', next)
+}
+
+// Same shallow-merge caveat: a store written before the onboarding wizard
+// shipped has no `church` key at all, so heal it on every launch (a no-op once
+// present).
+{
+  const church = store.get('church') as AppSettings['church'] | undefined
+  if (!church || typeof church.name !== 'string' || !Array.isArray(church.serviceTimes)) {
+    store.set('church', {
+      name: typeof church?.name === 'string' ? church.name : '',
+      timezone: typeof church?.timezone === 'string' ? church.timezone : '',
+      role: typeof church?.role === 'string' ? church.role : '',
+      serviceTimes: Array.isArray(church?.serviceTimes) ? church.serviceTimes : [],
+    })
+  }
 }
 
 // D3 migration — electron-store shallow-Object.assign's `defaults` at startup;

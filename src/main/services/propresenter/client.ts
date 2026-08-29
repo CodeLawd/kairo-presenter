@@ -1,8 +1,8 @@
 import { EventEmitter } from 'events'
 import http from 'http'
-import https from 'https'
 import axios, { type AxiosInstance, type AxiosError } from 'axios'
 import log from 'electron-log/main'
+import { proPresenterConnectAttempts, proPresenterHttpTimeoutMs } from '@shared/pp-http'
 import type {
   PPVersionResponse,
   PPLibrary,
@@ -25,7 +25,6 @@ import type {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const DEFAULT_TIMEOUT_MS = 3_000
 /** Name of the message template ProAutomate creates/reuses for scripture overlays. */
 const SCRIPTURE_MESSAGE_NAME = 'ProAutomate Scripture'
 const RECONNECT_BASE_MS = 1_000
@@ -67,6 +66,15 @@ export class ProPresenterClient extends EventEmitter {
   private reconnectAttempt = 0
   private reconnectDelay = RECONNECT_BASE_MS
   private destroyed = false
+  private httpAgent: http.Agent | null = null
+  /**
+   * Bumped by every `connect()`. A run whose generation is stale has been
+   * superseded — it must not report its own outcome, or a background reconnect
+   * to the previous host will land its failure on top of the connection the
+   * operator just made by hand (they see "no response" while ProPresenter is
+   * plainly answering).
+   */
+  private connectGeneration = 0
 
   constructor() {
     super()
@@ -92,9 +100,12 @@ export class ProPresenterClient extends EventEmitter {
   // ─── Axios factory ─────────────────────────────────────────────────────────
 
   private buildAxios(): AxiosInstance {
+    this.httpAgent?.destroy()
+    this.httpAgent = new http.Agent({ keepAlive: true, maxSockets: 4 })
     return axios.create({
       baseURL: `http://${this.host}:${this.port}`,
-      timeout: DEFAULT_TIMEOUT_MS,
+      timeout: proPresenterHttpTimeoutMs(this.host),
+      httpAgent: this.httpAgent,
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     })
   }
@@ -107,6 +118,8 @@ export class ProPresenterClient extends EventEmitter {
 
   async connect(host: string, port: number): Promise<void> {
     this.destroyed = false
+    const generation = ++this.connectGeneration
+    const superseded = (): boolean => this.destroyed || generation !== this.connectGeneration
     if (host !== this.host || port !== this.port) {
       this.cachedLibraryId = null
       this.cachedScriptureMessageId = null
@@ -118,22 +131,40 @@ export class ProPresenterClient extends EventEmitter {
 
     this.clearReconnectTimer()
     this.setState('connecting')
-    log.info('[PP] Connecting', { host, port })
+    const timeoutMs = proPresenterHttpTimeoutMs(host)
+    const attempts = proPresenterConnectAttempts(host)
+    log.info('[PP] Connecting', { host, port, timeoutMs, attempts })
 
-    try {
-      const version = await this.getVersion()
-      this.resetReconnect()
-      this.setState('connected')
-      log.info('[PP] Connected', { version: `${version.major}.${version.minor}.${version.patch}` })
-      this.emit('connected', version)
-      this.startStream()
-    } catch (err) {
-      const error = this.normalizeError(err)
-      log.error('[PP] Connection failed', error.message)
-      this.setState('error')
-      this.emit('error', error)
-      this.scheduleReconnect()
+    let lastError: Error | null = null
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      if (superseded()) return
+      try {
+        const version = await this.getVersion()
+        if (superseded()) return
+        this.resetReconnect()
+        this.setState('connected')
+        log.info('[PP] Connected', { version: `${version.major}.${version.minor}.${version.patch}` })
+        this.emit('connected', version)
+        this.startStream()
+        return
+      } catch (err) {
+        lastError = this.normalizeError(err)
+        log.warn('[PP] Connect attempt failed', {
+          attempt,
+          attempts,
+          timeoutMs,
+          error: lastError.message,
+        })
+      }
     }
+
+    if (superseded()) return
+
+    const error = lastError ?? new Error('Connection failed')
+    log.error('[PP] Connection failed', error.message)
+    this.setState('error')
+    this.emit('error', error)
+    this.scheduleReconnect()
   }
 
   disconnect(): void {
@@ -152,8 +183,9 @@ export class ProPresenterClient extends EventEmitter {
     log.info('[PP] Reconnecting', { attempt: this.reconnectAttempt, delayMs: delay })
     this.emit('reconnecting', this.reconnectAttempt, delay)
 
+    const generation = this.connectGeneration
     this.reconnectTimer = setTimeout(async () => {
-      if (this.destroyed) return
+      if (this.destroyed || generation !== this.connectGeneration) return
       this.reconnectDelay = Math.min(this.reconnectDelay * 2, RECONNECT_MAX_MS)
       await this.connect(this.host, this.port)
     }, delay)
@@ -728,16 +760,33 @@ export class ProPresenterClient extends EventEmitter {
     }
   }
 
+  /**
+   * Takes down everything this app can put on screen.
+   *
+   * PP19 clear endpoints are GET (POST returns 404), and the presentation layer
+   * is named `slide` — `/v1/clear/layer/presentation` 404s, which meant this
+   * used to fail without clearing anything. Verified against PP 19.0.1: the
+   * accepted names are audio, props, messages, announcements, slide, media and
+   * video_input; presentation, background and all are rejected.
+   *
+   * `video_input` is cleared too because blanking the NDI frame only makes our
+   * source transparent — the layer itself stays live until PP is told to drop it.
+   */
   async clearAll(): Promise<boolean> {
-    // PP19: clear layer endpoints are GET (POST returns 404)
-    try {
-      await this.http.get('/v1/clear/layer/presentation')
-      log.info('[PP] Presentation layer cleared')
-      return true
-    } catch (err) {
-      this.logAxiosError('clearAll', err)
-      return false
-    }
+    const results = await Promise.all(
+      (['slide', 'video_input'] as const).map(async (layer) => {
+        try {
+          await this.http.get(`/v1/clear/layer/${layer}`)
+          return true
+        } catch (err) {
+          this.logAxiosError(`clearAll(${layer})`, err)
+          return false
+        }
+      }),
+    )
+    const ok = results.every(Boolean)
+    if (ok) log.info('[PP] Slide and video-input layers cleared')
+    return ok
   }
 
   async clearMessages(): Promise<boolean> {

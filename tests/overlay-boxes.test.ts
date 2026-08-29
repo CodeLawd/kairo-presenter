@@ -9,8 +9,8 @@ import {
   resizeOverlayBox,
 } from '../src/lib/overlay-boxes'
 import { DEFAULT_OVERLAY_THEME, normalizeOverlayTheme } from '../src/lib/overlay-defaults'
-import { estimateAutoFitVerseFontPx, renderOverlayHTML } from '../src/lib/overlay-template'
-import { largestFontThatFits } from '../src/lib/overlay-fit'
+import { estimateAutoFitVerseFontPx, renderOverlayHTML, SMART_FILL_REFERENCE } from '../src/lib/overlay-template'
+import { largestFontThatFits, overlayTextOverflows } from '../src/lib/overlay-fit'
 
 test('clamps overlay boxes onto the canvas', () => {
   const boxed = clampOverlayBox({ xPct: -10, yPct: 90, widthPct: 40, heightPct: 40 })
@@ -102,8 +102,22 @@ test('auto-fit uses the verse box, not only fullscreen', () => {
   const shortPx = estimateAutoFitVerseFontPx(short, shortTheme)
   const longPx = estimateAutoFitVerseFontPx(long, shortTheme)
   assert.ok(longPx < shortPx)
-  assert.ok(longPx <= shortTheme.verse.fontSizePx)
-  assert.ok(shortPx <= shortTheme.verse.fontSizePx)
+})
+
+test('smart fill keeps a short verse at typical size instead of filling the screen', () => {
+  const theme: typeof DEFAULT_OVERLAY_THEME = {
+    ...DEFAULT_OVERLAY_THEME,
+    verse: {
+      ...DEFAULT_OVERLAY_THEME.verse,
+      fontSizePx: 54,
+      box: { xPct: 5, yPct: 15, widthPct: 90, heightPct: 70 },
+    },
+    layout: { ...DEFAULT_OVERLAY_THEME.layout, autoFitText: true, paddingPx: 24 },
+  }
+  const wept = estimateAutoFitVerseFontPx('Jesus wept.', theme)
+  const typical = estimateAutoFitVerseFontPx(SMART_FILL_REFERENCE, theme)
+  assert.equal(wept, typical)
+  assert.ok(wept < 180)
 })
 
 test('overlay HTML places verse and reference in independent boxes', () => {
@@ -114,6 +128,18 @@ test('overlay HTML places verse and reference in independent boxes', () => {
   assert.doesNotMatch(html, /pa-content-box/)
 })
 
+test('overlay HTML constrains auto-fit verse so the text cannot grow the box', () => {
+  const theme = {
+    ...DEFAULT_OVERLAY_THEME,
+    layout: { ...DEFAULT_OVERLAY_THEME.layout, autoFitText: true },
+  }
+  const html = renderOverlayHTML(theme, 'John 3:16', 'For God so loved the world.')
+  assert.match(html, /class="pa-verse"[^>]*min-height:0/)
+  assert.match(html, /class="pa-verse"[^>]*overflow:hidden/)
+  assert.match(html, /class="pa-verse"[^>]*max-height:100%/)
+  assert.match(html, /overflow-wrap:break-word/)
+})
+
 test('largestFontThatFits binary-searches the last size that does not overflow', () => {
   assert.equal(
     largestFontThatFits(12, 80, (px) => px > 40),
@@ -122,5 +148,16 @@ test('largestFontThatFits binary-searches the last size that does not overflow',
   assert.equal(
     largestFontThatFits(12, 80, () => true),
     12
+  )
+})
+
+test('auto-fit overflow uses the clip box when the verse element has grown with its text', () => {
+  const text = { scrollHeight: 900, scrollWidth: 400 }
+  const grownVerse = { clientHeight: 900, clientWidth: 800 }
+  const clipBox = { clientHeight: 200, clientWidth: 800 }
+  assert.equal(overlayTextOverflows(text, grownVerse, clipBox), true)
+  assert.equal(
+    overlayTextOverflows({ scrollHeight: 180, scrollWidth: 400 }, grownVerse, clipBox),
+    false
   )
 })

@@ -86,11 +86,133 @@ export interface AppSettings {
     theme: OverlayTheme
   }
   themeLibrary: CustomOverlayTheme[]
+  media: MediaSettings
+  church: ChurchProfile
+}
+
+// ─── Church profile (onboarding) ──────────────────────────────────────────────
+
+export interface ChurchServiceTime {
+  /** 0 = Sunday … 6 = Saturday. */
+  day: number
+  /** 24h 'HH:MM'. */
+  time: string
+  label: string
+}
+
+export interface ChurchProfile {
+  name: string
+  /** IANA zone, e.g. 'Africa/Lagos'. '' until the operator picks one. */
+  timezone: string
+  /** What the person running this machine does, free text. */
+  role: string
+  serviceTimes: ChurchServiceTime[]
+}
+
+// ─── Onboarding ───────────────────────────────────────────────────────────────
+
+export type OnboardingStepId = 'account' | 'propresenter' | 'output' | 'apiKeys' | 'church'
+
+export interface OnboardingState {
+  completedSteps: OnboardingStepId[]
+  /** Answered with "not now" — resolved, but not done. */
+  skippedSteps: OnboardingStepId[]
+  currentStep: OnboardingStepId
+  /** Null while the wizard is still open. */
+  completedAt: number | null
+  /** 'legacy' = derived from an install that predates the wizard. */
+  source: 'fresh' | 'legacy'
+}
+
+// ─── Media (background dock) ──────────────────────────────────────────────────
+// Backgrounds are FOLDER-BACKED: the app indexes a directory the user picks and
+// never copies, imports or writes to it. A background is pushed live from the
+// dock rather than saved into a theme, because it changes every song while a
+// theme is configured once.
+
+export interface MediaSettings {
+  /** Absolute path of the watched backgrounds folder. '' until the user picks one. */
+  folder: string
+  /**
+   * @deprecated Playlists now live in `<folder>/.proautomate/playlists.json` so
+   * they travel with the media. Read once on first scan to migrate, then empty.
+   */
+  playlists: MediaPlaylist[]
+}
+
+export type MediaKind = 'video' | 'image'
+
+export interface MediaItem {
+  /** Stable id derived from the absolute path — survives rescans. */
+  id: string
+  /** Filename without extension. */
+  name: string
+  path: string
+  kind: MediaKind
+  /** Lowercased extension without the dot, e.g. 'mp4'. */
+  ext: string
+  /** Subfolder name relative to the root, or '' for files sitting at the root. */
+  folder: string
+  sizeBytes: number
+}
+
+/** A subfolder of the watched root, including empty shelves the operator just created. */
+export interface MediaFolder {
+  /** Folder name relative to the root; '' is the root itself. */
+  id: string
+  name: string
+  count: number
+}
+
+/** An operator-built collection. Holds item ids and can span folders. */
+export interface MediaPlaylist {
+  id: string
+  name: string
+  /**
+   * Item ids, which are paths relative to the media root. An id that no longer
+   * resolves is KEPT so the dock can report it as missing rather than quietly
+   * shrinking the playlist.
+   */
+  itemIds: string[]
+  createdAt: number
+}
+
+/** Per-file playback — loop and a light color grade. Lives in the media manifest. */
+export interface MediaPlayback {
+  loop: boolean
+  /** Degrees, −180 to 180. Identity is 0. */
+  hue: number
+  /** Multiplier, 0 to 2. Identity is 1. */
+  saturation: number
+  /** Multiplier, 0.25 to 1.75. Identity is 1. */
+  brightness: number
+  /** Multiplier, 0.25 to 1.75. Identity is 1. */
+  contrast: number
+}
+
+export interface MediaLibrary {
+  folder: string
+  folders: MediaFolder[]
+  items: MediaItem[]
+  playlists: MediaPlaylist[]
+  /** Custom loop / color per item id. Missing keys use the identity defaults. */
+  playback: Record<string, MediaPlayback>
+  /** Item currently pushed to screen, or null. */
+  liveItemId: string | null
+  /** Set when the last scan failed — e.g. the folder was moved or unmounted. */
+  error: string | null
 }
 
 export interface CustomOverlayTheme {
   id: string
   name: string
+  /**
+   * What this theme is for. A lyric look and a verse look are not
+   * interchangeable — one fills the frame, the other sits in a third of it — so
+   * the library keeps them apart instead of offering every theme everywhere.
+   * Themes saved before this field existed normalize to 'scripture'.
+   */
+  kind: OverlayContentKind
   createdAt: number
   updatedAt: number
   theme: OverlayTheme
@@ -167,6 +289,12 @@ export interface OverlayTheme {
     mediaPath?: string
     /** How image/video media fills the 1920×1080 frame. Default 'cover'. */
     mediaFit?: 'cover' | 'contain' | 'fill'
+    /** Videos only. Default false — loop is an explicit choice. */
+    mediaLoop?: boolean
+    hue?: number
+    saturation?: number
+    brightness?: number
+    contrast?: number
   }
   verse: OverlayTextStyle
   reference: OverlayTextStyle & {
@@ -180,7 +308,7 @@ export interface OverlayTheme {
     backdropBox: boolean   // rounded box behind the text block
     backdropColor: string  // rgba recommended
     backdropRadiusPx: number // 0–64
-    /** Auto-size verse text to fill its box, capped by verse.fontSizePx. */
+    /** Auto-size verse text to the box: shrink long passages, keep short lines a natural size. */
     autoFitText: boolean
   }
 }
@@ -192,6 +320,27 @@ export interface OverlayTheme {
 // live in src/lib/overlay-outputs.ts.
 
 export type OverlayOutputKind = 'ndi' | 'library' | 'message' | 'stage'
+
+/**
+ * What is being pushed. Scripture and lyrics land on the same outputs but rarely
+ * want the same look — a verse reads as a lower third, a lyric slide fills the
+ * frame — so each output can carry a per-kind override (`OverlayOutput.lyrics`).
+ */
+export type OverlayContentKind = 'scripture' | 'lyrics'
+
+/**
+ * A content-kind override on one output: the styling and token template used
+ * when that kind is pushed. `null` on an output means "use the output's own
+ * theme/template", which is what keeps scripture behaviour unchanged.
+ */
+export interface OverlayOutputVariant {
+  /** Source theme in `themeLibrary`, or null when `theme` is a one-off. Display only. */
+  themeId: string | null
+  /** Resolved copy — rendering never depends on the library still holding `themeId`. */
+  theme: OverlayTheme
+  /** Token template for `message`/`stage` kinds; same {Reference}/{Text} syntax. */
+  template: string
+}
 
 /** The ProPresenter layer an output writes to. Two outputs on the same layer compete. */
 export type OverlayLayer = 'presentation' | 'messages' | 'stage'
@@ -223,6 +372,12 @@ export interface OverlayOutput {
   // — kind: 'message' | 'stage' —
   /** Token template; same {Reference}/{Text} syntax as the legacy `overlay.template`. */
   template: string
+  /**
+   * Lyrics-specific styling and template. `null` — the default — means lyric
+   * pushes reuse the scripture theme and template above, so turning the
+   * override off anywhere always falls back to one configured look.
+   */
+  lyrics: OverlayOutputVariant | null
 }
 
 /** Per-output result of one fan-out push. */
@@ -326,6 +481,7 @@ export type BootstrapResource =
   | 'sermonPlans'
   | 'livePlan'
   | 'lyrics'
+  | 'onboarding'
 
 export interface BootstrapResourceError {
   resource: BootstrapResource
@@ -354,6 +510,8 @@ export interface AppBootstrapSnapshot {
   sermonPlans: SermonPlan[]
   livePlan: LivePlanState | null
   lyrics: LyricsSong[]
+  /** Read from disk like everything else here — never from the network. */
+  onboarding: OnboardingState
   errors: BootstrapResourceError[]
   completedAt: number
 }
@@ -816,6 +974,12 @@ export interface LyricsAPI {
   delete: (id: string) => Promise<boolean>
   toggleFavorite: (id: string) => Promise<boolean>
   sendToProPresenter: (songId: string, options?: SongPresentOptions) => Promise<void>
+  /**
+   * Pushes a single slide of a song to the configured overlay outputs.
+   * `slideIndex` is zero-based into the song's flat slide list, built with the
+   * same `buildSlides` the library grid renders from.
+   */
+  pushSlide: (songId: string, slideIndex: number) => Promise<void>
   addToPlaylist: (songId: string, playlistId: string) => Promise<void>
   /**
    * Translates singable lines to English and inserts `(gloss)` under each line.
@@ -970,6 +1134,18 @@ export interface AppAPI {
   onBootstrapProgress: (callback: (progress: BootstrapProgress) => void) => Unsubscribe
 }
 
+export interface OnboardingAPI {
+  getState: () => Promise<OnboardingState>
+  completeStep: (step: OnboardingStepId) => Promise<OnboardingState>
+  skipStep: (step: OnboardingStepId) => Promise<OnboardingState>
+  setCurrentStep: (step: OnboardingStepId) => Promise<OnboardingState>
+  /** Ends the wizard wherever it stands. */
+  finish: () => Promise<OnboardingState>
+  /** "Run setup again" — reopens the wizard; settings are untouched. */
+  reset: () => Promise<OnboardingState>
+  onStateChange: (callback: (state: OnboardingState) => void) => Unsubscribe
+}
+
 export interface ProAutomateAPI {
   app: AppAPI
   propresenter: ProPresenterAPI
@@ -981,6 +1157,34 @@ export interface ProAutomateAPI {
   orchestrator: OrchestratorAPI
   resilience: ResilienceAPI
   ndi: NdiAPI
+  media: MediaAPI
+  onboarding: OnboardingAPI
+}
+
+export interface MediaAPI {
+  getLibrary: () => Promise<MediaLibrary>
+  /** Native folder picker; resolves to the library for the folder that was chosen. */
+  chooseFolder: () => Promise<MediaLibrary>
+  rescan: () => Promise<MediaLibrary>
+  /** Creates an empty subfolder in the media folder. Never moves existing files. */
+  createFolder: (name: string) => Promise<MediaLibrary>
+  /**
+   * Puts a background on screen and cuts ProPresenter to the NDI video input.
+   * `applied` is false when the overlay could not be sent.
+   */
+  push: (itemId: string) => Promise<{ applied: boolean }>
+  clear: () => Promise<MediaLibrary>
+  createPlaylist: (name: string) => Promise<MediaLibrary>
+  renamePlaylist: (id: string, name: string) => Promise<MediaLibrary>
+  deletePlaylist: (id: string) => Promise<MediaLibrary>
+  setPlaylistItems: (id: string, itemIds: string[]) => Promise<MediaLibrary>
+  /**
+   * Native file picker, then add those backgrounds to the playlist.
+   * Files already in the media folder are referenced; anything else is copied in.
+   */
+  addMediaToPlaylist: (playlistId: string) => Promise<MediaLibrary>
+  setPlayback: (itemId: string, playback: Partial<MediaPlayback>) => Promise<MediaLibrary>
+  onLibraryChange: (callback: (library: MediaLibrary) => void) => () => void
 }
 
 // ─── IPC channel constants ────────────────────────────────────────────────────
@@ -1043,6 +1247,21 @@ export const IPC = {
     TRANSCRIPT:     'transcription:transcript',     // push
     INTERIM:        'transcription:interim',        // push
   },
+  MEDIA: {
+    GET_LIBRARY:     'media:getLibrary',            // invoke
+    CHOOSE_FOLDER:   'media:chooseFolder',          // invoke
+    RESCAN:          'media:rescan',                // invoke
+    CREATE_FOLDER:   'media:createFolder',           // invoke
+    PUSH:            'media:push',                  // invoke
+    CLEAR:           'media:clear',                 // invoke
+    CREATE_PLAYLIST: 'media:createPlaylist',        // invoke
+    RENAME_PLAYLIST: 'media:renamePlaylist',        // invoke
+    DELETE_PLAYLIST: 'media:deletePlaylist',        // invoke
+    SET_PLAYLIST_ITEMS: 'media:setPlaylistItems',   // invoke
+    ADD_MEDIA_TO_PLAYLIST: 'media:addMediaToPlaylist', // invoke
+    SET_PLAYBACK:    'media:setPlayback',           // invoke
+    LIBRARY:         'media:library',               // push (MediaLibrary)
+  },
   LYRICS: {
     SEARCH:          'lyrics:search',               // invoke
     SEARCH_ONLINE:   'lyrics:searchOnline',         // invoke
@@ -1054,6 +1273,7 @@ export const IPC = {
     DELETE:          'lyrics:delete',               // invoke
     TOGGLE_FAVORITE: 'lyrics:toggleFavorite',       // invoke
     SEND_TO_PP:      'lyrics:sendToProPresenter',   // invoke
+    PUSH_SLIDE:      'lyrics:pushSlide',             // invoke
     ADD_TO_PLAYLIST: 'lyrics:addToPlaylist',        // invoke
     TRANSLATE:       'lyrics:translate',            // invoke
   },
@@ -1083,5 +1303,14 @@ export const IPC = {
     GET_STATUS:         'ndi:getStatus',         // invoke — { available, sending, ppInputConfigured, outputs }
     GET_VIDEO_INPUTS:   'ndi:getVideoInputs',    // invoke — PPVideoInputInfo[]
     PICK_OVERLAY_MEDIA: 'ndi:pickOverlayMedia',  // invoke — native file dialog → absolute path | null
+  },
+  ONBOARDING: {
+    GET_STATE:     'onboarding:getState',       // invoke — OnboardingState
+    COMPLETE_STEP: 'onboarding:completeStep',   // invoke
+    SKIP_STEP:     'onboarding:skipStep',       // invoke
+    SET_CURRENT:   'onboarding:setCurrent',     // invoke
+    FINISH:        'onboarding:finish',         // invoke
+    RESET:         'onboarding:reset',          // invoke
+    STATE:         'onboarding:state',          // push (OnboardingState)
   },
 } as const

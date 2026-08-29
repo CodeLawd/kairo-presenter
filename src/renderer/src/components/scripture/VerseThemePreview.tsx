@@ -5,11 +5,9 @@ import {
   formatOverlayVerseText,
 } from "@shared/overlay-content";
 import { renderOverlayHTML } from "@shared/overlay-template";
+import { ScaledOverlayPreview } from "@/components/overlay/ScaledOverlayPreview";
 import type { OverlayTheme, ScriptureResult } from "@shared/ipc";
 import type { SendStatus } from "./types";
-
-const FRAME_WIDTH = 1920;
-const FRAME_HEIGHT = 1080;
 
 export interface VerseThemePreviewProps {
   result: ScriptureResult;
@@ -28,6 +26,11 @@ export interface VerseThemePreviewProps {
   sendStatus: SendStatus;
   onSelect: () => void;
   cardRef: (element: HTMLButtonElement | null) => void;
+  /**
+   * Card chrome (translation + Live) sits under the 16:9 frame so the slide
+   * itself matches NDI. Hide it on the operator live-output monitor.
+   */
+  chrome?: boolean;
 }
 
 export function VerseThemePreview({
@@ -43,6 +46,7 @@ export function VerseThemePreview({
   sendStatus,
   onSelect,
   cardRef,
+  chrome = true,
 }: VerseThemePreviewProps): React.ReactElement {
   const reference = formatCardReference(result.reference);
   const text = formatOverlayVerseText(result.verses, {
@@ -52,42 +56,45 @@ export function VerseThemePreview({
 
   const html = useMemo(() => {
     if (!text) return null;
-    return renderOverlayHTML(theme, reference, text, FRAME_WIDTH, FRAME_HEIGHT);
+    return renderOverlayHTML(theme, reference, text);
   }, [theme, reference, text]);
 
-  const scale = width > 0 ? width / FRAME_WIDTH : 0;
   const showLiveBadge = isLive || sendStatus === "sent";
+  const status =
+    sendStatus === "sending"
+      ? "Sending"
+      : sendStatus === "error"
+        ? "Failed"
+        : showLiveBadge
+          ? "Live"
+          : null;
 
   return (
     <button
       ref={cardRef}
       type="button"
       className={cn(
-        "group relative shrink-0 rounded-xl border text-left shadow-sm transition-all focus-visible:outline-none",
+        "group relative flex shrink-0 flex-col overflow-hidden rounded-xl border text-left shadow-sm transition-all focus-visible:outline-none",
         isActive
           ? "border-teal-400 ring-2 ring-teal-400/70"
           : "border-surface-border/70 hover:border-slate-500 focus-visible:ring-1 focus-visible:ring-surface-border",
       )}
-      style={{ width, height }}
+      style={{ width }}
       onClick={onSelect}
       aria-pressed={isActive || isLive || isFocused}
       aria-current={isActive ? "true" : undefined}
       aria-label={`Send ${result.reference} live`}
     >
       <div
-        className="relative h-full w-full overflow-hidden rounded-[10px] bg-[repeating-conic-gradient(#1a1a1a_0%_25%,#0d0d0d_0%_50%)] bg-[length:12px_12px]"
+        className="relative w-full overflow-hidden"
+        style={{ height }}
         aria-hidden={!html}
       >
         {html ? (
-          <div
-            className="pointer-events-none absolute left-0 top-0 origin-top-left"
-            style={{
-              width: FRAME_WIDTH,
-              height: FRAME_HEIGHT,
-              transform: `scale(${scale})`,
-            }}
-            // eslint-disable-next-line react/no-danger -- shared WYSIWYG overlay template (escaped)
-            dangerouslySetInnerHTML={{ __html: html }}
+          <ScaledOverlayPreview
+            html={html}
+            autoFit={theme.layout.autoFitText}
+            fill
           />
         ) : (
           <div className="flex h-full items-center justify-center px-3">
@@ -98,30 +105,26 @@ export function VerseThemePreview({
         )}
       </div>
 
-      <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-start gap-1 p-1.5">
-        <span className="rounded bg-black/55 px-1.5 py-0.5 font-sans text-[9px] font-bold uppercase tracking-wider text-slate-200 backdrop-blur-sm">
-          {result.translation}
+      {chrome && (
+        <span className="flex min-h-[18px] items-center justify-between gap-2 px-1.5 py-1">
+          <span className="font-sans text-[9px] font-bold uppercase tracking-wider text-slate-500">
+            {result.translation}
+          </span>
+          {status && (
+            <span
+              className={cn(
+                "rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider",
+                sendStatus === "error"
+                  ? "bg-red-600/90 text-white"
+                  : sendStatus === "sending"
+                    ? "bg-slate-800 text-slate-100"
+                    : "bg-teal-500/95 text-white",
+              )}
+            >
+              {status}
+            </span>
+          )}
         </span>
-      </div>
-
-      {(sendStatus === "sending" || sendStatus === "error" || showLiveBadge) && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-center p-1.5">
-          {sendStatus === "sending" && (
-            <span className="rounded-full bg-slate-900/85 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-slate-100 shadow-sm ring-1 ring-white/10 backdrop-blur-sm">
-              Sending
-            </span>
-          )}
-          {sendStatus === "error" && (
-            <span className="rounded-full bg-red-600/90 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white shadow-sm backdrop-blur-sm">
-              Failed
-            </span>
-          )}
-          {showLiveBadge && sendStatus !== "sending" && sendStatus !== "error" && (
-            <span className="rounded-full bg-teal-500/95 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white shadow-sm ring-1 ring-teal-300/30 backdrop-blur-sm">
-              Live
-            </span>
-          )}
-        </div>
       )}
     </button>
   );

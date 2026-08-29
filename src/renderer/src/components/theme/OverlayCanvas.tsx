@@ -1,11 +1,13 @@
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
+import { X } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { OverlayBox, OverlayTheme } from '@shared/ipc'
+import type { OverlayBox, OverlayContentKind, OverlayTheme } from '@shared/ipc'
 import {
   moveOverlayBox,
   resizeOverlayBox,
   type ResizeHandle,
 } from '@shared/overlay-boxes'
+import { overlayLayerLabel } from '@shared/overlay-outputs'
 
 export type OverlayLayerId = 'verse' | 'reference'
 
@@ -35,16 +37,30 @@ const HANDLE_CLASS: Record<ResizeHandle, string> = {
 
 interface OverlayCanvasProps {
   theme: OverlayTheme
+  contentKind: OverlayContentKind
   selected: OverlayLayerId | null
   onSelect: (id: OverlayLayerId | null) => void
   onBoxChange: (id: OverlayLayerId, box: OverlayBox) => void
+  /** Hides a layer — the canvas's Delete key and the frame's × both call this. */
+  onDeleteLayer: (id: OverlayLayerId) => void
+}
+
+/**
+ * Only the reference can be removed: the verse box holds the content itself, and
+ * the theme has no flag that would hide it. Selecting it and pressing Delete is
+ * a no-op rather than an error.
+ */
+function isDeletable(id: OverlayLayerId): boolean {
+  return id === 'reference'
 }
 
 export function OverlayCanvas({
   theme,
+  contentKind,
   selected,
   onSelect,
   onBoxChange,
+  onDeleteLayer,
 }: OverlayCanvasProps): React.ReactElement {
   const frameRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<{
@@ -146,6 +162,27 @@ export function OverlayCanvas({
     window.addEventListener('mouseup', up, true)
   }
 
+  // Delete/Backspace on the selected box, the way any canvas editor behaves.
+  // Ignored while typing so the number and color fields keep their own keys.
+  useEffect(() => {
+    if (!selected || !isDeletable(selected)) return
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== 'Delete' && event.key !== 'Backspace') return
+      const target = event.target as HTMLElement | null
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) return
+      event.preventDefault()
+      onDeleteLayer(selected)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [selected, onDeleteLayer])
+
   const layers: OverlayLayerId[] =
     theme.reference.show ? ['verse', 'reference'] : ['verse']
 
@@ -162,11 +199,12 @@ export function OverlayCanvas({
         <LayerFrame
           key={id}
           id={id}
-          label={id === 'verse' ? 'Verse' : 'Reference'}
+          label={overlayLayerLabel(contentKind, id === 'verse' ? 'verse' : 'reference')}
           box={id === 'verse' ? theme.verse.box : theme.reference.box}
           selected={selected === id}
           stacked={selected === id ? 30 : id === 'reference' ? 20 : 10}
           accent={id === 'verse' ? 'teal' : 'amber'}
+          onDelete={isDeletable(id) ? () => onDeleteLayer(id) : undefined}
           onPointerDown={beginDrag}
         />
       ))}
@@ -181,6 +219,7 @@ function LayerFrame({
   selected,
   stacked,
   accent,
+  onDelete,
   onPointerDown,
 }: {
   id: OverlayLayerId
@@ -189,6 +228,8 @@ function LayerFrame({
   selected: boolean
   stacked: number
   accent: 'teal' | 'amber'
+  /** Omitted for layers that cannot be hidden. */
+  onDelete?: () => void
   onPointerDown: (
     event: React.PointerEvent<HTMLElement>,
     id: OverlayLayerId,
@@ -232,6 +273,27 @@ function LayerFrame({
       >
         {label}
       </span>
+      {selected && onDelete && (
+        <button
+          type="button"
+          // The drag handler lives on pointerdown, so it has to be stopped here
+          // or clicking × would start a drag before the click ever lands.
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation()
+            onDelete()
+          }}
+          title={`Hide ${label} (Delete)`}
+          aria-label={`Hide ${label}`}
+          className={cn(
+            'absolute -top-5 -right-1 z-20 grid h-4 w-4 place-items-center rounded text-white transition-opacity hover:opacity-80',
+            chip
+          )}
+          style={{ pointerEvents: 'auto' }}
+        >
+          <X size={10} aria-hidden="true" />
+        </button>
+      )}
       {selected &&
         HANDLES.map((handle) => (
           <span

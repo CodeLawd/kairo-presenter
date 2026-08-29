@@ -47,6 +47,7 @@ import {
 import type { PassageFollowState } from "@shared/scripture-live-progress";
 import type {
   AppSettings,
+  MediaLibrary,
   ScriptureResult,
   ScriptureSuggestion,
   PendingAutoPresent,
@@ -54,6 +55,7 @@ import type {
   TranscriptResult,
   ResilienceStatus,
 } from "@shared/ipc";
+import { normalizeMediaPlayback } from "@shared/media-playback";
 import { useBootstrapStore } from "@/bootstrap/useBootstrapStore";
 import { OperatorQueueSearch } from "@/components/operator/OperatorQueueSearch";
 
@@ -264,6 +266,7 @@ export default function Operator(): React.ReactElement {
   const [overlay, setOverlay] = useState<AppSettings["overlay"]>(
     DEFAULT_OVERLAY_SETTINGS,
   );
+  const [mediaLibrary, setMediaLibrary] = useState<MediaLibrary | null>(null);
   const [defaultTranslation, setDefaultTranslation] =
     useState<AppSettings["scripture"]["defaultTranslation"]>("NKJV");
   const [pendingAuto, setPendingAuto] = useState<PendingAutoPresent[]>([]);
@@ -420,6 +423,13 @@ export default function Operator(): React.ReactElement {
     };
   }, [activeProjection, defaultTranslation, suggestions]);
 
+  const liveMedia = useMemo(() => {
+    if (!mediaLibrary?.liveItemId) return null;
+    const item = mediaLibrary.items.find((candidate) => candidate.id === mediaLibrary.liveItemId);
+    if (!item) return null;
+    return { item, playback: normalizeMediaPlayback(mediaLibrary.playback[item.id]) };
+  }, [mediaLibrary]);
+
   useEffect(() => {
     suggestionsRef.current = suggestions;
   }, [suggestions]);
@@ -430,6 +440,21 @@ export default function Operator(): React.ReactElement {
     setOverlay(normalizeOverlaySettings(bootstrapSettings.overlay));
     setDefaultTranslation(bootstrapSettings.scripture.defaultTranslation);
   }, [bootstrapSettings]);
+
+  useEffect(() => {
+    let cancelled = false;
+    window.api.media
+      .getLibrary()
+      .then((library) => {
+        if (!cancelled) setMediaLibrary(library);
+      })
+      .catch(() => undefined);
+    const off = window.api.media.onLibraryChange(setMediaLibrary);
+    return () => {
+      cancelled = true;
+      off();
+    };
+  }, []);
 
   const advanceAutoFollowFromText = useCallback((text: string): void => {
     const current = followStateRef.current;
@@ -879,12 +904,9 @@ export default function Operator(): React.ReactElement {
       // Same passage staged twice is always a misclick, never an intent.
       prev.some((item) => item.reference === entry.reference)
         ? prev
-        : [
-            ...prev,
-            { ...entry, id: `queued-${entry.reference}-${Date.now()}` },
-          ],
-    );
-  }, []);
+        : [{ ...entry, id: `queued-${entry.reference}-${Date.now()}` }, ...prev],
+    )
+  }, [])
 
   const removeFromQueue = useCallback((id: string): void => {
     setQueue((prev) => prev.filter((item) => item.id !== id));
@@ -962,18 +984,22 @@ export default function Operator(): React.ReactElement {
     }
   }, []);
 
-  const enqueueSearchResults = useCallback(
-    (results: ScriptureResult[]): void => {
+  const enqueueSearchResults = useCallback((results: ScriptureResult[]): void => {
+    setQueue((prev) => {
+      const seen = new Set(prev.map((item) => item.reference))
+      const incoming: ScriptureSuggestion[] = []
       for (const result of results) {
+        if (seen.has(result.reference)) continue
+        seen.add(result.reference)
         const verseCount = result.verses.length
         const isRange = verseCount > 1
-        addToQueue({
+        incoming.push({
           id: `manual-${result.reference}-${Date.now()}`,
           reference: result.reference,
           verses: result.verses,
           translation: result.translation,
           confidence: 1,
-          source: "manual",
+          source: 'manual',
           triggerText: result.reference,
           ...(isRange
             ? {
@@ -983,11 +1009,11 @@ export default function Operator(): React.ReactElement {
                 passageLength: verseCount,
               }
             : {}),
-        });
+        })
       }
-    },
-    [addToQueue],
-  );
+      return incoming.length === 0 ? prev : [...incoming, ...prev]
+    })
+  }, [])
 
   const handleToggleAutoMode = async () => {
     const nextVal = !autoModeEnabled;
@@ -1611,10 +1637,14 @@ export default function Operator(): React.ReactElement {
 
         {/* RIGHT COLUMN: live output preview and essential controls */}
         <aside
-          className="shrink-0 flex flex-col bg-surface-secondary/10"
+          className="shrink-0 flex min-h-0 flex-col overflow-hidden bg-surface-secondary/10"
           style={{ width: previewWidth }}
         >
-          <div className="border-b border-surface-border p-4 space-y-3 shrink-0">
+          {/* Live output scrolls instead of holding its full height. When the
+              window (or the background dock) leaves this column short, something
+              has to give — and it must not be the pipeline controls at the
+              bottom, which are the ones the operator reaches for mid-service. */}
+          <div className="min-h-0 shrink overflow-y-auto border-b border-surface-border p-4 space-y-3">
             <div>
               <p className="text-xs font-semibold text-slate-300">
                 Live output
@@ -1626,6 +1656,7 @@ export default function Operator(): React.ReactElement {
               selectedOutputId={previewOutputId}
               onSelectOutput={setPreviewOutputId}
               result={livePreviewResult}
+              liveMedia={liveMedia}
               overlay={overlay}
               width={liveOutputPreviewWidth}
               height={liveOutputPreviewHeight}
@@ -1665,7 +1696,10 @@ export default function Operator(): React.ReactElement {
             </div>
           </div>
 
-          <div className="flex min-h-0 flex-1 flex-col">
+          {/* overflow-hidden is load-bearing: without it the fixed-height header
+              and search below spill past this box and paint over the pipeline
+              controls once the column is squeezed. */}
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
             <div className="flex shrink-0 items-center justify-between gap-3 border-b border-surface-border px-4 py-2.5">
               <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
                 Queue

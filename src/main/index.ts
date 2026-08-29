@@ -1,6 +1,7 @@
 import { app, BrowserWindow, Menu, shell, protocol, net } from 'electron'
 import { join, resolve } from 'path'
 import { pathToFileURL } from 'url'
+import { realpathSync } from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import log from 'electron-log/main'
 import { configuredMediaPaths } from '@shared/overlay-outputs'
@@ -10,10 +11,10 @@ import { initDatabase, store } from './db'
 import { lyricsService } from './services/lyrics'
 import { scriptureService } from './services/scripture'
 import { initOfflineBibles } from './services/scripture/offline-bibles'
-import { proPresenterService } from './services/propresenter'
 import { ndiService } from './services/ndi'
 import { overlayWindow } from './services/ndi/overlay-window'
 import { isPickedOverlayMediaAllowed } from './services/ndi/media-allowlist'
+import { isInsideRoot, mediaService } from './services/media'
 
 log.initialize()
 log.transports.file.level = 'info'
@@ -27,6 +28,32 @@ log.info('ProAutomate starting', { version: app.getVersion() })
 protocol.registerSchemesAsPrivileged([
   { scheme: 'pa-media', privileges: { stream: true } },
 ])
+
+/**
+ * Whether `requested` sits inside the backgrounds folder the user picked.
+ *
+ * The dock indexes a whole directory, so its files cannot be enumerated into an
+ * exact-path allowlist the way a hand-picked theme background is — a file
+ * dropped in after the last scan has to play too. That makes this a PREFIX
+ * test, and the two ways a prefix test leaks are closed here:
+ *
+ *   - both sides are realpath'd, so a symlink inside the folder cannot point at
+ *     /etc and inherit the folder's permission;
+ *   - the comparison requires a path separator after the root, so a sibling
+ *     directory like `<root>-private` does not match.
+ *
+ * The root is only ever a directory the user chose in a native picker.
+ */
+function isUnderMediaFolder(requested: string): boolean {
+  const root = mediaService.allowedRoot()
+  if (!root) return false
+  try {
+    return isInsideRoot(realpathSync(requested), realpathSync(root))
+  } catch {
+    // A path that cannot be resolved (missing, or a broken symlink) is not served.
+    return false
+  }
+}
 
 function registerPaMediaProtocol(): void {
   protocol.handle('pa-media', (request) => {
@@ -46,7 +73,8 @@ function registerPaMediaProtocol(): void {
       const allowed = new Set(
         configuredMediaPaths(store.get('overlay'), store.get('themeLibrary')).map((p) => resolve(p))
       )
-      if (!allowed.has(requested) && !isPickedOverlayMediaAllowed(requested)) {
+      if (!allowed.has(requested) && !isPickedOverlayMediaAllowed(requested) &&
+          !isUnderMediaFolder(requested)) {
         log.warn('[pa-media] Blocked non-configured path', { requested })
         return new Response('Forbidden', { status: 403 })
       }
@@ -162,18 +190,8 @@ app.whenReady().then(() => {
     log.error('[NDI] start() failed:', (err as Error).message)
   })
 
-  // Auto-connect to ProPresenter using stored settings
-  const ppSettings = store.get('propresenter')
-  if (ppSettings && ppSettings.host) {
-    log.info('[PP] Auto-connecting to ProPresenter on startup', { host: ppSettings.host, port: ppSettings.port })
-    proPresenterService.connect({
-      host: ppSettings.host,
-      port: ppSettings.port,
-      password: ppSettings.password || ''
-    }).catch((err) => {
-      log.error('[PP] Auto-connection on startup failed:', (err as Error).message)
-    })
-  }
+  // First ProPresenter handshake is the launch gate in the renderer — connecting
+  // here would retry (and log timeouts) before the operator has confirmed PP is open.
 
   createWindow()
 

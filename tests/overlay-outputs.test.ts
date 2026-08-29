@@ -8,7 +8,17 @@ import {
   normalizeOverlayOutputs,
   normalizeOverlaySettings,
 } from "../src/lib/overlay-defaults";
-import { liveOverlayTheme } from "../src/lib/overlay-outputs";
+import {
+  hasContentOverride,
+  inheritLyricsTheme,
+  themeForContentKind,
+  liveOverlayTheme,
+  outputTemplateFor,
+  outputThemeFor,
+  outputThemeIdFor,
+  setContentOverride,
+  withContentPatch,
+} from "../src/lib/overlay-outputs";
 
 const legacy = {
   mode: "auto" as const,
@@ -134,4 +144,190 @@ test("live overlay theme prefers the enabled NDI output over a disabled one", ()
   };
 
   assert.equal(liveOverlayTheme(overlay).verse.color, "#ff0000");
+});
+
+// ─── Per-content-kind overrides ───────────────────────────────────────────────
+
+const RED_THEME = {
+  ...DEFAULT_OVERLAY_THEME,
+  verse: { ...DEFAULT_OVERLAY_THEME.verse, color: "#ff0000" },
+};
+
+test("an output with no override resolves lyrics to its scripture theme and template", () => {
+  const output = makeOverlayOutput("main", "ndi", { theme: RED_THEME, template: "{Text}" });
+
+  assert.equal(hasContentOverride(output, "lyrics"), false);
+  assert.equal(outputThemeFor(output, "lyrics").verse.color, "#ff0000");
+  assert.equal(outputTemplateFor(output, "lyrics"), "{Text}");
+});
+
+test("lyrics inheriting scripture do not take Fit to box with them", () => {
+  const fitted = {
+    ...RED_THEME,
+    layout: { ...RED_THEME.layout, autoFitText: true },
+  };
+  const output = makeOverlayOutput("main", "ndi", { theme: fitted });
+
+  assert.equal(outputThemeFor(output, "scripture").layout.autoFitText, true);
+  assert.equal(outputThemeFor(output, "lyrics").layout.autoFitText, false);
+  assert.equal(outputThemeFor(output, "lyrics").verse.color, "#ff0000");
+  assert.equal(inheritLyricsTheme(fitted).layout.autoFitText, false);
+});
+
+test("an applied lyrics theme keeps its own Fit to box", () => {
+  const lyricsTheme = {
+    ...DEFAULT_OVERLAY_THEME,
+    layout: { ...DEFAULT_OVERLAY_THEME.layout, autoFitText: true },
+  };
+  const output = withContentPatch(
+    setContentOverride(makeOverlayOutput("main", "ndi"), "lyrics", true),
+    "lyrics",
+    { themeId: "lyrics-stage", theme: lyricsTheme },
+  );
+
+  assert.equal(outputThemeFor(output, "lyrics").layout.autoFitText, true);
+  assert.equal(outputThemeFor(output, "scripture").layout.autoFitText, false);
+});
+
+test("seeding a lyrics override does not copy scripture Fit to box", () => {
+  const fitted = {
+    ...RED_THEME,
+    layout: { ...RED_THEME.layout, autoFitText: true },
+  };
+  const output = setContentOverride(
+    makeOverlayOutput("main", "ndi", { theme: fitted, themeId: "theme-1" }),
+    "lyrics",
+    true,
+  );
+
+  assert.equal(outputThemeFor(output, "lyrics").layout.autoFitText, false);
+  assert.equal(outputThemeFor(output, "scripture").layout.autoFitText, true);
+});
+
+test("enabling the lyrics override seeds styling from scripture but drops the citation", () => {
+  const base = makeOverlayOutput("main", "ndi", {
+    theme: RED_THEME,
+    themeId: "theme-1",
+    template: "{Reference}\n{Text}",
+  });
+  const output = setContentOverride(base, "lyrics", true);
+
+  assert.equal(hasContentOverride(output, "lyrics"), true);
+  assert.equal(outputThemeFor(output, "lyrics").verse.color, "#ff0000");
+  assert.equal(outputThemeIdFor(output, "lyrics"), "theme-1");
+
+  // A lyric slide has no reference to print — neither layer nor token.
+  assert.equal(outputThemeFor(output, "lyrics").reference.show, false);
+  assert.equal(outputTemplateFor(output, "lyrics"), "{Text}");
+  // ...and the scripture side keeps both.
+  assert.equal(outputThemeFor(output, "scripture").reference.show, true);
+  assert.equal(outputTemplateFor(output, "scripture"), "{Reference}\n{Text}");
+});
+
+test("applying a theme to one output leaves every other output's theme untouched", () => {
+  const main = makeOverlayOutput("main", "ndi", { theme: DEFAULT_OVERLAY_THEME });
+  const spare = makeOverlayOutput("spare", "ndi", { theme: DEFAULT_OVERLAY_THEME });
+  const outputs = [main, spare].map((output) =>
+    output.id !== "main"
+      ? output
+      : withContentPatch(output, "scripture", { theme: structuredClone(RED_THEME) }),
+  );
+
+  assert.equal(outputs[1], spare);
+  assert.equal(outputThemeFor(outputs[0], "scripture").verse.color, "#ff0000");
+  assert.equal(outputThemeFor(outputs[1], "scripture").verse.color, DEFAULT_OVERLAY_THEME.verse.color);
+});
+
+test("editing the lyrics override leaves the scripture config untouched", () => {
+  const base = setContentOverride(
+    makeOverlayOutput("main", "ndi", { theme: DEFAULT_OVERLAY_THEME, template: "{Reference}" }),
+    "lyrics",
+    true,
+  );
+  const output = withContentPatch(base, "lyrics", { theme: RED_THEME, template: "{Text}" });
+
+  assert.equal(outputThemeFor(output, "lyrics").verse.color, "#ff0000");
+  assert.equal(outputTemplateFor(output, "lyrics"), "{Text}");
+  assert.equal(outputThemeFor(output, "scripture").verse.color, DEFAULT_OVERLAY_THEME.verse.color);
+  assert.equal(outputTemplateFor(output, "scripture"), "{Reference}");
+});
+
+test("a scripture patch writes the base fields even when a lyrics override exists", () => {
+  const base = setContentOverride(makeOverlayOutput("main", "ndi"), "lyrics", true);
+  const output = withContentPatch(base, "scripture", { template: "{Reference}" });
+
+  assert.equal(outputTemplateFor(output, "scripture"), "{Reference}");
+  assert.equal(hasContentOverride(output, "lyrics"), true);
+});
+
+test("turning the override off returns lyrics to the scripture theme", () => {
+  const withOverride = withContentPatch(
+    setContentOverride(makeOverlayOutput("main", "ndi"), "lyrics", true),
+    "lyrics",
+    { theme: RED_THEME },
+  );
+  const output = setContentOverride(withOverride, "lyrics", false);
+
+  assert.equal(output.lyrics, null);
+  assert.equal(outputThemeFor(output, "lyrics").verse.color, DEFAULT_OVERLAY_THEME.verse.color);
+});
+
+test("liveOverlayTheme answers per content kind", () => {
+  const overlay = {
+    ...DEFAULT_OVERLAY_SETTINGS,
+    outputs: [
+      withContentPatch(
+        setContentOverride(
+          makeOverlayOutput("on", "ndi", { enabled: true, theme: DEFAULT_OVERLAY_THEME }),
+          "lyrics",
+          true,
+        ),
+        "lyrics",
+        { theme: RED_THEME },
+      ),
+    ],
+  };
+
+  assert.equal(liveOverlayTheme(overlay, "scripture").verse.color, DEFAULT_OVERLAY_THEME.verse.color);
+  assert.equal(liveOverlayTheme(overlay, "lyrics").verse.color, "#ff0000");
+});
+
+test("a stored lyrics override survives normalization; an absent one stays null", () => {
+  const [withOverride, without] = normalizeOverlayOutputs(
+    [
+      { id: "a", kind: "ndi", lyrics: { themeId: "t", theme: RED_THEME, template: "{Text}" } },
+      { id: "b", kind: "message" },
+    ],
+    legacy,
+  );
+
+  assert.equal(withOverride.lyrics?.template, "{Text}");
+  assert.equal(withOverride.lyrics?.theme.verse.color, "#ff0000");
+  assert.equal(without.lyrics, null);
+});
+
+test("a lyrics theme can never carry a background", () => {
+  const withImage = {
+    ...DEFAULT_OVERLAY_THEME,
+    background: { ...DEFAULT_OVERLAY_THEME.background, type: "image" as const, mediaPath: "/tmp/a.png" },
+  };
+
+  // Backgrounds change every song, so they are pushed live rather than saved
+  // into a theme — a lyrics theme is text only.
+  assert.equal(themeForContentKind(withImage, "lyrics").background.type, "transparent");
+  // Scripture is untouched.
+  assert.equal(themeForContentKind(withImage, "scripture").background.type, "image");
+});
+
+test("seeding a lyrics override strips a background inherited from scripture", () => {
+  const base = makeOverlayOutput("main", "ndi", {
+    theme: {
+      ...DEFAULT_OVERLAY_THEME,
+      background: { ...DEFAULT_OVERLAY_THEME.background, type: "gradient" as const },
+    },
+  });
+  const output = setContentOverride(base, "lyrics", true);
+
+  assert.equal(outputThemeFor(output, "lyrics").background.type, "transparent");
+  assert.equal(outputThemeFor(output, "scripture").background.type, "gradient");
 });

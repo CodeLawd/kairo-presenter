@@ -9,6 +9,7 @@ import type {
   LivePlanState,
   LyricsSong,
   NdiStatus,
+  OnboardingState,
   OrchestratorStatus,
   ScriptureTranslationOption,
   SermonPlan,
@@ -18,6 +19,7 @@ import { normalizeOverlaySettings } from '@shared/overlay-defaults'
 import { useAppStore } from '@/stores/useAppStore'
 import { applyAppTheme } from '@/lib/appTheme'
 import { DEFAULT_SETTINGS } from '@/lib/defaultSettings'
+import { DEFAULT_ONBOARDING_STATE } from '@shared/cloud/onboarding'
 import {
   createBootstrapRunner,
   getBootstrapPhase,
@@ -41,6 +43,7 @@ interface BootstrapStore {
   lyrics: LyricsSong[]
   transcription: TranscriptResult[]
   orchestrator: OrchestratorStatus | null
+  onboarding: OnboardingState
 
   // ── Background integration state ──────────────────────────────────────────
   apiBibleAuth: ApiBibleAuthorizationState
@@ -60,6 +63,7 @@ interface BootstrapStore {
   setApiBibleAuth: (state: ApiBibleAuthorizationState) => void
   setAudioDevices: (devices: AudioDevice[]) => void
   setNdiStatus: (status: NdiStatus | null) => void
+  setOnboarding: (state: OnboardingState) => void
 }
 
 /**
@@ -82,6 +86,7 @@ export const useBootstrapStore = create<BootstrapStore>((set, get) => ({
   lyrics: [],
   transcription: [],
   orchestrator: null,
+  onboarding: DEFAULT_ONBOARDING_STATE,
 
   apiBibleAuth: 'unchecked',
   audioDevices: [],
@@ -110,6 +115,7 @@ export const useBootstrapStore = create<BootstrapStore>((set, get) => ({
   setApiBibleAuth: (apiBibleAuth) => set({ apiBibleAuth }),
   setAudioDevices: (audioDevices) => set({ audioDevices }),
   setNdiStatus: (ndiStatus) => set({ ndiStatus }),
+  setOnboarding: (onboarding) => set({ onboarding }),
 }))
 
 type SetState = (partial: Partial<BootstrapStore>) => void
@@ -146,6 +152,7 @@ function applySnapshot(set: SetState, snapshot: AppBootstrapSnapshot): void {
     lyrics: snapshot.lyrics,
     transcription: snapshot.transcription,
     orchestrator: snapshot.orchestrator,
+    onboarding: snapshot.onboarding ?? DEFAULT_ONBOARDING_STATE,
   })
 }
 

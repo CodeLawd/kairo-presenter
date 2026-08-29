@@ -11,6 +11,7 @@ interface FitElement {
   scrollHeight: number
   scrollWidth: number
   style: { fontSize: string }
+  querySelector(selector: string): FitElement | null
 }
 
 interface FitRoot {
@@ -35,16 +36,30 @@ export function largestFontThatFits(
   return lo
 }
 
+/** True when the verse text does not fit the clip box (the NDI-visible area). */
+export function overlayTextOverflows(
+  text: { scrollHeight: number; scrollWidth: number },
+  verse: { clientHeight: number; clientWidth: number },
+  box: { clientHeight: number; clientWidth: number }
+): boolean {
+  // Flex min-height:auto can grow `.pa-verse` with its content. The box is
+  // overflow:hidden, so it is the real 1920×1080 constraint.
+  const limitH = Math.max(1, Math.min(verse.clientHeight, box.clientHeight))
+  const limitW = Math.max(1, Math.min(verse.clientWidth, box.clientWidth))
+  return text.scrollHeight > limitH + 1 || text.scrollWidth > limitW + 1
+}
+
 export function applyOverlayAutoFit(root: FitRoot): void {
   const box = root.querySelector('.pa-verse-box')
   const verse = root.querySelector('.pa-verse')
   if (!box || !verse) return
   if (box.dataset.autoFit !== 'true') return
   const maxPx = Number(box.dataset.maxFontPx)
-  const cap = Number.isFinite(maxPx) && maxPx > 0 ? maxPx : 200
+  const cap = Number.isFinite(maxPx) && maxPx > 0 ? maxPx : 240
+  const text = verse.querySelector('.pa-verse-text') ?? verse
   const fitted = largestFontThatFits(12, cap, (px) => {
     verse.style.fontSize = `${px}px`
-    return verse.scrollHeight > box.clientHeight + 1 || verse.scrollWidth > box.clientWidth + 1
+    return overlayTextOverflows(text, verse, box)
   })
   verse.style.fontSize = `${fitted}px`
 }

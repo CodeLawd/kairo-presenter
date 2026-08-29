@@ -2,7 +2,8 @@ import { BrowserWindow } from 'electron'
 import log from 'electron-log/main'
 import overlayHtml from './overlay.html?asset'
 import { renderOverlayHTML } from '@shared/overlay-template'
-import type { OverlayTheme } from '@shared/ipc'
+import type { MediaPlayback, OverlayTheme } from '@shared/ipc'
+import { mediaFilterCss } from '@shared/media-playback'
 import { ndiService } from './index'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -25,6 +26,12 @@ class OverlayWindow {
   private creating: Promise<BrowserWindow> | null = null
   /** Which output last rendered here — see showScripture. */
   private lastOutputId: string | null = null
+  /**
+   * What is currently painted, kept so the background can be swapped underneath
+   * without the operator having to re-push the slide. Changing a background
+   * mid-song must not blank the words.
+   */
+  private lastRender: { reference: string; text: string; theme: OverlayTheme } | null = null
 
   private async ensureWindow(): Promise<BrowserWindow> {
     if (this.win && !this.win.isDestroyed()) return this.win
@@ -88,8 +95,8 @@ class OverlayWindow {
     reference: string,
     text: string,
     theme: OverlayTheme
-  ): Promise<void> {
-    if (!ndiService.getStatus().available) return
+  ): Promise<boolean> {
+    if (!ndiService.getStatus().available) return false
     if (this.lastOutputId !== null && this.lastOutputId !== outputId) {
       log.warn('[NDI] Overlay window reused by a second output — frames will overwrite', {
         previous: this.lastOutputId,
@@ -97,6 +104,56 @@ class OverlayWindow {
       })
     }
     this.lastOutputId = outputId
+    this.lastRender = { reference, text, theme }
+    await this.paint(reference, text, theme)
+    return true
+  }
+
+  /**
+   * Swaps the background under whatever is already on screen.
+   *
+   * Returns false when nothing has been pushed yet — the caller then knows the
+   * background is staged but not visible, rather than assuming it went live.
+   */
+  async setBackground(background: OverlayTheme['background']): Promise<boolean> {
+    if (!ndiService.getStatus().available) return false
+    const current = this.lastRender
+    if (!current) return false
+
+    const theme: OverlayTheme = { ...current.theme, background }
+    this.lastRender = { ...current, theme }
+    await this.paint(current.reference, current.text, theme)
+    return true
+  }
+
+  /**
+   * Updates loop and color on the current background without rebuilding the
+   * slide — a full paint restarts the video, which is unusable on a slider.
+   */
+  async patchBackgroundPlayback(playback: MediaPlayback): Promise<void> {
+    const current = this.lastRender
+    if (!current) return
+    const background: OverlayTheme['background'] = {
+      ...current.theme.background,
+      mediaLoop: playback.loop,
+      hue: playback.hue,
+      saturation: playback.saturation,
+      brightness: playback.brightness,
+      contrast: playback.contrast,
+    }
+    this.lastRender = { ...current, theme: { ...current.theme, background } }
+    if (!this.win || this.win.isDestroyed()) return
+    const filter = mediaFilterCss(playback)
+    await this.win.webContents.executeJavaScript(
+      `window.__patchBackground(${JSON.stringify(filter)}, ${playback.loop ? 'true' : 'false'})`,
+    )
+  }
+
+  private async paint(reference: string, text: string, theme: OverlayTheme): Promise<void> {
+    // Retry sender creation if an earlier attempt lost the name to another copy
+    // of the app. Cooldown-guarded inside the service, and a no-op once a sender
+    // exists — without this a startup clash would need an app restart to clear.
+    await ndiService.start()
 
     const win = await this.ensureWindow()
     if (win.isDestroyed()) return
@@ -109,6 +166,7 @@ class OverlayWindow {
   /** Blanks the overlay window content AND resets the NDI sender's repeating frame. */
   async clear(): Promise<void> {
     this.lastOutputId = null
+    this.lastRender = null
     ndiService.clearFrame()
     if (this.win && !this.win.isDestroyed()) {
       try {

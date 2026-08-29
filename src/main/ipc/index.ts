@@ -3,7 +3,10 @@ import type { OpenDialogOptions } from "electron";
 import log from "electron-log/main";
 import type {
   AppSettings,
+  MediaPlayback,
   NdiOutputStatus,
+  OnboardingState,
+  OnboardingStepId,
   OrchestratorConfig,
   ResilienceStatus,
 } from "@shared/ipc";
@@ -21,11 +24,15 @@ import { livePlanService } from "../services/scripture/live-plan";
 import { getDownloadManager, hasDownloadManager } from "../services/scripture/offline-bibles";
 import path from "path";
 import { lyricsService } from "../services/lyrics";
+import { buildSlides } from "@shared/lyrics-slides";
 import { orchestrator } from "../orchestrator";
 import { resilienceManager } from "../services/resilience";
 import { ndiService } from "../services/ndi";
+import { mediaService, MEDIA_FILE_EXTENSIONS } from "../services/media";
+import { overlayWindow } from "../services/ndi/overlay-window";
 import { allowPickedOverlayMedia } from "../services/ndi/media-allowlist";
 import { runBootstrap } from "../bootstrap";
+import { onboardingService } from "../services/cloud/onboarding";
 
 // ─── Broadcast helper ─────────────────────────────────────────────────────────
 
@@ -353,6 +360,22 @@ function registerLyricsHandlers(): void {
     await lyricsService.sendToProPresenter(songId, options);
   });
 
+  ipcMain.handle(IPC.LYRICS.PUSH_SLIDE, async (_event, songId: string, slideIndex: number) => {
+    const song = lyricsService.getSong(songId);
+    if (!song) throw new Error(`Song not found: ${songId}`);
+
+    // Same builder the library grid renders from, so `slideIndex` lines up with
+    // the tile the operator clicked.
+    const slides = buildSlides(song, { glossColor: store.get("lyrics").glossColor });
+    const slide = slides[slideIndex];
+    if (!slide) throw new Error(`Slide ${slideIndex + 1} not found in "${song.title}"`);
+
+    await orchestrator.presentLyricSlide(
+      `${song.title} — ${slide.sectionLabel}`,
+      slide.lines.join("\n"),
+    );
+  });
+
   ipcMain.handle(
     IPC.LYRICS.ADD_TO_PLAYLIST,
     async (_event, songId: string, playlistId: string) => {
@@ -409,6 +432,87 @@ function registerResilienceHandlers(): void {
 
 // ─── NDI handlers ──────────────────────────────────────────────────────────────
 
+function registerMediaHandlers(): void {
+  ipcMain.handle(IPC.MEDIA.GET_LIBRARY, () => mediaService.getLibrary());
+
+  ipcMain.handle(IPC.MEDIA.RESCAN, () => mediaService.scan());
+
+  ipcMain.handle(IPC.MEDIA.CREATE_FOLDER, (_event, name: string) =>
+    mediaService.createFolder(name),
+  );
+
+  ipcMain.handle(IPC.MEDIA.CHOOSE_FOLDER, async () => {
+    const result = await dialog.showOpenDialog({
+      title: "Choose your backgrounds folder",
+      properties: ["openDirectory", "createDirectory"],
+      buttonLabel: "Use this folder",
+    });
+    if (result.canceled || result.filePaths.length === 0) return mediaService.getLibrary();
+    return mediaService.setFolder(result.filePaths[0]);
+  });
+
+  /**
+   * Clicking a background IS the push. The overlay is painted immediately and
+   * ProPresenter is cut to the bound NDI video input.
+   */
+  ipcMain.handle(IPC.MEDIA.PUSH, async (_event, itemId: string) => {
+    const item = mediaService.getItem(itemId);
+    if (!item) throw new Error("That background is no longer in the folder.");
+
+    mediaService.setLiveItem(item.id);
+    const applied = await orchestrator.presentLiveBackground();
+
+    log.info("[Media] Background pushed", { name: item.name, applied });
+    return { applied };
+  });
+
+  ipcMain.handle(IPC.MEDIA.CLEAR, async () => {
+    mediaService.setLiveItem(null);
+    await overlayWindow.setBackground({
+      ...normalizeOverlaySettings(store.get("overlay")).theme.background,
+      type: "transparent",
+      mediaPath: "",
+    });
+    return mediaService.getLibrary();
+  });
+
+  ipcMain.handle(IPC.MEDIA.CREATE_PLAYLIST, (_event, name: string) =>
+    mediaService.createPlaylist(name),
+  );
+  ipcMain.handle(IPC.MEDIA.RENAME_PLAYLIST, (_event, id: string, name: string) =>
+    mediaService.renamePlaylist(id, name),
+  );
+  ipcMain.handle(IPC.MEDIA.DELETE_PLAYLIST, (_event, id: string) =>
+    mediaService.deletePlaylist(id),
+  );
+  ipcMain.handle(IPC.MEDIA.SET_PLAYLIST_ITEMS, (_event, id: string, itemIds: string[]) =>
+    mediaService.setPlaylistItems(id, itemIds),
+  );
+
+  ipcMain.handle(IPC.MEDIA.ADD_MEDIA_TO_PLAYLIST, async (_event, playlistId: string) => {
+    const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+    const options: OpenDialogOptions = {
+      title: "Add backgrounds",
+      properties: ["openFile", "multiSelections"],
+      filters: [{ name: "Backgrounds", extensions: [...MEDIA_FILE_EXTENSIONS] }],
+    };
+    const result = win
+      ? await dialog.showOpenDialog(win, options)
+      : await dialog.showOpenDialog(options);
+    if (result.canceled || result.filePaths.length === 0) return mediaService.getLibrary();
+    return mediaService.importIntoPlaylist(playlistId, result.filePaths);
+  });
+
+  ipcMain.handle(IPC.MEDIA.SET_PLAYBACK, async (_event, itemId: string, patch: Partial<MediaPlayback>) => {
+    const library = await mediaService.setPlayback(itemId, patch);
+    const live = mediaService.getLiveItem();
+    if (live?.id === itemId) {
+      await overlayWindow.patchBackgroundPlayback(mediaService.getPlayback(itemId));
+    }
+    return library;
+  });
+}
+
 function registerNdiHandlers(): void {
   ipcMain.handle(IPC.NDI.GET_STATUS, async () => {
     const ndiStatus = ndiService.getStatus();
@@ -416,13 +520,9 @@ function registerNdiHandlers(): void {
     const connected = proPresenterService.getStatus().state === "connected";
     const ndiOutput = findNdiOutput(overlay.outputs);
 
-    let ppInputConfigured = false;
-    if (connected && ndiOutput) {
-      const inputs = await proPresenterService.rawClient.getVideoInputs();
-      ppInputConfigured = ndiOutput.ppVideoInputUuid
-        ? inputs.some((i) => i.uuid === ndiOutput.ppVideoInputUuid)
-        : inputs.some((i) => i.name.includes("ProAutomate"));
-    }
+    // Trust a stored uuid. Hitting /v1/video_inputs on this 4s poll saturates the
+    // same Wi-Fi NDI is using and was aborting the PP control connection.
+    const ppInputConfigured = connected && !!ndiOutput?.ppVideoInputUuid;
 
     // Per-output readiness, so the Outputs UI can say WHICH destination is not
     // going to fire rather than just "NDI unavailable".
@@ -538,6 +638,12 @@ function wireEventBroadcasting(): void {
     broadcast(IPC.SCRIPTURE.LIVE_PLAN_CHANGED, state);
   });
 
+  // One library push covers a rescan, a playlist edit and a background going
+  // live — every dock in every window stays in step without polling.
+  mediaService.onChange((library) => {
+    broadcast(IPC.MEDIA.LIBRARY, library);
+  });
+
   scriptureService.onSuggestion((suggestion) => {
     broadcast(IPC.SCRIPTURE.SUGGESTION, suggestion);
   });
@@ -559,6 +665,27 @@ function wireEventBroadcasting(): void {
   resilienceManager.onStatusChange((status: ResilienceStatus) => {
     broadcast(IPC.RESILIENCE.STATUS_CHANGE, status);
   });
+
+  onboardingService.onStateChange((state: OnboardingState) => {
+    broadcast(IPC.ONBOARDING.STATE, state);
+  });
+}
+
+// ─── Onboarding handlers ──────────────────────────────────────────────────────
+
+function registerOnboardingHandlers(): void {
+  ipcMain.handle(IPC.ONBOARDING.GET_STATE, async () => onboardingService.getState());
+  ipcMain.handle(IPC.ONBOARDING.COMPLETE_STEP, async (_e, step: OnboardingStepId) =>
+    onboardingService.completeStep(step),
+  );
+  ipcMain.handle(IPC.ONBOARDING.SKIP_STEP, async (_e, step: OnboardingStepId) =>
+    onboardingService.skipStep(step),
+  );
+  ipcMain.handle(IPC.ONBOARDING.SET_CURRENT, async (_e, step: OnboardingStepId) =>
+    onboardingService.setCurrentStep(step),
+  );
+  ipcMain.handle(IPC.ONBOARDING.FINISH, async () => onboardingService.finish());
+  ipcMain.handle(IPC.ONBOARDING.RESET, async () => onboardingService.reset());
 }
 
 // ─── Startup bootstrap ────────────────────────────────────────────────────────
@@ -584,6 +711,9 @@ function registerAppHandlers(): void {
         sermonPlans: async () => sermonPlanStore.list(),
         livePlan: async () => livePlanService.getState(),
         lyrics: async () => lyricsService.getLibrary(),
+        // Disk read, like every other resource here. The moment anything in
+        // this map touches the network, launch time becomes internet-dependent.
+        onboarding: async () => onboardingService.getState(),
       },
       {
         onProgress: (progress) => {
@@ -605,6 +735,9 @@ function registerAppHandlers(): void {
 export function registerIpcHandlers(): void {
   // Restore the persisted reference playlist before any transcript can arrive.
   livePlanService.init();
+  // Derive wizard progress for an install that predates it, before the first
+  // bootstrap can read the state.
+  onboardingService.migrateExistingInstall();
   registerAppHandlers();
   registerProPresenterHandlers();
   registerAudioHandlers();
@@ -615,6 +748,13 @@ export function registerIpcHandlers(): void {
   registerSettingsHandlers();
   registerResilienceHandlers();
   registerNdiHandlers();
+  registerMediaHandlers();
+  registerOnboardingHandlers();
+  // Index the backgrounds folder without holding up startup — the dock renders
+  // empty and fills in when the scan lands.
+  void mediaService.scan().catch((err) => {
+    log.warn("[Media] Initial scan failed", (err as Error).message);
+  });
   wireEventBroadcasting();
   log.info("All IPC handlers registered");
 }

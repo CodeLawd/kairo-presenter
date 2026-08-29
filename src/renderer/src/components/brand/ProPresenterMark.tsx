@@ -1,0 +1,59 @@
+import { useId } from "react";
+
+/**
+ * Official ProPresenter mark, from Renewed Vision’s site wordmark.
+ * Gradient ids are unique so two marks can sit on the same page.
+ */
+export default function ProPresenterMark({
+  className,
+  size = 16,
+}: {
+  className?: string;
+  size?: number;
+}): React.ReactElement {
+  const uid = useId().replace(/:/g, "");
+  return (
+    <svg
+      viewBox="2 5 85 80"
+      width={size}
+      height={size}
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      aria-hidden="true"
+    >
+      <path
+        d="M24.679 69.7311L7.38388 74.5311C5.01477 75.1868 2.67041 73.4053 2.67041 70.9435V18.601C2.67041 16.1392 5.01477 14.3577 7.38388 15.0134L24.679 19.8134C25.947 20.166 26.8254 21.3165 26.8254 22.634V66.9105C26.8254 68.228 25.947 69.3785 24.679 69.7311Z"
+        fill={`url(#${uid}-a)`}
+      />
+      <path
+        d="M35.9554 16.9866C33.1595 17.6052 33.4193 21.6691 36.2647 21.9289L58.1928 27.4897C60.6856 28.2691 62.3805 30.5763 62.3805 33.1866V56.0424C62.3805 58.7084 60.6052 61.0589 58.0382 61.7826L35.8255 67.2135C32.9863 67.4733 32.7203 71.5187 35.4977 72.1496L81.0859 83.8961C83.6468 84.4837 86.0901 82.5352 86.0901 79.9064V9.68761C86.0901 7.07111 83.6715 5.12265 81.1106 5.68553L35.9492 16.9866H35.9554Z"
+        fill={`url(#${uid}-b)`}
+      />
+      <defs>
+        <linearGradient
+          id={`${uid}-a`}
+          x1="86.0901"
+          y1="5.58814"
+          x2="7.82691"
+          y2="88.8483"
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop offset="0.159341" stopColor="#FF6C1B" />
+          <stop offset="0.851648" stopColor="#FFA235" />
+        </linearGradient>
+        <linearGradient
+          id={`${uid}-b`}
+          x1="86.0901"
+          y1="5.58814"
+          x2="7.82691"
+          y2="88.8483"
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop offset="0.159341" stopColor="#FF6C1B" />
+          <stop offset="0.851648" stopColor="#FFA235" />
+        </linearGradient>
+      </defs>
+    </svg>
+  );
+}

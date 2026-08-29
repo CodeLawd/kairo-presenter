@@ -20,6 +20,7 @@ const RESOURCE_LABELS: Record<BootstrapResource, string> = {
   sermonPlans: 'scripture playlists',
   livePlan: 'live playlist',
   lyrics: 'song library',
+  onboarding: 'setup progress',
 }
 
 /** A failed resource opens the app with a warning; it never blocks entry. */

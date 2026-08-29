@@ -232,7 +232,10 @@ function SectionSlideGrid({
   startIndex,
   glossColor,
   paintColor,
-  onOpenSlide,
+  liveSlideIndex,
+  pushingSlideIndex,
+  onPushSlide,
+  onPreviewSlide,
   onSetLineColor,
 }: {
   section: LyricsSongSection
@@ -242,7 +245,12 @@ function SectionSlideGrid({
   glossColor: string
   /** When set, clicking a line applies this color (null clears override). */
   paintColor: string | null | undefined
-  onOpenSlide: (zeroBasedIndex: number) => void
+  /** Zero-based index of the slide currently on screen in ProPresenter. */
+  liveSlideIndex: number | null
+  /** Zero-based index of the slide mid-push, if any. */
+  pushingSlideIndex: number | null
+  onPushSlide: (zeroBasedIndex: number) => void
+  onPreviewSlide: (zeroBasedIndex: number) => void
   onSetLineColor: (sectionIndex: number, lineIndex: number, color: string | null) => void
 }): React.ReactElement {
   const chunks = sectionColoredSlideChunks(section, glossColor)
@@ -262,26 +270,63 @@ function SectionSlideGrid({
       <div className="flex flex-wrap gap-2.5">
         {chunks.map((lines, i) => {
           const slideNo = startIndex + i
+          const zeroBased = slideNo - 1
           const lineCount = lines.length
+          const isLive = liveSlideIndex === zeroBased
+          const isPushing = pushingSlideIndex === zeroBased
           return (
             <button
               key={i}
               type="button"
-              onClick={() => onOpenSlide(slideNo - 1)}
+              onClick={() => onPushSlide(zeroBased)}
               className={cn(
                 'group relative w-[min(13.5rem,calc(50%-0.3125rem))] sm:w-[13.5rem] aspect-video rounded-xl overflow-hidden',
-                'bg-black border border-white/[0.08] text-left',
+                'bg-black border text-left',
                 'shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]',
-                'hover:border-teal-500/40 hover:ring-1 hover:ring-teal-500/20',
+                isLive
+                  ? 'border-teal-400/70 ring-1 ring-teal-400/40'
+                  : 'border-white/[0.08] hover:border-teal-500/40 hover:ring-1 hover:ring-teal-500/20',
+                isPushing && 'opacity-70',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50',
                 'transition-all duration-150'
               )}
-              aria-label={`Preview slide ${slideNo}`}
+              aria-label={`Push slide ${slideNo} to ProPresenter`}
+              title="Push this slide to ProPresenter"
             >
               <div
                 aria-hidden
                 className="pointer-events-none absolute inset-x-6 top-1/3 h-1/2 rounded-full bg-teal-500/[0.07] blur-2xl opacity-0 group-hover:opacity-100 transition-opacity"
               />
+
+              {/* Preview is the secondary action now — click the tile to go live. */}
+              <span
+                role="button"
+                tabIndex={0}
+                onClick={(e) => { e.stopPropagation(); onPreviewSlide(zeroBased) }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    onPreviewSlide(zeroBased)
+                  }
+                }}
+                title={`Preview slide ${slideNo}`}
+                aria-label={`Preview slide ${slideNo}`}
+                className={cn(
+                  'absolute top-1.5 right-1.5 z-10 grid place-items-center h-5 w-5 rounded-md',
+                  'bg-black/60 text-white/50 border border-white/10 cursor-pointer',
+                  'opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity',
+                  'hover:text-teal-300 hover:border-teal-500/40'
+                )}
+              >
+                <Eye size={11} />
+              </span>
+
+              {isLive && (
+                <span className="absolute top-1.5 left-1.5 z-10 px-1.5 py-px rounded text-[8px] font-bold tracking-wider uppercase bg-teal-500/20 text-teal-300 border border-teal-500/30">
+                  Live
+                </span>
+              )}
 
               <div className="absolute inset-0 flex flex-col items-center justify-center px-3.5 gap-0.5">
                 {lineCount > 0 ? (
@@ -1673,6 +1718,11 @@ export default function Lyrics(): React.ReactElement {
   const [showSlidePreview, setShowSlidePreview] = useState(false)
   const [previewSlideIndex, setPreviewSlideIndex] = useState(0)
 
+  // ── Live slide push ──────────────────────────────────────────────────────────
+  /** Zero-based index of the slide last pushed to ProPresenter, if any. */
+  const [liveSlideIndex, setLiveSlideIndex] = useState<number | null>(null)
+  const [pushingSlideIndex, setPushingSlideIndex] = useState<number | null>(null)
+
   // ── Action bar ───────────────────────────────────────────────────────────────
   const [sendStatus, setSendStatus] = useState<SendStatus>('idle')
   const [sendError, setSendError] = useState<string | null>(null)
@@ -1875,6 +1925,7 @@ export default function Lyrics(): React.ReactElement {
     setSendStatus('idle')
     setSendError(null)
     setTranslateError(null)
+    setLiveSlideIndex(null)
   }, [editMode, setSelectedId])
 
   // ── Edit mode ────────────────────────────────────────────────────────────────
@@ -2245,6 +2296,24 @@ export default function Lyrics(): React.ReactElement {
     } catch (err) {
       setSendStatus('error')
       setSendError((err as Error).message)
+    }
+  }, [selectedId])
+
+  /**
+   * Clicking a slide tile puts it on screen. Errors surface in the same action-bar
+   * slot the whole-song push uses, so there is one place to look when PP refuses.
+   */
+  const handlePushSlide = useCallback(async (zeroBased: number): Promise<void> => {
+    if (!selectedId) return
+    setPushingSlideIndex(zeroBased)
+    setSendError(null)
+    try {
+      await window.api.lyrics.pushSlide(selectedId, zeroBased)
+      setLiveSlideIndex(zeroBased)
+    } catch (err) {
+      setSendError((err as Error).message)
+    } finally {
+      setPushingSlideIndex(null)
     }
   }, [selectedId])
 
@@ -2710,7 +2779,7 @@ export default function Lyrics(): React.ReactElement {
                       <span className="text-[11px] text-slate-600 ml-auto hidden sm:inline">
                         {paintColor !== undefined
                           ? 'Click a lyric line to paint · Esc turns paint off'
-                          : 'Click a slide to preview'}
+                          : 'Click a slide to push it live · eye icon previews'}
                       </span>
                     </div>
 
@@ -2723,9 +2792,14 @@ export default function Lyrics(): React.ReactElement {
                           startIndex={sectionSlideStarts[i] ?? 1}
                           glossColor={glossColor}
                           paintColor={paintColor}
+                          liveSlideIndex={liveSlideIndex}
+                          pushingSlideIndex={pushingSlideIndex}
                           onSetLineColor={(si, li, c) => void handleSetLineColor(si, li, c)}
-                          onOpenSlide={(zeroBased) => {
+                          onPushSlide={(zeroBased) => {
                             if (paintColor !== undefined) return
+                            void handlePushSlide(zeroBased)
+                          }}
+                          onPreviewSlide={(zeroBased) => {
                             setPreviewSlideIndex(zeroBased)
                             setShowSlidePreview(true)
                           }}

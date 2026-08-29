@@ -12,16 +12,20 @@ import type {
   ScriptureSuggestion,
   ScriptureVerse,
   AppSettings,
+  OverlayContentKind,
   OverlayDispatchResult,
   OverlayLayer,
   OverlayOutput,
+  OverlayTheme,
 } from "@shared/ipc";
 import { normalizeOverlaySettings } from "@shared/overlay-defaults";
 import {
   firstLookId,
+  findNdiOutput,
   getDispatchPlan,
   layerOfKind,
-  liveOverlayTheme,
+  outputTemplateFor,
+  outputThemeFor,
   OVERLAY_LAYERS,
 } from "@shared/overlay-outputs";
 import { formatOverlayReference, formatOverlayVerseText, renderOverlayTemplate } from "@shared/overlay-content";
@@ -41,8 +45,31 @@ import { proPresenterService } from "./services/propresenter";
 import { scriptureService } from "./services/scripture";
 import { resilienceManager } from "./services/resilience";
 import { ndiService } from "./services/ndi";
+import { mediaService } from "./services/media";
+import { themeOwnsBackground, themeWithLiveMedia } from "@shared/media-playback";
 import { overlayWindow } from "./services/ndi/overlay-window";
 import { store } from "./db";
+
+/**
+ * Lays the background pushed from the Media dock under a theme.
+ *
+ * Backgrounds live outside themes on purpose: a lyric theme is configured once,
+ * while the loop behind it changes every song. So the theme supplies type and
+ * placement, the dock supplies what is behind it, and they meet here — the one
+ * place a frame is built. A theme that carries its own background (scripture
+ * still can) keeps it when nothing is staged in the dock.
+ */
+function withLiveBackground(theme: OverlayTheme, force = false): OverlayTheme {
+  const live = mediaService.getLiveItem();
+  if (!live) return theme;
+  // A theme that configures its own background outranks the dock: pushing
+  // scripture over a running song must show the scripture look, not the song's
+  // motion loop. Lyric themes are forced transparent, so they still take it.
+  // `force` is the dock's own "present this background" action, which is the
+  // one case where the staged file IS the content.
+  if (!force && themeOwnsBackground(theme)) return theme;
+  return themeWithLiveMedia(theme, live, mediaService.getPlayback(live.id));
+}
 
 /** Verse content formatted once per push and shared by every destination. */
 interface PushContent {
@@ -591,6 +618,46 @@ class Orchestrator {
     this.emitStatus();
   }
 
+  /**
+   * Pushes one lyric slide to every configured overlay output.
+   *
+   * Same fan-out as scripture — NDI slide on the main screen, plain text on
+   * stage, messages layer as the last resort — so a lyric slide inherits the
+   * operator's overlay theme instead of needing a presentation in the PP
+   * library (which the PP19 REST API cannot create).
+   */
+  async presentLyricSlide(reference: string, text: string): Promise<void> {
+    const ppStatus = proPresenterService.getStatus();
+    if (ppStatus.state !== "connected") {
+      throw new Error("ProPresenter is not connected. Connect in Settings → ProPresenter first.");
+    }
+    if (!text.trim()) throw new Error("Slide is empty — nothing to push.");
+
+    const results = await this.dispatchContent({ reference, text }, "lyrics", null);
+    const failed = results.filter((r) => !r.ok);
+
+    if (!results.some((r) => r.ok)) {
+      const msg = results.length === 0
+        ? "No overlay outputs are enabled — cannot push this slide"
+        : `Failed to push "${reference}" on any output`;
+      this.updateHealth("propresenter", "error", msg);
+      this.emitStatus();
+      throw new Error(msg);
+    }
+
+    if (this.session) this.session.totalPresentations++;
+    if (failed.length > 0) {
+      this.updateHealth(
+        "propresenter",
+        "degraded",
+        `Output failed: ${failed.map((f) => `${f.name} (${f.reason ?? "unknown"})`).join("; ")}`,
+      );
+    } else {
+      this.updateHealth("propresenter", "ok");
+    }
+    this.emitStatus();
+  }
+
   // ─── Output fan-out (phase 3) ──────────────────────────────────────────────
 
   /**
@@ -614,11 +681,6 @@ class Orchestrator {
     suggestion: ScriptureSuggestion,
   ): Promise<OverlayDispatchResult[]> {
     const overlay = normalizeOverlaySettings(store.get("overlay"));
-    const plan = getDispatchPlan(overlay.outputs);
-
-    // A fresh present is starting — any auto-clear timer left over from a
-    // *different* prior push must not fire later and clear this one.
-    this.cancelOverlayAutoClear();
 
     // The verse text depends only on the suggestion and the global content
     // settings, never on the destination — format it once for every output.
@@ -642,6 +704,30 @@ class Orchestrator {
       text,
     };
 
+    return this.dispatchContent(content, "scripture", suggestion);
+  }
+
+  /**
+   * The destination-agnostic half of a push: everything below here cares only
+   * about `content`, so lyric slides ride the exact same output fan-out,
+   * layer bookkeeping and auto-clear timer that scripture does.
+   *
+   * `suggestion` is only needed by the `library` output kind, which searches
+   * ProPresenter for a presentation matching a scripture reference. Callers
+   * with no suggestion (lyrics) get that one kind skipped.
+   */
+  private async dispatchContent(
+    content: PushContent,
+    kind: OverlayContentKind,
+    suggestion: ScriptureSuggestion | null,
+  ): Promise<OverlayDispatchResult[]> {
+    const overlay = normalizeOverlaySettings(store.get("overlay"));
+    const plan = getDispatchPlan(overlay.outputs);
+
+    // A fresh present is starting — any auto-clear timer left over from a
+    // *different* prior push must not fire later and clear this one.
+    this.cancelOverlayAutoClear();
+
     // A Look is whole-system state: triggering several in a row would just
     // leave the last one standing, so fire exactly the first one configured.
     const lookId = firstLookId(plan.groups);
@@ -652,12 +738,12 @@ class Orchestrator {
 
     // Groups land on different PP layers, so they run concurrently.
     const grouped = await Promise.all(
-      plan.groups.map((group) => this.runInOrder(group.outputs, suggestion, content)),
+      plan.groups.map((group) => this.runInOrder(group.outputs, kind, suggestion, content)),
     );
     const results = grouped.flat();
 
     if (!results.some((r) => r.ok)) {
-      results.push(...(await this.runInOrder(plan.fallbacks, suggestion, content)));
+      results.push(...(await this.runInOrder(plan.fallbacks, kind, suggestion, content)));
     }
 
     if (results.some((r) => r.ok)) this.scheduleOverlayAutoClear(overlay.autoClearSec);
@@ -667,12 +753,13 @@ class Orchestrator {
   /** Runs outputs in order and stops at the first success. */
   private async runInOrder(
     outputs: readonly OverlayOutput[],
-    suggestion: ScriptureSuggestion,
+    kind: OverlayContentKind,
+    suggestion: ScriptureSuggestion | null,
     content: PushContent,
   ): Promise<OverlayDispatchResult[]> {
     const results: OverlayDispatchResult[] = [];
     for (const output of outputs) {
-      const result = await this.pushToOutput(output, suggestion, content);
+      const result = await this.pushToOutput(output, kind, suggestion, content);
       results.push(result);
       if (result.ok) break;
     }
@@ -686,7 +773,8 @@ class Orchestrator {
    */
   private async pushToOutput(
     output: OverlayOutput,
-    suggestion: ScriptureSuggestion,
+    kind: OverlayContentKind,
+    suggestion: ScriptureSuggestion | null,
     content: PushContent,
   ): Promise<OverlayDispatchResult> {
     const layer = layerOfKind(output.kind);
@@ -696,24 +784,28 @@ class Orchestrator {
       let reason: string | null;
       switch (output.kind) {
         case "library":
-          reason = await this.pushScriptureLibrary(suggestion);
+          // Library lookup is reference-driven; non-scripture content has none.
+          reason = suggestion
+            ? await this.pushScriptureLibrary(suggestion)
+            : "library output only supports scripture references";
           break;
         case "ndi":
-          reason = await this.pushScriptureOverlayNdi(output, content);
+          reason = await this.pushOverlayNdi(output, kind, content);
           break;
         case "stage":
-          reason = await this.pushScriptureStage(output, content);
+          reason = await this.pushStage(output, kind, content);
           break;
         case "message":
         default:
-          reason = await this.pushScriptureOverlay(output, content);
+          reason = await this.pushMessageOverlay(output, kind, content);
           break;
       }
 
       if (reason === null) {
         this.activeLayers.add(layer);
-        log.info("[Orchestrator] Scripture presented", {
-          ref: suggestion.reference,
+        log.info("[Orchestrator] Content presented", {
+          ref: suggestion?.reference ?? content.reference,
+          content: kind,
           output: output.name,
           kind: output.kind,
           layer,
@@ -721,7 +813,7 @@ class Orchestrator {
         return { ...base, ok: true };
       }
       log.warn("[Orchestrator] Output push failed", {
-        ref: suggestion.reference,
+        ref: suggestion?.reference ?? content.reference,
         output: output.name,
         reason,
       });
@@ -752,14 +844,15 @@ class Orchestrator {
    * Pushes through the messages-layer overlay path. ProPresenter does the token
    * substitution itself here, so the template goes across untouched.
    */
-  private async pushScriptureOverlay(
+  private async pushMessageOverlay(
     output: OverlayOutput,
+    kind: OverlayContentKind,
     content: PushContent,
   ): Promise<string | null> {
     const shown = await proPresenterService.rawClient.showScriptureMessage(
       content.reference,
       content.text,
-      output.template,
+      outputTemplateFor(output, kind),
     );
     return shown ? null : "ProPresenter rejected the message trigger";
   }
@@ -771,14 +864,15 @@ class Orchestrator {
    * that in-PP setup step is the operator's, and there is no API to check it, so
    * a "successful" push here only means PP accepted the call.
    */
-  private async pushScriptureStage(
+  private async pushStage(
     output: OverlayOutput,
+    kind: OverlayContentKind,
     content: PushContent,
   ): Promise<string | null> {
     // Unlike the messages layer, PP does no token substitution for a stage
     // message — we render the template ourselves, through the shared renderer.
     const ok = await proPresenterService.rawClient.setStageMessage(
-      renderOverlayTemplate(output.template, content),
+      renderOverlayTemplate(outputTemplateFor(output, kind), content),
     );
     return ok ? null : "ProPresenter rejected the stage message";
   }
@@ -795,14 +889,17 @@ class Orchestrator {
    * missing binding silently falls through to library/message and ProPresenter
    * shows unstyled text instead of the operator's theme.
    */
-  private async pushScriptureOverlayNdi(
+  private async pushOverlayNdi(
     output: OverlayOutput,
+    kind: OverlayContentKind,
     content: PushContent,
   ): Promise<string | null> {
     if (!ndiService.getStatus().available) return "NDI sender unavailable";
 
-    const overlay = normalizeOverlaySettings(store.get("overlay"));
-    const theme = liveOverlayTheme(overlay);
+    // The theme comes off the output being pushed, not off the "live" lookup —
+    // that one answers a preview question and would ignore this output's own
+    // per-content-kind override.
+    const theme = withLiveBackground(outputThemeFor(output, kind));
 
     await overlayWindow.showScripture(output.id, content.reference, content.text, theme);
     // Let at least one 'paint' land in NdiService's frame buffer before
@@ -829,21 +926,16 @@ class Orchestrator {
   }
 
   /**
-   * PP video input binding: persist uuid, name-match only as discovery. If the
-   * output's `ppVideoInputUuid` is set and still present in PP's
-   * `/v1/video_inputs` list, use it. Else find one whose name contains
-   * "ProAutomate"; if found, persist its uuid back onto that output. Never
-   * hard-fails a push over discovery — returns null (NDI not ready) if neither
-   * resolves.
+   * PP video input binding: persist uuid, name-match only as discovery.
+   * A stored uuid is used as-is so a push does not wait on `/v1/video_inputs`
+   * (that list timed out on Wi-Fi and skipped the trigger). Discovery still
+   * lists inputs when nothing is bound. Never hard-fails a push over discovery
+   * — returns null if neither resolves.
    */
   private async ensureVideoInputBinding(output: OverlayOutput): Promise<string | null> {
+    if (output.ppVideoInputUuid) return output.ppVideoInputUuid;
+
     const inputs = await proPresenterService.rawClient.getVideoInputs();
-
-    if (output.ppVideoInputUuid) {
-      const bound = inputs.find((i) => i.uuid === output.ppVideoInputUuid);
-      if (bound) return bound.uuid;
-    }
-
     const discovered = inputs.find((i) => i.name.includes("ProAutomate"));
     if (discovered) {
       // `stored` is already normalized and the patch is a uuid straight from PP,
@@ -864,6 +956,49 @@ class Orchestrator {
     }
 
     return null;
+  }
+
+  /**
+   * Puts the dock's live background on the NDI overlay and cuts ProPresenter
+   * to that video input. Works with no verse on screen yet — the click IS the
+   * push, not a note to wait for the next slide.
+   */
+  async presentLiveBackground(): Promise<boolean> {
+    const live = mediaService.getLiveItem();
+    if (!live) return false;
+    if (!ndiService.getStatus().available) return false;
+
+    const overlay = normalizeOverlaySettings(store.get("overlay"));
+    const ndi =
+      overlay.outputs.find((output) => output.kind === "ndi" && output.enabled) ??
+      findNdiOutput(overlay.outputs);
+    if (!ndi) return false;
+
+    const theme = withLiveBackground(outputThemeFor(ndi, "scripture"), true);
+    const swapped = await overlayWindow.setBackground(theme.background);
+    if (!swapped) {
+      const shown = await overlayWindow.showScripture(ndi.id, "", "", theme);
+      if (!shown) return false;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, NDI_PAINT_SETTLE_MS));
+
+    try {
+      const uuid = await this.ensureVideoInputBinding(ndi);
+      if (uuid) {
+        await proPresenterService.rawClient.triggerVideoInput(uuid);
+      } else {
+        log.warn("[Orchestrator] Background on NDI without a bound ProPresenter video input", {
+          name: live.name,
+        });
+      }
+    } catch (err) {
+      log.warn("[Orchestrator] Could not trigger ProPresenter onto the background", {
+        name: live.name,
+        error: (err as Error).message,
+      });
+    }
+    return true;
   }
 
   /**

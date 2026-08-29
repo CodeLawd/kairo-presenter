@@ -217,6 +217,12 @@
     @apply block text-xs font-semibold font-narrow text-slate-400 mb-1.5 uppercase tracking-[0.08em];
   }
 
+  /* Setup is a reading surface, not a control panel: the shouty uppercase
+     field labels that suit a dense inspector are too loud across five screens. */
+  .onboarding-step .label {
+    @apply mb-1.5 font-sans text-[11px] font-medium normal-case tracking-normal text-slate-400;
+  }
+
   .theme-inspector .label {
     @apply mb-1.5 font-sans text-[11px] font-medium normal-case tracking-normal text-slate-400;
   }

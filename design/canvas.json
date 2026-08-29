@@ -1,0 +1,47 @@
+{
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "Dock open — lyrics + background together"
+    },
+    {
+      "file": "Collapsed.dc.html",
+      "x": 1560,
+      "y": 0,
+      "w": 1440,
+      "h": 560,
+      "title": "Dock collapsed — rail only"
+    },
+    {
+      "file": "FirstRun.dc.html",
+      "x": 1560,
+      "y": 700,
+      "w": 1440,
+      "h": 900,
+      "title": "First run — choose folder"
+    }
+  ],
+  "annotations": [
+    {
+      "id": "note-dock",
+      "x": 0,
+      "y": -170,
+      "w": 560,
+      "text": "Docked at the bottom, dragged to any height. Lyrics stay on screen, so changing a background never means leaving the song.\n\nCollections sit down the left of the dock, not as tabs — the list grows as they add playlists, and a sidebar takes new rows without reflowing.\n\nFolders are scanned from disk. Playlists are built by the operator and can pull from any folder."
+    },
+    {
+      "id": "note-collapsed",
+      "x": 1560,
+      "y": -170,
+      "w": 520,
+      "text": "Dragged all the way down it becomes a rail: what is on screen right now, and a handle to pull it back up. Costs about 50px when the operator only needs lyrics."
+    }
+  ],
+  "launch": {
+    "view": "canvas"
+  }
+}

@@ -23,6 +23,9 @@ const FRAME_FORMAT_PROGRESSIVE = 1
  */
 const FOURCC_BGRA = 1095911234
 
+/** Backoff between sender-creation attempts, so repeated pushes cannot hammer NDI. */
+const RETRY_COOLDOWN_MS = 5000
+
 // ─── Minimal grandiose-mac surface used here (no upstream @types package) ──────
 
 interface GrandioseVideoFrame {
@@ -56,6 +59,10 @@ class NdiService {
   private frameTimer: ReturnType<typeof setInterval> | null = null
   private currentFrame: Buffer
   private starting: Promise<void> | null = null
+  /** Why the last sender attempt failed, surfaced in status and logs. */
+  private senderError: string | null = null
+  /** Earliest time another attempt may run — see RETRY_COOLDOWN_MS. */
+  private retryAfter = 0
 
   constructor() {
     this.currentFrame = Buffer.alloc(WIDTH * HEIGHT * 4, 0) // fully transparent (alpha 0)
@@ -75,14 +82,23 @@ class NdiService {
     }
   }
 
-  getStatus(): { available: boolean; sending: boolean } {
-    return { available: this.available, sending: this.sending }
+  getStatus(): { available: boolean; sending: boolean; senderError: string | null } {
+    return { available: this.available, sending: this.sending, senderError: this.senderError }
   }
 
   /** Idempotent — safe to call multiple times (e.g. app launch + explicit retry). */
+  /**
+   * Creates the NDI sender, retrying on a later call if it failed.
+   *
+   * The commonest failure is a second copy of the app already holding
+   * SENDER_NAME — an NDI sender name is exclusive. That is transient: quit the
+   * duplicate and the name frees up. So a failure must NOT disable NDI for the
+   * rest of the process, or the only cure for a momentary clash is a restart.
+   */
   async start(): Promise<void> {
     if (!this.available || this.sender) return
     if (this.starting) return this.starting
+    if (Date.now() < this.retryAfter) return
     this.starting = this._start()
     return this.starting
   }
@@ -91,12 +107,17 @@ class NdiService {
     try {
       this.sender = await this.grandiose!.send({ name: SENDER_NAME, clockVideo: true })
       this.sending = true
+      this.senderError = null
       log.info('[NDI] Sender created', { name: SENDER_NAME, width: WIDTH, height: HEIGHT })
       this.startFrameLoop()
     } catch (err) {
-      log.error('[NDI] Sender creation failed — NDI features disabled', (err as Error).message)
-      this.available = false
+      this.senderError = (err as Error).message
       this.sending = false
+      this.retryAfter = Date.now() + RETRY_COOLDOWN_MS
+      log.error(
+        '[NDI] Sender creation failed — will retry. Is a second copy of ProAutomate running?',
+        this.senderError,
+      )
     } finally {
       this.starting = null
     }
