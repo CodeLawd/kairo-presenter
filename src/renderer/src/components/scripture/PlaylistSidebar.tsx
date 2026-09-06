@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   BookOpen,
   Check,
+  GripVertical,
   FileText,
   Loader,
   MoreHorizontal,
@@ -9,7 +10,7 @@ import {
   Plus,
   Search,
   Trash2,
-} from "lucide-react";
+} from '@/icons';
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import {
@@ -43,6 +44,12 @@ export interface PlaylistSidebarProps {
   onCancelDelete: () => void;
   onConfirmDelete: (planId: string) => void;
   onSelectedPlanChange: (planId: string) => void;
+  /** Reorders the open playlist. Omitted while a plan is not open. */
+  onReorderItem?: (
+    draggedId: string,
+    targetId: string,
+    position: "before" | "after",
+  ) => void;
 }
 
 export function PlaylistSidebar({
@@ -67,8 +74,21 @@ export function PlaylistSidebar({
   onCancelDelete,
   onConfirmDelete,
   onSelectedPlanChange,
+  onReorderItem,
 }: PlaylistSidebarProps): React.ReactElement {
   const [itemQuery, setItemQuery] = useState("");
+  const [draggingItemId, setDraggingItemId] = useState<string | null>(null);
+  const [dragOverItemId, setDragOverItemId] = useState<string | null>(null);
+  const [dropPosition, setDropPosition] = useState<"before" | "after">("before");
+
+  // Filtering hides the neighbours a drop lands between, so reordering is only
+  // offered on the full, unfiltered list.
+  const canReorder = Boolean(onReorderItem) && itemQuery.trim() === "";
+
+  const endDrag = (): void => {
+    setDraggingItemId(null);
+    setDragOverItemId(null);
+  };
 
   useEffect(() => {
     setItemQuery("");
@@ -90,10 +110,10 @@ export function PlaylistSidebar({
   return (
     <aside
       data-playlist-sidebar=""
-      className="flex h-full min-h-0 w-64 shrink-0 flex-col overflow-hidden border-r border-surface-border bg-surface-secondary/30 xl:w-72"
+      className="flex h-full min-h-0 w-64 shrink-0 flex-col overflow-hidden border-r border-surface-border bg-surface-secondary xl:w-72"
     >
-      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-surface-border/70 px-3 py-2.5">
-        <h2 className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-surface-border bg-surface-tertiary px-3 py-2">
+        <h2 className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">
           Playlist
         </h2>
         <button
@@ -262,10 +282,15 @@ export function PlaylistSidebar({
         </div>
 
         {showItems && (
-          <div className="border-t border-surface-border/70">
+          <div className="border-t border-surface-border bg-surface-tertiary">
             <div className="flex items-center justify-between px-3 py-2">
               <h3 className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
                 Items
+                {canReorder && openPlanItems.length > 1 && (
+                  <span className="ml-2 font-medium normal-case tracking-normal text-slate-600">
+                    drag to reorder
+                  </span>
+                )}
               </h3>
               <span className="text-[10px] tabular-nums text-slate-500">
                 {filteredItems.length === openPlanItems.length
@@ -316,17 +341,67 @@ export function PlaylistSidebar({
                   <button
                     key={item.id}
                     type="button"
+                    draggable={canReorder}
                     className={cn(
-                      "flex w-full items-center gap-2 px-3 py-1.5 text-left",
+                      "group relative flex w-full items-center gap-1 px-2 py-1.5 text-left",
                       !item.available && "opacity-55",
                       activeItemId === item.id
                         ? "bg-teal-500/15 text-white"
                         : "text-slate-300 hover:bg-surface-tertiary/50",
+                      draggingItemId === item.id && "opacity-40",
+                      dragOverItemId === item.id &&
+                        (dropPosition === "before"
+                          ? "before:absolute before:inset-x-2 before:top-0 before:h-px before:bg-teal-400"
+                          : "after:absolute after:inset-x-2 after:bottom-0 after:h-px after:bg-teal-400"),
                     )}
                     onClick={() => onSelectItem(item.id)}
                     aria-current={activeItemId === item.id ? "true" : undefined}
                     title={item.error}
+                    onDragStart={(event) => {
+                      if (!canReorder) return;
+                      event.dataTransfer.effectAllowed = "move";
+                      event.dataTransfer.setData("text/plain", item.id);
+                      setDraggingItemId(item.id);
+                    }}
+                    onDragOver={(event) => {
+                      if (!canReorder || !draggingItemId) return;
+                      event.preventDefault();
+                      event.dataTransfer.dropEffect = "move";
+                      const bounds = event.currentTarget.getBoundingClientRect();
+                      setDropPosition(
+                        event.clientY < bounds.top + bounds.height / 2
+                          ? "before"
+                          : "after",
+                      );
+                      setDragOverItemId(item.id);
+                    }}
+                    onDragLeave={() => {
+                      setDragOverItemId((current) =>
+                        current === item.id ? null : current,
+                      );
+                    }}
+                    onDrop={(event) => {
+                      if (!canReorder) return;
+                      event.preventDefault();
+                      const draggedId =
+                        event.dataTransfer.getData("text/plain") || draggingItemId;
+                      if (draggedId && draggedId !== item.id) {
+                        onReorderItem?.(draggedId, item.id, dropPosition);
+                      }
+                      endDrag();
+                    }}
+                    onDragEnd={endDrag}
                   >
+                    <GripVertical
+                      size={12}
+                      aria-hidden="true"
+                      className={cn(
+                        "shrink-0 text-slate-600 transition-opacity",
+                        canReorder
+                          ? "cursor-grab opacity-0 group-hover:opacity-100"
+                          : "opacity-0",
+                      )}
+                    />
                     <span className="w-4 shrink-0 text-[10px] font-mono text-slate-600">
                       {index + 1}
                     </span>
@@ -350,7 +425,7 @@ export function PlaylistSidebar({
       </div>
 
       {showAddTarget && plans.length > 0 && (
-        <div className="shrink-0 border-t border-surface-border/70 px-3 py-3">
+        <div className="shrink-0 border-t border-surface-border bg-surface-tertiary px-3 py-3">
           <label className="flex flex-col gap-1.5 text-[11px] text-slate-500">
             Add searched verses to
             <select

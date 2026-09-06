@@ -45,19 +45,19 @@ module.exports = {
           border: 'rgb(var(--surface-border) / <alpha-value>)',
         },
         // Legacy class name retained to avoid a risky app-wide class migration.
-        // This is the product accent: an ember orange, not a status color.
+        // Product accent is Kairo amber (#F59E0B), not a status color.
         teal: {
-          50: '#fff7ed',
-          100: '#ffedd5',
-          200: '#fed7aa',
-          300: '#fdba74',
-          400: '#fb923c',
-          500: '#f26b38',
-          600: '#dc5124',
-          700: '#b73c1b',
-          800: '#8f311c',
-          900: '#742b1b',
-          950: '#3f130a',
+          50: '#fffbeb',
+          100: '#fef3c7',
+          200: '#fde68a',
+          300: '#fcd34d',
+          400: '#fbbf24',
+          500: '#f59e0b',
+          600: '#d97706',
+          700: '#b45309',
+          800: '#92400e',
+          900: '#78350f',
+          950: '#451a03',
         },
         // Existing components use slate extensively; neutralize its blue cast.
         slate: {
@@ -120,8 +120,14 @@ module.exports = {
         'fade-in': 'fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
         'slide-in': 'slideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
         'spring-in': 'springIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)',
+        'caret-blink': 'caretBlink 1.25s ease-out infinite',
       },
       keyframes: {
+        // The fake caret in the OTP slots — the real input is off-screen.
+        caretBlink: {
+          '0%,70%,100%': { opacity: '1' },
+          '20%,50%': { opacity: '0' },
+        },
         fadeIn: {
           '0%': { opacity: '0' },
           '100%': { opacity: '1' },

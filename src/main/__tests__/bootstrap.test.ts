@@ -4,6 +4,13 @@ import type { BootstrapProgress } from '@shared/ipc'
 import { BOOTSTRAP_STEPS, BOOTSTRAP_TIMEOUT_MS, runBootstrap, type BootstrapLoaders } from '../bootstrap'
 
 const SETTINGS = { display: { theme: 'dark' } } as never
+const ACCOUNT = {
+  state: 'signed-out',
+  user: null,
+  org: null,
+  orgs: [],
+  lastSyncedAt: null,
+} as never
 const ORCH = { running: true, totalPresentations: 4 } as never
 const PP = { state: 'connected' } as never
 const LIVE_PLAN = { planId: 'plan-1', title: 'Sunday', itemCount: 3, unavailableCount: 0 }
@@ -26,6 +33,7 @@ function loaders(overrides: Partial<BootstrapLoaders> = {}): BootstrapLoaders {
     livePlan: async () => LIVE_PLAN,
     lyrics: async () => [{ id: 'song-1' } as never],
     onboarding: async () => ONBOARDING,
+    account: async () => ACCOUNT,
     ...overrides,
   }
 }
@@ -110,10 +118,10 @@ test('progress labels name work that is genuinely still running', async () => {
   const events: BootstrapProgress[] = []
   await runBootstrap(loaders(), { onProgress: (p) => events.push(p) })
 
-  const labels = new Set(BOOTSTRAP_STEPS.map((step) => `Loading ${step.label}…`))
+  const labels = new Set(BOOTSTRAP_STEPS.map((step) => step.label))
   for (const event of events.slice(0, -1)) {
     assert.ok(
-      labels.has(event.step) || event.step === 'Starting ProAutomate…',
+      labels.has(event.step) || event.step === 'Getting everything ready…',
       `unexpected step label: ${event.step}`,
     )
   }
@@ -145,6 +153,6 @@ test('every resource has a user-facing label', () => {
   }
   assert.deepEqual(
     BOOTSTRAP_STEPS.map((s) => s.resource).sort(),
-    ['livePlan', 'lyrics', 'onboarding', 'orchestrator', 'propresenter', 'sermonPlans', 'settings', 'transcription', 'translations'],
+    ['account', 'livePlan', 'lyrics', 'onboarding', 'orchestrator', 'propresenter', 'sermonPlans', 'settings', 'transcription', 'translations'],
   )
 })

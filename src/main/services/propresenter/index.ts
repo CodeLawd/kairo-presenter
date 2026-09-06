@@ -10,6 +10,7 @@ import type {
 import { ProPresenterClient } from './client'
 import type { PPLibraryItem, PPPlaylist, PPStreamUpdate } from './types'
 import { ndiService } from '../ndi'
+import { configureProPresenterResourceClient, proPresenterResources } from './resources'
 
 type StatusCallback = (status: ProPresenterStatus) => void
 
@@ -56,13 +57,16 @@ class ProPresenterService {
   }
 
   constructor() {
+    configureProPresenterResourceClient(this.client)
     this.client.on('status-change', (state) => {
       this.status = { ...this.status, state }
       if (state === 'connected') {
+        proPresenterResources.invalidate()
         this.updateInitialStatus().catch((err) => {
           log.error('[PPService] updateInitialStatus failed:', err.message)
         })
       } else if (state === 'disconnected') {
+        proPresenterResources.invalidate()
         this.status = {
           ...this.status,
           version: null,
@@ -208,6 +212,7 @@ class ProPresenterService {
 
   async disconnect(): Promise<void> {
     this.client.disconnect()
+    proPresenterResources.invalidate()
     this.status = {
       ...this.status,
       state: 'disconnected',

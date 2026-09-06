@@ -13,8 +13,8 @@ import {
   Send,
   X,
   CheckCircle,
-  type LucideIcon,
-} from 'lucide-react'
+  type Icon,
+} from '@/icons'
 import { useAppStore } from '@/stores/useAppStore'
 import { cn, downloadFile } from '@/lib/utils'
 import type {
@@ -593,7 +593,7 @@ function ScrollLockButton({
   locked: boolean
   onClick: () => void
 }): React.ReactElement {
-  const Icon: LucideIcon = locked ? Lock : Unlock
+  const Icon: Icon = locked ? Lock : Unlock
   return (
     <button
       onClick={onClick}
@@ -883,11 +883,11 @@ export default function Transcription(): React.ReactElement {
         const llmProvider = all.stt.llmProvider ?? 'anthropic'
         const config: OrchestratorConfig = {
           audioDeviceId:       captureDeviceId,
-          sttProvider:         all.stt.apiKey ? 'deepgram' : all.stt.provider,
-          sttApiKey:           all.stt.apiKey,
+          sttProvider:         all.secretsConfigured.deepgram ? 'deepgram' : all.stt.provider,
+          sttApiKey:           '',
           sttLanguage:         selectedLanguage,
           llmProvider,
-          llmApiKey:           llmProvider === 'deepseek' ? all.stt.deepseekApiKey : all.stt.anthropicApiKey,
+          llmApiKey:           '',
           scriptureTranslation: all.scripture.defaultTranslation,
           autoMode:            all.scripture.autoMode,
           confidenceThreshold: all.scripture.confidenceThreshold,

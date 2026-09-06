@@ -23,6 +23,7 @@ import type {
   OverlayOutputVariant,
   OverlayTheme,
 } from './ipc'
+import { isOwnedNdiName } from './brand'
 
 // ─── Layer map ─────────────────────────────────────────────────────────────────
 
@@ -117,6 +118,25 @@ export function fallbackOutputs(outputs: readonly OverlayOutput[]): OverlayOutpu
  */
 export function findNdiOutput(outputs: readonly OverlayOutput[]): OverlayOutput | null {
   return outputs.find((o) => o.kind === 'ndi') ?? null
+}
+
+/**
+ * Resolves the NDI input for a push. A confirmed durable UUID wins over the
+ * older per-output value and name discovery; an unconfirmed durable UUID is
+ * never silently substituted for another input.
+ */
+export function chooseNdiVideoInputId(
+  durableId: string,
+  outputId: string,
+  discovered: readonly { uuid: string; name: string }[],
+): string | null {
+  const durable = durableId.trim()
+  if (durable && discovered.some((input) => input.uuid === durable)) return durable
+
+  const output = outputId.trim()
+  if (output) return output
+
+  return discovered.find((input) => isOwnedNdiName(input.name))?.uuid ?? null
 }
 
 /**
@@ -218,9 +238,15 @@ export function hasContentOverride(output: OverlayOutput, kind: OverlayContentKi
 /** The theme an output renders `kind` with. */
 export function outputThemeFor(output: OverlayOutput, kind: OverlayContentKind): OverlayTheme {
   const variant = outputVariant(output, kind)
-  if (variant) return variant.theme
-  if (kind === 'lyrics') return inheritLyricsTheme(output.theme)
-  return output.theme
+  const theme = variant
+    ? variant.theme
+    : kind === 'lyrics'
+      ? inheritLyricsTheme(output.theme)
+      : output.theme
+  // Always run the kind policy at resolve time. A stored lyrics override can
+  // still carry a scripture background (applied from a scripture draft, or
+  // restored from an older store), and that look must not win over the dock.
+  return themeForContentKind(theme, kind)
 }
 
 /** The `themeId` shown as the source of `kind`'s look. Display only. */

@@ -1,3 +1,6 @@
+import { reorderLyricSlide } from '@shared/lyrics-reorder'
+import { useLibraryWidth } from './useLibraryWidth'
+import { useImportRequest } from '@/hooks/useImportRequest'
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import {
   Search,
@@ -29,7 +32,7 @@ import {
   Library,
   Languages,
   Palette,
-} from 'lucide-react'
+} from '@/icons'
 import { cn, downloadFile } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -69,6 +72,10 @@ import { formatOnlineLyricsError } from '@shared/lyrics-online-error'
 import { useBootstrapStore } from '@/bootstrap/useBootstrapStore'
 import { useAppStore } from '@/stores/useAppStore'
 import { useSettings } from '@/hooks/useSettings'
+import { LiveOutputRail } from '@/components/operator/LiveOutputRail'
+import { BoothWorkspace } from '@/components/layout/BoothWorkspace'
+import { useLiveRailWidth } from '@/components/operator/useLiveRailWidth'
+import { buildLyricsLiveOutputPayload } from '@shared/live-output'
 
 // ─── Local types ──────────────────────────────────────────────────────────────
 
@@ -237,7 +244,11 @@ function SectionSlideGrid({
   onPushSlide,
   onPreviewSlide,
   onSetLineColor,
+  onReorder,
+  reorderBusy,
 }: {
+  onReorder: (from: number, to: number) => void
+  reorderBusy: boolean
   section: LyricsSongSection
   sectionIndex: number
   /** 1-based index of this section's first slide in the full song. */
@@ -253,21 +264,21 @@ function SectionSlideGrid({
   onPreviewSlide: (zeroBasedIndex: number) => void
   onSetLineColor: (sectionIndex: number, lineIndex: number, color: string | null) => void
 }): React.ReactElement {
+  const [dropTarget, setDropTarget] = useState<number | null>(null)
   const chunks = sectionColoredSlideChunks(section, glossColor)
 
   return (
-    <section className="space-y-2.5">
+    <section className="space-y-1.5">
       <div className="flex items-center gap-2.5">
-        <SectionBadge type={section.type} />
-        <h3 className="text-[13px] font-semibold text-slate-200 tracking-tight">
+        <h3 className="text-xs font-medium text-slate-400 tracking-tight">
           {section.label}
         </h3>
-        <span className="text-[11px] text-slate-600 tabular-nums">
+        <span className="ml-auto text-[11px] text-slate-600 tabular-nums">
           {chunks.length} slide{chunks.length !== 1 ? 's' : ''}
         </span>
       </div>
 
-      <div className="flex flex-wrap gap-2.5">
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,180px),200px))] gap-2">
         {chunks.map((lines, i) => {
           const slideNo = startIndex + i
           const zeroBased = slideNo - 1
@@ -278,14 +289,33 @@ function SectionSlideGrid({
             <button
               key={i}
               type="button"
+              data-lyric-slide={zeroBased}
+              draggable={!reorderBusy}
+              disabled={reorderBusy}
+              onDragStart={(event) => {
+                event.dataTransfer.setData('application/x-kairo-slide', String(zeroBased))
+                event.dataTransfer.effectAllowed = 'move'
+              }}
+              onDragOver={(event) => {
+                if (reorderBusy || !event.dataTransfer.types.includes('application/x-kairo-slide')) return
+                event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setDropTarget(zeroBased)
+              }}
+              onDragLeave={() => setDropTarget(null)}
+              onDragEnd={() => setDropTarget(null)}
+              onDrop={(event) => {
+                event.preventDefault(); setDropTarget(null)
+                const raw = event.dataTransfer.getData('application/x-kairo-slide')
+                if (raw && !reorderBusy) onReorder(Number(raw), zeroBased)
+              }}
               onClick={() => onPushSlide(zeroBased)}
               className={cn(
-                'group relative w-[min(13.5rem,calc(50%-0.3125rem))] sm:w-[13.5rem] aspect-video rounded-xl overflow-hidden',
+                'group relative w-full aspect-video rounded-lg overflow-hidden',
                 'bg-black border text-left',
                 'shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]',
                 isLive
                   ? 'border-teal-400/70 ring-1 ring-teal-400/40'
                   : 'border-white/[0.08] hover:border-teal-500/40 hover:ring-1 hover:ring-teal-500/20',
+                dropTarget === zeroBased && 'ring-2 ring-teal-400',
                 isPushing && 'opacity-70',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50',
                 'transition-all duration-150'
@@ -556,14 +586,14 @@ function SectionEditBlock({
       onDragOver={(e) => onDragOver(e, index)}
       onDrop={() => onDrop(index)}
       className={cn(
-        'rounded-xl border transition-all duration-150',
+        'rounded-lg border transition-colors duration-150 focus-within:border-surface-border',
         isDragTarget
           ? 'border-teal-500/50 bg-teal-500/5 shadow-[0_0_0_1px_rgba(20,184,166,0.25)]'
-          : 'border-surface-border/50 bg-surface-secondary/30'
+          : 'border-surface-border/30 bg-transparent'
       )}
     >
       {/* Section header row */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-surface-border/30">
+      <div className="flex flex-wrap items-center gap-2 px-3 py-3">
         <div
           draggable
           onDragStart={(e) => {
@@ -607,6 +637,7 @@ function SectionEditBlock({
           value={section.label}
           onChange={(e) => onUpdate(section._key, { label: e.target.value })}
           className="flex-1 bg-transparent text-[13px] font-medium text-slate-300 placeholder:text-slate-600 focus-visible:outline-none min-w-0 border-b border-transparent focus-visible:border-surface-border transition-colors"
+          aria-label={`Section ${index + 1} label`}
           placeholder="Section label…"
         />
         <span className="text-[10px] text-slate-600 tabular-nums shrink-0">
@@ -614,14 +645,16 @@ function SectionEditBlock({
         </span>
 
         {/* Reorder + delete */}
-        <div className="flex items-center gap-0.5 shrink-0">
+        <details className="w-full text-xs text-slate-500">
+          <summary className="w-fit cursor-pointer rounded py-1 text-[11px] hover:text-slate-200 focus-visible:outline-teal-500">Section options</summary>
+          <div className="flex flex-wrap items-center gap-1 pt-2">
           <button
             type="button"
             title="Put each line on its own slide"
             onClick={() => onUpdate(section._key, { linesText: insertSlideBreaks(section.linesText, 1) })}
             className="px-1.5 py-0.5 rounded text-[10px] font-semibold text-slate-500 hover:text-slate-200 hover:bg-white/5 transition-colors focus-visible:outline-none"
           >
-            1-line
+            1 line per slide
           </button>
           <button
             type="button"
@@ -629,7 +662,7 @@ function SectionEditBlock({
             onClick={() => onUpdate(section._key, { linesText: insertSlideBreaks(section.linesText, 2) })}
             className="px-1.5 py-0.5 rounded text-[10px] font-semibold text-slate-500 hover:text-slate-200 hover:bg-white/5 transition-colors focus-visible:outline-none"
           >
-            2-line
+            2 lines per slide
           </button>
           <button
             type="button"
@@ -637,7 +670,7 @@ function SectionEditBlock({
             onClick={() => onUpdate(section._key, { linesText: expandJammedLines(section.linesText) })}
             className="px-1.5 py-0.5 rounded text-[10px] font-semibold text-slate-500 hover:text-slate-200 hover:bg-white/5 transition-colors focus-visible:outline-none"
           >
-            Rows
+            Separate phrases
           </button>
           <button
             type="button"
@@ -645,7 +678,7 @@ function SectionEditBlock({
             onClick={() => onSplit(index, cursorPos())}
             className="px-1.5 py-0.5 rounded text-[10px] font-semibold text-teal-500/80 hover:text-teal-300 hover:bg-teal-500/10 transition-colors focus-visible:outline-none"
           >
-            Split
+            Split at cursor
           </button>
           <button
             type="button"
@@ -655,7 +688,7 @@ function SectionEditBlock({
             })}
             className="px-1.5 py-0.5 rounded text-[10px] font-semibold text-slate-500 hover:text-slate-200 hover:bg-white/5 transition-colors focus-visible:outline-none"
           >
-            Clear
+            Remove slide breaks
           </button>
           <button
             disabled={index === 0}
@@ -681,6 +714,7 @@ function SectionEditBlock({
             <X size={13} />
           </button>
         </div>
+        </details>
       </div>
 
       {/* Lyrics textarea */}
@@ -694,15 +728,13 @@ function SectionEditBlock({
             onSplit(index, e.currentTarget.selectionStart)
           }
         }}
-        rows={Math.max(3, section.linesText.split('\n').length + 1)}
-        className="w-full bg-transparent px-4 py-2.5 text-[13px] text-slate-300 leading-relaxed font-sans resize-none focus-visible:outline-none placeholder:text-slate-700"
+        rows={Math.min(18, Math.max(4, section.linesText.split('\n').length + 1))}
+        className="w-full bg-transparent px-4 py-2.5 text-sm text-slate-200 leading-loose font-sans resize-y focus-visible:outline-none placeholder:text-slate-700"
+        aria-label={`${section.label || 'Section'} lyrics`}
         placeholder="One line per row. Blank line = new slide."
         spellCheck
       />
-      <p className="px-4 pb-2 text-[10px] text-slate-600">
-        Blank line = new slide. Change type in the dropdown. Split (⌘/Ctrl+Enter) starts a new section from the cursor.
-        Rows untangles jammed phrases.
-      </p>
+
     </div>
   )
 }
@@ -1413,7 +1445,7 @@ function ImportModal({
             </div>
           </div>
         ) : (
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4 min-h-0">
+        <div className="flex-1 overflow-y-auto px-2 py-5 space-y-5 min-h-0">
           {tab === 'file' && (
             !filePreview ? (
               <div
@@ -1629,6 +1661,8 @@ function DeleteConfirmModal({
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function Lyrics(): React.ReactElement {
+  const liveRail = useLiveRailWidth()
+
   // ── Library ──────────────────────────────────────────────────────────────────
   // Seeded from the startup snapshot so returning to this tab never flashes an
   // empty library while a fresh read resolves.
@@ -1709,12 +1743,17 @@ export default function Lyrics(): React.ReactElement {
   const webPreviewSeqRef = useRef(0)
   const webPreviewCacheRef = useRef(new Map<string, LyricsOnlinePreview>())
   const [sortOpen, setSortOpen] = useState(false)
+  const [showSongTools, setShowSongTools] = useState(false)
+  const libraryWidth = useLibraryWidth()
+  const [reorderBusy, setReorderBusy] = useState(false)
+  const reorderLock = useRef(false)
   const sortRef = useRef<HTMLDivElement>(null)
 
   // ── Overlays ─────────────────────────────────────────────────────────────────
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<LyricsSong | null>(null)
   const [showImport, setShowImport] = useState(false)
+  useImportRequest(['lyrics'], () => setShowImport(true), !showImport)
   const [showSlidePreview, setShowSlidePreview] = useState(false)
   const [previewSlideIndex, setPreviewSlideIndex] = useState(0)
 
@@ -2291,13 +2330,18 @@ export default function Lyrics(): React.ReactElement {
     setSendError(null)
     try {
       await window.api.lyrics.sendToProPresenter(selectedId, {})
+      if (selectedSong) {
+        useAppStore.getState().setLiveOutputPreview(
+          buildLyricsLiveOutputPayload(selectedSong, songSlides[0]),
+        )
+      }
       setSendStatus('sent')
       sendTimerRef.current = setTimeout(() => setSendStatus('idle'), 3000)
     } catch (err) {
       setSendStatus('error')
       setSendError((err as Error).message)
     }
-  }, [selectedId])
+  }, [selectedId, selectedSong, songSlides])
 
   /**
    * Clicking a slide tile puts it on screen. Errors surface in the same action-bar
@@ -2310,12 +2354,45 @@ export default function Lyrics(): React.ReactElement {
     try {
       await window.api.lyrics.pushSlide(selectedId, zeroBased)
       setLiveSlideIndex(zeroBased)
+      if (selectedSong) {
+        useAppStore.getState().setLiveOutputPreview(
+          buildLyricsLiveOutputPayload(selectedSong, songSlides[zeroBased]),
+        )
+      }
     } catch (err) {
       setSendError((err as Error).message)
     } finally {
       setPushingSlideIndex(null)
     }
-  }, [selectedId])
+  }, [selectedId, selectedSong, songSlides])
+
+  const handleReorderSlide = async (from: number, to: number): Promise<void> => {
+    if (!selectedSong || reorderLock.current || from === to || !Number.isInteger(from)) return
+    reorderLock.current = true; setReorderBusy(true); setSendError(null)
+    try {
+      const updated = await window.api.lyrics.update(selectedSong.id, { ...selectedSong, sections: reorderLyricSlide(selectedSong.sections, from, to) })
+      if (!updated) throw new Error('Could not save slide order')
+      setSongs(previous => previous.map(song => song.id === updated.id ? updated : song))
+      setLiveSlideIndex(null)
+    } catch (error) { setSendError((error as Error).message) }
+    finally { reorderLock.current = false; setReorderBusy(false) }
+  }
+
+  useEffect(() => {
+    const navigate = (event: KeyboardEvent) => {
+      if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key) || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.repeat || event.isComposing) return
+      const target = event.target as HTMLElement | null
+      if (editMode || !selectedSong || showSlidePreview || showImport || deleteTarget || webPreviewResult || reorderBusy || pushingSlideIndex !== null || !document.hasFocus() || document.querySelector('.kairo-pp-settings, [role="dialog"], [role="menu"]') || target?.closest('input, textarea, select, [contenteditable="true"], [role="separator"]')) return
+      event.preventDefault(); event.stopImmediatePropagation()
+      const delta = event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 1
+      const next = liveSlideIndex === null ? 0 : Math.max(0, Math.min(songSlides.length - 1, liveSlideIndex + delta))
+      if (next === liveSlideIndex || !songSlides.length) return
+      document.querySelector(`[data-lyric-slide="${next}"]`)?.scrollIntoView({ block: 'nearest' })
+      void handlePushSlide(next)
+    }
+    window.addEventListener('keydown', navigate, true)
+    return () => window.removeEventListener('keydown', navigate, true)
+  }, [editMode, selectedSong, showSlidePreview, showImport, deleteTarget, webPreviewResult, reorderBusy, pushingSlideIndex, liveSlideIndex, songSlides.length, handlePushSlide])
 
   // ── Playlists ────────────────────────────────────────────────────────────────
   const handlePlaylistOpen = useCallback(async (): Promise<void> => {
@@ -2355,8 +2432,18 @@ export default function Lyrics(): React.ReactElement {
 
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col h-full max-h-full overflow-hidden">
-      {/* Page header */}
+    <>
+    <BoothWorkspace
+      rail={
+        <LiveOutputRail
+          width={liveRail.width}
+          onResizeStart={liveRail.onResizeStart}
+          onResizeKeyDown={liveRail.onResizeKeyDown}
+        />
+      }
+    >
+      <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-surface">
+        {/* Page header */}
       <div className="flex-shrink-0 px-6 pt-6 pb-4 flex items-start justify-between gap-4">
         <div>
           <h1 className="page-header">Lyrics</h1>
@@ -2373,10 +2460,10 @@ export default function Lyrics(): React.ReactElement {
       </div>
 
       {/* Main split layout */}
-      <div className="flex-1 flex min-h-0 px-6 pb-6 gap-4">
+      <div ref={libraryWidth.containerRef} className="flex-1 flex min-h-0 min-w-0 px-6 pb-6 overflow-hidden">
 
-        {/* ── Left panel: Library (30%) ────────────────────────────────────── */}
-        <div className="w-[30%] shrink-0 flex flex-col gap-2.5 min-h-0">
+        {/* ── Left panel: Library (compact) ─────────────────────────────────── */}
+        <div style={{ width: libraryWidth.width }} className="shrink-0 flex flex-col gap-2.5 min-h-0 min-w-0">
           {/* Search */}
           <div className="relative">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
@@ -2401,11 +2488,12 @@ export default function Lyrics(): React.ReactElement {
             )}
           </div>
 
-          {/* Filter chips + sort */}
-          <div className="flex items-center gap-1">
+          {/* Wrap controls within the library panel as the window narrows. */}
+          <div className="flex flex-wrap items-center gap-x-1 gap-y-2">
             <ToggleGroup
               type="single"
               value={filter}
+              className="min-w-0 max-w-full flex-wrap"
               onValueChange={(value) => value && setFilter(value as FilterType)}
               variant="outline"
               size="sm"
@@ -2420,10 +2508,9 @@ export default function Lyrics(): React.ReactElement {
               </ToggleGroupItem>
             ))}
             </ToggleGroup>
-            <div className="flex-1" />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm">Sort <ChevronDown data-icon="inline-end" /></Button>
+                <Button variant="ghost" size="sm" className="ml-auto">Sort <ChevronDown data-icon="inline-end" /></Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-40">
                 <DropdownMenuGroup>
@@ -2569,7 +2656,13 @@ export default function Lyrics(): React.ReactElement {
         </div>
 
         {/* ── Right panel: Editor (70%) ─────────────────────────────────────── */}
-        <div className="flex-1 flex flex-col min-h-0 card p-0 overflow-hidden">
+        <button
+          type="button"
+          {...libraryWidth.separatorProps}
+          title="Drag to resize library · double-click to reset"
+          className="group mx-2 flex w-2 shrink-0 cursor-col-resize touch-none items-center justify-center rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50"
+        ><span className="h-12 w-px bg-white/10 transition-colors group-hover:bg-teal-400/70 group-active:bg-teal-400" /></button>
+        <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
           {webPreviewResult && !editMode ? (
             <OnlinePreviewPane
               result={webPreviewResult}
@@ -2595,7 +2688,7 @@ export default function Lyrics(): React.ReactElement {
           ) : (
             <>
               {/* Editor header */}
-              <div className="flex-shrink-0 flex items-center justify-between gap-3 px-5 py-3.5 border-b border-surface-border/50">
+              <div className="flex-shrink-0 flex flex-wrap items-center justify-between gap-3 px-2 py-4">
                 <div className="flex-1 min-w-0">
                   {editMode ? (
                     <p className="text-xs font-bold text-teal-400 uppercase tracking-wider">
@@ -2603,48 +2696,25 @@ export default function Lyrics(): React.ReactElement {
                     </p>
                   ) : (
                     <div>
-                      <p className="text-sm font-semibold text-white truncate">{selectedSong?.title}</p>
+                      <p className="text-base font-semibold tracking-tight text-white truncate">{selectedSong?.title}</p>
                       <p className="text-xs text-slate-500 mt-0.5">{selectedSong?.artist || 'Unknown Artist'}</p>
                     </div>
                   )}
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  <select
-                    value={translateSourceLang}
-                    onChange={(e) => setTranslateSourceLang(e.target.value)}
-                    disabled={translating || saving}
-                    className="appearance-none text-[11px] font-semibold text-slate-300 bg-surface-secondary border border-surface-border/60 rounded-lg px-2 py-1.5 focus-visible:outline-none disabled:opacity-40"
-                    title="Source language — pick Yoruba/Igbo for better results than Auto"
-                    aria-label="Translation source language"
-                  >
-                    <option value="auto">Auto-detect</option>
-                    <option value="yo">Yoruba</option>
-                    <option value="ig">Igbo</option>
-                    <option value="ha">Hausa</option>
-                    <option value="fr">French</option>
-                    <option value="es">Spanish</option>
-                    <option value="pt">Portuguese</option>
-                  </select>
                   <button
                     type="button"
-                    className="btn-secondary flex items-center gap-1.5 text-xs py-1.5 px-3 disabled:opacity-40"
-                    onClick={() => void handleTranslateToEnglish()}
-                    disabled={translating || saving}
-                    title="Keep original lines; add English in parentheses under each non-English line"
+                    className={cn('btn-secondary flex items-center gap-1.5 text-xs py-1.5 px-3', showSongTools && 'text-teal-300')}
+                    aria-expanded={showSongTools}
+                    aria-controls="lyrics-song-tools"
+                    onClick={() => {
+                      setShowSongTools(open => !open)
+                      setPaintColor(undefined)
+                      setPlaylistOpen(false)
+                      setExportOpen(false)
+                    }}
                   >
-                    {translating
-                      ? <Loader2 size={12} className="animate-spin" />
-                      : <Languages size={12} />}
-                    {translating ? 'Translating…' : 'Translate to English'}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-secondary flex items-center gap-1.5 text-xs py-1.5 px-3 disabled:opacity-40"
-                    onClick={() => void handleUndoTranslation()}
-                    disabled={translating || saving || !canUndoTranslation}
-                    title="Remove English glosses and keep the original lyrics"
-                  >
-                    Undo translation
+                    Song tools <ChevronDown size={12} className={showSongTools ? 'rotate-180' : ''} />
                   </button>
                   {editMode ? (
                     <>
@@ -2675,6 +2745,25 @@ export default function Lyrics(): React.ReactElement {
                 </div>
               </div>
 
+              {showSongTools && (
+                <div id="lyrics-song-tools" className="shrink-0 flex flex-wrap items-center gap-3 px-2 pb-3 text-xs">
+                  <details className="relative">
+                    <summary className="cursor-pointer text-slate-400 hover:text-white">Translate lyrics</summary>
+                    <div className="absolute right-0 top-full z-30 mt-2 w-64 space-y-3 rounded-lg border border-surface-border bg-surface-elevated p-3 shadow-xl">
+                      <label className="block text-slate-400">Original language
+                        <select aria-label="Translation source language" value={translateSourceLang} onChange={event => setTranslateSourceLang(event.target.value)} className="input mt-1 w-full" disabled={translating || saving}>
+                          {['auto', 'yo', 'ig', 'ha', 'fr', 'es', 'pt'].map((lang, i) => <option key={lang} value={lang}>{['Auto-detect', 'Yoruba', 'Igbo', 'Hausa', 'French', 'Spanish', 'Portuguese'][i]}</option>)}
+                        </select>
+                      </label>
+                      <button className="btn-secondary w-full text-xs" disabled={translating || saving} onClick={() => void handleTranslateToEnglish()}>{translating ? 'Translating…' : 'Translate to English'}</button>
+                      {canUndoTranslation && <button className="text-xs text-slate-400" disabled={translating || saving} onClick={() => void handleUndoTranslation()}>Undo translation</button>}
+                    </div>
+                  </details>
+                  {!editMode && <DropdownMenu><DropdownMenuTrigger asChild><button className="text-slate-400 hover:text-white">Export lyrics</button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onSelect={() => handleExport('txt')}>Plain text (.txt)</DropdownMenuItem><DropdownMenuItem onSelect={() => handleExport('usr')}>SongSelect (.usr)</DropdownMenuItem></DropdownMenuContent></DropdownMenu>}
+                </div>
+              )}
+
+              {sendError && <p role="alert" className="px-2 py-2 text-xs text-red-400">{sendError}</p>}
               {translateError && (
                 <div className="mx-5 mt-3 flex items-start gap-2 px-3.5 py-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs">
                   <AlertCircle size={12} className="shrink-0 mt-0.5" />
@@ -2687,7 +2776,7 @@ export default function Lyrics(): React.ReactElement {
                 {editMode && editState ? (
                   /* Edit mode: metadata + sections */
                   <>
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,15rem),1fr))] gap-4">
                       <div>
                         <label className="label">Title</label>
                         <input
@@ -2707,6 +2796,9 @@ export default function Lyrics(): React.ReactElement {
                           onChange={(e) => patchEdit('artist', e.target.value)}
                         />
                       </div>
+                      <details className="col-span-full text-xs text-slate-500">
+                        <summary className="cursor-pointer py-1 hover:text-slate-200">Song details</summary>
+                        <div className="mt-3 grid gap-3">
                       <div>
                         <label className="label">Copyright</label>
                         <input
@@ -2716,7 +2808,7 @@ export default function Lyrics(): React.ReactElement {
                           onChange={(e) => patchEdit('copyright', e.target.value)}
                         />
                       </div>
-                      <div>
+                      {/* <div>
                         <label className="label">CCLI Number</label>
                         <input
                           className="input"
@@ -2724,7 +2816,9 @@ export default function Lyrics(): React.ReactElement {
                           value={editState.ccliNumber}
                           onChange={(e) => patchEdit('ccliNumber', e.target.value)}
                         />
-                      </div>
+                      </div> */}
+                        </div>
+                      </details>
                     </div>
 
                     {saveError && (
@@ -2734,9 +2828,9 @@ export default function Lyrics(): React.ReactElement {
                       </div>
                     )}
 
-                    <div className="space-y-2">
+                    <div className="space-y-5">
                       <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-                        Sections — change type · Split · blank line = slide
+                        Lyrics · Blank line starts a new slide
                       </p>
                       {editState.sections.map((sec, idx) => (
                         <SectionEditBlock
@@ -2779,15 +2873,17 @@ export default function Lyrics(): React.ReactElement {
                       <span className="text-[11px] text-slate-600 ml-auto hidden sm:inline">
                         {paintColor !== undefined
                           ? 'Click a lyric line to paint · Esc turns paint off'
-                          : 'Click a slide to push it live · eye icon previews'}
+                          : '← → Previous / next · Drag slides to reorder'}
                       </span>
                     </div>
 
-                    <div className="space-y-6 pt-1">
+                    <div className="space-y-4 pt-1">
                       {selectedSong.sections.map((section, i) => (
                         <SectionSlideGrid
                           key={i}
                           section={section}
+                          onReorder={(from, to) => void handleReorderSlide(from, to)}
+                          reorderBusy={reorderBusy}
                           sectionIndex={i}
                           startIndex={sectionSlideStarts[i] ?? 1}
                           glossColor={glossColor}
@@ -2810,152 +2906,13 @@ export default function Lyrics(): React.ReactElement {
                 )}
               </div>
 
-              {/* Action bar */}
-              {!editMode && selectedSong && (
-                <div className="flex-shrink-0 border-t border-surface-border/50 px-5 py-3 flex items-center gap-2 flex-wrap">
-                  {/* Push to ProPresenter */}
-                  <button
-                    onClick={handleSendToPP}
-                    disabled={sendStatus === 'sending'}
-                    title={sendError ?? undefined}
-                    className={cn(
-                      'flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all border',
-                      sendStatus === 'sent'
-                        ? 'bg-teal-500/15 border-teal-500/30 text-teal-400'
-                        : sendStatus === 'error'
-                        ? 'bg-red-500/15 border-red-500/30 text-red-400'
-                        : 'btn-primary'
-                    )}
-                  >
-                    {sendStatus === 'sending' && <Loader2 size={12} className="animate-spin" />}
-                    {sendStatus === 'sent' && <CheckCircle2 size={12} />}
-                    {sendStatus === 'error' && <AlertCircle size={12} />}
-                    {sendStatus === 'idle' && <Send size={12} />}
-                    {SEND_LABEL[sendStatus]}
-                  </button>
 
-                  {/* Add to Playlist */}
-                  <div className="relative" ref={playlistRef}>
-                    <button
-                      onClick={handlePlaylistOpen}
-                      className={cn(
-                        'btn-secondary flex items-center gap-1.5 px-3.5 py-2 text-xs',
-                        playlistStatus === 'added' && 'text-teal-400 border-teal-500/30'
-                      )}
-                    >
-                      {playlistStatus === 'adding' ? <Loader2 size={12} className="animate-spin" /> : <ListMusic size={12} />}
-                      {playlistStatus === 'added' ? 'Added!' : 'Playlist'}
-                      <ChevronDown size={11} className={cn('transition-transform', playlistOpen && 'rotate-180')} />
-                    </button>
-                    {playlistOpen && (
-                      <div className="absolute bottom-full left-0 mb-1 w-52 rounded-lg bg-surface-elevated border border-surface-border shadow-2xl z-30 py-1 overflow-hidden animate-fade-in max-h-48 overflow-y-auto">
-                        {playlists.length === 0 ? (
-                          <p className="px-4 py-3 text-xs text-slate-500 text-center">
-                            No playlists found.{' '}
-                            <span className="text-slate-600">Connect ProPresenter first.</span>
-                          </p>
-                        ) : (
-                          playlists.map((pl) => (
-                            <button
-                              key={pl.id}
-                              className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs text-left text-slate-300 hover:bg-surface-tertiary hover:text-white transition-colors"
-                              onClick={() => handleAddToPlaylist(pl.id)}
-                            >
-                              <ListMusic size={12} className="text-slate-600 shrink-0" />
-                              <span className="truncate">{pl.name}</span>
-                            </button>
-                          ))
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Preview Slides */}
-                  <button
-                    className="btn-secondary flex items-center gap-1.5 px-3.5 py-2 text-xs"
-                    onClick={() => {
-                      setPreviewSlideIndex(0)
-                      setShowSlidePreview(true)
-                    }}
-                  >
-                    <Eye size={12} /> Preview
-                  </button>
-
-                  {/* Paint line colors */}
-                  <div className="flex items-center gap-1.5">
-                    <input
-                      type="color"
-                      value={typeof paintColor === 'string' ? paintColor : glossColor}
-                      onChange={(e) => setPaintColor(e.target.value.toUpperCase())}
-                      className="h-8 w-9 cursor-pointer rounded border border-surface-border bg-transparent p-0.5"
-                      title="Pick a color, then click lyric lines on the slides"
-                      aria-label="Paint color"
-                    />
-                    <button
-                      type="button"
-                      className={cn(
-                        'btn-secondary flex items-center gap-1.5 px-2.5 py-2 text-xs',
-                        typeof paintColor === 'string' && 'border-teal-500/40 text-teal-300'
-                      )}
-                      onClick={() =>
-                        setPaintColor((c) =>
-                          typeof c === 'string' ? undefined : glossColor
-                        )
-                      }
-                      title="Click lines on slides to apply this color"
-                    >
-                      <Palette size={12} />
-                      Paint
-                    </button>
-                    <button
-                      type="button"
-                      className={cn(
-                        'btn-secondary px-2.5 py-2 text-xs',
-                        paintColor === null && 'border-amber-500/40 text-amber-300'
-                      )}
-                      onClick={() =>
-                        setPaintColor((c) => (c === null ? undefined : null))
-                      }
-                      title="Click lines to clear custom color (glosses stay auto-yellow)"
-                    >
-                      Clear
-                    </button>
-                  </div>
-
-                  <div className="flex-1" />
-
-                  {/* Export */}
-                  <div className="relative" ref={exportRef}>
-                    <button
-                      className="btn-secondary flex items-center gap-1.5 px-3.5 py-2 text-xs"
-                      onClick={() => setExportOpen((o) => !o)}
-                    >
-                      <Download size={12} /> Export
-                      <ChevronDown size={11} className={cn('transition-transform', exportOpen && 'rotate-180')} />
-                    </button>
-                    {exportOpen && (
-                      <div className="absolute bottom-full right-0 mb-1 w-44 rounded-lg bg-surface-elevated border border-surface-border shadow-xl z-30 py-1 overflow-hidden animate-fade-in">
-                        <button
-                          className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs text-left text-slate-300 hover:bg-surface-tertiary hover:text-white transition-colors"
-                          onClick={() => handleExport('txt')}
-                        >
-                          <FileText size={12} className="text-slate-600" /> Plain text (.txt)
-                        </button>
-                        <button
-                          className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs text-left text-slate-300 hover:bg-surface-tertiary hover:text-white transition-colors"
-                          onClick={() => handleExport('usr')}
-                        >
-                          <FileText size={12} className="text-slate-600" /> SongSelect (.usr)
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
             </>
           )}
         </div>
       </div>
+      </div>
+    </BoothWorkspace>
 
       {/* Modals */}
       {showImport && (
@@ -2998,6 +2955,6 @@ export default function Lyrics(): React.ReactElement {
           onClose={() => setContextMenu(null)}
         />
       )}
-    </div>
+    </>
   )
 }

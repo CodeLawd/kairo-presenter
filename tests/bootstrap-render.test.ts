@@ -45,7 +45,7 @@ test('the loading screen renders instead of the app shell until bootstrap is rea
   reset(m)
   const markup = renderToStaticMarkup(React.createElement(m.App))
 
-  assert.match(markup, /ProAutomate/)
+  assert.match(markup, /Kairo/)
   assert.match(markup, /aria-busy="true"/)
   assert.doesNotMatch(markup, /data-playlist-sidebar/, 'no route content may mount yet')
 })

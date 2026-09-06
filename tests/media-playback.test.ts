@@ -4,6 +4,7 @@ import test from 'node:test'
 import {
   applyPlaybackToBackground,
   DEFAULT_MEDIA_PLAYBACK,
+  formatMediaClock,
   isDefaultMediaPlayback,
   mediaFilterCss,
   normalizeMediaPlayback,
@@ -13,6 +14,14 @@ import {
 } from '../src/lib/media-playback'
 import { DEFAULT_OVERLAY_THEME } from '../src/lib/overlay-defaults'
 import { renderOverlayHTML } from '../src/lib/overlay-template'
+
+test('formatMediaClock uses m:ss and h:mm:ss', () => {
+  assert.equal(formatMediaClock(0), '0:00')
+  assert.equal(formatMediaClock(5), '0:05')
+  assert.equal(formatMediaClock(65), '1:05')
+  assert.equal(formatMediaClock(3601), '1:00:01')
+  assert.equal(formatMediaClock(Number.NaN), '0:00')
+})
 
 test('missing playback is identity with loop off', () => {
   assert.deepEqual(normalizeMediaPlayback(undefined), DEFAULT_MEDIA_PLAYBACK)
@@ -64,7 +73,7 @@ test('overlay video does not loop until asked', () => {
     },
   }
   const html = renderOverlayHTML(theme, '', '')
-  assert.match(html, /autoplay muted/)
+  assert.match(html, /autoplay muted playsinline preload="auto"/)
   assert.doesNotMatch(html, /autoplay loop muted/)
 
   const looping = {

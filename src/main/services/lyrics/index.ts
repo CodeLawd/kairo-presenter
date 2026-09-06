@@ -21,6 +21,7 @@ import {
   preserveSlideBreaks,
   splitIntoSlideChunks,
 } from '@shared/lyrics-slides'
+import { normalizeResourceBindings } from '@shared/propresenter-resources'
 import { store } from '../../db'
 import { proPresenterService } from '../propresenter'
 import type { PPSlideGroupSpec } from '../propresenter/types'
@@ -1016,9 +1017,30 @@ class LyricsService {
     if (groups.length === 0) throw new Error('Song has no sections to present.')
 
     const presentationName = `${song.title}${song.artist ? ` — ${song.artist}` : ''}`
+    const bindings = normalizeResourceBindings(store.get('propresenterResources'))
+    let themeId: string | undefined
+    if (bindings.lyricsThemeId) {
+      try {
+        if (await proPresenterService.rawClient.resourceExists('theme', bindings.lyricsThemeId)) {
+          themeId = bindings.lyricsThemeId
+        } else {
+          log.warn('[LyricsService] Bound lyrics theme is unavailable — using the unthemed creation path', {
+            themeId: bindings.lyricsThemeId,
+            title: song.title,
+          })
+        }
+      } catch (err) {
+        log.warn('[LyricsService] Could not confirm bound lyrics theme — using the unthemed creation path', {
+          themeId: bindings.lyricsThemeId,
+          title: song.title,
+          error: (err as Error).message,
+        })
+      }
+    }
     const presentation = await proPresenterService.rawClient.createGroupedPresentation(
       presentationName,
-      groups
+      groups,
+      themeId ? { themeId } : {},
     )
 
     if (!presentation) {

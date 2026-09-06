@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { planMediaImport, uniqueFileName } from '../src/main/services/media'
+import { planMediaImport, planMediaPaste, uniqueFileName } from '../src/main/services/media'
 
 test('a free name is left alone', () => {
   assert.equal(uniqueFileName('loop.mp4', new Set(['still.png'])), 'loop.mp4')
@@ -39,4 +39,25 @@ test('files outside the media folder are copied in', () => {
 
 test('unsupported types are skipped', () => {
   assert.equal(planMediaImport('/Downloads/notes.pdf', '/media/backgrounds', new Set()).action, 'skip')
+})
+
+test('paste duplicates a file already in the library', () => {
+  const plan = planMediaPaste(
+    '/media/backgrounds/loop.mp4',
+    '/media/backgrounds',
+    new Set(['loop.mp4']),
+  )
+  assert.equal(plan.action, 'copy')
+  if (plan.action === 'copy') {
+    assert.equal(plan.from, '/media/backgrounds/loop.mp4')
+    assert.equal(plan.destName, 'loop 1.mp4')
+  }
+})
+
+test('paste copies an external file under a free name', () => {
+  const plan = planMediaPaste('/Downloads/sunset.mp4', '/media/backgrounds', new Set())
+  assert.equal(plan.action, 'copy')
+  if (plan.action === 'copy') {
+    assert.equal(plan.destName, 'sunset.mp4')
+  }
 })

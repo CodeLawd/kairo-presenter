@@ -13,10 +13,12 @@ import type {
   OrchestratorStatus,
   ScriptureTranslationOption,
   SermonPlan,
+  SettingsWithSecretsStatus,
   TranscriptResult,
 } from '@shared/ipc'
 import { normalizeOverlaySettings } from '@shared/overlay-defaults'
 import { useAppStore } from '@/stores/useAppStore'
+import { useAccountStore } from '@/stores/useAccountStore'
 import { applyAppTheme } from '@/lib/appTheme'
 import { DEFAULT_SETTINGS } from '@/lib/defaultSettings'
 import { DEFAULT_ONBOARDING_STATE } from '@shared/cloud/onboarding'
@@ -26,7 +28,11 @@ import {
   type BootstrapPhase,
 } from './bootstrap-state'
 
-const INITIAL_PROGRESS: BootstrapProgress = { completed: 0, total: 1, step: 'Starting ProAutomate…' }
+const INITIAL_PROGRESS: BootstrapProgress = {
+  completed: 0,
+  total: 1,
+  step: 'Getting everything ready…',
+}
 
 interface BootstrapStore {
   phase: BootstrapPhase
@@ -36,7 +42,7 @@ interface BootstrapStore {
   startedAt: number | null
 
   // ── Shared startup data, kept current as screens mutate it ────────────────
-  settings: AppSettings
+  settings: SettingsWithSecretsStatus
   translations: ScriptureTranslationOption[]
   sermonPlans: SermonPlan[]
   livePlan: LivePlanState | null
@@ -54,7 +60,7 @@ interface BootstrapStore {
   retry: () => Promise<void>
   dismissWarning: () => void
 
-  setSettings: (settings: AppSettings) => void
+  setSettings: (settings: SettingsWithSecretsStatus) => void
   patchSettings: <K extends keyof AppSettings>(section: K, value: AppSettings[K]) => void
   setTranslations: (options: ScriptureTranslationOption[]) => void
   setSermonPlans: (plans: SermonPlan[]) => void
@@ -107,7 +113,9 @@ export const useBootstrapStore = create<BootstrapStore>((set, get) => ({
 
   setSettings: (settings) => set({ settings: withNormalizedOverlay(settings) }),
   patchSettings: (section, value) =>
-    set((state) => ({ settings: withNormalizedOverlay({ ...state.settings, [section]: value }) })),
+    set((state) => ({
+      settings: withNormalizedOverlay({ ...state.settings, [section]: value }),
+    })),
   setTranslations: (translations) => set({ translations }),
   setSermonPlans: (sermonPlans) => set({ sermonPlans }),
   setLivePlan: (livePlan) => set({ livePlan }),
@@ -165,31 +173,61 @@ function hydrateRuntimeStore(snapshot: AppBootstrapSnapshot, settings: AppSettin
     useAppStore.setState({ scriptureProjectedCount: snapshot.orchestrator.totalPresentations })
   }
   if (snapshot.propresenter) store.setPPStatus(snapshot.propresenter)
+  // Read from the local token vault at launch, so the account is known before
+  // the first paint and no screen ever waits on the network for it.
+  if (snapshot.account) useAccountStore.getState().setSession(snapshot.account)
   store.setAutoMode(settings.scripture.autoMode, settings.scripture.confidenceThreshold)
   store.setCaptureDeviceId(settings.audio.deviceId || '')
 }
 
-function withNormalizedOverlay(settings: AppSettings): AppSettings {
-  return { ...settings, overlay: normalizeOverlaySettings(settings.overlay) }
+function withNormalizedOverlay(settings: SettingsWithSecretsStatus): SettingsWithSecretsStatus {
+  return {
+    ...settings,
+    overlay: normalizeOverlaySettings(settings.overlay),
+    secretsConfigured: settings.secretsConfigured ?? DEFAULT_SETTINGS.secretsConfigured,
+  }
 }
+
+let settingsChangedBound = false
 
 /**
  * Non-blocking integration hydration, started once the interface is open.
  * Nothing here may prevent or delay startup.
  */
 export async function hydrateIntegrations(): Promise<void> {
+  // Keep write-only secret status in sync after vault pull / key save.
+  // Subscribed here (not at module load) so `window.api` is definitely ready.
+  if (!settingsChangedBound) {
+    settingsChangedBound = true
+    window.api.settings.onChanged((next) => {
+      useBootstrapStore.getState().setSettings(next)
+      if (next.secretsConfigured.bible) {
+        void window.api.scripture
+          .getTranslations()
+          .then((translations) => {
+            useBootstrapStore.getState().setTranslations(translations)
+            useBootstrapStore.getState().setApiBibleAuth('authorized')
+          })
+          .catch(() => {
+            /* network blip — leave auth as-is */
+          })
+      }
+    })
+  }
+
   const { setApiBibleAuth, setAudioDevices, setNdiStatus, setTranslations } =
     useBootstrapStore.getState()
-  const apiKey = useBootstrapStore.getState().settings.stt.bibleApiKey
+  const bibleConfigured = useBootstrapStore.getState().settings.secretsConfigured.bible
 
   const validateApiBible = async (): Promise<void> => {
-    if (!apiKey) {
+    if (!bibleConfigured) {
       setApiBibleAuth('unauthorized')
       return
     }
     setApiBibleAuth('checking')
     try {
-      setTranslations(await window.api.scripture.getTranslations(apiKey))
+      // No key in the renderer — main uses the stored value.
+      setTranslations(await window.api.scripture.getTranslations())
       setApiBibleAuth('authorized')
     } catch (error) {
       // A refusal is definitive; anything else (no network, DNS) is not.

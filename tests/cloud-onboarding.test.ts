@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import type { AppSettings, OnboardingState } from '../src/lib/ipc'
+import { EMPTY_PP_RESOURCE_BINDINGS } from '../src/lib/propresenter-resources'
 import {
   DEFAULT_ONBOARDING_STATE,
   ONBOARDING_STEPS,
@@ -50,6 +51,7 @@ function settings(overrides: Partial<AppSettings> = {}): AppSettings {
     themeLibrary: [],
     media: { folder: '', playlists: [] },
     church: { name: '', timezone: '', role: '', serviceTimes: [] },
+    propresenterResources: { ...EMPTY_PP_RESOURCE_BINDINGS },
     ...overrides,
   } as AppSettings
 }
@@ -91,6 +93,34 @@ test('either a Bible key or a transcription key satisfies the API-key step', () 
   assert.equal(isStepComplete('apiKeys', deepgram), true)
 })
 
+test('ProPresenter resources step sits directly after the connection step', () => {
+  assert.deepEqual([...ONBOARDING_STEPS], [
+    'account',
+    'propresenter',
+    'propresenterResources',
+    'output',
+    'apiKeys',
+    'church',
+  ])
+})
+
+test('ProPresenter resources step is complete when any binding is configured', () => {
+  const configured = settings({
+    propresenterResources: { ...EMPTY_PP_RESOURCE_BINDINGS, scriptureThemeId: 'theme-1' },
+  })
+  assert.equal(isStepComplete('propresenterResources', configured), true)
+  assert.equal(isStepComplete('propresenterResources', settings()), false)
+})
+
+test('ProPresenter resources step can be skipped when discovery is unavailable', () => {
+  let atResources = completeStep(DEFAULT_ONBOARDING_STATE, 'account')
+  atResources = completeStep(atResources, 'propresenter')
+  atResources = setCurrentStep(atResources, 'propresenterResources')
+  const skipped = skipStep(atResources, 'propresenterResources')
+  assert.deepEqual(skipped.skippedSteps, ['propresenterResources'])
+  assert.equal(nextIncompleteStep(skipped), 'output')
+})
+
 test('a fully configured existing install never sees the wizard', () => {
   const full = configuredSettings()
   full.church = { name: 'Grace Chapel', timezone: 'Africa/Lagos', role: 'Operator', serviceTimes: [] }
@@ -106,7 +136,7 @@ test('a partly configured install resumes at the one step it is missing', () => 
   assert.deepEqual(state.completedSteps, ['propresenter', 'output', 'apiKeys'])
   // Account cannot be derived, so it is answered as skipped rather than left
   // holding a working setup open.
-  assert.deepEqual(state.skippedSteps, ['account'])
+  assert.deepEqual(state.skippedSteps, ['account', 'propresenterResources'])
   assert.equal(state.currentStep, 'church')
   assert.equal(isOnboardingFinished(state), false)
 })
@@ -131,6 +161,7 @@ test('walking back and continuing goes one step along, not to the first gap', ()
   // 2, not skip past everything answered and land on step 5.
   let state: OnboardingState = DEFAULT_ONBOARDING_STATE
   state = completeStep(state, 'propresenter')
+  state = completeStep(state, 'propresenterResources')
   state = completeStep(state, 'output')
   state = skipStep(state, 'apiKeys')
   state = setCurrentStep(state, 'account')
@@ -140,8 +171,13 @@ test('walking back and continuing goes one step along, not to the first gap', ()
 
   state = setCurrentStep(state, nextStep(state)!)
   assert.equal(state.currentStep, 'propresenter')
-  assert.equal(nextStep(state), 'output')
+  assert.equal(nextStep(state), 'propresenterResources')
   assert.equal(previousStep(state), 'account')
+
+  state = setCurrentStep(state, nextStep(state)!)
+  assert.equal(state.currentStep, 'propresenterResources')
+  assert.equal(nextStep(state), 'output')
+  assert.equal(previousStep(state), 'propresenter')
 })
 
 test('the last step has nowhere further to go', () => {
@@ -202,9 +238,8 @@ test('the closing summary reports what the machine will actually do', () => {
   const summary = onboardingSummary(configured)
   assert.deepEqual(summary.map((line) => line.step), ['propresenter', 'output', 'apiKeys', 'church'])
   assert.equal(summary[0].detail, '192.168.1.164:57563')
-  // Only the enabled output is named — a configured-but-off output is not what
-  // the machine will do on Sunday.
-  assert.equal(summary[1].detail, 'Main screen')
+  // Counted, not listed: output names overflow any layout they are put in.
+  assert.equal(summary[1].detail, '1 turned on')
   assert.equal(summary[2].detail, 'API.Bible')
   assert.equal(summary[3].detail, 'Grace Chapel')
   assert.ok(summary.every((line) => line.done))

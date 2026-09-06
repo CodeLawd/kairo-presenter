@@ -1,18 +1,36 @@
+import { useEffect, useState } from 'react'
 import type { BootstrapProgress } from '@shared/ipc'
-import { getBootstrapPercent } from './bootstrap-state'
+import { PRODUCT_NAME, PRODUCT_TAGLINE } from '@shared/brand'
+import { getSplashPercent, getSplashStep } from './bootstrap-state'
+import kairoIcon from '@/assets/kairo-icon.png'
 
 /**
- * Branded startup screen. Everything animated here carries `motion-reduce`
- * variants so `prefers-reduced-motion` leaves a static, legible screen.
+ * Branded startup screen. Stages advance on a timer so scriptures, lyrics, and
+ * the rest each get a readable beat — even when bootstrap finishes early.
+ * `motion-reduce` variants keep prefers-reduced-motion on a static screen.
  */
 export function LoadingScreen({
-  progress,
+  progress: _progress,
   fadingOut,
 }: {
   progress: BootstrapProgress
   fadingOut: boolean
 }): React.ReactElement {
-  const percent = getBootstrapPercent(progress)
+  const [elapsedMs, setElapsedMs] = useState(0)
+  const percent = getSplashPercent(elapsedMs, fadingOut)
+  const step = getSplashStep(elapsedMs, fadingOut)
+
+  useEffect(() => {
+    if (fadingOut) return
+    const started = performance.now()
+    let frame = 0
+    const tick = (): void => {
+      setElapsedMs(performance.now() - started)
+      frame = requestAnimationFrame(tick)
+    }
+    frame = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(frame)
+  }, [fadingOut])
 
   return (
     <div
@@ -25,33 +43,42 @@ export function LoadingScreen({
       aria-live="polite"
       aria-busy={!fadingOut}
     >
-      <div className="flex flex-col items-center gap-6 w-[320px]">
-        <div className="relative flex h-16 w-16 items-center justify-center">
-          <span className="absolute inset-0 rounded-2xl bg-teal-500/15 animate-ping motion-reduce:animate-none" />
-          <span className="relative flex h-16 w-16 items-center justify-center rounded-2xl border border-teal-500/40 bg-surface-secondary">
-            <span className="text-2xl font-black tracking-tighter text-teal-500">PA</span>
-          </span>
+      <div className="flex w-[340px] flex-col items-center gap-7">
+        <div className="splash-mark relative h-[88px] w-[88px]">
+          <img
+            src={kairoIcon}
+            alt=""
+            width={88}
+            height={88}
+            className="h-full w-full object-contain"
+          />
+          <span className="splash-mark-sheen" aria-hidden="true" />
         </div>
 
-        <div className="text-center">
-          <h1 className="text-xl font-black tracking-tight text-white">
-            Pro<span className="text-teal-500">Automate</span>
+        <div className="splash-copy text-center">
+          <h1 className="text-[28px] font-semibold leading-none tracking-[-0.03em] text-white">
+            {PRODUCT_NAME}
           </h1>
-          <p className="mt-1 text-[11px] uppercase tracking-[0.2em] text-slate-600">
-            Church tech automation
+          <p className="mt-2.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-300">
+            {PRODUCT_TAGLINE}
           </p>
         </div>
 
-        <div className="w-full">
-          <div className="h-1 w-full overflow-hidden rounded-full bg-surface-tertiary">
+        <div className="splash-copy w-full">
+          <div className="h-1 w-full overflow-hidden rounded-full bg-white/12">
             <div
-              className="h-full rounded-full bg-teal-500 transition-[width] duration-300 ease-out motion-reduce:transition-none"
+              className="h-full rounded-full bg-[#F59E0B] transition-[width] duration-200 ease-out motion-reduce:transition-none"
               style={{ width: `${percent}%` }}
             />
           </div>
-          <div className="mt-2 flex items-baseline justify-between gap-3">
-            <p className="min-w-0 truncate text-[11px] text-slate-400">{progress.step}</p>
-            <p className="shrink-0 font-mono text-[11px] tabular-nums text-slate-500">{percent}%</p>
+          <div className="mt-2.5 flex items-baseline justify-between gap-3">
+            <p
+              key={step}
+              className="splash-step min-w-0 truncate text-[12px] font-medium text-zinc-300"
+            >
+              {step}
+            </p>
+            <p className="shrink-0 font-mono text-[12px] tabular-nums text-zinc-400">{percent}%</p>
           </div>
         </div>
       </div>

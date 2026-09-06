@@ -8,7 +8,7 @@ import {
   Eye,
   EyeOff,
   Minus,
-} from 'lucide-react'
+} from '@/icons'
 import { cn } from '@/lib/utils'
 import type {
   OverlayContentKind,

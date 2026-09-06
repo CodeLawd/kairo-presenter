@@ -1,8 +1,9 @@
 import { DEFAULT_OVERLAY_SETTINGS } from '@shared/overlay-defaults'
-import type { AppSettings } from '@shared/ipc'
+import type { SettingsWithSecretsStatus } from '@shared/ipc'
+import { EMPTY_PP_RESOURCE_BINDINGS } from '@shared/propresenter-resources'
 
 /** Neutral settings used until the real ones arrive from the main process. */
-export const DEFAULT_SETTINGS: AppSettings = {
+export const DEFAULT_SETTINGS: SettingsWithSecretsStatus = {
   propresenter: { host: 'localhost', port: 50000, password: '' },
   audio: { deviceId: '' },
   stt: { provider: 'none', apiKey: '', anthropicApiKey: '', deepseekApiKey: '', llmProvider: 'anthropic', bibleApiKey: '', language: 'en-US' },
@@ -20,5 +21,15 @@ export const DEFAULT_SETTINGS: AppSettings = {
   overlay: DEFAULT_OVERLAY_SETTINGS,
   themeLibrary: [],
   media: { folder: '', playlists: [] },
+  tracks: { folder: '' },
   church: { name: '', timezone: '', role: '', serviceTimes: [] },
+  propresenterResources: { ...EMPTY_PP_RESOURCE_BINDINGS },
+  secretsConfigured: {
+    deepgram: false,
+    anthropic: false,
+    deepseek: false,
+    bible: false,
+    brave: false,
+    googleTranslate: false,
+  },
 }

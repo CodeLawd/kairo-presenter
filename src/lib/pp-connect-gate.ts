@@ -7,8 +7,11 @@ export type PpLaunchOutcome = 'pending' | 'connected' | 'unavailable'
 export function shouldOfferPpConnectGate(input: {
   sessionResolved: boolean
   launch: PpLaunchOutcome
+  /** Account sign-in is open — never stack the PP modal on top of it. */
+  accountGateOpen?: boolean
 }): boolean {
   if (input.sessionResolved) return false
+  if (input.accountGateOpen) return false
   // Hide while we still might get in — the modal is only for a failed handshake.
   return input.launch === 'unavailable'
 }

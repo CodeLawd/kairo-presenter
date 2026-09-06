@@ -1,7 +1,7 @@
 import { BrowserWindow } from 'electron'
 import log from 'electron-log/main'
 import overlayHtml from './overlay.html?asset'
-import { renderOverlayHTML } from '@shared/overlay-template'
+import { renderOverlayHTML, type OverlayColoredLine } from '@shared/overlay-template'
 import type { MediaPlayback, OverlayTheme } from '@shared/ipc'
 import { mediaFilterCss } from '@shared/media-playback'
 import { ndiService } from './index'
@@ -31,7 +31,12 @@ class OverlayWindow {
    * without the operator having to re-push the slide. Changing a background
    * mid-song must not blank the words.
    */
-  private lastRender: { reference: string; text: string; theme: OverlayTheme } | null = null
+  private lastRender: {
+    reference: string
+    text: string
+    theme: OverlayTheme
+    coloredLines?: OverlayColoredLine[]
+  } | null = null
 
   private async ensureWindow(): Promise<BrowserWindow> {
     if (this.win && !this.win.isDestroyed()) return this.win
@@ -55,6 +60,7 @@ class OverlayWindow {
       backgroundColor: '#00000000',
       webPreferences: {
         offscreen: true,
+        backgroundThrottling: false,
         contextIsolation: true,
         nodeIntegration: false,
       },
@@ -94,7 +100,8 @@ class OverlayWindow {
     outputId: string,
     reference: string,
     text: string,
-    theme: OverlayTheme
+    theme: OverlayTheme,
+    coloredLines?: OverlayColoredLine[],
   ): Promise<boolean> {
     if (!ndiService.getStatus().available) return false
     if (this.lastOutputId !== null && this.lastOutputId !== outputId) {
@@ -104,8 +111,8 @@ class OverlayWindow {
       })
     }
     this.lastOutputId = outputId
-    this.lastRender = { reference, text, theme }
-    await this.paint(reference, text, theme)
+    this.lastRender = { reference, text, theme, coloredLines }
+    await this.paint(reference, text, theme, coloredLines)
     return true
   }
 
@@ -122,7 +129,7 @@ class OverlayWindow {
 
     const theme: OverlayTheme = { ...current.theme, background }
     this.lastRender = { ...current, theme }
-    await this.paint(current.reference, current.text, theme)
+    await this.paint(current.reference, current.text, theme, current.coloredLines)
     return true
   }
 
@@ -149,7 +156,27 @@ class OverlayWindow {
     )
   }
 
-  private async paint(reference: string, text: string, theme: OverlayTheme): Promise<void> {
+  /** Pause or resume the current background video without rebuilding the slide. */
+  async setVideoPaused(paused: boolean): Promise<void> {
+    if (!this.win || this.win.isDestroyed()) return
+    await this.win.webContents.executeJavaScript(
+      `window.__setVideoPaused(${paused ? 'true' : 'false'})`,
+    )
+  }
+
+  /** Scrub the current background video without rebuilding the slide. */
+  async seekVideo(seconds: number): Promise<void> {
+    if (!this.win || this.win.isDestroyed()) return
+    const time = Number.isFinite(seconds) ? seconds : 0
+    await this.win.webContents.executeJavaScript(`window.__seekVideo(${time})`)
+  }
+
+  private async paint(
+    reference: string,
+    text: string,
+    theme: OverlayTheme,
+    coloredLines?: OverlayColoredLine[],
+  ): Promise<void> {
     // Retry sender creation if an earlier attempt lost the name to another copy
     // of the app. Cooldown-guarded inside the service, and a no-op once a sender
     // exists — without this a startup clash would need an app restart to clear.
@@ -159,8 +186,40 @@ class OverlayWindow {
     if (win.isDestroyed()) return
     const isVideoBg = theme.background.type === 'video' && !!theme.background.mediaPath
     win.webContents.setFrameRate(isVideoBg ? OSR_FRAME_RATE_VIDEO : OSR_FRAME_RATE)
-    const html = renderOverlayHTML(theme, reference, text, WIDTH, HEIGHT)
+    const html = renderOverlayHTML(theme, reference, text, WIDTH, HEIGHT, { coloredLines })
     await win.webContents.executeJavaScript(`window.__setContent(${JSON.stringify(html)})`)
+  }
+
+  /** Documents use a clean, opaque frame and wait for the page pixels to decode. */
+  async showDocument(outputId: string, theme: OverlayTheme): Promise<boolean> {
+    if (!(await this.showScripture(outputId, '', '', theme))) return false
+    if (!this.win || this.win.isDestroyed()) return false
+    await this.win.webContents.executeJavaScript(`(async () => {
+      const root = document.querySelector('.pa-overlay-root');
+      const image = root?.querySelector('img');
+      if (!root || !image) throw new Error('Document output image is missing.');
+      root.style.background = '#000';
+      await image.decode();
+    })()`)
+    return true
+  }
+
+  /**
+   * Drops verse / lyric / reference text without tearing down the background
+   * video. Returns false when nothing has been painted yet.
+   */
+  async clearText(): Promise<boolean> {
+    const current = this.lastRender
+    if (!current) return false
+    this.lastRender = { ...current, reference: '', text: '', coloredLines: undefined }
+    if (!this.win || this.win.isDestroyed()) return true
+    try {
+      await this.win.webContents.executeJavaScript('window.__clearText()')
+    } catch (err) {
+      log.warn('[NDI] Overlay clearText failed', (err as Error).message)
+      return false
+    }
+    return true
   }
 
   /** Blanks the overlay window content AND resets the NDI sender's repeating frame. */

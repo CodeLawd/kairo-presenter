@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { AlertTriangle, Download, Lock, RefreshCw } from 'lucide-react'
+import { AlertTriangle, Download, Lock, RefreshCw } from '@/icons'
 import type { ApiBibleOfflineTranslation } from '@shared/ipc'
 import {
   OFFLINE_BIBLE_ACTION_LABELS,
@@ -73,12 +73,12 @@ export function OfflineBibleManager(): JSX.Element {
   )
 
   return (
-    <div>
-      <div className="flex items-center justify-between">
-        <label className="label">Offline Bibles</label>
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[13px] text-white">Cached translations</p>
         <button
           type="button"
-          className="btn-secondary text-[10px] px-2 py-1"
+          className="btn-secondary px-2 py-1 text-[11px]"
           onClick={() => { void reload() }}
         >
           <RefreshCw size={11} className="mr-1 inline" />
@@ -86,24 +86,22 @@ export function OfflineBibleManager(): JSX.Element {
         </button>
       </div>
 
-      <p className="mt-1 text-[10px] text-slate-500 leading-relaxed">
-        API.Bible translations can be cached on this computer for offline use. Cached text must be
-        refreshed at least every 30 days; expired text is not displayed until it is refreshed.
+      <p className="text-[11px] leading-snug text-white/40">
+        Cached for offline use. Refresh at least every 30 days.
       </p>
 
       {error && (
-        <p className="mt-2 flex items-start gap-1.5 text-[10px] text-amber-400">
+        <p className="flex items-start gap-1.5 text-[11px] text-amber-400">
           <AlertTriangle size={11} className="mt-px shrink-0" />
           {error}
         </p>
       )}
 
-      <div className="mt-3 space-y-2">
-        {loading && <p className="text-[10px] text-slate-500">Checking cached Bibles…</p>}
+      <div className="space-y-1.5">
+        {loading && <p className="text-[11px] text-white/40">Checking cached Bibles…</p>}
         {!loading && rows.length === 0 && (
-          <p className="text-[10px] text-slate-500">
-            No API.Bible translations have been cached yet. Save an API.Bible key and search a
-            passage to start caching, or download a translation once its offline licence is confirmed.
+          <p className="text-[11px] leading-snug text-white/40">
+            None cached yet. Save an API.Bible key and search a passage, or download once the licence allows it.
           </p>
         )}
 
@@ -112,26 +110,25 @@ export function OfflineBibleManager(): JSX.Element {
           const percent = getOfflineBibleProgressPercent(row)
           const expiry = formatOfflineBibleExpiry(row)
           return (
-            <div key={row.bibleId} className="rounded-lg bg-surface-secondary/50 p-3">
+            <div key={row.bibleId} className="rounded-md bg-[#1c1c1c] px-2.5 py-2">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-sm font-bold text-white tracking-tight truncate">
+                  <p className="truncate text-[13px] text-white">
                     {row.translation} — {row.name}
                   </p>
-                  <p className="text-[10px] text-slate-400 mt-0.5">
+                  <p className="mt-0.5 text-[11px] text-white/40">
                     {getOfflineBibleStatusLabel(row)}
                     {expiry ? ` · ${expiry}` : ''}
-                  </p>
-                  <p className="text-[10px] text-slate-500 mt-0.5">
-                    {row.cachedVerses.toLocaleString()} verses cached
+                    {' · '}
+                    {row.cachedVerses.toLocaleString()} verses
                   </p>
                 </div>
-                <div className="flex shrink-0 gap-1.5">
+                <div className="flex shrink-0 gap-1">
                   {actions.map((action) => (
                     <button
                       key={action}
                       type="button"
-                      className="btn-secondary text-[10px] px-2 py-1"
+                      className="btn-secondary px-2 py-1 text-[11px]"
                       disabled={busy === row.bibleId && action !== 'pause'}
                       onClick={() => { void run(row, action) }}
                     >
@@ -143,22 +140,20 @@ export function OfflineBibleManager(): JSX.Element {
               </div>
 
               {row.totalChapters > 0 && row.status !== 'downloaded' && (
-                <div className="mt-2 h-1 rounded bg-surface-tertiary overflow-hidden">
-                  <div className="h-full bg-teal-500 transition-all" style={{ width: `${percent}%` }} />
+                <div className="mt-2 h-1 overflow-hidden rounded bg-white/10">
+                  <div className="h-full bg-[#007aff] transition-all" style={{ width: `${percent}%` }} />
                 </div>
               )}
 
               {!row.offlineDownloadEnabled && (
-                <p className="mt-2 flex items-start gap-1.5 text-[10px] text-slate-500 leading-relaxed">
+                <p className="mt-2 flex items-start gap-1.5 text-[11px] leading-snug text-white/35">
                   <Lock size={11} className="mt-px shrink-0" />
-                  Whole-Bible download is disabled for this translation until its API.Bible plan and
-                  publisher licence are confirmed to permit offline storage in this app. Verses you
-                  search are still cached for 30 days.
+                  Whole-Bible download is disabled until the publisher licence is confirmed. Searched verses are still cached for 30 days.
                 </p>
               )}
 
               {row.copyright && (
-                <p className="mt-2 text-[10px] text-slate-600 leading-relaxed">{row.copyright}</p>
+                <p className="mt-1.5 text-[10px] leading-snug text-white/30">{row.copyright}</p>
               )}
             </div>
           )

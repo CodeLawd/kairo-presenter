@@ -306,6 +306,29 @@ test("a stored lyrics override survives normalization; an absent one stays null"
   assert.equal(without.lyrics, null);
 });
 
+test("normalizing a lyrics override strips a baked-in background", () => {
+  const [output] = normalizeOverlayOutputs(
+    [
+      {
+        id: "a",
+        kind: "ndi",
+        lyrics: {
+          themeId: "t",
+          theme: {
+            ...RED_THEME,
+            background: { ...DEFAULT_OVERLAY_THEME.background, type: "video", mediaPath: "/tmp/loop.mp4" },
+          },
+          template: "{Text}",
+        },
+      },
+    ],
+    legacy,
+  );
+
+  assert.equal(output.lyrics?.theme.background.type, "transparent");
+  assert.equal(output.lyrics?.theme.verse.color, "#ff0000");
+});
+
 test("a lyrics theme can never carry a background", () => {
   const withImage = {
     ...DEFAULT_OVERLAY_THEME,
@@ -330,4 +353,27 @@ test("seeding a lyrics override strips a background inherited from scripture", (
 
   assert.equal(outputThemeFor(output, "lyrics").background.type, "transparent");
   assert.equal(outputThemeFor(output, "scripture").background.type, "gradient");
+});
+
+test("a stored lyrics override cannot keep a scripture background", () => {
+  // Apply-to-output used to write the draft as-is, so a scripture image could
+  // land in the lyrics slot. Resolve time must still strip it, or a lyric
+  // push replaces the dock loop with that image.
+  const output = withContentPatch(
+    setContentOverride(makeOverlayOutput("main", "ndi"), "lyrics", true),
+    "lyrics",
+    {
+      theme: {
+        ...DEFAULT_OVERLAY_THEME,
+        background: {
+          ...DEFAULT_OVERLAY_THEME.background,
+          type: "image",
+          mediaPath: "/tmp/theme-bg.png",
+        },
+      },
+    },
+  );
+
+  assert.equal(output.lyrics?.theme.background.type, "image");
+  assert.equal(outputThemeFor(output, "lyrics").background.type, "transparent");
 });

@@ -1,8 +1,10 @@
+import { DOCUMENTS } from '@shared/documents'
 import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import type {
   MediaLibrary,
+  TracksLibrary,
   AppBootstrapSnapshot,
   ApiBibleDownloadProgress,
   BootstrapProgress,
@@ -37,6 +39,12 @@ import type {
   PPLook,
   Unsubscribe,
 } from '@shared/ipc'
+import type {
+  PPResourceBindings,
+  PPResourceCatalogue,
+  PPResourceKind,
+  PPResourcePreview,
+} from '@shared/propresenter-resources'
 import { IPC } from '@shared/ipc'
 
 /**
@@ -84,12 +92,32 @@ const propresenter: ProAutomateAPI['propresenter'] = {
     return ipcRenderer.invoke(IPC.PROPRESENTER.TEST_OVERLAY)
   },
 
+  clearText(): Promise<boolean> {
+    return ipcRenderer.invoke(IPC.PROPRESENTER.CLEAR_TEXT)
+  },
+
   clearOverlay(): Promise<boolean> {
     return ipcRenderer.invoke(IPC.PROPRESENTER.CLEAR_OVERLAY)
   },
 
   getLooks(): Promise<PPLook[]> {
     return ipcRenderer.invoke(IPC.PROPRESENTER.GET_LOOKS)
+  },
+
+  getResourceCatalogue(options?: { refresh?: boolean }): Promise<PPResourceCatalogue> {
+    return ipcRenderer.invoke(IPC.PROPRESENTER.GET_RESOURCE_CATALOGUE, options)
+  },
+
+  getResourceDetails(kind: PPResourceKind, id: string): Promise<Record<string, unknown> | null> {
+    return ipcRenderer.invoke(IPC.PROPRESENTER.GET_RESOURCE_DETAILS, kind, id)
+  },
+
+  getResourcePreview(kind: PPResourceKind, id: string, childId?: string): Promise<PPResourcePreview> {
+    return ipcRenderer.invoke(IPC.PROPRESENTER.GET_RESOURCE_PREVIEW, kind, id, childId)
+  },
+
+  setResourceBindings(bindings: PPResourceBindings): Promise<PPResourceBindings> {
+    return ipcRenderer.invoke(IPC.PROPRESENTER.SET_RESOURCE_BINDINGS, bindings)
   },
 
   onStatusChange(callback: (status: ProPresenterStatus) => void): Unsubscribe {
@@ -128,6 +156,11 @@ const audio: ProAutomateAPI['audio'] = {
 // ─── app ──────────────────────────────────────────────────────────────────────
 
 const appApi: ProAutomateAPI['app'] = {
+  onImportRequested(callback) {
+    const unsubscribe = subscribe(IPC.APP.IMPORT_REQUESTED, callback)
+    ipcRenderer.send(IPC.APP.IMPORT_READY)
+    return unsubscribe
+  },
   bootstrap(): Promise<AppBootstrapSnapshot> {
     return ipcRenderer.invoke(IPC.APP.BOOTSTRAP)
   },
@@ -156,6 +189,10 @@ const scripture: ProAutomateAPI['scripture'] = {
     return ipcRenderer.invoke(IPC.SCRIPTURE.REGISTER, suggestion)
   },
 
+  presentDirectly(suggestion): Promise<void> {
+    return ipcRenderer.invoke(IPC.SCRIPTURE.PRESENT_DIRECTLY, suggestion)
+  },
+
   search(query: string, translation?: ScriptureTranslation): Promise<ScriptureResult[]> {
     return ipcRenderer.invoke(IPC.SCRIPTURE.SEARCH, query, translation)
   },
@@ -170,6 +207,10 @@ const scripture: ProAutomateAPI['scripture'] = {
 
   importSermonNotes() {
     return ipcRenderer.invoke(IPC.SCRIPTURE.IMPORT_SERMON_NOTES)
+  },
+
+  scanSermonNotes(text: string) {
+    return ipcRenderer.invoke(IPC.SCRIPTURE.SCAN_SERMON_NOTES, text)
   },
 
   listSermonPlans() {
@@ -325,12 +366,28 @@ const settings: ProAutomateAPI['settings'] = {
     return ipcRenderer.invoke(IPC.SETTINGS.GET, key)
   },
 
-  set<K extends keyof AppSettings>(key: K, value: AppSettings[K] | Partial<AppSettings[K]>): Promise<void> {
+  set<K extends keyof AppSettings>(
+    key: K,
+    value: import('@shared/ipc').SettingsSectionPatch<K>,
+  ): Promise<void> {
     return ipcRenderer.invoke(IPC.SETTINGS.SET, key, value)
   },
 
-  getAll(): Promise<AppSettings> {
+  getAll(): Promise<import('@shared/ipc').SettingsWithSecretsStatus> {
     return ipcRenderer.invoke(IPC.SETTINGS.GET_ALL)
+  },
+
+  testApiKey(
+    kind: 'deepgram' | 'anthropic' | 'bible',
+    draft?: string,
+  ): Promise<{ ok: boolean; message: string }> {
+    return ipcRenderer.invoke(IPC.SETTINGS.TEST_API_KEY, kind, draft)
+  },
+
+  onChanged(
+    callback: (settings: import('@shared/ipc').SettingsWithSecretsStatus) => void,
+  ): Unsubscribe {
+    return subscribe(IPC.SETTINGS.CHANGED, callback)
   },
 }
 
@@ -413,6 +470,7 @@ const ndi: ProAutomateAPI['ndi'] = {
 // ─── Expose ───────────────────────────────────────────────────────────────────
 
 const media: ProAutomateAPI['media'] = {
+  importFiles: (kind) => ipcRenderer.invoke(IPC.MEDIA.IMPORT_FILES, kind),
   getLibrary() {
     return ipcRenderer.invoke(IPC.MEDIA.GET_LIBRARY)
   },
@@ -443,16 +501,75 @@ const media: ProAutomateAPI['media'] = {
   setPlaylistItems(id: string, itemIds: string[]) {
     return ipcRenderer.invoke(IPC.MEDIA.SET_PLAYLIST_ITEMS, id, itemIds)
   },
+  setItemOrder(itemIds: string[]) {
+    return ipcRenderer.invoke(IPC.MEDIA.SET_ITEM_ORDER, itemIds)
+  },
+  deleteItem(itemId: string) {
+    return ipcRenderer.invoke(IPC.MEDIA.DELETE_ITEM, itemId)
+  },
+  renameItem(itemId: string, name: string) {
+    return ipcRenderer.invoke(IPC.MEDIA.RENAME_ITEM, itemId, name)
+  },
+  revealItem(itemId: string) {
+    return ipcRenderer.invoke(IPC.MEDIA.REVEAL_ITEM, itemId)
+  },
+  copyItems(itemIds: string[]) {
+    return ipcRenderer.invoke(IPC.MEDIA.COPY_ITEMS, itemIds)
+  },
+  cutItems(itemIds: string[], fromPlaylistId?: string) {
+    return ipcRenderer.invoke(IPC.MEDIA.CUT_ITEMS, itemIds, fromPlaylistId)
+  },
+  pasteItems(playlistId?: string) {
+    return ipcRenderer.invoke(IPC.MEDIA.PASTE_ITEMS, playlistId)
+  },
+  clipboardHasFiles() {
+    return ipcRenderer.invoke(IPC.MEDIA.CLIPBOARD_HAS_FILES)
+  },
   addMediaToPlaylist(playlistId: string) {
     return ipcRenderer.invoke(IPC.MEDIA.ADD_MEDIA_TO_PLAYLIST, playlistId)
   },
   setPlayback(itemId, playback) {
     return ipcRenderer.invoke(IPC.MEDIA.SET_PLAYBACK, itemId, playback)
   },
+  setPaused(paused) {
+    return ipcRenderer.invoke(IPC.MEDIA.SET_PAUSED, paused)
+  },
+  seek(seconds) {
+    return ipcRenderer.invoke(IPC.MEDIA.SEEK, seconds)
+  },
   onLibraryChange(callback) {
     const listener = (_e: unknown, library: MediaLibrary): void => callback(library)
     ipcRenderer.on(IPC.MEDIA.LIBRARY, listener)
     return () => ipcRenderer.removeListener(IPC.MEDIA.LIBRARY, listener)
+  },
+}
+
+const tracks: ProAutomateAPI['tracks'] = {
+  getLibrary() {
+    return ipcRenderer.invoke(IPC.TRACKS.GET_LIBRARY)
+  },
+  rescan() {
+    return ipcRenderer.invoke(IPC.TRACKS.RESCAN)
+  },
+  chooseFolder() {
+    return ipcRenderer.invoke(IPC.TRACKS.CHOOSE_FOLDER)
+  },
+  importFiles() {
+    return ipcRenderer.invoke(IPC.TRACKS.IMPORT_FILES)
+  },
+  play(itemId) {
+    return ipcRenderer.invoke(IPC.TRACKS.PLAY, itemId)
+  },
+  setPaused(paused) {
+    return ipcRenderer.invoke(IPC.TRACKS.SET_PAUSED, paused)
+  },
+  stop() {
+    return ipcRenderer.invoke(IPC.TRACKS.STOP)
+  },
+  onLibraryChange(callback) {
+    const listener = (_e: unknown, library: TracksLibrary): void => callback(library)
+    ipcRenderer.on(IPC.TRACKS.LIBRARY, listener)
+    return () => ipcRenderer.removeListener(IPC.TRACKS.LIBRARY, listener)
   },
 }
 
@@ -480,7 +597,65 @@ const onboarding: ProAutomateAPI['onboarding'] = {
   },
 }
 
-const api: ProAutomateAPI = { app: appApi, propresenter, audio, scripture, transcription, lyrics, settings, orchestrator, resilience, ndi, media, onboarding }
+const account: ProAutomateAPI['account'] = {
+  getSession() {
+    return ipcRenderer.invoke(IPC.ACCOUNT.GET_SESSION)
+  },
+  signUp(input) {
+    return ipcRenderer.invoke(IPC.ACCOUNT.SIGN_UP, input)
+  },
+  signIn(input) {
+    return ipcRenderer.invoke(IPC.ACCOUNT.SIGN_IN, input)
+  },
+  signOut() {
+    return ipcRenderer.invoke(IPC.ACCOUNT.SIGN_OUT)
+  },
+  requestPasswordReset(email) {
+    return ipcRenderer.invoke(IPC.ACCOUNT.REQUEST_PASSWORD_RESET, email)
+  },
+  resendVerification() {
+    return ipcRenderer.invoke(IPC.ACCOUNT.RESEND_VERIFICATION)
+  },
+  verifyEmailCode(code) {
+    return ipcRenderer.invoke(IPC.ACCOUNT.VERIFY_EMAIL_CODE, code)
+  },
+  startDevicePairing() {
+    return ipcRenderer.invoke(IPC.ACCOUNT.START_DEVICE_PAIRING)
+  },
+  cancelDevicePairing() {
+    return ipcRenderer.invoke(IPC.ACCOUNT.CANCEL_DEVICE_PAIRING)
+  },
+  getDevicePairing() {
+    return ipcRenderer.invoke(IPC.ACCOUNT.GET_DEVICE_PAIRING)
+  },
+  openWeb(path) {
+    return ipcRenderer.invoke(IPC.ACCOUNT.OPEN_WEB, path)
+  },
+  onSessionChange(callback) {
+    return subscribe(IPC.ACCOUNT.SESSION_CHANGED, callback)
+  },
+  onPairingChange(callback) {
+    return subscribe(IPC.ACCOUNT.PAIRING_CHANGED, callback)
+  },
+}
+
+const documents: ProAutomateAPI['documents'] = {
+  list: () => ipcRenderer.invoke(DOCUMENTS.LIST),
+  capabilities: () => ipcRenderer.invoke(DOCUMENTS.CAPABILITIES),
+  prepare: (kind) => ipcRenderer.invoke(DOCUMENTS.PREPARE, kind),
+  savePage: (id, page, png) => ipcRenderer.invoke(DOCUMENTS.SAVE_PAGE, id, page, png),
+  finish: (id) => ipcRenderer.invoke(DOCUMENTS.FINISH, id),
+  cancel: (id) => ipcRenderer.invoke(DOCUMENTS.CANCEL, id),
+  rename: (id, name) => ipcRenderer.invoke(DOCUMENTS.RENAME, id, name),
+  remove: (id) => ipcRenderer.invoke(DOCUMENTS.REMOVE, id),
+  push: (id, page) => ipcRenderer.invoke(DOCUMENTS.PUSH, id, page),
+}
+
+const services: ProAutomateAPI['services'] = {
+  command: (command) => ipcRenderer.invoke('services:command', command),
+  onChanged: (callback) => subscribe('services:changed', callback),
+}
+const api: ProAutomateAPI = { services, documents, app: appApi, propresenter, audio, scripture, transcription, lyrics, settings, orchestrator, resilience, ndi, media, tracks, onboarding, account }
 
 if (process.contextIsolated) {
   try {

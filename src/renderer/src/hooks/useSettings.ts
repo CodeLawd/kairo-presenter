@@ -16,7 +16,7 @@ export function useSettings<K extends keyof AppSettings>(
   const setSetting = useCallback(
     async (newValue: AppSettings[K]): Promise<void> => {
       useBootstrapStore.getState().patchSettings(key, newValue)
-      await window.api.settings.set(key, newValue)
+      await window.api.settings.set(key, newValue as import('@shared/ipc').SettingsSectionPatch<K>)
     },
     [key]
   )

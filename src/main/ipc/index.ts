@@ -1,40 +1,72 @@
-import { ipcMain, BrowserWindow, systemPreferences, dialog } from "electron";
+import { DOCUMENTS } from "@shared/documents";
+import { documentsService } from "../services/documents";
+import { ipcMain, BrowserWindow, systemPreferences, dialog, shell } from "electron";
 import type { OpenDialogOptions } from "electron";
 import log from "electron-log/main";
 import type {
   AppSettings,
   MediaPlayback,
   NdiOutputStatus,
+  DevicePairingState,
   OnboardingState,
   OnboardingStepId,
+  SessionSnapshot,
+  SignInInput,
+  SignUpInput,
   OrchestratorConfig,
   ResilienceStatus,
 } from "@shared/ipc";
 import { IPC } from "@shared/ipc";
+import { normalizeResourceBindings } from "@shared/propresenter-resources";
+import type {
+  PPResourceBindings,
+  PPResourceKind,
+} from "@shared/propresenter-resources";
 import { normalizeOverlaySettings } from "@shared/overlay-defaults";
 import { findNdiOutput } from "@shared/overlay-outputs";
 import { normalizeThemeLibrary } from "@shared/theme-library";
+import {
+  LYRICS_SECRET_KEYS,
+  STT_SECRET_KEYS,
+  mergeSecretSection,
+  redactSettingsSecrets,
+  secretsConfiguredFromSettings,
+} from "@shared/cloud/org-secrets";
+import type { SettingsSecretClearKey, SettingsWithSecretsStatus } from "@shared/ipc";
 import { store } from "../db";
 import { proPresenterService } from "../services/propresenter";
+import { proPresenterResources } from "../services/propresenter/resources";
 import { audioService } from "../services/audio";
 import { sttService } from "../services/stt";
 import { scriptureService } from "../services/scripture";
-import { extractScriptureReferences, readSermonDocument, sermonPlanStore } from "../services/scripture/sermon-plans";
+import { analyzeScriptureReferences, readSermonDocument, sermonPlanStore } from "../services/scripture/sermon-plans";
 import { livePlanService } from "../services/scripture/live-plan";
+import { serviceRecords } from '../services/service-records';
+import { SERVICE_CHANNEL, SERVICE_CHANGED, type ServiceCommand } from '@shared/service-records';
 import { getDownloadManager, hasDownloadManager } from "../services/scripture/offline-bibles";
 import path from "path";
 import { lyricsService } from "../services/lyrics";
 import { buildSlides } from "@shared/lyrics-slides";
+import { normalizeGlossColor } from "@shared/lyrics-style";
 import { orchestrator } from "../orchestrator";
 import { resilienceManager } from "../services/resilience";
 import { ndiService } from "../services/ndi";
 import { mediaService, MEDIA_FILE_EXTENSIONS } from "../services/media";
+import { tracksService } from "../services/tracks";
+import { TRACK_FILE_EXTENSIONS } from "@shared/tracks";
 import { overlayWindow } from "../services/ndi/overlay-window";
 import { allowPickedOverlayMedia } from "../services/ndi/media-allowlist";
 import { runBootstrap } from "../bootstrap";
 import { onboardingService } from "../services/cloud/onboarding";
+import { cloudSession } from "../services/cloud/session";
 
 // ─── Broadcast helper ─────────────────────────────────────────────────────────
+
+/** Replace a handler so `--watch` reloads cannot leave a channel unregistered. */
+function handle(channel: string, listener: Parameters<typeof ipcMain.handle>[1]): void {
+  ipcMain.removeHandler(channel);
+  ipcMain.handle(channel, listener);
+}
 
 function broadcast<T>(channel: string, data: T): void {
   BrowserWindow.getAllWindows().forEach((win) => {
@@ -93,6 +125,10 @@ function registerProPresenterHandlers(): void {
     return orchestrator.testOverlay();
   });
 
+  ipcMain.handle(IPC.PROPRESENTER.CLEAR_TEXT, async () => {
+    return orchestrator.clearText();
+  });
+
   ipcMain.handle(IPC.PROPRESENTER.CLEAR_OVERLAY, async () => {
     return orchestrator.clearOverlay();
   });
@@ -101,6 +137,37 @@ function registerProPresenterHandlers(): void {
     if (proPresenterService.getStatus().state !== "connected") return [];
     return proPresenterService.rawClient.getLooks();
   });
+
+  ipcMain.handle(IPC.PROPRESENTER.GET_RESOURCE_CATALOGUE, async (_event, options?: { refresh?: boolean }) => {
+    if (proPresenterService.getStatus().state !== "connected") {
+      return { refreshedAt: Date.now(), resources: [], warnings: [] };
+    }
+    return proPresenterResources.getCatalogue({ refresh: options?.refresh === true });
+  });
+
+  ipcMain.handle(
+    IPC.PROPRESENTER.GET_RESOURCE_DETAILS,
+    async (_event, kind: PPResourceKind, id: string) => {
+      if (proPresenterService.getStatus().state !== "connected") return null;
+      return proPresenterResources.getDetails(kind, id);
+    },
+  );
+
+  ipcMain.handle(
+    IPC.PROPRESENTER.GET_RESOURCE_PREVIEW,
+    async (_event, kind: PPResourceKind, id: string, childId?: string) => {
+      if (proPresenterService.getStatus().state !== "connected") return null;
+      return proPresenterResources.getPreview(kind, id, childId);
+    },
+  );
+
+  ipcMain.handle(
+    IPC.PROPRESENTER.SET_RESOURCE_BINDINGS,
+    (_event, bindings: PPResourceBindings) => {
+      store.set("propresenterResources", normalizeResourceBindings(bindings));
+      return store.get("propresenterResources");
+    },
+  );
 }
 
 // ─── Audio handlers ───────────────────────────────────────────────────────────
@@ -131,6 +198,10 @@ function registerAudioHandlers(): void {
 function registerScriptureHandlers(): void {
   ipcMain.handle(IPC.SCRIPTURE.REGISTER, (_event, suggestion) => {
     scriptureService.receiveSuggestion(suggestion);
+  });
+
+  ipcMain.handle(IPC.SCRIPTURE.PRESENT_DIRECTLY, async (_event, suggestion) => {
+    await orchestrator.presentScriptureDirectly(suggestion);
   });
 
   ipcMain.handle(
@@ -166,11 +237,17 @@ function registerScriptureHandlers(): void {
     const filePath = result.filePaths[0];
     const text = await readSermonDocument(filePath);
     const defaultTranslation = store.get('scripture').defaultTranslation;
+    const analysis = analyzeScriptureReferences(text, defaultTranslation);
     return {
       title: path.basename(filePath, path.extname(filePath)),
       sourceFileName: path.basename(filePath),
-      items: extractScriptureReferences(text, defaultTranslation),
+      text,
+      ...analysis,
     };
+  });
+
+  ipcMain.handle(IPC.SCRIPTURE.SCAN_SERMON_NOTES, (_event, text: string) => {
+    return analyzeScriptureReferences(text, store.get('scripture').defaultTranslation);
   });
 
   ipcMain.handle(IPC.SCRIPTURE.LIST_SERMON_PLANS, () => sermonPlanStore.list());
@@ -270,6 +347,34 @@ function registerScriptureHandlers(): void {
 // ─── Transcription handlers ───────────────────────────────────────────────────
 
 function registerTranscriptionHandlers(): void {
+  serviceRecords.init();
+  serviceRecords.onChanged(snapshot => broadcast(SERVICE_CHANGED, snapshot));
+  let changingService = false;
+  handle(SERVICE_CHANNEL, async (_event, command: ServiceCommand) => {
+    if (command.action === 'list') return serviceRecords.snapshot();
+    if (changingService) throw new Error('Service is updating. Please try again.');
+    changingService = true;
+    try {
+      if (command.action === 'create') {
+        if (orchestrator.getStatus().running) throw new Error('Pause transcription before creating a service.');
+        const plan = command.planId ? sermonPlanStore.get(command.planId) : null;
+        if (command.planId && !plan) throw new Error('Selected notes are unavailable.');
+        serviceRecords.create(command.title, command.speaker, plan);
+        sttService.clearHistory();
+        livePlanService.setPlan(command.planId);
+      } else if (command.action === 'end') {
+        await orchestrator.stop();
+        serviceRecords.end();
+      } else if (command.action === 'nugget') {
+        serviceRecords.nugget(command.text, command.sourceIds);
+      } else if (command.action === 'analyze') {
+        serviceRecords.retryAnalysis(command.serviceId);
+      } else if (command.action === 'removeNugget') {
+        serviceRecords.removeNugget(command.serviceId, command.nuggetId);
+      } else throw new Error('Unknown service command.');
+      return serviceRecords.snapshot();
+    } finally { changingService = false; }
+  });
   ipcMain.handle(IPC.TRANSCRIPTION.GET_HISTORY, () => {
     return sttService.getHistory();
   });
@@ -283,7 +388,23 @@ function registerTranscriptionHandlers(): void {
 
 function registerOrchestratorHandlers(): void {
   ipcMain.handle(IPC.ORCHESTRATOR.START, async (_event, config: OrchestratorConfig) => {
-    await orchestrator.start(config);
+    if (!serviceRecords.active()) throw new Error('Create a service in Operator before starting transcription.');
+    // Renderer settings are redacted — fill secret fields from the local store.
+    const stt = store.get("stt");
+    const hydrated: OrchestratorConfig = {
+      ...config,
+      sttApiKey: config.sttApiKey?.trim() || stt.apiKey,
+      llmApiKey:
+        config.llmApiKey?.trim() ||
+        (config.llmProvider === "deepseek" ? stt.deepseekApiKey : stt.anthropicApiKey),
+      sttProvider:
+        config.sttProvider !== "none"
+          ? config.sttProvider
+          : stt.apiKey
+            ? "deepgram"
+            : stt.provider,
+    };
+    await orchestrator.start(hydrated);
   });
 
   ipcMain.handle(IPC.ORCHESTRATOR.STOP, async () => {
@@ -366,13 +487,16 @@ function registerLyricsHandlers(): void {
 
     // Same builder the library grid renders from, so `slideIndex` lines up with
     // the tile the operator clicked.
-    const slides = buildSlides(song, { glossColor: store.get("lyrics").glossColor });
+    const slides = buildSlides(song, {
+      glossColor: normalizeGlossColor(store.get("lyrics").glossColor),
+    });
     const slide = slides[slideIndex];
     if (!slide) throw new Error(`Slide ${slideIndex + 1} not found in "${song.title}"`);
 
     await orchestrator.presentLyricSlide(
       `${song.title} — ${slide.sectionLabel}`,
       slide.lines.join("\n"),
+      slide.lines.map((text, index) => ({ text, color: slide.lineColors?.[index] })),
     );
   });
 
@@ -422,6 +546,7 @@ function registerResilienceHandlers(): void {
   });
 
   ipcMain.handle(IPC.RESILIENCE.RESTORE, async () => {
+    if (!serviceRecords.active()) throw new Error('Create or resume a service before restoring transcription.');
     await resilienceManager.restoreSession();
   });
 
@@ -430,9 +555,39 @@ function registerResilienceHandlers(): void {
   });
 }
 
-// ─── NDI handlers ──────────────────────────────────────────────────────────────
+// ─── Document handlers ────────────────────────────────────────────────────────
+
+function registerDocumentHandlers(): void {
+  handle(DOCUMENTS.LIST, () => documentsService.list());
+  handle(DOCUMENTS.CAPABILITIES, () => documentsService.capabilities());
+  handle(DOCUMENTS.PREPARE, (_event, kind) => documentsService.prepare(kind));
+  handle(DOCUMENTS.SAVE_PAGE, (_event, id, page, png) => documentsService.savePage(id, page, png));
+  handle(DOCUMENTS.FINISH, (_event, id) => documentsService.finish(id));
+  handle(DOCUMENTS.CANCEL, (_event, id) => documentsService.cancel(id));
+  handle(DOCUMENTS.RENAME, (_event, id, name) => documentsService.rename(id, name));
+  handle(DOCUMENTS.REMOVE, (_event, id) => documentsService.remove(id));
+  handle(DOCUMENTS.PUSH, async (_event, id, page) => {
+    const path = await documentsService.page(id, page);
+    return { applied: await orchestrator.presentDocumentPage(path) };
+  });
+}
 
 function registerMediaHandlers(): void {
+  handle(IPC.MEDIA.IMPORT_FILES, async (_event, kind: "image" | "video") => {
+    if (kind !== "image" && kind !== "video") throw new Error("Unsupported media type.");
+    if (!mediaService.getLibrary().folder) {
+      const folder = await dialog.showOpenDialog({ title: "Choose a backgrounds folder for imported files", properties: ["openDirectory", "createDirectory"] });
+      if (folder.canceled || !folder.filePaths[0]) return mediaService.getLibrary();
+      await mediaService.setFolder(folder.filePaths[0]);
+    }
+    const result = await dialog.showOpenDialog({
+      title: kind === "image" ? "Import images" : "Import videos",
+      properties: ["openFile", "multiSelections"],
+      filters: [{ name: kind === "image" ? "Images" : "Videos", extensions: kind === "image" ? ["png", "jpg", "jpeg", "webp", "gif", "avif", "bmp"] : ["mp4", "webm", "m4v", "mov", "ogv"] }],
+    });
+    if (result.canceled || result.filePaths.length === 0) return mediaService.getLibrary();
+    return mediaService.importIntoPlaylist(null, result.filePaths);
+  });
   ipcMain.handle(IPC.MEDIA.GET_LIBRARY, () => mediaService.getLibrary());
 
   ipcMain.handle(IPC.MEDIA.RESCAN, () => mediaService.scan());
@@ -488,6 +643,39 @@ function registerMediaHandlers(): void {
   ipcMain.handle(IPC.MEDIA.SET_PLAYLIST_ITEMS, (_event, id: string, itemIds: string[]) =>
     mediaService.setPlaylistItems(id, itemIds),
   );
+  ipcMain.handle(IPC.MEDIA.SET_ITEM_ORDER, (_event, itemIds: string[]) =>
+    mediaService.setItemOrder(itemIds),
+  );
+  ipcMain.handle(IPC.MEDIA.DELETE_ITEM, async (_event, itemId: string) => {
+    const live = mediaService.getLiveItem();
+    const library = await mediaService.deleteItem(itemId);
+    // A background that was on screen must come down with the file — otherwise
+    // the NDI frame keeps showing a path that no longer exists.
+    if (live?.id === itemId) {
+      await overlayWindow.setBackground({
+        ...normalizeOverlaySettings(store.get("overlay")).theme.background,
+        type: "transparent",
+        mediaPath: "",
+      });
+    }
+    return library;
+  });
+  ipcMain.handle(IPC.MEDIA.RENAME_ITEM, (_event, itemId: string, name: string) =>
+    mediaService.renameItem(itemId, name),
+  );
+  ipcMain.handle(IPC.MEDIA.REVEAL_ITEM, (_event, itemId: string) => {
+    mediaService.revealItem(itemId);
+  });
+  ipcMain.handle(IPC.MEDIA.COPY_ITEMS, (_event, itemIds: string[]) => {
+    mediaService.copyItems(itemIds);
+  });
+  ipcMain.handle(IPC.MEDIA.CUT_ITEMS, (_event, itemIds: string[], fromPlaylistId?: string) => {
+    mediaService.cutItems(itemIds, fromPlaylistId);
+  });
+  ipcMain.handle(IPC.MEDIA.PASTE_ITEMS, (_event, playlistId?: string) =>
+    mediaService.pasteItems(playlistId),
+  );
+  ipcMain.handle(IPC.MEDIA.CLIPBOARD_HAS_FILES, () => mediaService.clipboardHasFiles());
 
   ipcMain.handle(IPC.MEDIA.ADD_MEDIA_TO_PLAYLIST, async (_event, playlistId: string) => {
     const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
@@ -511,6 +699,56 @@ function registerMediaHandlers(): void {
     }
     return library;
   });
+
+  ipcMain.handle(IPC.MEDIA.SET_PAUSED, async (_event, paused: boolean) => {
+    const library = mediaService.setLivePaused(!!paused);
+    await overlayWindow.setVideoPaused(library.livePaused);
+    return library;
+  });
+
+  ipcMain.handle(IPC.MEDIA.SEEK, async (_event, seconds: number) => {
+    const live = mediaService.getLiveItem();
+    if (!live || live.kind !== "video") return;
+    await overlayWindow.seekVideo(Number(seconds));
+  });
+}
+
+function registerTracksHandlers(): void {
+  tracksService.onChange((library) => broadcast(IPC.TRACKS.LIBRARY, library));
+
+  handle(IPC.TRACKS.GET_LIBRARY, () => tracksService.getLibrary());
+  handle(IPC.TRACKS.RESCAN, () => tracksService.scan());
+  handle(IPC.TRACKS.CHOOSE_FOLDER, async () => {
+    const result = await dialog.showOpenDialog({
+      title: "Choose your audio folder",
+      properties: ["openDirectory", "createDirectory"],
+      buttonLabel: "Use this folder",
+    });
+    if (result.canceled || result.filePaths.length === 0) return tracksService.getLibrary();
+    return tracksService.setFolder(result.filePaths[0]);
+  });
+  handle(IPC.TRACKS.IMPORT_FILES, async () => {
+    try {
+      await tracksService.ensureFolder();
+    } catch {
+      const folder = await dialog.showOpenDialog({
+        title: "Choose a folder for audio files",
+        properties: ["openDirectory", "createDirectory"],
+      });
+      if (folder.canceled || !folder.filePaths[0]) return tracksService.getLibrary();
+      await tracksService.setFolder(folder.filePaths[0]);
+    }
+    const result = await dialog.showOpenDialog({
+      title: "Import audio",
+      properties: ["openFile", "multiSelections"],
+      filters: [{ name: "Audio", extensions: [...TRACK_FILE_EXTENSIONS] }],
+    });
+    if (result.canceled || result.filePaths.length === 0) return tracksService.getLibrary();
+    return tracksService.importFiles(result.filePaths);
+  });
+  handle(IPC.TRACKS.PLAY, (_event, itemId: string) => tracksService.play(itemId));
+  handle(IPC.TRACKS.SET_PAUSED, (_event, paused: boolean) => tracksService.setPaused(!!paused));
+  handle(IPC.TRACKS.STOP, () => tracksService.stop());
 }
 
 function registerNdiHandlers(): void {
@@ -565,11 +803,33 @@ function registerNdiHandlers(): void {
 
 // ─── Settings handlers ────────────────────────────────────────────────────────
 
+function settingsForRenderer(): SettingsWithSecretsStatus {
+  const raw: AppSettings = {
+    ...store.store,
+    overlay: normalizeOverlaySettings(store.get("overlay")),
+    themeLibrary: normalizeThemeLibrary(
+      store.get("themeLibrary"),
+      store.get("overlay").theme,
+    ),
+  };
+  return {
+    ...redactSettingsSecrets(raw),
+    secretsConfigured: secretsConfiguredFromSettings(raw),
+  };
+}
+
+function broadcastSettingsChanged(): void {
+  broadcast(IPC.SETTINGS.CHANGED, settingsForRenderer());
+}
+
 function registerSettingsHandlers(): void {
   ipcMain.handle(IPC.SETTINGS.GET, (_event, key: keyof AppSettings) => {
     if (key === "overlay") return normalizeOverlaySettings(store.get("overlay"));
     if (key === "themeLibrary") {
       return normalizeThemeLibrary(store.get("themeLibrary"), store.get("overlay").theme);
+    }
+    if (key === "stt" || key === "lyrics") {
+      return settingsForRenderer()[key];
     }
     return store.get(key);
   });
@@ -593,8 +853,34 @@ function registerSettingsHandlers(): void {
           "themeLibrary",
           normalizeThemeLibrary(value, store.get("overlay").theme),
         );
+      } else if (key === "stt") {
+        const merged = mergeSecretSection(
+          store.get("stt"),
+          value as AppSettings["stt"] & { clearKeys?: SettingsSecretClearKey[] },
+          STT_SECRET_KEYS,
+        );
+        store.set("stt", merged);
+        broadcastSettingsChanged();
+        void cloudSession.pushOrgSecrets();
+      } else if (key === "lyrics") {
+        const merged = mergeSecretSection(
+          store.get("lyrics"),
+          value as AppSettings["lyrics"] & { clearKeys?: SettingsSecretClearKey[] },
+          LYRICS_SECRET_KEYS,
+        );
+        store.set("lyrics", merged);
+        broadcastSettingsChanged();
+        void cloudSession.pushOrgSecrets();
       } else {
         store.set(key, value);
+        if (key === "church") {
+          const church = value as AppSettings["church"];
+          void cloudSession.syncOrgProfile({
+            name: church.name,
+            timezone: church.timezone,
+            serviceTimes: church.serviceTimes,
+          });
+        }
       }
       if (key === "scripture") {
         const scripture = value as AppSettings["scripture"];
@@ -609,13 +895,69 @@ function registerSettingsHandlers(): void {
     },
   );
 
-  ipcMain.handle(IPC.SETTINGS.GET_ALL, () => {
-    return {
-      ...store.store,
-      overlay: normalizeOverlaySettings(store.get("overlay")),
-      themeLibrary: normalizeThemeLibrary(store.get("themeLibrary"), store.get("overlay").theme),
-    };
-  });
+  ipcMain.handle(IPC.SETTINGS.GET_ALL, () => settingsForRenderer());
+
+  ipcMain.handle(
+    IPC.SETTINGS.TEST_API_KEY,
+    async (_event, kind: "deepgram" | "anthropic" | "bible", draft?: string) => {
+      const stt = store.get("stt");
+      const key =
+        (typeof draft === "string" && draft.trim()) ||
+        (kind === "deepgram"
+          ? stt.apiKey
+          : kind === "anthropic"
+            ? stt.anthropicApiKey
+            : stt.bibleApiKey);
+
+      if (!key) return { ok: false, message: "No key entered" };
+
+      if (kind === "deepgram") {
+        try {
+          const res = await fetch("https://api.deepgram.com/v1/projects", {
+            headers: { Authorization: `Token ${key}` },
+          });
+          if (res.ok) return { ok: true, message: "Key valid" };
+          if (res.status === 401) return { ok: false, message: "Unauthorized — invalid key" };
+          return { ok: false, message: `HTTP ${res.status}` };
+        } catch {
+          const valid = key.length >= 20 && !/\s/.test(key);
+          return {
+            ok: valid,
+            message: valid ? "Format valid (network check blocked)" : "Key format invalid",
+          };
+        }
+      }
+
+      if (kind === "anthropic") {
+        if (!key.startsWith("sk-ant-") || key.length < 30) {
+          return { ok: false, message: "Must start with sk-ant-" };
+        }
+        try {
+          const res = await fetch("https://api.anthropic.com/v1/models", {
+            headers: { "x-api-key": key, "anthropic-version": "2023-06-01" },
+          });
+          if (res.ok || res.status === 200) return { ok: true, message: "Key valid" };
+          if (res.status === 401) return { ok: false, message: "Unauthorized — check key" };
+          return { ok: true, message: `Accepted (HTTP ${res.status})` };
+        } catch {
+          return { ok: true, message: "Format valid (network check blocked)" };
+        }
+      }
+
+      try {
+        const translations = await scriptureService.getTranslationOptions(key, true);
+        const available = translations.filter(
+          (item: { available: boolean }) => item.available,
+        );
+        return { ok: true, message: `${available.length} translations available` };
+      } catch (error) {
+        return {
+          ok: false,
+          message: error instanceof Error ? error.message : "Unable to validate key",
+        };
+      }
+    },
+  );
 }
 
 // ─── Push event wiring ────────────────────────────────────────────────────────
@@ -627,6 +969,7 @@ function wireEventBroadcasting(): void {
   });
 
   sttService.onTranscript((result) => {
+    serviceRecords.transcript(result);
     broadcast(IPC.TRANSCRIPTION.TRANSCRIPT, result);
   });
 
@@ -635,6 +978,8 @@ function wireEventBroadcasting(): void {
   });
 
   livePlanService.onChange((state) => {
+    const note = state.planId ? sermonPlanStore.get(state.planId) : null;
+    if (note) serviceRecords.attach(note);
     broadcast(IPC.SCRIPTURE.LIVE_PLAN_CHANGED, state);
   });
 
@@ -645,6 +990,7 @@ function wireEventBroadcasting(): void {
   });
 
   scriptureService.onSuggestion((suggestion) => {
+    serviceRecords.scripture(suggestion);
     broadcast(IPC.SCRIPTURE.SUGGESTION, suggestion);
   });
 
@@ -655,6 +1001,7 @@ function wireEventBroadcasting(): void {
   }
 
   orchestrator.onStatus((status) => {
+    serviceRecords.setRunning(status.running);
     broadcast(IPC.ORCHESTRATOR.STATUS, status);
   });
 
@@ -668,6 +1015,18 @@ function wireEventBroadcasting(): void {
 
   onboardingService.onStateChange((state: OnboardingState) => {
     broadcast(IPC.ONBOARDING.STATE, state);
+  });
+
+  cloudSession.onSessionChange((session: SessionSnapshot) => {
+    broadcast(IPC.ACCOUNT.SESSION_CHANGED, session);
+  });
+
+  cloudSession.onPairingChange((state: DevicePairingState) => {
+    broadcast(IPC.ACCOUNT.PAIRING_CHANGED, state);
+  });
+
+  cloudSession.onSecretsChanged(() => {
+    broadcastSettingsChanged();
   });
 }
 
@@ -688,6 +1047,67 @@ function registerOnboardingHandlers(): void {
   ipcMain.handle(IPC.ONBOARDING.RESET, async () => onboardingService.reset());
 }
 
+// ─── Account handlers ─────────────────────────────────────────────────────────
+
+/**
+ * Every mutating call resolves to `{ ok, data, error }` rather than rejecting.
+ *
+ * A rejected `invoke` reaches the renderer as an opaque "Error invoking remote
+ * method" string, which is useless in a form. Returning the failure keeps the
+ * operator-facing message intact all the way to the field it belongs under.
+ */
+function registerAccountHandlers(): void {
+  ipcMain.handle(IPC.ACCOUNT.GET_SESSION, async () => cloudSession.getSession());
+
+  ipcMain.handle(IPC.ACCOUNT.SIGN_UP, async (_e, input: SignUpInput) =>
+    cloudResult(() => cloudSession.signUp(input)),
+  );
+  ipcMain.handle(IPC.ACCOUNT.SIGN_IN, async (_e, input: SignInInput) =>
+    cloudResult(() => cloudSession.signIn(input)),
+  );
+  ipcMain.handle(IPC.ACCOUNT.SIGN_OUT, async () => cloudSession.signOut());
+  ipcMain.handle(IPC.ACCOUNT.REQUEST_PASSWORD_RESET, async (_e, email: string) =>
+    cloudResult(async () => {
+      await cloudSession.requestPasswordReset(email);
+      return null;
+    }),
+  );
+
+  ipcMain.handle(IPC.ACCOUNT.RESEND_VERIFICATION, async () =>
+    cloudResult(async () => {
+      await cloudSession.resendVerification();
+      return null;
+    }),
+  );
+
+  ipcMain.handle(IPC.ACCOUNT.VERIFY_EMAIL_CODE, async (_e, code: string) =>
+    cloudResult(() => cloudSession.verifyEmailCode(code)),
+  );
+
+  ipcMain.handle(IPC.ACCOUNT.START_DEVICE_PAIRING, async () => cloudSession.startPairing());
+  ipcMain.handle(IPC.ACCOUNT.CANCEL_DEVICE_PAIRING, async () => cloudSession.cancelPairing());
+  ipcMain.handle(IPC.ACCOUNT.GET_DEVICE_PAIRING, async () => cloudSession.getPairing());
+
+  ipcMain.handle(IPC.ACCOUNT.OPEN_WEB, async (_e, path?: string) => {
+    // Build-time, same reasoning as the API URL — see cloud/session.ts.
+    const base = import.meta.env.MAIN_VITE_WEB_URL || "http://localhost:3001";
+    await shell.openExternal(`${base}${path ?? ""}`);
+  });
+}
+
+async function cloudResult<T>(run: () => Promise<T>): Promise<{
+  ok: boolean;
+  data: T | null;
+  error: string | null;
+}> {
+  try {
+    return { ok: true, data: await run(), error: null };
+  } catch (error) {
+    const message = (error as { message?: string }).message ?? "Something went wrong.";
+    return { ok: false, data: null, error: message };
+  }
+}
+
 // ─── Startup bootstrap ────────────────────────────────────────────────────────
 
 function registerAppHandlers(): void {
@@ -698,11 +1118,7 @@ function registerAppHandlers(): void {
     const sender = event.sender;
     const snapshot = await runBootstrap(
       {
-        settings: async () => ({
-          ...store.store,
-          overlay: normalizeOverlaySettings(store.get("overlay")),
-          themeLibrary: normalizeThemeLibrary(store.get("themeLibrary"), store.get("overlay").theme),
-        }),
+        settings: async () => settingsForRenderer(),
         orchestrator: async () => orchestrator.getStatus(),
         propresenter: async () => proPresenterService.getStatus(),
         transcription: async () => sttService.getHistory(),
@@ -714,6 +1130,9 @@ function registerAppHandlers(): void {
         // Disk read, like every other resource here. The moment anything in
         // this map touches the network, launch time becomes internet-dependent.
         onboarding: async () => onboardingService.getState(),
+        // Reads the encrypted token vault on disk. The API call that validates
+        // that token happens later, in the background.
+        account: async () => cloudSession.getSession(),
       },
       {
         onProgress: (progress) => {
@@ -748,12 +1167,21 @@ export function registerIpcHandlers(): void {
   registerSettingsHandlers();
   registerResilienceHandlers();
   registerNdiHandlers();
+  registerDocumentHandlers();
   registerMediaHandlers();
+  registerTracksHandlers();
   registerOnboardingHandlers();
+  registerAccountHandlers();
   // Index the backgrounds folder without holding up startup — the dock renders
   // empty and fills in when the scan lands.
+  // Restores a stored sign-in and starts the quiet refresh loop. Never awaited:
+  // the account is not allowed to delay startup by so much as a frame.
+  cloudSession.start();
   void mediaService.scan().catch((err) => {
     log.warn("[Media] Initial scan failed", (err as Error).message);
+  });
+  void tracksService.scan().catch((err) => {
+    log.warn("[Tracks] Initial scan failed", (err as Error).message);
   });
   wireEventBroadcasting();
   log.info("All IPC handlers registered");

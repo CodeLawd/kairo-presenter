@@ -21,15 +21,25 @@ import type {
   PPMessageToken,
   PPVideoInput,
   PPLookSummary,
+  PPBinaryAsset,
+  PPResourceCollectionEnvelope,
 } from './types'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-/** Name of the message template ProAutomate creates/reuses for scripture overlays. */
-const SCRIPTURE_MESSAGE_NAME = 'ProAutomate Scripture'
+/** Name of the message template Kairo creates/reuses for scripture overlays. */
+const SCRIPTURE_MESSAGE_NAME = 'Kairo Scripture'
+const LEGACY_SCRIPTURE_MESSAGE_NAME = 'ProAutomate Scripture'
 const RECONNECT_BASE_MS = 1_000
 const RECONNECT_MAX_MS = 30_000
 const STREAM_BUFFER_MAX = 1_024 * 1_024 // 1 MB safety cap
+const RESOURCE_BINARY_MAX_BYTES = 5 * 1024 * 1024
+const RESOURCE_IMAGE_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp'])
+
+export interface PPCreatePresentationOptions {
+  /** Stable UUID of an existing ProPresenter theme. */
+  themeId?: string
+}
 
 // ─── Typed EventEmitter ───────────────────────────────────────────────────────
 
@@ -373,6 +383,158 @@ export class ProPresenterClient extends EventEmitter {
     }
   }
 
+  // ─── Read-only resource requests ──────────────────────────────────────────
+
+  /**
+   * Reads a collection while tolerating the envelopes used by different PP
+   * versions. Unsupported endpoints become an empty collection so discovery
+   * can continue with the categories that are available.
+   */
+  async getResourceCollection(path: string): Promise<unknown[]> {
+    return (await this.getResourceCollectionOutcome(path)).items
+  }
+
+  async getResourceCollectionOutcome(path: string): Promise<{ items: unknown[]; error?: unknown }> {
+    try {
+      const { data } = await this.http.get<unknown>(path)
+      if (Array.isArray(data)) return { items: data }
+      if (!data || typeof data !== 'object') return { items: [] }
+
+      const envelope = data as PPResourceCollectionEnvelope
+      for (const key of ['items', 'collections', 'data', 'resources'] as const) {
+        if (Array.isArray(envelope[key])) return { items: envelope[key] as unknown[] }
+      }
+      return { items: [] }
+    } catch (err) {
+      this.logAxiosError(`getResourceCollection(${path})`, err)
+      return { items: [], error: err }
+    }
+  }
+
+  /** Reads one resource detail without allowing a detail failure to escape. */
+  async getResourceDetails(path: string): Promise<Record<string, unknown> | null> {
+    try {
+      const { data } = await this.http.get<unknown>(path)
+      if (!data || typeof data !== 'object' || Array.isArray(data)) return null
+      const record = data as Record<string, unknown>
+      if (record.data && typeof record.data === 'object' && !Array.isArray(record.data)) {
+        return record.data as Record<string, unknown>
+      }
+      return record
+    } catch (err) {
+      this.logAxiosError(`getResourceDetails(${path})`, err)
+      return null
+    }
+  }
+
+  /**
+   * Reads an approved image format into an owned byte array. The response is
+   * deliberately GET-only and bounded before it crosses into the cache.
+   */
+  async getBinaryAsset(
+    path: string,
+    params: Record<string, string | number> = {},
+  ): Promise<PPBinaryAsset | null> {
+    try {
+      const response = await this.http.get<ArrayBuffer | Uint8Array>(path, {
+        params,
+        responseType: 'arraybuffer',
+      })
+      const mimeType = String(response.headers?.['content-type'] ?? '').split(';', 1)[0].trim().toLowerCase()
+      if (!RESOURCE_IMAGE_MIME_TYPES.has(mimeType)) {
+        log.warn('[PP] Resource preview returned unsupported MIME type', { path, mimeType })
+        return null
+      }
+
+      const data = response.data
+      const bytes = data instanceof Uint8Array
+        ? Uint8Array.from(data)
+        : data instanceof ArrayBuffer
+          ? new Uint8Array(data.slice(0))
+          : null
+      if (!bytes || bytes.byteLength > RESOURCE_BINARY_MAX_BYTES) {
+        log.warn('[PP] Resource preview exceeded the 5 MiB limit', {
+          path,
+          bytes: bytes?.byteLength ?? 0,
+        })
+        return null
+      }
+
+      return { mimeType, bytes }
+    } catch (err) {
+      this.logAxiosError(`getBinaryAsset(${path})`, err)
+      return null
+    }
+  }
+
+  private resourcePath(...segments: string[]): string {
+    return `/${segments.map((segment) => encodeURIComponent(segment)).join('/')}`
+  }
+
+  // Collection/detail wrappers keep endpoint knowledge in the main process.
+  async getThemes(): Promise<unknown[]> { return this.getResourceCollection('/v1/themes') }
+  async getTheme(id: string): Promise<Record<string, unknown> | null> {
+    return this.getResourceDetails(this.resourcePath('v1', 'theme', id))
+  }
+  async getMacros(): Promise<unknown[]> { return this.getResourceCollection('/v1/macros') }
+  async getMacroCollections(): Promise<unknown[]> { return this.getResourceCollection('/v1/macro_collections') }
+  async getMacro(id: string): Promise<Record<string, unknown> | null> {
+    return this.getResourceDetails(this.resourcePath('v1', 'macro', id))
+  }
+  async getLook(id: string): Promise<Record<string, unknown> | null> {
+    return this.getResourceDetails(this.resourcePath('v1', 'look', id))
+  }
+  async getMessage(id: string): Promise<Record<string, unknown> | null> {
+    return this.getResourceDetails(this.resourcePath('v1', 'message', id))
+  }
+  async getProps(): Promise<unknown[]> { return this.getResourceCollection('/v1/props') }
+  async getPropCollections(): Promise<unknown[]> { return this.getResourceCollection('/v1/prop_collections') }
+  async getProp(id: string): Promise<Record<string, unknown> | null> {
+    return this.getResourceDetails(this.resourcePath('v1', 'prop', id))
+  }
+  async getMessagesCollection(): Promise<unknown[]> { return this.getResourceCollection('/v1/messages') }
+  async getMediaPlaylists(): Promise<unknown[]> { return this.getResourceCollection('/v1/media/playlists') }
+  async getMediaPlaylist(id: string): Promise<Record<string, unknown> | null> {
+    return this.getResourceDetails(this.resourcePath('v1', 'media', 'playlist', id))
+  }
+  async getMasks(): Promise<unknown[]> { return this.getResourceCollection('/v1/masks') }
+  async getMask(id: string): Promise<Record<string, unknown> | null> {
+    return this.getResourceDetails(this.resourcePath('v1', 'mask', id))
+  }
+  async getStageLayouts(): Promise<unknown[]> { return this.getResourceCollection('/v1/stage/layouts') }
+  async getStageScreens(): Promise<unknown[]> { return this.getResourceCollection('/v1/stage/screens') }
+  async getStageLayout(id: string): Promise<Record<string, unknown> | null> {
+    return this.getResourceDetails(this.resourcePath('v1', 'stage', 'layout', id))
+  }
+  async getClearGroups(): Promise<unknown[]> { return this.getResourceCollection('/v1/clear/groups') }
+  async getLibraryDetails(id: string): Promise<Record<string, unknown> | null> {
+    return this.getResourceDetails(this.resourcePath('v1', 'library', id))
+  }
+  async getPlaylistDetails(id: string): Promise<Record<string, unknown> | null> {
+    return this.getResourceDetails(this.resourcePath('v1', 'playlist', id))
+  }
+
+  // Lazy preview wrappers. `childId` is used for a theme slide; all segments
+  // are encoded independently so a UUID/name can never escape its path slot.
+  async getThemeSlideThumbnail(themeId: string, childId: string, params: Record<string, string | number> = {}): Promise<PPBinaryAsset | null> {
+    return this.getBinaryAsset(this.resourcePath('v1', 'theme', themeId, 'slides', childId, 'thumbnail'), params)
+  }
+  async getPropThumbnail(id: string, params: Record<string, string | number> = {}): Promise<PPBinaryAsset | null> {
+    return this.getBinaryAsset(this.resourcePath('v1', 'prop', id, 'thumbnail'), params)
+  }
+  async getMaskThumbnail(id: string, params: Record<string, string | number> = {}): Promise<PPBinaryAsset | null> {
+    return this.getBinaryAsset(this.resourcePath('v1', 'mask', id, 'thumbnail'), params)
+  }
+  async getMediaThumbnail(id: string, params: Record<string, string | number> = {}): Promise<PPBinaryAsset | null> {
+    return this.getBinaryAsset(this.resourcePath('v1', 'media', id, 'thumbnail'), params)
+  }
+  async getStageLayoutThumbnail(id: string, params: Record<string, string | number> = {}): Promise<PPBinaryAsset | null> {
+    return this.getBinaryAsset(this.resourcePath('v1', 'stage', 'layout', id, 'thumbnail'), params)
+  }
+  async getMacroIcon(id: string, params: Record<string, string | number> = {}): Promise<PPBinaryAsset | null> {
+    return this.getBinaryAsset(this.resourcePath('v1', 'macro', id, 'icon'), params)
+  }
+
   // ─── Version ───────────────────────────────────────────────────────────────
 
   async getVersion(): Promise<PPVersionResponse> {
@@ -673,11 +835,24 @@ export class ProPresenterClient extends EventEmitter {
 
   // ─── Content pushing ───────────────────────────────────────────────────────
 
-  private buildPresentationBody(name: string, slideGroups: PPCreatePresentationRequest['slide_groups']): PPCreatePresentationRequest {
-    return { id: { name }, slide_groups: slideGroups }
+  private buildPresentationBody(
+    name: string,
+    slideGroups: PPCreatePresentationRequest['slide_groups'],
+    options: PPCreatePresentationOptions = {},
+  ): PPCreatePresentationRequest {
+    const themeId = options.themeId?.trim()
+    return {
+      id: { name },
+      ...(themeId ? { theme: { uuid: themeId, name: '', index: 0 } } : {}),
+      slide_groups: slideGroups,
+    }
   }
 
-  async createPresentation(name: string, slides: PPCreateSlide[]): Promise<PPPresentation | null> {
+  async createPresentation(
+    name: string,
+    slides: PPCreateSlide[],
+    options: PPCreatePresentationOptions = {},
+  ): Promise<PPPresentation | null> {
     const defaultSlideArea: PPTextElement = {
       text: '',
       position: { x: 0.0, y: 0.0, width: 1.0, height: 1.0 },
@@ -695,12 +870,16 @@ export class ProPresenterClient extends EventEmitter {
             : [defaultSlideArea],
         })),
       },
-    ])
+    ], options)
 
     return this.postPresentation(name, body, slides.length)
   }
 
-  async createGroupedPresentation(name: string, groups: PPSlideGroupSpec[]): Promise<PPPresentation | null> {
+  async createGroupedPresentation(
+    name: string,
+    groups: PPSlideGroupSpec[],
+    options: PPCreatePresentationOptions = {},
+  ): Promise<PPPresentation | null> {
     const defaultArea: PPTextElement = {
       text: '',
       position: { x: 0.0, y: 0.0, width: 1.0, height: 1.0 },
@@ -717,7 +896,7 @@ export class ProPresenterClient extends EventEmitter {
             ? slide.lines.map((line) => ({ ...defaultArea, text: line }))
             : [defaultArea],
       })),
-    })))
+    })), options)
 
     return this.postPresentation(name, body, groups.length)
   }
@@ -769,12 +948,16 @@ export class ProPresenterClient extends EventEmitter {
    * accepted names are audio, props, messages, announcements, slide, media and
    * video_input; presentation, background and all are rejected.
    *
-   * `video_input` is cleared too because blanking the NDI frame only makes our
-   * source transparent — the layer itself stays live until PP is told to drop it.
+   * `video_input` is cleared by default for a full PP reset. Callers clearing
+   * ProAutomate's own output can pass `{ clearVideoInput: false }` to preserve
+   * the operator's selected input while the NDI frame is blanked separately.
    */
-  async clearAll(): Promise<boolean> {
+  async clearAll(options: { clearVideoInput?: boolean } = {}): Promise<boolean> {
+    const layers = options.clearVideoInput === false
+      ? (['slide'] as const)
+      : (['slide', 'video_input'] as const)
     const results = await Promise.all(
-      (['slide', 'video_input'] as const).map(async (layer) => {
+      layers.map(async (layer) => {
         try {
           await this.http.get(`/v1/clear/layer/${layer}`)
           return true
@@ -785,7 +968,11 @@ export class ProPresenterClient extends EventEmitter {
       }),
     )
     const ok = results.every(Boolean)
-    if (ok) log.info('[PP] Slide and video-input layers cleared')
+    if (ok) {
+      log.info(options.clearVideoInput === false
+        ? '[PP] Slide layer cleared; video-input selection preserved'
+        : '[PP] Slide and video-input layers cleared')
+    }
     return ok
   }
 
@@ -813,7 +1000,7 @@ export class ProPresenterClient extends EventEmitter {
   }
 
   /**
-   * Find (or create) the "ProAutomate Scripture" message template and return
+   * Find (or create) the "Kairo Scripture" message template and return
    * its UUID. The template holds two tokens — Reference and Text — whose values
    * are filled on every trigger. Styling lives in ProPresenter (Messages panel),
    * so users can restyle it once and every push inherits the look.
@@ -833,6 +1020,7 @@ export class ProPresenterClient extends EventEmitter {
     const existing = this.cachedScriptureMessageId
       ? messages.find((m) => m.id?.uuid === this.cachedScriptureMessageId)
       : messages.find((m) => m.id?.name === SCRIPTURE_MESSAGE_NAME)
+        ?? messages.find((m) => m.id?.name === LEGACY_SCRIPTURE_MESSAGE_NAME)
 
     if (existing?.id?.uuid) {
       this.cachedScriptureMessageId = existing.id.uuid
@@ -917,6 +1105,43 @@ export class ProPresenterClient extends EventEmitter {
       }
       this.logAxiosError('showScriptureMessage', err)
       return false
+    }
+  }
+
+  /** Triggers an operator-selected message without creating or updating it. */
+  async showBoundMessage(messageId: string, reference: string, text: string): Promise<boolean> {
+    const tokens: PPMessageToken[] = [
+      { name: 'Reference', text: { text: reference } },
+      { name: 'Text', text: { text } },
+    ]
+
+    try {
+      await this.http.post(`/v1/message/${encodeURIComponent(messageId)}/trigger`, tokens)
+      log.info('[PP] Bound message shown', { messageId, reference })
+      return true
+    } catch (err) {
+      this.logAxiosError('showBoundMessage', err)
+      return false
+    }
+  }
+
+  /** Confirms that a durable binding still resolves in the connected PP workspace. */
+  async resourceExists(kind: string, id: string): Promise<boolean> {
+    if (!id.trim()) return false
+    switch (kind) {
+      case 'theme': return (await this.getTheme(id)) !== null
+      case 'macro': return (await this.getMacro(id)) !== null
+      case 'look': return (await this.getLook(id)) !== null
+      case 'message': return (await this.getMessage(id)) !== null
+      case 'prop': return (await this.getProp(id)) !== null
+      case 'media': return (await this.getMediaPlaylist(id)) !== null
+      case 'mask': return (await this.getMask(id)) !== null
+      case 'stageLayout': return (await this.getStageLayout(id)) !== null
+      case 'clearGroup': return (await this.getResourceDetails(this.resourcePath('v1', 'clear', 'group', id))) !== null
+      case 'library': return (await this.getLibraryDetails(id)) !== null
+      case 'playlist': return (await this.getPlaylistDetails(id)) !== null
+      case 'videoInput': return (await this.getVideoInputs()).some((input) => input.uuid === id)
+      default: return false
     }
   }
 

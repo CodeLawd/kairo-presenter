@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { AlertTriangle, Check, Plus, Trash2 } from 'lucide-react'
+import { AlertTriangle, Check, Plus, Trash2 } from '@/icons'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 import { makeOverlayOutput } from '@shared/overlay-defaults'
@@ -467,7 +467,7 @@ function NdiOutputFields({
           </button>
         </div>
         <p className="mt-1 text-[10px] leading-snug text-slate-500">
-          Pick the PP Video Input you created for the “ProAutomate Scripture” NDI source. PP labels
+          Pick the PP Video Input you created for the “Kairo Scripture” NDI source. PP labels
           inputs “Input N” — check PP’s Video Inputs list if unsure.
         </p>
       </Field>

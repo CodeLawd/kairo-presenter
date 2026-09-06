@@ -1,5 +1,12 @@
-import { useLayoutEffect, useRef, useState } from 'react'
-import { applyOverlayAutoFit } from '@shared/overlay-fit'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import {
+  applyOverlayAutoFit,
+  overlayVideoTime,
+  playOverlayVideos,
+  seekOverlayVideos,
+  setOverlayVideosPaused,
+  type OverlayVideoTime,
+} from '@shared/overlay-fit'
 import { cn } from '@/lib/utils'
 
 export const OVERLAY_FRAME_WIDTH = 1920
@@ -18,6 +25,9 @@ export function ScaledOverlayPreview({
   height,
   className,
   fill = false,
+  paused = false,
+  seekTo = null,
+  onTime,
 }: {
   html: string
   autoFit: boolean
@@ -26,6 +36,11 @@ export function ScaledOverlayPreview({
   className?: string
   /** Fill a sized parent instead of imposing 16:9. */
   fill?: boolean
+  /** Pause background video without rebuilding the slide. */
+  paused?: boolean
+  /** Scrub without rebuilding the slide. Token changes trigger the seek. */
+  seekTo?: { token: number; seconds: number } | null
+  onTime?: (time: OverlayVideoTime) => void
 }): React.ReactElement {
   const frameRef = useRef<HTMLDivElement>(null)
   const innerRef = useRef<HTMLDivElement>(null)
@@ -50,7 +65,9 @@ export function ScaledOverlayPreview({
 
   useLayoutEffect(() => {
     const inner = innerRef.current
-    if (!inner || !autoFit || scale.x <= 0 || scale.y <= 0) return
+    if (!inner || scale.x <= 0 || scale.y <= 0) return
+    playOverlayVideos(inner, paused)
+    if (!autoFit) return
     applyOverlayAutoFit(inner)
     let cancelled = false
     void document.fonts?.ready.then(() => {
@@ -59,7 +76,46 @@ export function ScaledOverlayPreview({
     return () => {
       cancelled = true
     }
+    // `paused` is applied by the effect below so a play/pause toggle does not
+    // rebind autoplay listeners and restart the clip.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- html/scale only
   }, [html, autoFit, scale.x, scale.y])
+
+  useLayoutEffect(() => {
+    const inner = innerRef.current
+    if (!inner) return
+    setOverlayVideosPaused(inner, paused)
+  }, [paused])
+
+  useLayoutEffect(() => {
+    const inner = innerRef.current
+    if (!inner || !seekTo) return
+    seekOverlayVideos(inner, seekTo.seconds)
+  }, [seekTo])
+
+  useEffect(() => {
+    const inner = innerRef.current
+    if (!inner || !onTime) return
+    const videos = inner.querySelectorAll('video')
+    if (videos.length === 0) return
+    const video = videos[0]
+    const emit = (): void => {
+      onTime(overlayVideoTime(video))
+    }
+    video.addEventListener('timeupdate', emit)
+    video.addEventListener('durationchange', emit)
+    video.addEventListener('loadedmetadata', emit)
+    video.addEventListener('ended', emit)
+    video.addEventListener('seeked', emit)
+    emit()
+    return () => {
+      video.removeEventListener('timeupdate', emit)
+      video.removeEventListener('durationchange', emit)
+      video.removeEventListener('loadedmetadata', emit)
+      video.removeEventListener('ended', emit)
+      video.removeEventListener('seeked', emit)
+    }
+  }, [html, onTime])
 
   const ready = scale.x > 0 && scale.y > 0
 

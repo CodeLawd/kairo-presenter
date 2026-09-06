@@ -7,7 +7,7 @@ import {
   Send,
   ZoomIn,
   ZoomOut,
-} from "lucide-react";
+} from '@/icons';
 import { Slider } from "@/components/ui/slider";
 import {
   CARD_ZOOM_DEFAULT,
@@ -53,7 +53,7 @@ export function QueueDock({
 }: QueueDockProps): React.ReactElement {
   const isPlan = cardsSource === "plan";
   return (
-    <div className="shrink-0 border-t border-surface-border bg-surface-elevated/95 px-5 py-2.5 backdrop-blur-xl lg:px-6">
+    <div className="shrink-0 border-t border-surface-border bg-surface-secondary px-5 py-2.5 lg:px-6">
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex min-w-0 items-center gap-2.5">
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-teal-500/10 text-teal-300">

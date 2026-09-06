@@ -3,6 +3,7 @@ import log from 'electron-log/main'
 import type { AppSettings } from '@shared/ipc'
 import { DEFAULT_OVERLAY_SETTINGS, normalizeOverlaySettings } from '@shared/overlay-defaults'
 import { normalizeThemeLibrary } from '@shared/theme-library'
+import { EMPTY_PP_RESOURCE_BINDINGS, normalizeResourceBindings } from '@shared/propresenter-resources'
 
 export type { AppSettings }
 
@@ -49,12 +50,16 @@ const defaults: AppSettings = {
     folder: '',
     playlists: [],
   },
+  tracks: {
+    folder: '',
+  },
   church: {
     name: '',
     timezone: '',
     role: '',
     serviceTimes: [],
   },
+  propresenterResources: { ...EMPTY_PP_RESOURCE_BINDINGS },
 }
 
 export const store = new Store<AppSettings>({
@@ -117,6 +122,11 @@ if (!migrations.get('nkjvDefaultV1')) {
     })
   }
 }
+
+// Resource bindings are the only durable part of the ProPresenter catalogue.
+// electron-store shallow-merges defaults, so heal the complete object on every
+// launch while leaving catalogue metadata and preview bytes in memory only.
+store.set('propresenterResources', normalizeResourceBindings(store.get('propresenterResources')))
 
 // D3 migration — electron-store shallow-Object.assign's `defaults` at startup;
 // it does NOT deep-merge. A pre-phase-2 user's stored `overlay` (no `mode` /

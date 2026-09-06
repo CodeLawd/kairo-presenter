@@ -1,23 +1,28 @@
+import {
+  commandForShortcut,
+  shortcutFromEvent,
+} from "@shared/keyboard-shortcuts";
+import { ServicePanel, useServiceRecords } from "./ServicePanel";
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
   BookOpen,
   X,
   Play,
   Pause,
-  Activity,
-  Trash2,
   Volume2,
   AlertTriangle,
-  RotateCcw,
-  BookOpenCheck,
   ArrowDown,
   ChevronLeft,
   ChevronRight,
   Loader,
   Plus,
-} from "lucide-react";
+  BookmarkSimple,
+  Copy,
+  Download,
+  Mic,
+} from "@/icons";
 import { useAppStore } from "@/stores/useAppStore";
-import { cn } from "@/lib/utils";
+import { cn, downloadFile } from "@/lib/utils";
 import {
   normalizeOperatorPanelWidth,
   resizeOperatorPanel,
@@ -30,7 +35,9 @@ import {
   normalizeOverlaySettings,
 } from "@shared/overlay-defaults";
 import { liveOverlayTheme } from "@shared/overlay-outputs";
-import { LiveOutputPreview } from "./LiveOutputPreview";
+import { LiveOutputRail } from "./LiveOutputRail";
+import { BoothWorkspace } from "@/components/layout/BoothWorkspace";
+import { useLiveRailWidth } from "./useLiveRailWidth";
 import {
   applyOperatorSuggestionSent,
   findReadingProgress,
@@ -58,6 +65,8 @@ import type {
 import { normalizeMediaPlayback } from "@shared/media-playback";
 import { useBootstrapStore } from "@/bootstrap/useBootstrapStore";
 import { OperatorQueueSearch } from "@/components/operator/OperatorQueueSearch";
+import { useBoothToolboxStore } from "@/stores/useBoothToolboxStore";
+import { clearLiveText } from "@/lib/clear-live-output";
 
 // ─── Constants for Live Highlight Parsing ─────────────────────────────────────
 
@@ -76,11 +85,53 @@ const TRIGGER_PHRASES = [
 const OPERATOR_CARD_WIDTH = 200;
 const OPERATOR_CARD_HEIGHT = Math.round((OPERATOR_CARD_WIDTH * 9) / 16);
 
+function detectionCaption(
+  suggestion: ScriptureSuggestion,
+  flags: { isLive: boolean; isReading: boolean; isUpNext: boolean },
+): string | null {
+  if (flags.isLive) return null;
+  if (flags.isReading) return "Reading";
+  if (flags.isUpNext) return "Up next";
+  if (suggestion.planMatch === "quote") return "Playlist · read";
+  if (suggestion.planMatch) return "Playlist";
+  if (suggestion.preloadedNext) return "Preloaded";
+  return null;
+}
+
 interface ScriptureHighlight {
   id: string;
   triggerText: string;
   reference: string;
   confidence: number;
+}
+
+interface MessageNugget {
+  id: string;
+  text: string;
+  capturedAt: number;
+}
+
+const NUGGET_STORAGE_KEY = "kairo-message-nuggets";
+
+function storedNuggets(): MessageNugget[] {
+  try {
+    const value = JSON.parse(
+      localStorage.getItem(NUGGET_STORAGE_KEY) ?? "[]",
+    ) as unknown;
+    return Array.isArray(value)
+      ? value.filter((item): item is MessageNugget =>
+          Boolean(
+            item &&
+            typeof item === "object" &&
+            typeof (item as MessageNugget).id === "string" &&
+            typeof (item as MessageNugget).text === "string" &&
+            typeof (item as MessageNugget).capturedAt === "number",
+          ),
+        )
+      : [];
+  } catch {
+    return [];
+  }
 }
 
 interface DisplaySegment {
@@ -232,9 +283,77 @@ export default function Operator(): React.ReactElement {
 
   // Transcript states
   const [segments, setSegments] = useState<DisplaySegment[]>([]);
+  const [legacyNuggets, setLegacyNuggets] =
+    useState<MessageNugget[]>(storedNuggets);
+  const serviceSnapshot = useServiceRecords();
+  const activeService = serviceSnapshot.services.find(
+    (service) => service.id === serviceSnapshot.activeId,
+  );
+  const nuggets = activeService?.nuggets ?? legacyNuggets;
+  const [serviceError, setServiceError] = useState("");
+  const [creationIntent, setCreationIntent] = useState<
+    "manual" | "start" | null
+  >(null);
+  const pipelineBusyRef = useRef(false);
+  const [pipelineBusy, setPipelineBusy] = useState(false);
+  const [nuggetsOpen, setNuggetsOpen] = useState(false);
   const [interimText, setInterimText] = useState("");
   const transcriptEndRef = useRef<HTMLDivElement>(null);
   const isAutoScrolling = useRef(true);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(NUGGET_STORAGE_KEY, JSON.stringify(legacyNuggets));
+    } catch {
+      // Nugget capture still works for this session when storage is unavailable.
+    }
+  }, [legacyNuggets]);
+
+  const removeNugget = (id: string): void => {
+    if (!activeService) {
+      setLegacyNuggets((current) => current.filter((item) => item.id !== id));
+      return;
+    }
+    void window.api.services
+      .command({
+        action: "removeNugget",
+        serviceId: activeService.id,
+        nuggetId: id,
+      })
+      .catch((e) => setServiceError(String(e)));
+  };
+
+  const toggleNugget = useCallback(
+    (segment: DisplaySegment): void => {
+      if (!activeService) {
+        setServiceError("Create a service to save this nugget.");
+        return;
+      }
+      void window.api.services
+        .command({
+          action: "nugget",
+          text: segment.text,
+          sourceIds: [segment.id],
+        })
+        .catch((e) => setServiceError(String(e)));
+    },
+    [activeService],
+  );
+
+  const exportNuggets = useCallback((): void => {
+    if (nuggets.length === 0) return;
+    const body = nuggets
+      .map(
+        (item, index) =>
+          `${index + 1}. ${item.text}\nCaptured ${new Date(item.capturedAt).toLocaleString()}`,
+      )
+      .join("\n\n");
+    downloadFile(
+      body,
+      `kairo-message-nuggets-${new Date().toISOString().slice(0, 10)}.txt`,
+      "text/plain",
+    );
+  }, [nuggets]);
 
   // Scripture suggestions queue
   const [suggestions, setSuggestions] = useState<ScriptureSuggestion[]>([]);
@@ -252,7 +371,9 @@ export default function Operator(): React.ReactElement {
   /** Verses the operator staged to push on cue. Separate from what was detected. */
   const [queue, setQueue] = useState<ScriptureSuggestion[]>([]);
   const [queueBusyId, setQueueBusyId] = useState<string | null>(null);
-  const [selectedSuggestionId, setSelectedSuggestionId] = useState<string | null>(null);
+  const [selectedSuggestionId, setSelectedSuggestionId] = useState<
+    string | null
+  >(null);
   const [adjacentLoading, setAdjacentLoading] = useState<string | null>(null);
   const [readingProgress, setReadingProgress] = useState<{
     matchedId: string;
@@ -263,6 +384,24 @@ export default function Operator(): React.ReactElement {
   );
   const sentSuggestionIdsRef = useRef(new Set<string>());
   const followStateRef = useRef<PassageFollowState | null>(null);
+  useEffect(() => {
+    if (!serviceSnapshot.loaded) return;
+    const record = useServiceRecords
+      .getState()
+      .services.find((service) => service.id === serviceSnapshot.activeId);
+    setSegments(record?.transcript.slice(-50).map(resultToSegment) ?? []);
+    setSuggestions(record?.scriptures ?? []);
+    suggestionsRef.current = record?.scriptures ?? [];
+    setInterimText("");
+    setQueue([]);
+    setSelectedSuggestionId(null);
+    setHeldSuggestions([]);
+    setPendingAuto([]);
+    sentSuggestionIdsRef.current = new Set();
+    setSentSuggestionIds(new Set());
+    followStateRef.current = null;
+    recentReadingTextRef.current = "";
+  }, [serviceSnapshot.activeId, serviceSnapshot.loaded]);
   const [overlay, setOverlay] = useState<AppSettings["overlay"]>(
     DEFAULT_OVERLAY_SETTINGS,
   );
@@ -274,20 +413,11 @@ export default function Operator(): React.ReactElement {
     normalizeOperatorPanelWidth(
       "left",
       localStorage.getItem("operator-transcript-width"),
-      240,
     ),
   );
-  const [previewWidth, setPreviewWidth] = useState(() =>
-    normalizeOperatorPanelWidth(
-      "right",
-      localStorage.getItem("operator-preview-width"),
-      320,
-    ),
-  );
-  // Fills the panel (minus its p-4 padding) rather than capping at the queue
-  // card width — the live output is the one preview worth showing large.
-  const liveOutputPreviewWidth = Math.max(160, previewWidth - 32);
-  const liveOutputPreviewHeight = Math.round((liveOutputPreviewWidth * 9) / 16);
+  // The rail width is shared app state, not local: Operator stays mounted while
+  // hidden, so resizing the rail on Lyrics or Scripture must land here too.
+  const liveRail = useLiveRailWidth();
   const [activeProjection, setActiveProjection] = useState<{
     reference: string;
     text: string;
@@ -295,7 +425,9 @@ export default function Operator(): React.ReactElement {
 
   const goLive = useCallback((reference: string, text: string): void => {
     setActiveProjection({ reference, text });
-    useAppStore.getState().markLiveOutput(reference);
+    const store = useAppStore.getState();
+    store.markLiveOutput(reference);
+    store.setLiveOutputPreview({ kind: "scripture", reference, text });
   }, []);
 
   // Header CLEAR (and other clear paths) bump this token — drop the local preview.
@@ -310,7 +442,9 @@ export default function Operator(): React.ReactElement {
   const activeGroupId =
     followStateRef.current?.passageId ??
     suggestionGroups.find((group) =>
-      group.suggestions.some((item) => item.reference === activeProjection?.reference),
+      group.suggestions.some(
+        (item) => item.reference === activeProjection?.reference,
+      ),
     )?.id ??
     null;
   const suggestionSections = useMemo(
@@ -318,7 +452,10 @@ export default function Operator(): React.ReactElement {
     [suggestionGroups, activeGroupId],
   );
   const visibleSuggestionIds = useMemo(
-    () => suggestionSections.current.flatMap((group) => group.suggestions.map((item) => item.id)),
+    () =>
+      suggestionSections.current.flatMap((group) =>
+        group.suggestions.map((item) => item.id),
+      ),
     [suggestionSections.current],
   );
 
@@ -336,17 +473,14 @@ export default function Operator(): React.ReactElement {
     if (suggestions.length === 0) setHeldSuggestions([]);
   }, [suggestions.length]);
 
+  // Left transcript panel only — the right rail owns its own resize via
+  // useLiveRailWidth so every screen showing it stays in sync.
   const startPanelResize = useCallback(
     (side: OperatorPanelSide, event: React.PointerEvent): void => {
       event.preventDefault();
       const startX = event.clientX;
-      const startWidth = side === "left" ? transcriptWidth : previewWidth;
+      const startWidth = transcriptWidth;
       let finalWidth = startWidth;
-      const setWidth = side === "left" ? setTranscriptWidth : setPreviewWidth;
-      const storageKey =
-        side === "left"
-          ? "operator-transcript-width"
-          : "operator-preview-width";
 
       const handlePointerMove = (pointerEvent: PointerEvent): void => {
         finalWidth = resizeOperatorPanel(
@@ -354,14 +488,14 @@ export default function Operator(): React.ReactElement {
           startWidth,
           pointerEvent.clientX - startX,
         );
-        setWidth(finalWidth);
+        setTranscriptWidth(finalWidth);
       };
       const handlePointerUp = (): void => {
         window.removeEventListener("pointermove", handlePointerMove);
         window.removeEventListener("pointerup", handlePointerUp);
         document.body.style.cursor = "";
         document.body.style.userSelect = "";
-        localStorage.setItem(storageKey, String(finalWidth));
+        localStorage.setItem("operator-transcript-width", String(finalWidth));
       };
 
       document.body.style.cursor = "col-resize";
@@ -369,33 +503,17 @@ export default function Operator(): React.ReactElement {
       window.addEventListener("pointermove", handlePointerMove);
       window.addEventListener("pointerup", handlePointerUp, { once: true });
     },
-    [previewWidth, transcriptWidth],
+    [transcriptWidth],
   );
 
   const resizePanelByKeyboard = useCallback(
     (side: OperatorPanelSide, deltaX: number): void => {
-      const currentWidth = side === "left" ? transcriptWidth : previewWidth;
-      const nextWidth = resizeOperatorPanel(side, currentWidth, deltaX);
-      if (side === "left") setTranscriptWidth(nextWidth);
-      else setPreviewWidth(nextWidth);
-      localStorage.setItem(
-        side === "left"
-          ? "operator-transcript-width"
-          : "operator-preview-width",
-        String(nextWidth),
-      );
+      const nextWidth = resizeOperatorPanel(side, transcriptWidth, deltaX);
+      setTranscriptWidth(nextWidth);
+      localStorage.setItem("operator-transcript-width", String(nextWidth));
     },
-    [previewWidth, transcriptWidth],
+    [transcriptWidth],
   );
-  // Only enabled outputs are worth previewing — a disabled one shows nothing on
-  // any screen, so offering it as a tab would be a lie.
-  const previewOutputs = useMemo(
-    () => overlay.outputs.filter((output) => output.enabled),
-    [overlay.outputs],
-  );
-  const previewOutputId = useAppStore((s) => s.operatorPreviewOutputId);
-  const setPreviewOutputId = useAppStore((s) => s.setOperatorPreviewOutputId);
-
   const livePreviewResult = useMemo(() => {
     if (!activeProjection) return null;
     const detected = suggestions.find(
@@ -425,9 +543,15 @@ export default function Operator(): React.ReactElement {
 
   const liveMedia = useMemo(() => {
     if (!mediaLibrary?.liveItemId) return null;
-    const item = mediaLibrary.items.find((candidate) => candidate.id === mediaLibrary.liveItemId);
+    const item = mediaLibrary.items.find(
+      (candidate) => candidate.id === mediaLibrary.liveItemId,
+    );
     if (!item) return null;
-    return { item, playback: normalizeMediaPlayback(mediaLibrary.playback[item.id]) };
+    return {
+      item,
+      playback: normalizeMediaPlayback(mediaLibrary.playback[item.id]),
+      paused: mediaLibrary.livePaused,
+    };
   }, [mediaLibrary]);
 
   useEffect(() => {
@@ -478,7 +602,15 @@ export default function Operator(): React.ReactElement {
       reference: candidate.reference,
       text: candidate.verses.map((verse) => verse.text).join(" "),
     });
-    useAppStore.getState().markLiveOutput(candidate.reference);
+    const store = useAppStore.getState();
+    store.markLiveOutput(candidate.reference);
+    store.setLiveOutputPreview({
+      kind: "scripture",
+      reference: candidate.reference,
+      text: candidate.verses.map((verse) => verse.text).join(" "),
+      verses: candidate.verses,
+      translation: candidate.translation,
+    });
     window.api.scripture
       .register(candidate)
       .then(() => window.api.orchestrator.approveSuggestion(candidate.id))
@@ -644,10 +776,7 @@ export default function Operator(): React.ReactElement {
   // ── Load Init History & Health On Mount ──────────────────────────────────────
 
   useEffect(() => {
-    const { transcription, orchestrator } = useBootstrapStore.getState();
-    if (transcription.length > 0) {
-      setSegments(transcription.map((r) => resultToSegment(r)));
-    }
+    const { orchestrator } = useBootstrapStore.getState();
     if (orchestrator) {
       setHealth(orchestrator.health);
       setIsTranscribing(orchestrator.running);
@@ -660,6 +789,14 @@ export default function Operator(): React.ReactElement {
 
   useEffect(() => {
     const unsubTranscript = window.api.transcription.onTranscript((result) => {
+      const serviceState = useServiceRecords.getState();
+      // Keep the live feed when a service is open — transcription pause is separate.
+      if (
+        !serviceState.services.some(
+          (s) => s.id === serviceState.activeId && s.status !== "ended",
+        )
+      )
+        return;
       const seg = resultToSegment(result);
       setSegments((prev) => [...prev, seg].slice(-50));
       setInterimText("");
@@ -682,6 +819,13 @@ export default function Operator(): React.ReactElement {
     });
 
     const unsubInterim = window.api.transcription.onInterim((result) => {
+      const serviceState = useServiceRecords.getState();
+      if (
+        !serviceState.services.some(
+          (s) => s.id === serviceState.activeId && s.status !== "ended",
+        )
+      )
+        return;
       setInterimText(result.text);
       advanceAutoFollowFromText(result.text);
     });
@@ -759,10 +903,7 @@ export default function Operator(): React.ReactElement {
       return setTimeout(() => {
         const sug = suggestions.find((s) => s.id === item.suggestionId);
         if (sug) {
-          goLive(
-            sug.reference,
-            sug.verses.map((v) => v.text).join(" "),
-          );
+          goLive(sug.reference, sug.verses.map((v) => v.text).join(" "));
           const sent = new Set(sentSuggestionIdsRef.current).add(sug.id);
           sentSuggestionIdsRef.current = sent;
           setSentSuggestionIds(sent);
@@ -801,6 +942,7 @@ export default function Operator(): React.ReactElement {
 
   const handleApproveSuggestion = useCallback(
     async (id: string): Promise<void> => {
+      setSelectedSuggestionId(id);
       try {
         const sug = suggestions.find((s) => s.id === id);
         if (sug) {
@@ -815,7 +957,15 @@ export default function Operator(): React.ReactElement {
             reference: sug.reference,
             text: sug.verses.map((v) => v.text).join(" "),
           });
-          useAppStore.getState().markLiveOutput(sug.reference);
+          const store = useAppStore.getState();
+          store.markLiveOutput(sug.reference);
+          store.setLiveOutputPreview({
+            kind: "scripture",
+            reference: sug.reference,
+            text: sug.verses.map((verse) => verse.text).join(" "),
+            verses: sug.verses,
+            translation: sug.translation,
+          });
         }
         const sentState = applyOperatorSuggestionSent(
           suggestions,
@@ -838,25 +988,41 @@ export default function Operator(): React.ReactElement {
     async (groupId: string, direction: "previous" | "next"): Promise<void> => {
       const group = suggestionGroups.find((item) => item.id === groupId);
       if (!group || adjacentLoading) return;
-      const edge = direction === "next" ? group.suggestions.at(-1) : group.suggestions[0];
+      const edge =
+        direction === "next" ? group.suggestions.at(-1) : group.suggestions[0];
       if (!edge) return;
 
       const queries = getAdjacentVerseQueries(
-        [{ reference: edge.reference, translation: edge.translation, verses: edge.verses }],
+        [
+          {
+            reference: edge.reference,
+            translation: edge.translation,
+            verses: edge.verses,
+          },
+        ],
         direction,
       );
       setAdjacentLoading(`${groupId}:${direction}`);
       try {
         let adjacent = null;
         for (const query of queries) {
-          const [result] = await window.api.scripture.search(query, edge.translation);
+          const [result] = await window.api.scripture.search(
+            query,
+            edge.translation,
+          );
           const expanded = result ? expandScriptureResult(result) : [];
           adjacent = direction === "previous" ? expanded.at(-1) : expanded[0];
           if (adjacent) break;
         }
-        if (!adjacent || suggestionsRef.current.some(
-          (item) => item.reference === adjacent?.reference && item.translation === adjacent?.translation,
-        )) return;
+        if (
+          !adjacent ||
+          suggestionsRef.current.some(
+            (item) =>
+              item.reference === adjacent?.reference &&
+              item.translation === adjacent?.translation,
+          )
+        )
+          return;
 
         const suggestion: ScriptureSuggestion = {
           id: `operator-adjacent-${groupId}-${adjacent.reference}-${Date.now()}`,
@@ -870,8 +1036,12 @@ export default function Operator(): React.ReactElement {
           passageReference: group.reference,
           passageIndex:
             direction === "next"
-              ? Math.max(...group.suggestions.map((item) => item.passageIndex ?? 0)) + 1
-              : Math.min(...group.suggestions.map((item) => item.passageIndex ?? 0)) - 1,
+              ? Math.max(
+                  ...group.suggestions.map((item) => item.passageIndex ?? 0),
+                ) + 1
+              : Math.min(
+                  ...group.suggestions.map((item) => item.passageIndex ?? 0),
+                ) - 1,
           passageLength: group.suggestions.length + 1,
           preloadedNext: direction === "next",
         };
@@ -888,7 +1058,9 @@ export default function Operator(): React.ReactElement {
         });
         setSelectedSuggestionId(suggestion.id);
         requestAnimationFrame(() =>
-          verseCardRefs.current.get(suggestion.id)?.scrollIntoView({ behavior: "smooth", block: "nearest" }),
+          verseCardRefs.current
+            .get(suggestion.id)
+            ?.scrollIntoView({ behavior: "smooth", block: "nearest" }),
         );
       } catch (error) {
         console.error(error);
@@ -904,9 +1076,12 @@ export default function Operator(): React.ReactElement {
       // Same passage staged twice is always a misclick, never an intent.
       prev.some((item) => item.reference === entry.reference)
         ? prev
-        : [{ ...entry, id: `queued-${entry.reference}-${Date.now()}` }, ...prev],
-    )
-  }, [])
+        : [
+            { ...entry, id: `queued-${entry.reference}-${Date.now()}` },
+            ...prev,
+          ],
+    );
+  }, []);
 
   const removeFromQueue = useCallback((id: string): void => {
     setQueue((prev) => prev.filter((item) => item.id !== id));
@@ -973,47 +1148,44 @@ export default function Operator(): React.ReactElement {
     [],
   );
 
-  const handleClearProjection = useCallback(async (): Promise<void> => {
-    try {
-      await window.api.propresenter.clearOverlay();
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setActiveProjection(null);
-      useAppStore.getState().clearScriptureLiveOutput();
-    }
+  const handleClearText = useCallback(async (): Promise<void> => {
+    await clearLiveText();
+    setActiveProjection(null);
   }, []);
 
-  const enqueueSearchResults = useCallback((results: ScriptureResult[]): void => {
-    setQueue((prev) => {
-      const seen = new Set(prev.map((item) => item.reference))
-      const incoming: ScriptureSuggestion[] = []
-      for (const result of results) {
-        if (seen.has(result.reference)) continue
-        seen.add(result.reference)
-        const verseCount = result.verses.length
-        const isRange = verseCount > 1
-        incoming.push({
-          id: `manual-${result.reference}-${Date.now()}`,
-          reference: result.reference,
-          verses: result.verses,
-          translation: result.translation,
-          confidence: 1,
-          source: 'manual',
-          triggerText: result.reference,
-          ...(isRange
-            ? {
-                passageId: `queue-${result.reference}-${Date.now()}`,
-                passageReference: result.reference,
-                passageIndex: 0,
-                passageLength: verseCount,
-              }
-            : {}),
-        })
-      }
-      return incoming.length === 0 ? prev : [...incoming, ...prev]
-    })
-  }, [])
+  const enqueueSearchResults = useCallback(
+    (results: ScriptureResult[]): void => {
+      setQueue((prev) => {
+        const seen = new Set(prev.map((item) => item.reference));
+        const incoming: ScriptureSuggestion[] = [];
+        for (const result of results) {
+          if (seen.has(result.reference)) continue;
+          seen.add(result.reference);
+          const verseCount = result.verses.length;
+          const isRange = verseCount > 1;
+          incoming.push({
+            id: `manual-${result.reference}-${Date.now()}`,
+            reference: result.reference,
+            verses: result.verses,
+            translation: result.translation,
+            confidence: 1,
+            source: "manual",
+            triggerText: result.reference,
+            ...(isRange
+              ? {
+                  passageId: `queue-${result.reference}-${Date.now()}`,
+                  passageReference: result.reference,
+                  passageIndex: 0,
+                  passageLength: verseCount,
+                }
+              : {}),
+          });
+        }
+        return incoming.length === 0 ? prev : [...incoming, ...prev];
+      });
+    },
+    [],
+  );
 
   const handleToggleAutoMode = async () => {
     const nextVal = !autoModeEnabled;
@@ -1026,28 +1198,31 @@ export default function Operator(): React.ReactElement {
   };
 
   const handleTogglePipeline = async () => {
-    if (isTranscribing) {
-      try {
+    if (pipelineBusyRef.current) return;
+    if (!useServiceRecords.getState().activeId) {
+      setCreationIntent("start");
+      return;
+    }
+    pipelineBusyRef.current = true;
+    setPipelineBusy(true);
+    setServiceError("");
+    try {
+      if (isTranscribing) {
         await window.api.orchestrator.stop();
         setIsTranscribing(false);
-      } catch (err) {
-        console.error(err);
-      }
-    } else {
-      try {
+      } else {
         const all = await window.api.settings.getAll();
         const devs = await window.api.audio.getDevices();
         const defaultDev = devs.find((d) => d.isDefault) || devs[0];
         const config = {
           audioDeviceId: all.audio.deviceId || defaultDev?.id || "",
-          sttProvider: all.stt.apiKey ? "deepgram" : all.stt.provider,
-          sttApiKey: all.stt.apiKey,
+          sttProvider: all.secretsConfigured.deepgram
+            ? "deepgram"
+            : all.stt.provider,
+          sttApiKey: "",
           sttLanguage: all.stt.language || "en",
           llmProvider: all.stt.llmProvider ?? "anthropic",
-          llmApiKey:
-            (all.stt.llmProvider ?? "anthropic") === "deepseek"
-              ? all.stt.deepseekApiKey
-              : all.stt.anthropicApiKey,
+          llmApiKey: "",
           scriptureTranslation: all.scripture.defaultTranslation,
           autoMode: autoModeEnabled,
           confidenceThreshold: all.scripture.confidenceThreshold,
@@ -1055,9 +1230,12 @@ export default function Operator(): React.ReactElement {
         };
         await window.api.orchestrator.start(config);
         setIsTranscribing(true);
-      } catch (err) {
-        console.error(err);
       }
+    } catch (err) {
+      setServiceError(String(err));
+    } finally {
+      pipelineBusyRef.current = false;
+      setPipelineBusy(false);
     }
   };
 
@@ -1073,43 +1251,67 @@ export default function Operator(): React.ReactElement {
 
       // Operator stays mounted across routes, so these shortcuts fire app-wide.
       // Never steal Cmd/Ctrl+A (or other keys) while a field is focused.
-      if (isTyping) return;
+      if (
+        isTyping ||
+        e.defaultPrevented ||
+        e.repeat ||
+        e.isComposing ||
+        !document.hasFocus() ||
+        document.querySelector(
+          '.kairo-pp-settings, [role="dialog"], [role="alertdialog"], [role="menu"]',
+        )
+      )
+        return;
+      const shortcut = shortcutFromEvent(e);
+      const command = shortcut
+        ? commandForShortcut(shortcut, bootstrapSettings.display.shortcuts)
+        : undefined;
+      if (!command) return;
 
-      if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) {
+      if (command === "previous" || command === "next") {
         e.preventDefault();
-        const delta = e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 1;
+        const delta = command === "previous" ? -1 : 1;
         const nextId = navigateOperatorSuggestionId(
           visibleSuggestionIds,
           selectedSuggestionId,
           delta,
         );
-        if (nextId) {
+        if (nextId && nextId !== selectedSuggestionId) {
+          const controllingCards = [...verseCardRefs.current.values()].some(
+            (card) => card === target || card.contains(target),
+          );
           setSelectedSuggestionId(nextId);
-          verseCardRefs.current.get(nextId)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+          const nextCard = verseCardRefs.current.get(nextId);
+          nextCard?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+          if (controllingCards) {
+            nextCard?.focus({ preventScroll: true });
+            void handleApproveSuggestion(nextId);
+          }
         }
         return;
       }
       // Ctrl/Cmd+F: Focus search
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
+      if (command === "search") {
         e.preventDefault();
+        useBoothToolboxStore.getState().setTab("search");
         searchInputRef.current?.focus();
         return;
       }
       // Ctrl/Cmd+A: Toggle auto mode (only when not typing)
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "a") {
+      if (command === "auto") {
         e.preventDefault();
         handleToggleAutoMode();
         return;
       }
-      // Backspace / Delete: Clear current projection
-      if (e.key === "Backspace" || e.key === "Delete") {
+      // Backspace / Delete: clear text, keep the dock background
+      if (command === "clear") {
         e.preventDefault();
-        handleClearProjection();
+        void handleClearText();
         return;
       }
       // Space / Enter: Approve top suggestion
       if (
-        (e.key === " " || e.key === "Enter") &&
+        command === "approve" &&
         document.activeElement?.tagName !== "BUTTON"
       ) {
         e.preventDefault();
@@ -1120,7 +1322,7 @@ export default function Operator(): React.ReactElement {
         return;
       }
       // Escape: Dismiss top suggestion
-      if (e.key === "Escape") {
+      if (command === "dismiss") {
         e.preventDefault();
         if (suggestions.length > 0) {
           handleDismissSuggestion(suggestions[0].id);
@@ -1130,13 +1332,14 @@ export default function Operator(): React.ReactElement {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [
+    bootstrapSettings.display.shortcuts,
     suggestions,
     selectedSuggestionId,
     visibleSuggestionIds,
     autoModeEnabled,
     handleApproveSuggestion,
     handleDismissSuggestion,
-    handleClearProjection,
+    handleClearText,
   ]);
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -1194,7 +1397,7 @@ export default function Operator(): React.ReactElement {
     : getServiceError("detector");
 
   return (
-    <div className="h-full w-full flex flex-col bg-surface overflow-hidden">
+    <div className="flex h-full w-full flex-col overflow-hidden bg-transparent">
       {resilienceStatus?.recoverySessionAvailable && (
         <div className="bg-teal-950/40 border-b border-teal-500/30 px-6 py-3 flex items-center justify-between text-xs text-teal-300">
           <div className="flex items-center gap-2.5">
@@ -1254,590 +1457,692 @@ export default function Operator(): React.ReactElement {
         </div>
       )}
 
-      {/* Main columns */}
-      <div className="flex-1 min-h-0 w-full flex">
-        {/* LEFT COLUMN: compact live transcript */}
-        <section
-          className="shrink-0 flex flex-col bg-surface-secondary/15"
-          style={{ width: transcriptWidth }}
-        >
-          <div className="px-4 py-3.5 border-b border-surface-border flex items-center justify-between bg-surface-secondary/40 shrink-0">
-            <span className="font-narrow text-xs font-semibold text-slate-400 uppercase tracking-[0.08em]">
-              Live transcript
-            </span>
-            {isTranscribing && (
-              <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[9px] text-emerald-400 font-bold tracking-wider uppercase animate-pulse">
-                <span className="w-1 h-1 rounded-full bg-emerald-400" />
-                Live
+      <BoothWorkspace
+        rail={
+          <LiveOutputRail
+            width={liveRail.width}
+            overlay={overlay}
+            liveMedia={liveMedia}
+            result={livePreviewResult}
+            onResizeStart={liveRail.onResizeStart}
+            onResizeKeyDown={liveRail.onResizeKeyDown}
+            serviceStatuses={[
+              { label: "PP", status: ppStatus, error: ppError },
+              { label: "STT", status: sttStatus, error: sttError },
+              {
+                label: "AI",
+                status: claudeStatusMapped,
+                error: claudeErrorMapped,
+              },
+            ]}
+            search={
+              <div className="flex h-full min-h-0 flex-col overflow-hidden bg-transparent">
+                <div className="flex shrink-0 items-center justify-between gap-3 border-b border-surface-border bg-surface-tertiary px-3 py-1.5">
+                  <label className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">
+                    Queue
+                  </label>
+                  {queue.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setQueue([])}
+                      className="text-[10px] font-semibold text-slate-600 transition-colors hover:text-rose-400 focus-visible:text-rose-400 focus-visible:outline-none"
+                    >
+                      Clear all
+                    </button>
+                  )}
+                </div>
+
+                <div className="shrink-0 px-4 py-2.5">
+                  <OperatorQueueSearch
+                    translation={defaultTranslation}
+                    inputRef={searchInputRef}
+                    onEnqueue={enqueueSearchResults}
+                  />
+                </div>
+
+                <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+                  {queue.length === 0 ? (
+                    <p className="px-2 py-6 text-center text-[10px] leading-relaxed text-slate-600">
+                      Stage verses here with{" "}
+                      <span className="text-slate-500">+</span> on a detection,
+                      or search above. Click a row to send it to ProPresenter.
+                    </p>
+                  ) : (
+                    <ul className="space-y-1">
+                      {queue.map((entry) => {
+                        const isLive =
+                          activeProjection?.reference === entry.reference;
+                        return (
+                          <li key={entry.id}>
+                            <div
+                              className={cn(
+                                "group flex items-start gap-2 rounded-md border px-2.5 py-2 transition-colors",
+                                isLive
+                                  ? "border-teal-500/40 bg-teal-500/10"
+                                  : "border-transparent hover:border-surface-border hover:bg-surface",
+                              )}
+                            >
+                              <button
+                                type="button"
+                                onClick={() => void handlePresentQueued(entry)}
+                                disabled={queueBusyId === entry.id}
+                                className="min-w-0 flex-1 text-left focus-visible:outline-none"
+                                title={`Send ${entry.reference} to ProPresenter`}
+                              >
+                                <p
+                                  className={cn(
+                                    "truncate text-[11px] font-semibold",
+                                    isLive ? "text-teal-300" : "text-slate-300",
+                                  )}
+                                >
+                                  {entry.reference}
+                                  <span className="ml-1.5 font-normal text-slate-600">
+                                    {entry.translation}
+                                  </span>
+                                  {entry.verses.length > 1 && (
+                                    <span className="ml-1.5 font-normal text-slate-600">
+                                      · {entry.verses.length} verses
+                                    </span>
+                                  )}
+                                </p>
+                                <p className="mt-0.5 line-clamp-2 text-[10px] leading-snug text-slate-500">
+                                  {entry.verses
+                                    .map((verse) => verse.text)
+                                    .join(" ")}
+                                </p>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => removeFromQueue(entry.id)}
+                                className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded text-slate-700 transition-colors hover:bg-rose-500/10 hover:text-rose-400 focus-visible:outline-none focus-visible:text-rose-400"
+                                title={`Remove ${entry.reference} from the queue`}
+                                aria-label={`Remove ${entry.reference} from the queue`}
+                              >
+                                <X size={12} />
+                              </button>
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            }
+          />
+        }
+      >
+        <div className="flex h-full min-h-0 w-full">
+          {/* LEFT COLUMN: compact live transcript */}
+          <section
+            className="transcript-glass relative flex shrink-0 flex-col border-r border-white/10"
+            style={{ width: transcriptWidth }}
+          >
+            <button
+              type="button"
+              aria-label="Resize live transcript panel"
+              title="Drag to resize live transcript"
+              className="absolute inset-y-0 -right-1 z-10 w-2 cursor-col-resize bg-transparent outline-none hover:bg-teal-500/15 focus-visible:bg-teal-500/20"
+              onPointerDown={(event) => startPanelResize("left", event)}
+              onKeyDown={(event) => {
+                if (event.key === "ArrowLeft")
+                  resizePanelByKeyboard("left", -16);
+                if (event.key === "ArrowRight")
+                  resizePanelByKeyboard("left", 16);
+              }}
+            />
+            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-white/10 bg-black/20 px-3 py-1.5">
+              <span className="font-narrow text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">
+                Live transcript
               </span>
+              <div className="flex items-center gap-1.5">
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setNuggetsOpen((open) => !open)}
+                    className={cn(
+                      "flex h-6 items-center gap-1 rounded px-2 text-[10px] font-semibold",
+                      nuggetsOpen
+                        ? "bg-amber-500/15 text-amber-300"
+                        : "text-zinc-500 hover:bg-white/5 hover:text-zinc-200",
+                    )}
+                    aria-expanded={nuggetsOpen}
+                    aria-label={`Saved message nuggets: ${nuggets.length}`}
+                  >
+                    <BookmarkSimple
+                      size={11}
+                      weight={nuggets.length ? "fill" : "regular"}
+                    />
+                    Nuggets {nuggets.length > 0 ? nuggets.length : ""}
+                  </button>
+                  {nuggetsOpen && (
+                    <div className="absolute left-0 top-full z-40 mt-2 w-72 overflow-hidden rounded-lg border border-white/10 bg-zinc-900 shadow-2xl">
+                      <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
+                        <span className="text-[11px] font-semibold text-zinc-200">
+                          {activeService
+                            ? "This service’s nuggets"
+                            : "Legacy nuggets"}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={exportNuggets}
+                          disabled={nuggets.length === 0}
+                          className="flex items-center gap-1 text-[10px] text-zinc-400 hover:text-white disabled:opacity-30"
+                        >
+                          <Download size={11} /> Export
+                        </button>
+                      </div>
+                      <div className="max-h-72 overflow-y-auto p-2">
+                        {nuggets.length === 0 ? (
+                          <p className="px-2 py-5 text-center text-[11px] leading-relaxed text-zinc-500">
+                            Bookmark a transcript line to save a quote for after
+                            service.
+                          </p>
+                        ) : (
+                          nuggets.map((nugget) => (
+                            <div
+                              key={nugget.id}
+                              className="group/nugget flex gap-2 rounded-md px-2 py-2 hover:bg-white/[0.04]"
+                            >
+                              <div className="min-w-0 flex-1">
+                                <p className="text-[11px] leading-relaxed text-zinc-300">
+                                  {nugget.text}
+                                </p>
+                                <p className="mt-1 text-[9px] text-zinc-600">
+                                  {new Date(
+                                    nugget.capturedAt,
+                                  ).toLocaleTimeString([], {
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  })}
+                                </p>
+                              </div>
+                              <div className="flex self-start opacity-0 group-hover/nugget:opacity-100 focus-within:opacity-100">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    void navigator.clipboard.writeText(
+                                      nugget.text,
+                                    )
+                                  }
+                                  className="grid size-6 place-items-center text-zinc-600 hover:text-white"
+                                  aria-label="Copy nugget"
+                                  title="Copy nugget"
+                                >
+                                  <Copy size={11} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => removeNugget(nugget.id)}
+                                  className="grid size-6 place-items-center text-zinc-600 hover:text-rose-400"
+                                  aria-label="Remove nugget"
+                                  title="Remove nugget"
+                                >
+                                  <X size={11} />
+                                </button>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                {isTranscribing && (
+                  <span className="flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-emerald-400">
+                    <span className="size-1 rounded-full bg-emerald-400" />
+                    Live
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => void handleTogglePipeline()}
+                  disabled={pipelineBusy}
+                  title={
+                    isTranscribing
+                      ? "Pause transcription"
+                      : activeService
+                        ? "Start transcription"
+                        : "Create a service and start transcription"
+                  }
+                  className={cn(
+                    "flex h-6 items-center gap-1 rounded px-2 text-[10px] font-semibold uppercase tracking-wider",
+                    isTranscribing
+                      ? "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
+                      : "bg-teal-500 text-[#111827] hover:bg-teal-400",
+                  )}
+                >
+                  {isTranscribing ? (
+                    <Pause size={10} aria-hidden="true" />
+                  ) : (
+                    <Play size={10} aria-hidden="true" />
+                  )}
+                  {isTranscribing ? "Pause" : "Start"}
+                </button>
+              </div>
+            </div>
+            <ServicePanel
+              onStartTranscription={handleTogglePipeline}
+              creationIntent={creationIntent}
+              onCreationIntentChange={setCreationIntent}
+            />
+            {resilienceStatus &&
+              (sttHealth?.status === "degraded" ||
+                sttHealth?.status === "error") && (
+                <div className="bg-amber-950/20 border-b border-amber-500/30 px-4 py-2 text-[10px] font-bold text-amber-400 flex items-center justify-between animate-pulse shrink-0">
+                  <span>TRANSCRIPTION PAUSED — RECONNECTING</span>
+                  <span className="bg-amber-500/10 px-1.5 py-0.5 rounded text-[9px]">
+                    BUFFERING AUDIO
+                  </span>
+                </div>
+              )}
+            <div
+              onScroll={handleTranscriptScroll}
+              className={cn(
+                "flex-1 overflow-y-auto p-4 scroll-smooth font-sans text-zinc-100 leading-relaxed text-sm antialiased select-text",
+                segments.length === 0 &&
+                  !interimText &&
+                  !activeService &&
+                  !isTranscribing
+                  ? "flex flex-col"
+                  : "space-y-3",
+              )}
+            >
+              {segments.map((seg) => {
+                const saved = nuggets.some((item) => item.text === seg.text);
+                return (
+                  <div
+                    key={seg.id}
+                    className={cn(
+                      "group/segment relative rounded-md py-1 pr-7 transition-colors",
+                      saved && "bg-amber-500/[0.06]",
+                    )}
+                  >
+                    <p className="transition-all duration-300">
+                      <HighlightedText
+                        text={seg.text}
+                        scriptureHighlights={seg.scriptureHighlights}
+                      />
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => toggleNugget(seg)}
+                      className={cn(
+                        "absolute right-1 top-1 grid size-6 place-items-center rounded opacity-0 transition-opacity hover:bg-amber-500/10 hover:text-amber-300 group-hover/segment:opacity-100 focus-visible:opacity-100",
+                        saved && "text-amber-400 opacity-100",
+                      )}
+                      disabled={saved || !activeService}
+                      aria-label={
+                        saved ? "Nugget saved" : "Save as message nugget"
+                      }
+                      title={
+                        saved ? "Nugget saved" : "Save this message nugget"
+                      }
+                    >
+                      <BookmarkSimple
+                        size={13}
+                        weight={saved ? "fill" : "regular"}
+                      />
+                    </button>
+                  </div>
+                );
+              })}
+              {interimText && (
+                <p className="animate-pulse italic text-zinc-300">
+                  {interimText}
+                </p>
+              )}
+              {segments.length === 0 &&
+                !interimText &&
+                (!activeService && !isTranscribing ? (
+                  <div className="flex flex-1 flex-col items-center justify-center px-4 text-center">
+                    <div className="grid size-10 place-items-center rounded-full border border-white/10 bg-white/[0.03] text-zinc-400">
+                      <Mic size={16} aria-hidden />
+                    </div>
+                    <p className="mt-4 text-[13px] font-semibold tracking-tight text-zinc-100">
+                      Create a service to start the transcript
+                    </p>
+                    <p className="mt-1.5 max-w-[16rem] text-[11px] leading-relaxed text-zinc-500">
+                      The live feed, nuggets, and detected scriptures save into
+                      one service for this message.
+                    </p>
+                    <button
+                      type="button"
+                      disabled={pipelineBusy}
+                      onClick={() => void handleTogglePipeline()}
+                      className="mt-5 inline-flex h-8 items-center gap-1.5 rounded-md bg-teal-500 px-3 text-[11px] font-semibold text-[#111827] hover:bg-teal-400 disabled:opacity-40"
+                    >
+                      <Play size={11} aria-hidden />
+                      Create and start
+                    </button>
+                    <button
+                      type="button"
+                      className="mt-2 text-[11px] text-zinc-500 hover:text-zinc-300"
+                      onClick={() => setCreationIntent("manual")}
+                    >
+                      Create without transcription
+                    </button>
+                  </div>
+                ) : (
+                  <p className="font-mono text-xs italic text-zinc-400">
+                    {isTranscribing
+                      ? "Listening for speech…"
+                      : "Transcription paused."}
+                  </p>
+                ))}
+              <div ref={transcriptEndRef} />
+            </div>
+
+            {/* Audio Signal Level Indicator */}
+            <div className="shrink-0 space-y-2 border-t border-white/10 bg-black/20 p-3">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                  <Volume2
+                    size={11}
+                    className={
+                      isTranscribing ? "text-teal-400" : "text-slate-500"
+                    }
+                  />
+                  Audio Input Signal
+                </span>
+                <span className="text-[9px] font-mono text-slate-600">
+                  {Math.round((audioLevel?.rms ?? 0) * 100)}% RMS
+                </span>
+              </div>
+              <div className="relative h-1.5 w-full overflow-hidden rounded-full border border-white/10 bg-black/40">
+                <div
+                  className={cn(
+                    "h-full rounded-full transition-all duration-75 ease-out",
+                    (audioLevel?.clipping ?? false)
+                      ? "bg-rose-500 animate-pulse"
+                      : "bg-teal-500",
+                  )}
+                  style={{
+                    width: `${Math.min(100, (audioLevel?.rms ?? 0) * 100 * 3.5)}%`,
+                  }}
+                />
+              </div>
+            </div>
+          </section>
+
+          {/* CENTER COLUMN: scripture detection workspace */}
+          <section className="flex min-w-0 flex-1 flex-col bg-surface">
+            {serviceError && (
+              <p role="alert" className="px-4 py-2 text-xs text-red-400">
+                {serviceError}
+              </p>
             )}
-          </div>
-          {resilienceStatus &&
-            (sttHealth?.status === "degraded" ||
-              sttHealth?.status === "error") && (
-              <div className="bg-amber-950/20 border-b border-amber-500/30 px-4 py-2 text-[10px] font-bold text-amber-400 flex items-center justify-between animate-pulse shrink-0">
-                <span>TRANSCRIPTION PAUSED — RECONNECTING</span>
-                <span className="bg-amber-500/10 px-1.5 py-0.5 rounded text-[9px]">
-                  BUFFERING AUDIO
+            {resilienceStatus && resilienceStatus.claudeFallbackActive && (
+              <div className="bg-amber-950/10 border-b border-amber-500/20 px-5 py-2 text-[10px] font-bold text-amber-400/90 flex items-center justify-between shrink-0 animate-pulse">
+                <span>CLAUDE OFFLINE — LOCAL REGEX DETECTION ACTIVE</span>
+                <span className="text-[9px] uppercase tracking-wider text-slate-500 font-mono">
+                  FALLBACK ACTIVE
                 </span>
               </div>
             )}
-          <div
-            onScroll={handleTranscriptScroll}
-            className="flex-1 overflow-y-auto p-4 space-y-3 scroll-smooth font-sans text-zinc-300 leading-relaxed text-sm antialiased select-text"
-          >
-            {segments.map((seg) => (
-              <p
-                key={seg.id}
-                className="transition-all duration-300 opacity-90 hover:opacity-100"
-              >
-                <HighlightedText
-                  text={seg.text}
-                  scriptureHighlights={seg.scriptureHighlights}
-                />
-              </p>
-            ))}
-            {interimText && (
-              <p className="text-slate-500 italic opacity-80 animate-pulse">
-                {interimText}
-              </p>
-            )}
-            {segments.length === 0 && !interimText && (
-              <p className="text-xs text-slate-600 italic font-mono">
-                {isTranscribing
-                  ? "Listening for speech…"
-                  : "Speech pipeline offline."}
-              </p>
-            )}
-            <div ref={transcriptEndRef} />
-          </div>
-
-          {/* Audio Signal Level Indicator */}
-          <div className="p-3 border-t border-surface-border bg-surface shrink-0 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
-                <Volume2
-                  size={11}
-                  className={
-                    isTranscribing ? "text-teal-400" : "text-slate-500"
-                  }
-                />
-                Audio Input Signal
-              </span>
-              <span className="text-[9px] font-mono text-slate-600">
-                {Math.round((audioLevel?.rms ?? 0) * 100)}% RMS
-              </span>
-            </div>
-            <div className="h-1.5 w-full bg-zinc-900 rounded-full overflow-hidden relative border border-zinc-800/40">
-              <div
-                className={cn(
-                  "h-full rounded-full transition-all duration-75 ease-out",
-                  (audioLevel?.clipping ?? false)
-                    ? "bg-rose-500 animate-pulse"
-                    : "bg-teal-500",
+            <div className="flex h-9 shrink-0 items-center justify-between gap-3 border-b border-surface-border px-4">
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="font-narrow text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">
+                  Detected content
+                </span>
+                {suggestions.length > 0 && (
+                  <span className="tabular-nums text-[10px] text-zinc-600">
+                    {suggestions.length}
+                  </span>
                 )}
-                style={{
-                  width: `${Math.min(100, (audioLevel?.rms ?? 0) * 100 * 3.5)}%`,
-                }}
-              />
+              </div>
+              <div className="flex items-center gap-2">
+                {heldSuggestions.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={flushHeldSuggestions}
+                    className="flex items-center gap-1 text-[10px] font-semibold text-teal-300 hover:text-teal-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-teal-400"
+                  >
+                    <ArrowDown size={11} aria-hidden="true" />
+                    {heldSuggestions.length} new
+                  </button>
+                )}
+                {suggestions.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleClearDetections}
+                    className="text-[10px] font-semibold text-zinc-600 hover:text-rose-400 focus-visible:outline-none focus-visible:text-rose-400"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
-        </section>
-
-        <button
-          type="button"
-          aria-label="Resize live transcript panel"
-          title="Drag to resize live transcript"
-          className="group relative w-1.5 shrink-0 cursor-col-resize border-x border-surface-border/60 bg-surface-secondary/30 outline-none transition-colors hover:bg-teal-500/20 focus-visible:bg-teal-500/25"
-          onPointerDown={(event) => startPanelResize("left", event)}
-          onKeyDown={(event) => {
-            if (event.key === "ArrowLeft") resizePanelByKeyboard("left", -16);
-            if (event.key === "ArrowRight") resizePanelByKeyboard("left", 16);
-          }}
-        >
-          <span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-transparent transition-colors group-hover:bg-teal-400/70" />
-        </button>
-
-        {/* CENTER COLUMN: scripture detection workspace */}
-        <section className="min-w-0 flex-1 flex flex-col">
-          {resilienceStatus && resilienceStatus.claudeFallbackActive && (
-            <div className="bg-amber-950/10 border-b border-amber-500/20 px-5 py-2 text-[10px] font-bold text-amber-400/90 flex items-center justify-between shrink-0 animate-pulse">
-              <span>CLAUDE OFFLINE — LOCAL REGEX DETECTION ACTIVE</span>
-              <span className="text-[9px] uppercase tracking-wider text-slate-500 font-mono">
-                FALLBACK ACTIVE
-              </span>
-            </div>
-          )}
-          {/* SUGGESTION QUEUE */}
-          <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-surface-border bg-surface-secondary/40 shrink-0">
-            <span className="font-narrow text-xs font-semibold text-zinc-500 uppercase tracking-[0.08em]">
-              Detected content
-            </span>
-            <div className="flex items-center gap-2">
-              {heldSuggestions.length > 0 && (
-                <button
-                  type="button"
-                  onClick={flushHeldSuggestions}
-                  className="flex items-center gap-1.5 rounded-full bg-teal-500/15 px-2.5 py-1 text-[10px] font-semibold text-teal-300 transition-colors hover:bg-teal-500/25 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-teal-400"
-                >
-                  <ArrowDown size={11} />
-                  {heldSuggestions.length} new detection
-                  {heldSuggestions.length === 1 ? "" : "s"}
-                </button>
-              )}
-              {suggestions.length > 0 && (
-                <button
-                  type="button"
-                  onClick={handleClearDetections}
-                  className="text-[10px] font-semibold text-slate-600 transition-colors hover:text-rose-400 focus-visible:outline-none focus-visible:text-rose-400"
-                >
-                  Clear all
-                </button>
-              )}
-            </div>
-          </div>
-          <div
-            ref={queueScrollRef}
-            onWheel={noteQueueBrowsing}
-            onTouchMove={noteQueueBrowsing}
-            className="flex-1 overflow-y-auto bg-surface-secondary/5 p-4"
-          >
-            <div className="space-y-5">
-              {suggestionSections.current.map((group) => {
-                const followState = followStateRef.current;
-                return (
-                  <section key={group.id} className="space-y-2.5">
-                    <div className="flex items-end justify-between gap-3 px-0.5">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-200">
-                          {group.reference}
-                        </p>
-                        <p className="mt-0.5 text-[10px] text-slate-500">
-                          {group.suggestions.length} verse
-                          {group.suggestions.length !== 1 ? "s" : ""} · selected
-                          theme preview
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {followStateRef.current?.passageId === group.id && (
-                          <span className="text-[10px] font-semibold text-teal-300">
-                            Auto-follow armed
+            <div
+              ref={queueScrollRef}
+              onWheel={noteQueueBrowsing}
+              onTouchMove={noteQueueBrowsing}
+              className="flex flex-1 flex-col overflow-y-auto px-4 py-3"
+            >
+              <div className="flex w-full min-w-0 flex-col space-y-5">
+                {suggestionSections.current.map((group) => {
+                  const followState = followStateRef.current;
+                  const following = followState?.passageId === group.id;
+                  return (
+                    <section
+                      key={group.id}
+                      className="flex w-full min-w-0 flex-col space-y-3"
+                    >
+                      <div className="flex w-full items-center justify-between gap-3">
+                        <div className="flex min-w-0 items-baseline gap-2">
+                          <h3 className="truncate text-[13px] font-semibold text-zinc-100">
+                            {group.reference}
+                          </h3>
+                          <span className="shrink-0 text-[10px] tabular-nums text-zinc-600">
+                            {group.suggestions.length} verses
                           </span>
-                        )}
-                        <div className="flex overflow-hidden rounded-md border border-surface-border bg-surface-secondary">
+                          {following && (
+                            <span className="shrink-0 text-[10px] font-medium text-teal-400">
+                              Following
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex shrink-0 items-center">
                           <button
                             type="button"
-                            onClick={() => void loadAdjacentDetectedVerse(group.id, "previous")}
+                            onClick={() =>
+                              void loadAdjacentDetectedVerse(
+                                group.id,
+                                "previous",
+                              )
+                            }
                             disabled={adjacentLoading !== null}
-                            className="flex size-7 items-center justify-center border-r border-surface-border text-slate-400 hover:bg-surface-tertiary hover:text-white disabled:opacity-50"
+                            className="grid size-6 place-items-center text-zinc-500 hover:text-zinc-200 disabled:opacity-40"
                             title="Preload previous verse"
                             aria-label={`Preload verse before ${group.reference}`}
                           >
-                            {adjacentLoading === `${group.id}:previous` ? <Loader size={12} className="animate-spin" /> : <ChevronLeft size={13} />}
+                            {adjacentLoading === `${group.id}:previous` ? (
+                              <Loader size={12} className="animate-spin" />
+                            ) : (
+                              <ChevronLeft size={14} />
+                            )}
                           </button>
                           <button
                             type="button"
-                            onClick={() => void loadAdjacentDetectedVerse(group.id, "next")}
+                            onClick={() =>
+                              void loadAdjacentDetectedVerse(group.id, "next")
+                            }
                             disabled={adjacentLoading !== null}
-                            className="flex size-7 items-center justify-center text-slate-400 hover:bg-surface-tertiary hover:text-white disabled:opacity-50"
+                            className="grid size-6 place-items-center text-zinc-500 hover:text-zinc-200 disabled:opacity-40"
                             title="Preload next verse"
                             aria-label={`Preload verse after ${group.reference}`}
                           >
-                            {adjacentLoading === `${group.id}:next` ? <Loader size={12} className="animate-spin" /> : <ChevronRight size={13} />}
+                            {adjacentLoading === `${group.id}:next` ? (
+                              <Loader size={12} className="animate-spin" />
+                            ) : (
+                              <ChevronRight size={14} />
+                            )}
                           </button>
                         </div>
                       </div>
-                    </div>
-                    <div
-                      className="grid justify-start gap-3"
-                      style={{
-                        gridTemplateColumns: `repeat(auto-fill, ${OPERATOR_CARD_WIDTH}px)`,
-                      }}
-                    >
-                      {group.suggestions.map((s) => {
-                        const isReading =
-                          followState !== null &&
-                          followState.passageId === s.passageId &&
-                          followState.currentIndex === s.passageIndex;
-                        const isUpNext =
-                          followState !== null &&
-                          followState.passageId === s.passageId &&
-                          followState.currentIndex + 1 === s.passageIndex;
-                        const isSent = sentSuggestionIds.has(s.id);
-                        const isLive =
-                          activeProjection?.reference === s.reference;
-                        return (
-                          <article key={s.id} className="min-w-0 space-y-1.5">
-                            <VerseThemePreview
-                              result={{
-                                reference: s.reference,
-                                translation: s.translation,
-                                verses: s.verses,
-                              }}
-                              theme={liveOverlayTheme(overlay)}
-                              showTranslation={overlay.showTranslation}
-                              showVerseNumbers={overlay.showVerseNumbers}
-                              maxVerses={1}
-                              width={OPERATOR_CARD_WIDTH}
-                              height={OPERATOR_CARD_HEIGHT}
-                              isActive={isReading || selectedSuggestionId === s.id}
-                              isFocused={isReading || isUpNext || selectedSuggestionId === s.id}
-                              isLive={isLive}
-                              sendStatus={isLive ? "sent" : "idle"}
-                              onSelect={() =>
-                                void handleApproveSuggestion(s.id)
-                              }
-                              cardRef={(element) => {
-                                if (element)
-                                  verseCardRefs.current.set(s.id, element);
-                                else verseCardRefs.current.delete(s.id);
-                              }}
-                            />
-                            <div className="flex items-center justify-between gap-2 px-0.5">
-                              <div className="min-w-0">
-                                <p className="truncate text-[11px] font-semibold text-slate-300">
-                                  {s.reference}
-                                </p>
-                                <p
-                                  className={cn(
-                                    "text-[9px] font-semibold",
-                                    isLive
-                                      ? "text-teal-300"
-                                      : isReading
-                                        ? "text-amber-300"
-                                        : isUpNext
-                                          ? "text-slate-400"
-                                          : "text-slate-600",
-                                  )}
-                                >
-                              {isLive
-                                ? "Live · following reading"
-                                : isReading
-                                  ? "Reading now"
-                                  : isUpNext
-                                    ? "Up next"
-                                    : s.preloadedNext
-                                      ? "Preloaded next"
-                                    : isSent
-                                      ? "Shown"
-                                          : `${Math.round(s.confidence * 100)}% confidence`}
-                                </p>
-                                {s.planMatch && (
-                                  <span
-                                    className="mt-0.5 inline-block rounded bg-teal-500/10 px-1.5 py-0.5 text-[9px] font-semibold text-teal-300"
-                                    title={
-                                      s.planMatch === "quote"
-                                        ? "Matched the reference playlist by verse text"
-                                        : "On the reference playlist"
-                                    }
-                                  >
-                                    {s.planMatch === "quote"
-                                      ? "Playlist · read"
-                                      : "Playlist"}
-                                  </span>
-                                )}
-                              </div>
-                              <div className="flex shrink-0 items-center gap-0.5">
+                      <div
+                        className="grid w-full gap-3"
+                        style={{
+                          gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${OPERATOR_CARD_WIDTH}px), 1fr))`,
+                        }}
+                      >
+                        {group.suggestions.map((s) => {
+                          const isReading =
+                            followState !== null &&
+                            followState.passageId === s.passageId &&
+                            followState.currentIndex === s.passageIndex;
+                          const isUpNext =
+                            followState !== null &&
+                            followState.passageId === s.passageId &&
+                            followState.currentIndex + 1 === s.passageIndex;
+                          const isLive =
+                            activeProjection?.reference === s.reference;
+                          const caption = detectionCaption(s, {
+                            isLive,
+                            isReading,
+                            isUpNext,
+                          });
+                          return (
+                            <article
+                              key={s.id}
+                              className="group/card relative min-w-0"
+                            >
+                              <VerseThemePreview
+                                result={{
+                                  reference: s.reference,
+                                  translation: s.translation,
+                                  verses: s.verses,
+                                }}
+                                theme={liveOverlayTheme(overlay)}
+                                showTranslation={overlay.showTranslation}
+                                showVerseNumbers={overlay.showVerseNumbers}
+                                maxVerses={1}
+                                responsive
+                                width={OPERATOR_CARD_WIDTH}
+                                height={OPERATOR_CARD_HEIGHT}
+                                isActive={
+                                  isReading || selectedSuggestionId === s.id
+                                }
+                                isFocused={
+                                  isReading ||
+                                  isUpNext ||
+                                  selectedSuggestionId === s.id
+                                }
+                                isLive={isLive}
+                                sendStatus={isLive ? "sent" : "idle"}
+                                onSelect={() => {
+                                  verseCardRefs.current
+                                    .get(s.id)
+                                    ?.focus({ preventScroll: true });
+                                  void handleApproveSuggestion(s.id);
+                                }}
+                                cardRef={(element) => {
+                                  if (element)
+                                    verseCardRefs.current.set(s.id, element);
+                                  else verseCardRefs.current.delete(s.id);
+                                }}
+                              />
+                              <div className="absolute right-1 top-1 z-[1] flex opacity-0 transition-opacity group-hover/card:opacity-100 group-focus-within/card:opacity-100">
                                 <button
                                   type="button"
                                   onClick={() => addToQueue(s)}
-                                  className="flex size-7 items-center justify-center rounded-md text-slate-600 transition-colors hover:bg-teal-500/10 hover:text-teal-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50"
+                                  className="grid size-6 place-items-center rounded-md bg-black/55 text-zinc-200 hover:bg-black/75 hover:text-white"
                                   title={`Add ${s.reference} to queue`}
                                   aria-label={`Add ${s.reference} to queue`}
                                 >
-                                  <Plus size={13} />
+                                  <Plus size={12} />
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() =>
                                     void handleDismissSuggestion(s.id)
                                   }
-                                  className="flex size-7 items-center justify-center rounded-md text-slate-600 transition-colors hover:bg-rose-500/10 hover:text-rose-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/50"
+                                  className="grid size-6 place-items-center rounded-md bg-black/55 text-zinc-200 hover:bg-black/75 hover:text-rose-300"
                                   title={`Dismiss ${s.reference}`}
                                   aria-label={`Dismiss ${s.reference}`}
                                 >
-                                  <X size={13} />
+                                  <X size={12} />
                                 </button>
                               </div>
-                            </div>
-                          </article>
-                        );
-                      })}
-                    </div>
-                  </section>
-                );
-              })}
-              {suggestionSections.history.length > 0 && (
-                <details className="rounded-lg border border-surface-border/70 bg-surface-secondary/30">
-                  <summary className="cursor-pointer select-none px-3 py-2.5 text-[11px] font-semibold text-slate-400 marker:text-slate-600">
-                    History · {suggestionSections.history.length} older passage{suggestionSections.history.length === 1 ? "" : "s"}
-                  </summary>
-                  <div className="border-t border-surface-border/70 p-2.5">
-                    <div className="mb-2 flex justify-end">
+                              {caption && (
+                                <p
+                                  className={cn(
+                                    "mt-1 truncate text-center text-[10px]",
+                                    isReading
+                                      ? "text-amber-300"
+                                      : "text-zinc-500",
+                                  )}
+                                >
+                                  {caption}
+                                </p>
+                              )}
+                            </article>
+                          );
+                        })}
+                      </div>
+                    </section>
+                  );
+                })}
+                {suggestionSections.history.length > 0 && (
+                  <section className="w-full max-w-md border-t border-surface-border pt-4">
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <p className="font-narrow text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-600">
+                        History
+                        <span className="ml-2 font-sans font-medium normal-case tracking-normal tabular-nums">
+                          {suggestionSections.history.length}
+                        </span>
+                      </p>
                       <button
                         type="button"
                         onClick={handleClearHistory}
-                        className="text-[10px] font-semibold text-slate-600 transition-colors hover:text-rose-400 focus-visible:outline-none focus-visible:text-rose-400"
+                        className="text-[10px] font-semibold text-zinc-600 hover:text-rose-400 focus-visible:outline-none"
                       >
-                        Clear completed
+                        Clear
                       </button>
                     </div>
-                    <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                    <div className="flex flex-col">
                       {suggestionSections.history.slice(0, 5).map((group) => (
                         <button
                           key={group.id}
                           type="button"
-                          onClick={() => void handleApproveSuggestion(group.suggestions[0].id)}
-                          className="rounded-md border border-transparent px-2.5 py-2 text-left transition-colors hover:border-surface-border hover:bg-surface focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-teal-500/50 active:scale-[0.98]"
+                          onClick={() =>
+                            void handleApproveSuggestion(
+                              group.suggestions[0].id,
+                            )
+                          }
+                          className="flex items-baseline justify-between gap-3 py-1.5 text-left hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
                         >
-                          <span className="block truncate text-[11px] font-semibold text-slate-300">
+                          <span className="truncate text-[12px] font-medium text-zinc-300">
                             {group.reference}
                           </span>
-                          <span className="block text-[9px] text-slate-600">
-                            {group.suggestions.length} verse{group.suggestions.length === 1 ? "" : "s"} · click to recall
+                          <span className="shrink-0 text-[10px] tabular-nums text-zinc-600">
+                            {group.suggestions.length}
                           </span>
                         </button>
                       ))}
                     </div>
-                  </div>
-                </details>
-              )}
-            </div>
-
-            {suggestions.length === 0 && (
-              <div className="flex flex-col items-center justify-center py-16 text-slate-600 border border-dashed border-zinc-800 rounded-xl">
-                <Activity
-                  size={24}
-                  className="mb-2 text-slate-700 animate-pulse"
-                />
-                <p className="text-xs font-semibold">
-                  Listening for scriptures...
-                </p>
-                <p className="text-[10px] text-slate-500 mt-0.5">
-                  Read scripture quotes to trigger automatic cards
-                </p>
+                  </section>
+                )}
               </div>
-            )}
-          </div>
-        </section>
 
-        <button
-          type="button"
-          aria-label="Resize live output preview panel"
-          title="Drag to resize live output preview"
-          className="group relative w-1.5 shrink-0 cursor-col-resize border-x border-surface-border/60 bg-surface-secondary/30 outline-none transition-colors hover:bg-teal-500/20 focus-visible:bg-teal-500/25"
-          onPointerDown={(event) => startPanelResize("right", event)}
-          onKeyDown={(event) => {
-            if (event.key === "ArrowLeft") resizePanelByKeyboard("right", -16);
-            if (event.key === "ArrowRight") resizePanelByKeyboard("right", 16);
-          }}
-        >
-          <span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-transparent transition-colors group-hover:bg-teal-400/70" />
-        </button>
-
-        {/* RIGHT COLUMN: live output preview and essential controls */}
-        <aside
-          className="shrink-0 flex min-h-0 flex-col overflow-hidden bg-surface-secondary/10"
-          style={{ width: previewWidth }}
-        >
-          {/* Live output scrolls instead of holding its full height. When the
-              window (or the background dock) leaves this column short, something
-              has to give — and it must not be the pipeline controls at the
-              bottom, which are the ones the operator reaches for mid-service. */}
-          <div className="min-h-0 shrink overflow-y-auto border-b border-surface-border p-4 space-y-3">
-            <div>
-              <p className="text-xs font-semibold text-slate-300">
-                Live output
-              </p>
-              <p className="text-[10px] text-slate-500">ProPresenter</p>
-            </div>
-            <LiveOutputPreview
-              outputs={previewOutputs}
-              selectedOutputId={previewOutputId}
-              onSelectOutput={setPreviewOutputId}
-              result={livePreviewResult}
-              liveMedia={liveMedia}
-              overlay={overlay}
-              width={liveOutputPreviewWidth}
-              height={liveOutputPreviewHeight}
-            />
-            <div className="grid grid-cols-3 gap-1.5">
-              {[
-                { label: "PP", status: ppStatus, error: ppError },
-                { label: "STT", status: sttStatus, error: sttError },
-                {
-                  label: "AI",
-                  status: claudeStatusMapped,
-                  error: claudeErrorMapped,
-                },
-              ].map((service) => (
-                <div
-                  key={service.label}
-                  title={service.error}
-                  className="flex items-center justify-center gap-1.5 rounded-md border border-surface-border bg-surface px-2 py-1.5"
-                >
-                  <span
-                    className={cn(
-                      "size-1.5 rounded-full",
-                      service.status === "ok"
-                        ? "bg-emerald-500"
-                        : service.status === "degraded"
-                          ? "bg-amber-500"
-                          : service.status === "error"
-                            ? "bg-rose-500"
-                            : "bg-zinc-600",
-                    )}
-                  />
-                  <span className="text-[9px] font-semibold text-slate-400">
-                    {service.label}
-                  </span>
+              {suggestions.length === 0 && (
+                <div className="flex flex-1 flex-col items-center justify-center text-center">
+                  <p className="text-[13px] font-medium text-zinc-400">
+                    {isTranscribing
+                      ? "Listening for scripture"
+                      : "Nothing detected yet"}
+                  </p>
+                  <p className="mt-1 max-w-[16rem] text-[11px] leading-relaxed text-zinc-600">
+                    {isTranscribing
+                      ? "Quoted verses land here as slides. Click one to send it live."
+                      : "Start the speech pipeline to detect verses as they are read."}
+                  </p>
                 </div>
-              ))}
-            </div>
-          </div>
-
-          {/* overflow-hidden is load-bearing: without it the fixed-height header
-              and search below spill past this box and paint over the pipeline
-              controls once the column is squeezed. */}
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-            <div className="flex shrink-0 items-center justify-between gap-3 border-b border-surface-border px-4 py-2.5">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                Queue
-              </label>
-              {queue.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setQueue([])}
-                  className="text-[10px] font-semibold text-slate-600 transition-colors hover:text-rose-400 focus-visible:text-rose-400 focus-visible:outline-none"
-                >
-                  Clear all
-                </button>
               )}
             </div>
-
-            <div className="shrink-0 px-4 py-2.5">
-              <OperatorQueueSearch
-                translation={defaultTranslation}
-                inputRef={searchInputRef}
-                onEnqueue={enqueueSearchResults}
-              />
-            </div>
-
-            <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
-              {queue.length === 0 ? (
-                <p className="px-2 py-6 text-center text-[10px] leading-relaxed text-slate-600">
-                  Stage verses here with{" "}
-                  <span className="text-slate-500">+</span> on a detection, or
-                  search above. Click a row to send it to ProPresenter.
-                </p>
-              ) : (
-                <ul className="space-y-1">
-                  {queue.map((entry) => {
-                    const isLive =
-                      activeProjection?.reference === entry.reference;
-                    return (
-                      <li key={entry.id}>
-                        <div
-                          className={cn(
-                            "group flex items-start gap-2 rounded-md border px-2.5 py-2 transition-colors",
-                            isLive
-                              ? "border-teal-500/40 bg-teal-500/10"
-                              : "border-transparent hover:border-surface-border hover:bg-surface",
-                          )}
-                        >
-                          <button
-                            type="button"
-                            onClick={() => void handlePresentQueued(entry)}
-                            disabled={queueBusyId === entry.id}
-                            className="min-w-0 flex-1 text-left focus-visible:outline-none"
-                            title={`Send ${entry.reference} to ProPresenter`}
-                          >
-                            <p
-                              className={cn(
-                                "truncate text-[11px] font-semibold",
-                                isLive ? "text-teal-300" : "text-slate-300",
-                              )}
-                            >
-                              {entry.reference}
-                              <span className="ml-1.5 font-normal text-slate-600">
-                                {entry.translation}
-                              </span>
-                              {entry.verses.length > 1 && (
-                                <span className="ml-1.5 font-normal text-slate-600">
-                                  · {entry.verses.length} verses
-                                </span>
-                              )}
-                            </p>
-                            <p className="mt-0.5 line-clamp-2 text-[10px] leading-snug text-slate-500">
-                              {entry.verses
-                                .map((verse) => verse.text)
-                                .join(" ")}
-                            </p>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => removeFromQueue(entry.id)}
-                            className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded text-slate-700 transition-colors hover:bg-rose-500/10 hover:text-rose-400 focus-visible:outline-none focus-visible:text-rose-400"
-                            title={`Remove ${entry.reference} from the queue`}
-                            aria-label={`Remove ${entry.reference} from the queue`}
-                          >
-                            <X size={12} />
-                          </button>
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </div>
-          </div>
-
-          {/* Compact pipeline controls */}
-          <div className="shrink-0 border-t border-surface-border bg-surface-secondary/20 p-3">
-            <div className="mb-2 flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-xs font-semibold text-foreground">
-                  Pipeline controls
-                </p>
-                <p className="truncate text-[10px] text-muted-foreground">
-                  {isTranscribing
-                    ? "Listening and detecting scripture"
-                    : "Audio capture is stopped"}
-                </p>
-              </div>
-              <span
-                className={cn(
-                  "size-2 shrink-0 rounded-full",
-                  isTranscribing ? "bg-emerald-500" : "bg-muted-foreground/40",
-                )}
-                aria-hidden="true"
-              />
-            </div>
-            <div className="grid grid-cols-[1fr_auto] gap-2">
-              <Button
-                variant={isTranscribing ? "secondary" : "default"}
-                onClick={handleTogglePipeline}
-              >
-                {isTranscribing ? (
-                  <Pause data-icon="inline-start" />
-                ) : (
-                  <Play data-icon="inline-start" />
-                )}
-                {isTranscribing ? "Pause" : "Start pipeline"}
-              </Button>
-              <Button
-                variant="destructive"
-                onClick={handleClearProjection}
-                disabled={!activeProjection}
-                title="Clear the current ProPresenter output"
-              >
-                <Trash2 data-icon="inline-start" />
-                Clear output
-              </Button>
-            </div>
-          </div>
-        </aside>
-      </div>
+          </section>
+        </div>
+      </BoothWorkspace>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronDown, Eye, EyeOff } from 'lucide-react'
+import { ChevronDown, Eye, EyeOff } from '@/icons'
 import { cn } from '@/lib/utils'
 import type { OverlayBox, OverlayContentKind, OverlayTheme } from '@shared/ipc'
 import { colorWithOpacity } from '@shared/overlay-template'

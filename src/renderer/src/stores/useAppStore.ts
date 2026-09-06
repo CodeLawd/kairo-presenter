@@ -1,5 +1,19 @@
 import { create } from 'zustand'
 import type { ProPresenterStatus, ProPresenterConnectionState, AudioLevel } from '@shared/ipc'
+import type { LiveOutputPayload } from '@shared/live-output'
+import { normalizeOperatorPanelWidth, OPERATOR_PANEL_DEFAULTS } from '@shared/operator-layout'
+
+const RAIL_WIDTH_KEY = 'operator-preview-width'
+
+// The store is also imported by node tests, where localStorage does not exist.
+function readStoredRailWidth(): number {
+  if (typeof localStorage === 'undefined') return OPERATOR_PANEL_DEFAULTS.right
+  return normalizeOperatorPanelWidth(
+    'right',
+    localStorage.getItem(RAIL_WIDTH_KEY),
+    OPERATOR_PANEL_DEFAULTS.right,
+  )
+}
 
 // ─── State shape ──────────────────────────────────────────────────────────────
 
@@ -41,6 +55,8 @@ interface AppState {
   scriptureHighlightMode: 'none' | 'focus' | 'live'
   /** Reference currently on ProAutomate output — drives the header LIVE badge. */
   liveOutputLabel: string | null
+  /** Last text sent to ProPresenter, shared by the Operator, Scripture and Lyrics tabs. */
+  liveOutputPreview: LiveOutputPayload | null
   /** Bumps when PP output is cleared so Scripture can drop Live badges. */
   scriptureOutputClearToken: number
   /** Last opened song in the Lyrics library — restored when returning to the tab. */
@@ -49,6 +65,10 @@ interface AppState {
   lyricsSortBy: 'title' | 'artist' | 'recent' | 'added'
   /** Which output the Operator's live-output panel is previewing. */
   operatorPreviewOutputId: string | null
+  /** Width of the shared live output rail, kept in the store so every screen
+      showing the rail resizes together — Operator stays mounted across
+      navigation, so a per-screen state would drift out of sync. */
+  liveRailWidth: number
   /** Last selected theme in the Theme editor — restored when returning to the tab. */
   themeSelectedId: string | null
   themeSelectedName: string
@@ -84,6 +104,7 @@ interface AppState {
   }) => void
   clearScriptureViewState: () => void
   markLiveOutput: (label: string) => void
+  setLiveOutputPreview: (payload: LiveOutputPayload | null) => void
   clearScriptureLiveOutput: () => void
   setLyricsViewState: (state: {
     selectedSongId?: string | null
@@ -91,6 +112,7 @@ interface AppState {
     sortBy?: 'title' | 'artist' | 'recent' | 'added'
   }) => void
   setOperatorPreviewOutputId: (id: string | null) => void
+  setLiveRailWidth: (width: number) => void
   setThemeViewState: (state: {
     selectedId?: string | null
     selectedName?: string
@@ -137,11 +159,13 @@ export const useAppStore = create<AppState>((set) => ({
   scriptureActiveCardInRow: 0,
   scriptureHighlightMode: 'none',
   liveOutputLabel: null,
+  liveOutputPreview: null,
   scriptureOutputClearToken: 0,
   lyricsSelectedSongId: null,
   lyricsFilter: 'all',
   lyricsSortBy: 'title',
   operatorPreviewOutputId: null,
+  liveRailWidth: readStoredRailWidth(),
   themeSelectedId: null,
   themeSelectedName: '',
 
@@ -229,6 +253,7 @@ export const useAppStore = create<AppState>((set) => ({
       scriptureActiveCardInRow: 0,
       scriptureHighlightMode: 'none',
       liveOutputLabel: null,
+      liveOutputPreview: null,
     }),
 
   markLiveOutput: (label) =>
@@ -237,10 +262,17 @@ export const useAppStore = create<AppState>((set) => ({
       scriptureHighlightMode: 'live',
     }),
 
+  setLiveOutputPreview: (payload) =>
+    set({
+      liveOutputPreview: payload,
+      liveOutputLabel: payload?.reference.trim() || null,
+    }),
+
   clearScriptureLiveOutput: () =>
     set((state) => ({
       scriptureOutputClearToken: state.scriptureOutputClearToken + 1,
       liveOutputLabel: null,
+      liveOutputPreview: null,
       scriptureHighlightMode:
         state.scriptureHighlightMode === 'live' ? 'focus' : state.scriptureHighlightMode,
     })),
@@ -256,6 +288,12 @@ export const useAppStore = create<AppState>((set) => ({
     })),
 
   setOperatorPreviewOutputId: (id) => set({ operatorPreviewOutputId: id }),
+  setLiveRailWidth: (width) => {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(RAIL_WIDTH_KEY, String(width))
+    }
+    set({ liveRailWidth: width })
+  },
 
   setThemeViewState: (state) =>
     set((current) => ({

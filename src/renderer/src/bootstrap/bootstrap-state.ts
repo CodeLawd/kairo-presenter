@@ -6,8 +6,25 @@ import type {
   BootstrapResourceError,
 } from '@shared/ipc'
 
-/** Keeps the loading screen from flashing on a fast machine. */
-export const BOOTSTRAP_MIN_VISIBLE_MS = 500
+/**
+ * Keeps the splash up long enough to read each stage — fast machines would
+ * otherwise flash "Ready" before the copy is even visible.
+ */
+export const BOOTSTRAP_MIN_VISIBLE_MS = 4_200
+
+/**
+ * Operator-facing stages walked on a timer while real bootstrap runs.
+ * Order mirrors what the booth cares about: scriptures, lyrics, ProPresenter.
+ */
+export const SPLASH_STAGES = [
+  'Getting everything ready…',
+  'Loading scriptures…',
+  'Importing Bible translations…',
+  'Getting lyrics ready…',
+  'Checking ProPresenter…',
+  'Loading your account…',
+  'Almost ready…',
+] as const
 
 export type BootstrapPhase = 'idle' | 'loading' | 'ready' | 'ready-with-warnings'
 
@@ -21,6 +38,7 @@ const RESOURCE_LABELS: Record<BootstrapResource, string> = {
   livePlan: 'live playlist',
   lyrics: 'song library',
   onboarding: 'setup progress',
+  account: 'account',
 }
 
 /** A failed resource opens the app with a warning; it never blocks entry. */
@@ -37,6 +55,27 @@ export function describeBootstrapWarning(errors: BootstrapResourceError[]): stri
 export function getBootstrapPercent(progress: BootstrapProgress): number {
   if (progress.total <= 0) return 0
   return Math.max(0, Math.min(100, Math.round((progress.completed / progress.total) * 100)))
+}
+
+/**
+ * Paced splash percent from elapsed time. Real bootstrap can finish earlier;
+ * the bar still climbs through the stages so the booth feels prepared.
+ */
+export function getSplashPercent(elapsedMs: number, fadingOut: boolean): number {
+  if (fadingOut) return 100
+  // Leave a sliver for the final "Ready" beat when the screen fades out.
+  return Math.min(98, Math.round((elapsedMs / BOOTSTRAP_MIN_VISIBLE_MS) * 98))
+}
+
+/** Which splash line to show for the elapsed time (or Ready when fading out). */
+export function getSplashStep(elapsedMs: number, fadingOut: boolean): string {
+  if (fadingOut) return 'Ready'
+  const dwell = BOOTSTRAP_MIN_VISIBLE_MS / SPLASH_STAGES.length
+  const index = Math.min(
+    SPLASH_STAGES.length - 1,
+    Math.max(0, Math.floor(elapsedMs / dwell)),
+  )
+  return SPLASH_STAGES[index]
 }
 
 /**

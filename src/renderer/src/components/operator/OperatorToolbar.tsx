@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
-import { Keyboard, ListMusic } from 'lucide-react'
+import { Keyboard, ListMusic } from '@/icons'
 import { useAppStore } from '@/stores/useAppStore'
 import { useBootstrapStore } from '@/bootstrap/useBootstrapStore'
 import { Switch } from '@/components/ui/switch'
@@ -10,7 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import type { LivePlanState, SermonPlan } from '@shared/ipc'
+import type { LivePlanState } from '@shared/ipc'
 
 /** Radix Select rejects an empty item value, so "no playlist" needs a sentinel. */
 const NO_LIVE_PLAN = 'none'
@@ -25,7 +25,7 @@ const EMPTY_LIVE_PLAN: LivePlanState = {
 const SHORTCUT_LEGEND: Array<[string, string]> = [
   ['Space', 'Send focused verse'],
   ['Esc', 'Dismiss'],
-  ['Backspace', 'Clear output'],
+  ['Backspace', 'Clear text'],
   ['Ctrl+F', 'Search'],
   ['Ctrl+A', 'Toggle automation'],
 ]
@@ -43,8 +43,8 @@ export function displayPlanTitle(title: string): string {
 }
 
 /**
- * Operator's live controls, rendered into the app shell's single top bar rather
- * than a second row of its own.
+ * Operator controls share the title bar on wide windows and move to the
+ * shell's second row when the available width is smaller.
  */
 export default function OperatorToolbar(): React.ReactElement {
   const { isTranscribing, sessionStartTime, autoModeEnabled, confidenceThreshold, setAutoMode } =
@@ -94,7 +94,7 @@ export default function OperatorToolbar(): React.ReactElement {
   const hasPlans = plans.length > 0
 
   return (
-    <div className="no-drag flex h-8 min-w-0 items-center gap-2">
+    <div className="operator-toolbar no-drag flex h-8 min-w-0 items-center gap-2">
       <span
         className={[
           'shrink-0 font-mono text-[11px] tabular-nums',
@@ -110,15 +110,16 @@ export default function OperatorToolbar(): React.ReactElement {
         onValueChange={handleSelectLivePlan}
         disabled={!hasPlans}
       >
-        {/* `cn` is a plain join, so the trigger's base `w-fit` would win a
-            class-vs-class fight — the inline width is what actually pins it. */}
+
         <SelectTrigger
-          style={{ width: 208 }}
+          style={{ width: 'var(--header-playlist-width, 208px)' }}
           className="h-8 overflow-hidden text-[11px] *:data-[slot=select-value]:min-w-0"
           aria-label="Live reference playlist"
           title={
             hasPlans
-              ? 'Verses from this playlist project instantly, without a Bible lookup'
+              ? livePlan.planId
+                ? `Reference playlist: ${displayPlanTitle(plans.find(plan => plan.id === livePlan.planId)?.title ?? livePlan.title ?? '')}`
+                : 'Verses from this playlist project instantly, without a Bible lookup'
               : 'Import sermon notes on the Scripture tab to create a playlist'
           }
         >
@@ -143,10 +144,10 @@ export default function OperatorToolbar(): React.ReactElement {
       )}
 
       <div
-        className="flex h-8 shrink-0 items-center gap-2 border-l border-surface-border/70 pl-3 text-[11px] text-zinc-400"
+        className="flex h-8 shrink-0 items-center gap-2 border-l border-white/10 pl-3 text-[11px] text-zinc-400"
         title="Press Ctrl+A to toggle"
       >
-        <span className="hidden lg:inline">Automation</span>
+        <span className="whitespace-nowrap">Automation</span>
         <Switch
           checked={autoModeEnabled}
           onCheckedChange={handleToggleAutoMode}
@@ -157,7 +158,7 @@ export default function OperatorToolbar(): React.ReactElement {
       <div className="group relative shrink-0">
         <button
           type="button"
-          className="flex size-7 items-center justify-center rounded text-zinc-600 transition-colors hover:bg-zinc-900 hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-teal-400"
+          className="flex size-7 items-center justify-center rounded text-zinc-600 transition-colors hover:bg-white/10 hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/30"
           aria-label="Keyboard shortcuts"
         >
           <Keyboard size={14} />

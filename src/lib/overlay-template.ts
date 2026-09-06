@@ -33,6 +33,34 @@ function escapeAndBreak(input: string): string {
   return escapeHtml(input).replace(/\n/g, '<br>')
 }
 
+export interface OverlayColoredLine {
+  text: string
+  color?: string
+}
+
+/** Only hex colors reach the overlay — lyric gloss / paint values are operator-set. */
+export function sanitizeOverlayColor(raw: string | undefined): string | undefined {
+  if (!raw) return undefined
+  const t = raw.trim()
+  if (/^#[0-9a-fA-F]{6}$/.test(t)) return t.toUpperCase()
+  if (/^#[0-9a-fA-F]{3}$/.test(t)) {
+    const [, a, b, c] = t
+    return `#${a}${a}${b}${b}${c}${c}`.toUpperCase()
+  }
+  return undefined
+}
+
+/** Escaped lyric body with per-line color spans. Unsafe color values are dropped. */
+export function formatOverlayColoredText(lines: OverlayColoredLine[]): string {
+  return lines
+    .map(({ text, color }) => {
+      const safe = escapeHtml(text)
+      const hex = sanitizeOverlayColor(color)
+      return hex ? `<span style="color:${hex}">${safe}</span>` : safe
+    })
+    .join('<br>')
+}
+
 // ─── Media URLs (image/video backgrounds) ───────────────────────────────────────
 // Local media files are served through the pa-media:// protocol registered in
 // src/main/index.ts, which refuses any path other than the currently-configured
@@ -118,7 +146,7 @@ function backgroundLayerHTML(theme: OverlayTheme): string {
     const mediaStyle = `width:100%; height:100%; object-fit:${bg.mediaFit ?? 'cover'}; display:block;`
     const media =
       bg.type === 'video'
-        ? `<video src="${src}" style="${mediaStyle}" autoplay${playback.loop ? ' loop' : ''} muted playsinline></video>`
+        ? `<video src="${src}" style="${mediaStyle}" autoplay${playback.loop ? ' loop' : ''} muted playsinline preload="auto"></video>`
         : `<img src="${src}" style="${mediaStyle}" alt="">`
     const filterStyle = filter ? ` filter:${filter};` : ''
     return `<div class="pa-bg" style="position:absolute; inset:0; opacity:${bg.opacity}; overflow:hidden;${filterStyle}">${media}</div>`
@@ -304,9 +332,12 @@ export function renderOverlayHTML(
   reference: string,
   text: string,
   frameWidth = 1920,
-  frameHeight = 1080
+  frameHeight = 1080,
+  options?: { coloredLines?: OverlayColoredLine[] }
 ): string {
-  const safeText = escapeAndBreak(text)
+  const safeText = options?.coloredLines?.length
+    ? formatOverlayColoredText(options.coloredLines)
+    : escapeAndBreak(text)
   const safeReference = escapeAndBreak(reference)
 
   const { verse, reference: ref, layout } = theme

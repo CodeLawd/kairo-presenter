@@ -2,7 +2,7 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>ProAutomate NDI Overlay</title>
+    <title>Kairo NDI Overlay</title>
     <style>
       html,
       body {
@@ -73,6 +73,19 @@
       window.__setContent = function (html) {
         document.getElementById('root').innerHTML = html;
         fitVerse();
+        var videos = document.querySelectorAll('.pa-bg video');
+        for (var i = 0; i < videos.length; i++) {
+          videos[i].muted = true;
+          videos[i].playsInline = true;
+          var play = function (video) {
+            return function () {
+              if (video.dataset.paPaused === '1') return;
+              video.play().catch(function () {});
+            };
+          }(videos[i]);
+          if (videos[i].readyState >= 2) play();
+          else videos[i].addEventListener('canplay', play, { once: true });
+        }
       };
       // Color / loop tweaks must not rebuild the slide — that restarts the video.
       window.__patchBackground = function (filter, loop) {
@@ -84,8 +97,31 @@
         var video = document.querySelector('.pa-bg video');
         if (video) {
           video.loop = !!loop;
-          if (loop && video.ended) video.play();
+          if (loop && video.ended && video.dataset.paPaused !== '1') video.play();
         }
+      };
+      window.__setVideoPaused = function (paused) {
+        var video = document.querySelector('.pa-bg video');
+        if (!video) return;
+        video.dataset.paPaused = paused ? '1' : '';
+        if (paused) {
+          video.pause();
+          return;
+        }
+        if (video.ended) video.currentTime = 0;
+        video.play().catch(function () {});
+      };
+      window.__clearText = function () {
+        var boxes = document.querySelectorAll('.pa-verse-box, .pa-reference-box');
+        for (var i = 0; i < boxes.length; i++) boxes[i].remove();
+      };
+      window.__seekVideo = function (seconds) {
+        var video = document.querySelector('.pa-bg video');
+        if (!video || !isFinite(seconds)) return;
+        var duration = video.duration;
+        var time = seconds < 0 ? 0 : seconds;
+        if (isFinite(duration) && duration > 0 && time > duration) time = duration;
+        video.currentTime = time;
       };
     </script>
   </body>

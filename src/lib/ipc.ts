@@ -1,5 +1,12 @@
 // ─── Common ───────────────────────────────────────────────────────────────────
 
+import type {
+  PPResourceBindings,
+  PPResourceCatalogue,
+  PPResourceKind,
+  PPResourcePreview,
+} from './propresenter-resources'
+
 export type Unsubscribe = () => void
 
 // ─── App Settings ─────────────────────────────────────────────────────────────
@@ -58,6 +65,7 @@ export interface AppSettings {
     glossColor: string
   }
   display: {
+    shortcuts?: import('./keyboard-shortcuts').ShortcutBindings
     theme: 'dark' | 'light'
     fontSize: number
     transcriptionFontSize: number
@@ -87,7 +95,11 @@ export interface AppSettings {
   }
   themeLibrary: CustomOverlayTheme[]
   media: MediaSettings
+  /** House-audio folder. Empty until derived from the media sibling or picked. */
+  tracks: TracksSettings
   church: ChurchProfile
+  /** Stable ProPresenter UUIDs selected for ProAutomate roles. */
+  propresenterResources: PPResourceBindings
 }
 
 // ─── Church profile (onboarding) ──────────────────────────────────────────────
@@ -109,9 +121,50 @@ export interface ChurchProfile {
   serviceTimes: ChurchServiceTime[]
 }
 
+// ─── Cloud account ────────────────────────────────────────────────────────────
+// Shapes live in `cloud/contracts.ts` so the server compiles against the same
+// definitions; re-exported here because `ipc.ts` is the API surface everything
+// else imports.
+
+export type {
+  CloudOrg,
+  CloudResult,
+  CloudSessionState,
+  CloudUser,
+  DevicePairingState,
+  SessionSnapshot,
+  SignInInput,
+  SignUpInput,
+} from './cloud/contracts'
+
+export type { SecretsConfigured } from './cloud/org-secrets'
+
+/** Secret field names that settings.set can clear without revealing values. */
+export type SettingsSecretClearKey =
+  | 'apiKey'
+  | 'anthropicApiKey'
+  | 'deepseekApiKey'
+  | 'bibleApiKey'
+  | 'braveApiKey'
+  | 'googleTranslateApiKey'
+
+export type SettingsSectionPatch<K extends keyof AppSettings> = K extends 'stt' | 'lyrics'
+  ? AppSettings[K] & { clearKeys?: SettingsSecretClearKey[] }
+  : AppSettings[K] | Partial<AppSettings[K]>
+
+export type SettingsWithSecretsStatus = AppSettings & {
+  secretsConfigured: import('./cloud/org-secrets').SecretsConfigured
+}
+
 // ─── Onboarding ───────────────────────────────────────────────────────────────
 
-export type OnboardingStepId = 'account' | 'propresenter' | 'output' | 'apiKeys' | 'church'
+export type OnboardingStepId =
+  | 'account'
+  | 'propresenter'
+  | 'propresenterResources'
+  | 'output'
+  | 'apiKeys'
+  | 'church'
 
 export interface OnboardingState {
   completedSteps: OnboardingStepId[]
@@ -138,6 +191,27 @@ export interface MediaSettings {
    * they travel with the media. Read once on first scan to migrate, then empty.
    */
   playlists: MediaPlaylist[]
+}
+
+export interface TracksSettings {
+  /** Absolute path of the house-audio folder. '' until created next to Media. */
+  folder: string
+}
+
+export interface TrackItem {
+  id: string
+  name: string
+  path: string
+  ext: string
+  size: number
+}
+
+export interface TracksLibrary {
+  folder: string
+  items: TrackItem[]
+  liveId: string | null
+  livePaused: boolean
+  error: string | null
 }
 
 export type MediaKind = 'video' | 'image'
@@ -199,6 +273,8 @@ export interface MediaLibrary {
   playback: Record<string, MediaPlayback>
   /** Item currently pushed to screen, or null. */
   liveItemId: string | null
+  /** True when the live video is paused. Images ignore this. Reset on every push. */
+  livePaused: boolean
   /** Set when the last scan failed — e.g. the folder was moved or unmounted. */
   error: string | null
 }
@@ -482,6 +558,7 @@ export type BootstrapResource =
   | 'livePlan'
   | 'lyrics'
   | 'onboarding'
+  | 'account'
 
 export interface BootstrapResourceError {
   resource: BootstrapResource
@@ -502,7 +579,7 @@ export interface BootstrapProgress {
  */
 export interface AppBootstrapSnapshot {
   /** Null only when settings could not be read; the renderer falls back to defaults. */
-  settings: AppSettings | null
+  settings: SettingsWithSecretsStatus | null
   orchestrator: OrchestratorStatus | null
   propresenter: ProPresenterStatus | null
   transcription: TranscriptResult[]
@@ -512,6 +589,8 @@ export interface AppBootstrapSnapshot {
   lyrics: LyricsSong[]
   /** Read from disk like everything else here — never from the network. */
   onboarding: OnboardingState
+  /** Decrypted from the local token vault. No network call at launch. */
+  account: import('./cloud/contracts').SessionSnapshot
   errors: BootstrapResourceError[]
   completedAt: number
 }
@@ -616,21 +695,13 @@ export interface SermonScriptureItem {
 }
 
 export interface SermonPlan {
+  sourceText?: string
   id: string
   title: string
   sourceFileName: string
   items: SermonScriptureItem[]
   createdAt: number
   updatedAt: number
-  reviewedAt?: number
-}
-
-export function completeSermonPlanReview(plan: SermonPlan, completedAt = Date.now()): SermonPlan {
-  return { ...plan, reviewedAt: completedAt, updatedAt: completedAt }
-}
-
-export function sermonPlanNeedsReview(plan: SermonPlan): boolean {
-  return typeof plan.reviewedAt !== 'number'
 }
 
 export function appendScriptureResultToPlan(
@@ -743,7 +814,22 @@ export interface LivePlanState {
 export interface SermonPlanDraft {
   title: string
   sourceFileName: string
+  text: string
+  matches: SermonReferenceMatch[]
   items: Array<Pick<SermonScriptureItem, 'id' | 'reference' | 'translation'>>
+}
+
+export interface SermonReferenceMatch {
+  start: number
+  end: number
+  text: string
+  reference: string
+  translations: ScriptureTranslation[]
+}
+
+export interface SermonNotesAnalysis {
+  matches: SermonReferenceMatch[]
+  items: SermonPlanDraft['items']
 }
 
 // ─── Transcription ────────────────────────────────────────────────────────────
@@ -882,10 +968,16 @@ export interface ProPresenterAPI {
   getPlaylists: () => Promise<ProPresenterPlaylist[]>
   /** Pushes a sample verse (John 3:16 KJV) through the scripture overlay path using current overlay settings. */
   testOverlay: () => Promise<boolean>
-  /** Clears every layer this app most recently pushed to. */
+  /** Clears verse/lyric text and leaves the dock background running. */
+  clearText: () => Promise<boolean>
+  /** Clears text, dock background, and every layer this app most recently pushed to. */
   clearOverlay: () => Promise<boolean>
   /** PP Looks — a Look defines which layers are visible on which screens. */
   getLooks: () => Promise<PPLook[]>
+  getResourceCatalogue: (options?: { refresh?: boolean }) => Promise<PPResourceCatalogue>
+  getResourceDetails: (kind: PPResourceKind, id: string) => Promise<Record<string, unknown> | null>
+  getResourcePreview: (kind: PPResourceKind, id: string, childId?: string) => Promise<PPResourcePreview>
+  setResourceBindings: (bindings: PPResourceBindings) => Promise<PPResourceBindings>
   /** Returns cleanup fn — call when component unmounts. */
   onStatusChange: (callback: (status: ProPresenterStatus) => void) => Unsubscribe
 }
@@ -915,10 +1007,13 @@ export interface ScriptureAPI {
   dismiss: (suggestionId: string) => Promise<void>
   /** Register a manually-built suggestion so orchestrator.approveSuggestion can present it. */
   register: (suggestion: ScriptureSuggestion) => Promise<void>
+  /** Present browsed scripture without publishing it as detected Operator content. */
+  presentDirectly: (suggestion: ScriptureSuggestion) => Promise<void>
   search: (query: string, translation?: ScriptureTranslation) => Promise<ScriptureResult[]>
   getTranslations: (apiKey?: string) => Promise<ScriptureTranslationOption[]>
   setTranslation: (translation: ScriptureTranslation) => Promise<void>
   importSermonNotes: () => Promise<SermonPlanDraft | null>
+  scanSermonNotes: (text: string) => Promise<SermonNotesAnalysis>
   listSermonPlans: () => Promise<SermonPlan[]>
   saveSermonPlan: (plan: SermonPlan) => Promise<SermonPlan>
   deleteSermonPlan: (planId: string) => Promise<void>
@@ -1036,10 +1131,21 @@ export interface SettingsAPI {
   /**
    * For `overlay`, main merges the value onto the freshly-read stored object, so
    * pages may send only the fields they own (see D3 in src/main/ipc/index.ts).
-   * Every other key is replaced wholesale — send the complete section object.
+   * For `stt` / `lyrics`, empty secret strings leave the stored value alone unless
+   * listed in `clearKeys`. Every other key is replaced wholesale.
    */
-  set: <K extends keyof AppSettings>(key: K, value: AppSettings[K] | Partial<AppSettings[K]>) => Promise<void>
-  getAll: () => Promise<AppSettings>
+  set: <K extends keyof AppSettings>(key: K, value: SettingsSectionPatch<K>) => Promise<void>
+  getAll: () => Promise<SettingsWithSecretsStatus>
+  /**
+   * Validate a key using the draft (when replacing) or the stored value
+   * (when configured and write-only). Never returns the key itself.
+   */
+  testApiKey: (
+    kind: 'deepgram' | 'anthropic' | 'bible',
+    draft?: string,
+  ) => Promise<{ ok: boolean; message: string }>
+  /** Fires when main hydrates or saves API keys (e.g. after org vault pull). */
+  onChanged: (callback: (settings: SettingsWithSecretsStatus) => void) => Unsubscribe
 }
 
 // ─── Orchestrator ─────────────────────────────────────────────────────────────
@@ -1128,6 +1234,7 @@ export interface OrchestratorAPI {
 }
 
 export interface AppAPI {
+  onImportRequested: (callback: (kind: import('./import-menu').ImportKind) => void) => Unsubscribe
   /** Loads every local resource the first render needs, in one round trip. */
   bootstrap: () => Promise<AppBootstrapSnapshot>
   /** Returns cleanup fn. Fires as each bootstrap resource settles. */
@@ -1146,7 +1253,41 @@ export interface OnboardingAPI {
   onStateChange: (callback: (state: OnboardingState) => void) => Unsubscribe
 }
 
+export interface AccountAPI {
+  /** From the local cache — never blocks on the network. */
+  getSession: () => Promise<import('./cloud/contracts').SessionSnapshot>
+  signUp: (
+    input: import('./cloud/contracts').SignUpInput,
+  ) => Promise<import('./cloud/contracts').CloudResult<import('./cloud/contracts').SessionSnapshot>>
+  signIn: (
+    input: import('./cloud/contracts').SignInInput,
+  ) => Promise<import('./cloud/contracts').CloudResult<import('./cloud/contracts').SessionSnapshot>>
+  signOut: () => Promise<import('./cloud/contracts').SessionSnapshot>
+  requestPasswordReset: (
+    email: string,
+  ) => Promise<import('./cloud/contracts').CloudResult<null>>
+  /** Re-sends the confirmation code for the signed-in account. */
+  resendVerification: () => Promise<import('./cloud/contracts').CloudResult<null>>
+  /** Confirms the address with the six-digit code from the email. */
+  verifyEmailCode: (
+    code: string,
+  ) => Promise<import('./cloud/contracts').CloudResult<import('./cloud/contracts').SessionSnapshot>>
+  /** Shows a code to approve elsewhere; resolves as soon as the code exists. */
+  startDevicePairing: () => Promise<import('./cloud/contracts').DevicePairingState>
+  cancelDevicePairing: () => Promise<import('./cloud/contracts').DevicePairingState>
+  getDevicePairing: () => Promise<import('./cloud/contracts').DevicePairingState>
+  /** Opens a page of the web app in the system browser. */
+  openWeb: (path?: string) => Promise<void>
+  onSessionChange: (
+    callback: (session: import('./cloud/contracts').SessionSnapshot) => void,
+  ) => Unsubscribe
+  onPairingChange: (
+    callback: (state: import('./cloud/contracts').DevicePairingState) => void,
+  ) => Unsubscribe
+}
+
 export interface ProAutomateAPI {
+  services: import('./service-records').ServicesAPI
   app: AppAPI
   propresenter: ProPresenterAPI
   audio: AudioAPI
@@ -1157,11 +1298,15 @@ export interface ProAutomateAPI {
   orchestrator: OrchestratorAPI
   resilience: ResilienceAPI
   ndi: NdiAPI
+  documents: import('./documents').DocumentsAPI
   media: MediaAPI
+  tracks: TracksAPI
   onboarding: OnboardingAPI
+  account: AccountAPI
 }
 
 export interface MediaAPI {
+  importFiles: (kind: 'image' | 'video') => Promise<MediaLibrary>
   getLibrary: () => Promise<MediaLibrary>
   /** Native folder picker; resolves to the library for the folder that was chosen. */
   chooseFolder: () => Promise<MediaLibrary>
@@ -1178,13 +1323,38 @@ export interface MediaAPI {
   renamePlaylist: (id: string, name: string) => Promise<MediaLibrary>
   deletePlaylist: (id: string) => Promise<MediaLibrary>
   setPlaylistItems: (id: string, itemIds: string[]) => Promise<MediaLibrary>
+  /** Saves the operator's order for "All backgrounds". */
+  setItemOrder: (itemIds: string[]) => Promise<MediaLibrary>
+  /** Deletes the file from the backgrounds folder and drops every reference. */
+  deleteItem: (itemId: string) => Promise<MediaLibrary>
+  renameItem: (itemId: string, name: string) => Promise<MediaLibrary>
+  revealItem: (itemId: string) => Promise<void>
+  copyItems: (itemIds: string[]) => Promise<void>
+  cutItems: (itemIds: string[], fromPlaylistId?: string) => Promise<void>
+  pasteItems: (playlistId?: string) => Promise<MediaLibrary>
+  clipboardHasFiles: () => Promise<boolean>
   /**
    * Native file picker, then add those backgrounds to the playlist.
    * Files already in the media folder are referenced; anything else is copied in.
    */
   addMediaToPlaylist: (playlistId: string) => Promise<MediaLibrary>
   setPlayback: (itemId: string, playback: Partial<MediaPlayback>) => Promise<MediaLibrary>
+  /** Pause or resume the video currently on screen. No-op when an image is live. */
+  setPaused: (paused: boolean) => Promise<MediaLibrary>
+  /** Scrub the live video. No-op when an image is live. */
+  seek: (seconds: number) => Promise<void>
   onLibraryChange: (callback: (library: MediaLibrary) => void) => () => void
+}
+
+export interface TracksAPI {
+  getLibrary: () => Promise<TracksLibrary>
+  rescan: () => Promise<TracksLibrary>
+  chooseFolder: () => Promise<TracksLibrary>
+  importFiles: () => Promise<TracksLibrary>
+  play: (itemId: string) => Promise<TracksLibrary>
+  setPaused: (paused: boolean) => Promise<TracksLibrary>
+  stop: () => Promise<TracksLibrary>
+  onLibraryChange: (callback: (library: TracksLibrary) => void) => () => void
 }
 
 // ─── IPC channel constants ────────────────────────────────────────────────────
@@ -1201,8 +1371,13 @@ export const IPC = {
     GET_LIBRARY:    'propresenter:getLibrary',      // invoke
     GET_PLAYLISTS:  'propresenter:getPlaylists',    // invoke
     TEST_OVERLAY:   'propresenter:testOverlay',     // invoke
+    CLEAR_TEXT:     'propresenter:clearText',       // invoke
     CLEAR_OVERLAY:  'propresenter:clearOverlay',    // invoke
     GET_LOOKS:      'propresenter:getLooks',        // invoke — PPLook[]
+    GET_RESOURCE_CATALOGUE: 'propresenter:getResourceCatalogue',
+    GET_RESOURCE_DETAILS:   'propresenter:getResourceDetails',
+    GET_RESOURCE_PREVIEW:   'propresenter:getResourcePreview',
+    SET_RESOURCE_BINDINGS:  'propresenter:setResourceBindings',
     STATUS_CHANGE:  'propresenter:statusChange',    // push
   },
   AUDIO: {
@@ -1214,6 +1389,8 @@ export const IPC = {
     ERROR:          'audio:error',                  // push
   },
   APP: {
+    IMPORT_REQUESTED: 'app:importRequested',
+    IMPORT_READY: 'app:importReady',
     BOOTSTRAP:          'app:bootstrap',          // invoke
     BOOTSTRAP_PROGRESS: 'app:bootstrapProgress',  // push
   },
@@ -1221,10 +1398,12 @@ export const IPC = {
     APPROVE:                'scripture:approve',                 // invoke
     DISMISS:                'scripture:dismiss',                 // invoke
     REGISTER:               'scripture:register',                // invoke
+    PRESENT_DIRECTLY:       'scripture:presentDirectly',         // invoke
     SEARCH:                 'scripture:search',                  // invoke
     GET_TRANSLATIONS:       'scripture:getTranslations',         // invoke
     SET_TRANSLATION:        'scripture:setTranslation',         // invoke
     IMPORT_SERMON_NOTES:    'scripture:importSermonNotes',       // invoke
+    SCAN_SERMON_NOTES:      'scripture:scanSermonNotes',         // invoke
     LIST_SERMON_PLANS:      'scripture:listSermonPlans',         // invoke
     SAVE_SERMON_PLAN:       'scripture:saveSermonPlan',          // invoke
     DELETE_SERMON_PLAN:     'scripture:deleteSermonPlan',        // invoke
@@ -1248,6 +1427,7 @@ export const IPC = {
     INTERIM:        'transcription:interim',        // push
   },
   MEDIA: {
+    IMPORT_FILES: 'media:importFiles',
     GET_LIBRARY:     'media:getLibrary',            // invoke
     CHOOSE_FOLDER:   'media:chooseFolder',          // invoke
     RESCAN:          'media:rescan',                // invoke
@@ -1258,9 +1438,29 @@ export const IPC = {
     RENAME_PLAYLIST: 'media:renamePlaylist',        // invoke
     DELETE_PLAYLIST: 'media:deletePlaylist',        // invoke
     SET_PLAYLIST_ITEMS: 'media:setPlaylistItems',   // invoke
+    SET_ITEM_ORDER:  'media:setItemOrder',          // invoke
+    DELETE_ITEM:     'media:deleteItem',            // invoke
+    RENAME_ITEM:     'media:renameItem',            // invoke
+    REVEAL_ITEM:     'media:revealItem',            // invoke
+    COPY_ITEMS:      'media:copyItems',             // invoke
+    CUT_ITEMS:       'media:cutItems',              // invoke
+    PASTE_ITEMS:     'media:pasteItems',            // invoke
+    CLIPBOARD_HAS_FILES: 'media:clipboardHasFiles', // invoke
     ADD_MEDIA_TO_PLAYLIST: 'media:addMediaToPlaylist', // invoke
     SET_PLAYBACK:    'media:setPlayback',           // invoke
+    SET_PAUSED:      'media:setPaused',             // invoke
+    SEEK:            'media:seek',                  // invoke
     LIBRARY:         'media:library',               // push (MediaLibrary)
+  },
+  TRACKS: {
+    GET_LIBRARY:     'tracks:getLibrary',
+    RESCAN:          'tracks:rescan',
+    CHOOSE_FOLDER:   'tracks:chooseFolder',
+    IMPORT_FILES:    'tracks:importFiles',
+    PLAY:            'tracks:play',
+    SET_PAUSED:      'tracks:setPaused',
+    STOP:            'tracks:stop',
+    LIBRARY:         'tracks:library',
   },
   LYRICS: {
     SEARCH:          'lyrics:search',               // invoke
@@ -1281,6 +1481,8 @@ export const IPC = {
     GET:            'settings:get',                 // invoke
     SET:            'settings:set',                 // invoke
     GET_ALL:        'settings:getAll',              // invoke
+    TEST_API_KEY:   'settings:testApiKey',          // invoke
+    CHANGED:        'settings:changed',             // push — secrets hydrated / saved
   },
   ORCHESTRATOR: {
     START:        'orchestrator:start',         // invoke
@@ -1303,6 +1505,21 @@ export const IPC = {
     GET_STATUS:         'ndi:getStatus',         // invoke — { available, sending, ppInputConfigured, outputs }
     GET_VIDEO_INPUTS:   'ndi:getVideoInputs',    // invoke — PPVideoInputInfo[]
     PICK_OVERLAY_MEDIA: 'ndi:pickOverlayMedia',  // invoke — native file dialog → absolute path | null
+  },
+  ACCOUNT: {
+    GET_SESSION:            'account:getSession',            // invoke — SessionSnapshot
+    SIGN_UP:                'account:signUp',                // invoke
+    SIGN_IN:                'account:signIn',                // invoke
+    SIGN_OUT:               'account:signOut',               // invoke
+    REQUEST_PASSWORD_RESET: 'account:requestPasswordReset',  // invoke
+    RESEND_VERIFICATION:    'account:resendVerification',    // invoke
+    VERIFY_EMAIL_CODE:      'account:verifyEmailCode',       // invoke
+    START_DEVICE_PAIRING:   'account:startDevicePairing',    // invoke
+    CANCEL_DEVICE_PAIRING:  'account:cancelDevicePairing',   // invoke
+    GET_DEVICE_PAIRING:     'account:getDevicePairing',      // invoke
+    OPEN_WEB:               'account:openWeb',               // invoke
+    SESSION_CHANGED:        'account:sessionChanged',        // push (SessionSnapshot)
+    PAIRING_CHANGED:        'account:pairingChanged',        // push (DevicePairingState)
   },
   ONBOARDING: {
     GET_STATE:     'onboarding:getState',       // invoke — OnboardingState

@@ -136,6 +136,16 @@ export function mergeScriptureSuggestion(
   incoming: ScriptureSuggestion,
 ): ScriptureSuggestion[] {
   if (suggestions.some((item) => item.id === incoming.id)) return suggestions;
+  // A fresh single-verse detection must not duplicate a card already loaded
+  // inside a passage. Keep its id and passage membership for keyboard/follow state.
+  if ((incoming.passageLength ?? 1) <= 1) {
+    const existing = suggestions.find(item =>
+      item.translation === incoming.translation &&
+      item.reference.trim().toLowerCase() === incoming.reference.trim().toLowerCase(),
+    );
+    if (existing) return suggestions;
+  }
+
   const passage = incoming.passageReference?.match(
     /^(.+?)\s+(\d+):(\d+)(?:[-–—](\d+))?$/,
   );

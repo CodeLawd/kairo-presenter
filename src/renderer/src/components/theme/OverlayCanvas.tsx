@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { X } from 'lucide-react'
+import { X } from '@/icons'
 import { cn } from '@/lib/utils'
 import type { OverlayBox, OverlayContentKind, OverlayTheme } from '@shared/ipc'
 import {

@@ -13,6 +13,7 @@ import type { AppSettings, OnboardingState, OnboardingStepId } from '../ipc'
 export const ONBOARDING_STEPS: readonly OnboardingStepId[] = [
   'account',
   'propresenter',
+  'propresenterResources',
   'output',
   'apiKeys',
   'church',
@@ -21,6 +22,7 @@ export const ONBOARDING_STEPS: readonly OnboardingStepId[] = [
 export function onboardingStepLabel(step: OnboardingStepId): string {
   if (step === 'account') return 'Account'
   if (step === 'propresenter') return 'ProPresenter'
+  if (step === 'propresenterResources') return 'ProPresenter resources'
   if (step === 'output') return 'Output'
   if (step === 'apiKeys') return 'API keys'
   return 'Church profile'
@@ -37,13 +39,25 @@ export const DEFAULT_ONBOARDING_STATE: OnboardingState = {
 /**
  * Whether `step` is already satisfied by what is configured.
  *
- * `account` always answers false — signing in is not a fact settings can carry,
- * so it is reached by completing or skipping the step, never by derivation.
+ * `account` still answers false here: whether someone is signed in lives in the
+ * encrypted token vault, not in `AppSettings`, and this module may not read it.
+ * The wizard marks that step complete itself when a sign-in succeeds.
  */
 export function isStepComplete(step: OnboardingStepId, settings: AppSettings): boolean {
   if (step === 'propresenter') return settings.propresenter.host.trim() !== ''
+  if (step === 'propresenterResources') {
+    return Object.values(settings.propresenterResources ?? {}).some(
+      (value) => typeof value === 'string' && value.trim() !== '',
+    )
+  }
   if (step === 'output') return settings.overlay.outputs.some((output) => output.enabled)
   if (step === 'apiKeys') {
+    const configured = (settings as AppSettings & {
+      secretsConfigured?: { bible?: boolean; deepgram?: boolean }
+    }).secretsConfigured
+    if (configured) {
+      return Boolean(configured.bible || configured.deepgram)
+    }
     return settings.stt.bibleApiKey.trim() !== '' || settings.stt.apiKey.trim() !== ''
   }
   if (step === 'church') return settings.church.name.trim() !== ''
@@ -159,7 +173,10 @@ export function seedOnboardingFromSettings(
   settings: AppSettings,
   now = Date.now(),
 ): OnboardingState {
-  const completedSteps = deriveCompletedSteps(settings)
+  // The resource browser is opt-in for existing installs. Marking it skipped
+  // keeps an upgrade from opening a new screen or interrupting a partly
+  // configured operator; `resetOnboarding()` starts the current flow again.
+  const completedSteps = deriveCompletedSteps(settings).filter((step) => step !== 'propresenterResources')
   const state: OnboardingState = {
     ...DEFAULT_ONBOARDING_STATE,
     source: 'legacy',
@@ -167,7 +184,7 @@ export function seedOnboardingFromSettings(
     // Nothing about an existing install can prove an account, and there is no
     // account to prove in phase 1 — treat it as answered so a working setup is
     // not held open by the one step it cannot satisfy.
-    skippedSteps: ['account'],
+    skippedSteps: ['account', 'propresenterResources'],
   }
   const resume = nextIncompleteStep(state)
   // Nothing left to answer: the install is already set up, so the wizard is
@@ -193,6 +210,24 @@ export interface OnboardingSummaryLine {
   /** What was actually configured, or why the line is unset. */
   detail: string
   done: boolean
+}
+
+/** One line for the closing screen: what this machine will do on Sunday. */
+export interface OnboardingReadiness {
+  /** Chips, in the order the wizard asked for them. */
+  lines: OnboardingSummaryLine[]
+  /** Steps still unset — what "Finish in Settings" would be for. */
+  outstanding: OnboardingSummaryLine[]
+  ready: boolean
+}
+
+export function onboardingReadiness(settings: AppSettings): OnboardingReadiness {
+  const lines = onboardingSummary(settings)
+  const outstanding = lines.filter((line) => !line.done)
+  // "Ready" means a verse can actually reach a screen: a ProPresenter host and
+  // somewhere to send to. A church name and an API key are conveniences.
+  const ready = lines.every((line) => line.done || line.step === 'apiKeys' || line.step === 'church')
+  return { lines, outstanding, ready }
 }
 
 /**
@@ -221,9 +256,11 @@ export function onboardingSummary(settings: AppSettings): OnboardingSummaryLine[
     {
       step: 'output',
       label: 'Outputs',
+      // A count, not a list of names — four output names overflow every layout
+      // they are put in, and the names are one click away in Theme.
       detail:
         enabledOutputs.length > 0
-          ? enabledOutputs.map((output) => output.name).join(', ')
+          ? `${enabledOutputs.length} turned on`
           : 'None turned on',
       done: enabledOutputs.length > 0,
     },

@@ -3,10 +3,13 @@ import assert from 'node:assert/strict'
 import type { AppBootstrapSnapshot, BootstrapResourceError } from '../src/lib/ipc'
 import {
   BOOTSTRAP_MIN_VISIBLE_MS,
+  SPLASH_STAGES,
   createBootstrapRunner,
   describeBootstrapWarning,
   getBootstrapPercent,
   getBootstrapPhase,
+  getSplashPercent,
+  getSplashStep,
   shouldShowApiBibleWarning,
 } from '../src/renderer/src/bootstrap/bootstrap-state'
 
@@ -39,7 +42,28 @@ test('progress converts to a bounded percentage', () => {
 })
 
 test('the loading screen has a minimum visible duration', () => {
-  assert.equal(BOOTSTRAP_MIN_VISIBLE_MS, 500)
+  assert.equal(BOOTSTRAP_MIN_VISIBLE_MS, 4_200)
+})
+
+test('splash stages pace through booth-facing copy', () => {
+  assert.ok(SPLASH_STAGES.length >= 5)
+  assert.match(SPLASH_STAGES[0], /ready/i)
+  assert.ok(SPLASH_STAGES.some((step) => /scripture/i.test(step)))
+  assert.ok(SPLASH_STAGES.some((step) => /lyrics/i.test(step)))
+})
+
+test('splash percent climbs with elapsed time and finishes on fade-out', () => {
+  assert.equal(getSplashPercent(0, false), 0)
+  assert.ok(getSplashPercent(2_100, false) >= 45)
+  assert.ok(getSplashPercent(2_100, false) < 98)
+  assert.equal(getSplashPercent(4_200, false), 98)
+  assert.equal(getSplashPercent(0, true), 100)
+})
+
+test('splash step walks the stage list until fade-out', () => {
+  assert.equal(getSplashStep(0, false), SPLASH_STAGES[0])
+  assert.equal(getSplashStep(BOOTSTRAP_MIN_VISIBLE_MS - 1, false), SPLASH_STAGES.at(-1))
+  assert.equal(getSplashStep(0, true), 'Ready')
 })
 
 test('bootstrap runs once no matter how many times it is started', async () => {

@@ -1,6 +1,8 @@
-import { Check, Minus } from 'lucide-react'
+import { Check, Minus } from '@/icons'
+import { PRODUCT_NAME } from '@shared/brand'
 import { onboardingSummary } from '@shared/cloud/onboarding'
 import { useBootstrapStore } from '@/bootstrap/useBootstrapStore'
+import { KairoMark } from '@/components/brand/KairoMark'
 
 /**
  * The closing screen.
@@ -24,11 +26,17 @@ export default function StepDone({
 
   return (
     <div className="flex flex-1 flex-col animate-fade-in">
-      <span className="grid h-12 w-12 place-items-center rounded-full bg-teal-500/15 ring-1 ring-teal-400/30">
-        <Check className="h-6 w-6 text-teal-400" strokeWidth={2.5} aria-hidden="true" />
-      </span>
+      <div className="relative inline-flex self-start">
+        <KairoMark size="md" glow />
+        <span
+          className="absolute -bottom-0.5 -right-0.5 grid h-5 w-5 place-items-center rounded-full bg-teal-500 text-white ring-2 ring-surface"
+          aria-hidden="true"
+        >
+          <Check size={11} strokeWidth={3} />
+        </span>
+      </div>
 
-      <h2 className="mt-5 text-[19px] font-semibold tracking-[-0.02em] text-white">
+      <h2 className="mt-5 text-[20px] font-semibold tracking-[-0.025em] text-white">
         {church ? `${church} is set up` : 'You are set up'}
       </h2>
       <p className="mt-2 max-w-[46ch] text-[13px] leading-relaxed text-slate-500">
@@ -62,8 +70,14 @@ export default function StepDone({
       </ul>
 
       <div className="mt-auto flex items-center justify-end pt-8">
-        <button type="button" className="btn-primary min-w-[10rem]" onClick={onStart} disabled={busy} autoFocus>
-          Start using ProAutomate
+        <button
+          type="button"
+          className="btn-primary min-w-[10rem]"
+          onClick={onStart}
+          disabled={busy}
+          autoFocus
+        >
+          Start using {PRODUCT_NAME}
         </button>
       </div>
     </div>

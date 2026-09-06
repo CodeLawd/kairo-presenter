@@ -273,3 +273,9 @@ test("operator arrow navigation moves through the visible verse order", () => {
   assert.equal(navigateOperatorSuggestionId(ids, "verse-2", -1), "verse-1");
   assert.equal(navigateOperatorSuggestionId(ids, "verse-3", 1), "verse-3");
 });
+
+test('a later standalone detection does not duplicate a verse in a loaded passage', () => {
+  const incoming = { ...suggestions[1], id: 'fresh-detection', passageId: 'fresh-passage', passageLength: 1, passageReference: suggestions[1].reference, passageIndex: 0 };
+  assert.equal(mergeScriptureSuggestion(suggestions, incoming), suggestions);
+  assert.equal(mergeScriptureSuggestion(suggestions, { ...incoming, translation: 'NKJV' }).length, suggestions.length + 1);
+});

@@ -13,13 +13,16 @@ test('operator workspace uses production labels without dashboard copy', async (
   assert.match(source, /Live output/)
 })
 
-test('visual tokens use warm graphite surfaces and a restrained ember accent', async () => {
+test('visual tokens keep graphite surfaces and a Kairo amber accent', async () => {
   const source = await readFile(new URL('../tailwind.config.js', import.meta.url), 'utf8')
+  const css = await readFile(new URL('../src/renderer/src/index.css', import.meta.url), 'utf8')
 
   assert.match(source, /DEFAULT: 'rgb\(var\(--surface\) \/ <alpha-value>\)'/)
-  assert.match(source, /500: '#f26b38'/)
+  assert.match(source, /500: '#f59e0b'/)
   assert.match(source, /'glow-teal': 'none'/)
   assert.doesNotMatch(source, /filter: 'blur\(4px\)'/)
+  assert.match(css, /--surface: 12 12 12/)
+  assert.match(css, /--control-accent: 245 158 11/)
 })
 
 test('theme editor uses a preview-first three-pane workspace and theme-aware range controls', async () => {

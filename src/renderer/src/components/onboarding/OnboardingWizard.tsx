@@ -2,12 +2,15 @@ import { useCallback, useEffect, useState } from 'react'
 import type { OnboardingState } from '@shared/ipc'
 import { ONBOARDING_STEPS, isStepComplete } from '@shared/cloud/onboarding'
 import { useBootstrapStore } from '@/bootstrap/useBootstrapStore'
+import { useAccountStore } from '@/stores/useAccountStore'
+import { KairoMark } from '@/components/brand/KairoMark'
 import StepAccount from './StepAccount'
 import StepApiKeys from './StepApiKeys'
 import StepChurchProfile from './StepChurchProfile'
 import StepDone from './StepDone'
 import StepOutput from './StepOutput'
 import StepProPresenter from './StepProPresenter'
+import StepProPresenterResources from './StepProPresenterResources'
 
 /**
  * First-run setup. An overlay above the shell — never a route — so the app
@@ -38,7 +41,12 @@ export default function OnboardingWizard({
   const index = Math.max(0, ONBOARDING_STEPS.indexOf(current))
   const total = ONBOARDING_STEPS.length
   const isLast = index === total - 1
-  const done = isStepComplete(current, settings)
+  const signedIn = useAccountStore((s) => s.session.state !== 'signed-out')
+  const verified = useAccountStore((s) => s.session.user?.emailVerified === true)
+  // Signing in lives in the token vault rather than in settings, so the account
+  // step is the one the wizard has to answer for itself. Confirmed address is
+  // required — the launch wall should have already done this.
+  const done = current === 'account' ? signedIn && verified : isStepComplete(current, settings)
 
   const apply = useCallback(
     async (run: () => Promise<OnboardingState>): Promise<OnboardingState | null> => {
@@ -58,9 +66,10 @@ export default function OnboardingWizard({
   )
 
   const finish = useCallback(async (): Promise<void> => {
+    if (current === 'account' && !done) return
     await apply(() => window.api.onboarding.finish())
     onDismiss()
-  }, [apply, onDismiss])
+  }, [apply, current, done, onDismiss])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -81,6 +90,7 @@ export default function OnboardingWizard({
    * declare it would be asking the same question twice.
    */
   const advance = async (): Promise<void> => {
+    if (current === 'account' && !done) return
     await apply(() =>
       done ? window.api.onboarding.completeStep(current) : window.api.onboarding.skipStep(current),
     )
@@ -100,29 +110,43 @@ export default function OnboardingWizard({
 
   return (
     <div
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 animate-fade-in"
+      className="fixed inset-0 z-[70] flex items-center justify-center animate-fade-in"
       role="dialog"
       aria-modal="true"
       aria-labelledby="onboarding-title"
       data-onboarding-wizard="true"
     >
-      <div className="flex min-h-[27rem] w-[520px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-xl border border-surface-border/60 bg-surface shadow-2xl animate-spring-in">
+      <div className="absolute inset-0 bg-black/65" aria-hidden="true" />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute left-1/2 top-[26%] h-64 w-64 -translate-x-1/2 rounded-full bg-[#F59E0B]/12 blur-3xl"
+      />
+
+      <div className="relative flex min-h-[28rem] w-[520px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border border-surface-border/60 bg-surface shadow-2xl animate-spring-in">
+        <div
+          aria-hidden="true"
+            className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-[#F59E0B]/10 to-transparent"
+        />
+
         {/* Progress is a hairline, not a widget — it answers "how much longer"
             and nothing else. */}
-        <div className="h-[2px] w-full bg-surface-border/50" aria-hidden="true">
+        <div className="relative h-[2px] w-full bg-surface-border/50" aria-hidden="true">
           <div
-            className="h-full bg-teal-500 transition-[width] duration-300 ease-out-expo"
+            className="h-full bg-[#F59E0B] transition-[width] duration-300 ease-out-expo"
             style={{ width: showDone ? '100%' : `${((index + 1) / total) * 100}%` }}
           />
         </div>
 
-        <div className="flex flex-1 flex-col px-8 pb-6 pt-7">
-          <p
-            id="onboarding-title"
-            className="text-[11px] font-medium uppercase tracking-[0.1em] text-slate-600"
-          >
-            {showDone ? 'Setup complete' : `Setup · ${index + 1} of ${total}`}
-          </p>
+        <div className="relative flex flex-1 flex-col px-8 pb-6 pt-7">
+          <div className="flex items-center gap-2.5">
+            <KairoMark size="sm" />
+            <p
+              id="onboarding-title"
+              className="text-[11px] font-medium uppercase tracking-[0.1em] text-slate-500"
+            >
+              {showDone ? 'Setup complete' : `Setup · ${index + 1} of ${total}`}
+            </p>
+          </div>
 
           <div className="mt-5 flex flex-1 flex-col">
             {showDone && <StepDone onStart={() => void finish()} busy={busy} />}
@@ -132,6 +156,7 @@ export default function OnboardingWizard({
                 onConnected={() => void apply(() => window.api.onboarding.completeStep('propresenter'))}
               />
             )}
+            {!showDone && current === 'propresenterResources' && <StepProPresenterResources />}
             {!showDone && current === 'output' && <StepOutput />}
             {!showDone && current === 'apiKeys' && <StepApiKeys />}
             {!showDone && current === 'church' && <StepChurchProfile />}
@@ -141,8 +166,9 @@ export default function OnboardingWizard({
           <div className="mt-8 flex items-center justify-between gap-4">
             <button
               type="button"
-              className="text-[12px] text-slate-600 transition-colors hover:text-slate-300 focus-visible:outline-none focus-visible:text-slate-300"
+              className="text-[12px] text-slate-600 transition-colors hover:text-slate-300 focus-visible:outline-none focus-visible:text-slate-300 disabled:opacity-40"
               onClick={() => void finish()}
+              disabled={current === 'account' && !done}
             >
               Finish later
             </button>
@@ -162,7 +188,7 @@ export default function OnboardingWizard({
                 type="button"
                 className="btn-primary min-w-[7rem]"
                 onClick={() => void advance()}
-                disabled={busy}
+                disabled={busy || (current === 'account' && !done)}
               >
                 {isLast ? 'Finish' : 'Continue'}
               </button>

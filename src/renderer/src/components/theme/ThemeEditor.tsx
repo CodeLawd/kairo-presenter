@@ -15,8 +15,8 @@ import {
   RotateCcw,
   MoreHorizontal,
   ListChecks,
-  type LucideIcon,
-} from 'lucide-react'
+  type Icon,
+} from '@/icons'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -254,7 +254,7 @@ function SectionCard({
   title,
   children,
 }: {
-  icon: LucideIcon
+  icon: Icon
   title: string
   children: React.ReactNode
 }): React.ReactElement {
@@ -692,7 +692,10 @@ export default function ThemeEditor(): React.ReactElement {
         // the override is switched on rather than the apply silently landing on
         // the scripture theme.
         const target = setContentOverride(output, contentKind, true)
-        return withContentPatch(target, contentKind, { themeId, theme: structuredClone(draftTheme) })
+        return withContentPatch(target, contentKind, {
+          themeId,
+          theme: themeForContentKind(structuredClone(draftTheme), contentKind),
+        })
       }),
       // The legacy field still feeds verse-card previews elsewhere in the app,
       // which are scripture-only — a lyrics theme must not overwrite it.
@@ -862,7 +865,7 @@ export default function ThemeEditor(): React.ReactElement {
   const hasDraftChanges = JSON.stringify(draftTheme) !== JSON.stringify(liveTheme)
 
   return (
-    <ResizablePanelGroup orientation="horizontal" className="h-full overflow-hidden">
+    <ResizablePanelGroup orientation="horizontal" className="h-full overflow-hidden bg-surface">
       {/* Theme library */}
       <ResizablePanel
         id="theme-library"
@@ -874,7 +877,7 @@ export default function ThemeEditor(): React.ReactElement {
           if (previous) window.localStorage.setItem('theme-library-width', String(Math.round(inPixels)))
         }}
       >
-      <aside className="h-full bg-surface-secondary/30 overflow-y-auto p-3">
+      <aside className="h-full overflow-y-auto bg-surface-secondary p-3">
         <div className="mb-4 flex items-center justify-between gap-2 px-1">
           <div>
             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.16em]">Themes</p>
@@ -1305,7 +1308,7 @@ export default function ThemeEditor(): React.ReactElement {
 
       {/* Preview + status column */}
       <ResizablePanel id="theme-preview" minSize={PREVIEW_MIN}>
-      <div className="h-full bg-surface-secondary/25 overflow-y-auto">
+      <div className="h-full overflow-y-auto bg-transparent">
         <div className="flex min-h-full flex-col gap-5 p-5">
           {/* NDI / PP status line */}
           <div className="double-bezel-outer order-3">
@@ -1328,7 +1331,7 @@ export default function ThemeEditor(): React.ReactElement {
               {ndiStatus.available && !ndiStatus.ppInputConfigured && (
                 <p className="text-[10px] text-yellow-400 flex items-start gap-1.5 leading-relaxed">
                   <AlertCircle size={11} className="shrink-0 mt-0.5" aria-hidden="true" />
-                  In ProPresenter: add a Video Input for the "ProAutomate Scripture" NDI source, then bind it on the Output tab.
+                  In ProPresenter: add a Video Input for the "Kairo Scripture" NDI source, then bind it on the Output tab.
                 </p>
               )}
             </div>

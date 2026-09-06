@@ -1,6 +1,7 @@
 import { createHash } from 'crypto'
 import { promises as fs } from 'fs'
 import { basename, dirname, extname, join, relative, resolve, sep } from 'path'
+import { shell } from 'electron'
 import log from 'electron-log/main'
 import type {
   MediaFolder,
@@ -17,6 +18,8 @@ import {
   normalizeMediaPlayback,
   normalizePlaybackMap,
 } from '@shared/media-playback'
+import { applyItemOrder } from '@shared/media-order'
+import { readFilePathsFromClipboard } from './clipboard'
 
 // ─── What counts as a background ──────────────────────────────────────────────
 // Chromium decodes these; anything else in the folder is ignored rather than
@@ -100,8 +103,23 @@ class MediaService {
   private folders: MediaFolder[] = []
   private playlists: MediaPlaylist[] = []
   private playback: Record<string, MediaPlayback> = {}
+  /**
+   * Operator order for the whole library ("All backgrounds"). Empty means
+   * fall back to the scan's name sort. Playlists keep their own `itemIds`.
+   */
+  private itemOrder: string[] = []
   private scanError: string | null = null
   private liveItemId: string | null = null
+  private livePaused = false
+  /**
+   * In-app clipboard. System pasteboard is also written for Finder, but
+   * Electron's macOS clipboard clears between writes — so Paste here prefers
+   * these ids whenever they are set.
+   */
+  private clipboardIds: string[] | null = null
+  private clipboardMode: 'copy' | 'cut' | null = null
+  /** Playlist the cut items were taken from — cleared on Paste / Copy. */
+  private clipboardCutFromPlaylistId: string | null = null
   private listeners = new Set<(library: MediaLibrary) => void>()
 
   /** Fires whenever the library or the live item changes, so the dock re-renders. */
@@ -129,6 +147,7 @@ class MediaService {
       playlists: this.playlists,
       playback: this.playback,
       liveItemId: this.liveItemId,
+      livePaused: this.livePaused,
       error: this.scanError,
     }
   }
@@ -154,6 +173,7 @@ class MediaService {
       this.folders = []
       this.playlists = []
       this.playback = {}
+      this.itemOrder = []
       this.scanError = null
       this.emit()
       return this.getLibrary()
@@ -218,14 +238,17 @@ class MediaService {
     }
 
     items.sort((a, b) => a.name.localeCompare(b.name))
-    this.items = items
     this.folders = listMediaFolders(basename(root), subdirectoryNames, counts)
 
+    // Manifest holds the operator's library order — load it before applying so
+    // a rescan does not flash the alphabetical list for one frame.
     await this.loadPlaylists(root)
+    this.items = applyItemOrder(items, this.itemOrder)
 
     // A background that disappeared from disk is no longer on screen.
     if (this.liveItemId && !items.some((item) => item.id === this.liveItemId)) {
       this.liveItemId = null
+      this.livePaused = false
     }
 
     log.info('[Media] Scanned', {
@@ -243,9 +266,16 @@ class MediaService {
   private async loadPlaylists(root: string): Promise<void> {
     try {
       const raw = await fs.readFile(this.manifestPath(root), 'utf8')
-      const parsed = JSON.parse(raw) as { playlists?: unknown; playback?: unknown }
+      const parsed = JSON.parse(raw) as {
+        playlists?: unknown
+        playback?: unknown
+        itemOrder?: unknown
+      }
       this.playlists = Array.isArray(parsed.playlists) ? parsed.playlists.filter(isPlaylist) : []
       this.playback = normalizePlaybackMap(parsed.playback)
+      this.itemOrder = Array.isArray(parsed.itemOrder)
+        ? parsed.itemOrder.filter((id): id is string => typeof id === 'string' && id.length > 0)
+        : []
       // Persist the repair, or the same files get re-matched on every launch and
       // the manifest on disk keeps pointing at paths that no longer exist.
       if (this.repairPlaylistIds() > 0) await this.savePlaylists()
@@ -255,6 +285,7 @@ class MediaService {
         log.warn('[Media] Could not read playlists manifest', (err as Error).message)
         this.playlists = []
         this.playback = {}
+        this.itemOrder = []
         return
       }
     }
@@ -265,6 +296,7 @@ class MediaService {
     if (legacy.length === 0) {
       this.playlists = []
       this.playback = {}
+      this.itemOrder = []
       return
     }
 
@@ -308,7 +340,16 @@ class MediaService {
       await fs.mkdir(join(root, MANIFEST_DIR), { recursive: true })
       await fs.writeFile(
         this.manifestPath(root),
-        `${JSON.stringify({ version: MANIFEST_VERSION, playlists: this.playlists, playback: this.playback }, null, 2)}\n`,
+        `${JSON.stringify(
+          {
+            version: MANIFEST_VERSION,
+            playlists: this.playlists,
+            playback: this.playback,
+            itemOrder: this.itemOrder,
+          },
+          null,
+          2,
+        )}\n`,
         'utf8',
       )
     } catch (err) {
@@ -323,6 +364,7 @@ class MediaService {
   async setFolder(folder: string): Promise<MediaLibrary> {
     store.set('media', { ...readSettings(), folder })
     this.liveItemId = null
+    this.livePaused = false
     return this.scan()
   }
 
@@ -355,6 +397,325 @@ class MediaService {
     return this.items.find((item) => item.id === id) ?? null
   }
 
+  /**
+   * Deletes a background from disk and drops every reference to it.
+   *
+   * This is the one write that removes the operator's file — playlists only
+   * hold ids, so a "remove from playlist" is not enough when they want the
+   * thumbnail gone from the folder. Path is checked against the media root
+   * before unlink so a forged id cannot reach outside it.
+   */
+  async deleteItem(id: string): Promise<MediaLibrary> {
+    const item = this.getItem(id)
+    if (!item) throw new Error('That background is no longer in the folder.')
+
+    const root = this.root
+    if (!root) throw new Error('Choose a backgrounds folder first.')
+    const target = resolve(item.path)
+    if (!isInsideRoot(target, root)) {
+      throw new Error('That file is outside the backgrounds folder.')
+    }
+
+    try {
+      await fs.unlink(target)
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+        throw new Error(`Could not delete “${item.name}” — ${(err as Error).message}`)
+      }
+    }
+
+    this.items = this.items.filter((candidate) => candidate.id !== id)
+    this.itemOrder = this.itemOrder.filter((entry) => entry !== id)
+    this.playlists = this.playlists.map((playlist) => ({
+      ...playlist,
+      itemIds: playlist.itemIds.filter((entry) => entry !== id),
+    }))
+    if (this.playback[id]) {
+      const { [id]: _removed, ...rest } = this.playback
+      this.playback = rest
+    }
+    if (this.liveItemId === id) {
+      this.liveItemId = null
+      this.livePaused = false
+    }
+
+    // Folder counts are derived from the item list — rebuild so empty shelves
+    // still show and the sidebar number matches what is on disk.
+    const counts = new Map<string, number>()
+    for (const remaining of this.items) {
+      counts.set(remaining.folder, (counts.get(remaining.folder) ?? 0) + 1)
+    }
+    for (const folder of this.folders) {
+      if (!counts.has(folder.id)) counts.set(folder.id, 0)
+    }
+    this.folders = this.folders.map((folder) => ({
+      ...folder,
+      count: counts.get(folder.id) ?? 0,
+    }))
+
+    await this.savePlaylists()
+    log.info('[Media] Background deleted', { id, name: item.name })
+    this.emit()
+    return this.getLibrary()
+  }
+
+  /**
+   * Renames a background on disk. The id is a relative path, so every playlist
+   * entry, the library order and any playback grade have to move with it —
+   * otherwise the next scan would report the old name as missing.
+   */
+  async renameItem(id: string, nextName: string): Promise<MediaLibrary> {
+    const item = this.getItem(id)
+    if (!item) throw new Error('That background is no longer in the folder.')
+
+    const root = this.root
+    if (!root) throw new Error('Choose a backgrounds folder first.')
+
+    const clean = nextName.trim().replace(/[/\\:*?"<>|]/g, '').trim()
+    if (!clean || clean.startsWith('.')) throw new Error('That name is not allowed.')
+
+    // Keep the original extension — operators rename the title, not the codec.
+    const stem = clean.toLowerCase().endsWith(`.${item.ext}`)
+      ? clean.slice(0, -(item.ext.length + 1))
+      : clean
+    if (!stem) throw new Error('That name is not allowed.')
+
+    const destName = `${stem}.${item.ext}`
+    const destDir = dirname(item.path)
+    const destPath = join(destDir, destName)
+    if (resolve(destPath) === resolve(item.path)) return this.getLibrary()
+
+    if (!isInsideRoot(destPath, root) || dirname(resolve(destPath)) !== resolve(destDir)) {
+      throw new Error('That name is not allowed.')
+    }
+
+    const exists = await fs.access(destPath).then(() => true).catch(() => false)
+    if (exists) throw new Error(`“${stem}” already exists in this folder.`)
+
+    await fs.rename(item.path, destPath)
+    const newId = itemIdFor(root, destPath)
+    this.retargetItemId(id, newId, {
+      ...item,
+      id: newId,
+      name: stem,
+      path: destPath,
+    })
+    await this.savePlaylists()
+    log.info('[Media] Background renamed', { from: id, to: newId })
+    this.emit()
+    return this.getLibrary()
+  }
+
+  /** Opens the file's enclosing folder in Finder / Explorer / the file manager. */
+  revealItem(id: string): void {
+    const item = this.getItem(id)
+    if (!item) throw new Error('That background is no longer in the folder.')
+    shell.showItemInFolder(item.path)
+  }
+
+  /**
+   * Remembers backgrounds for in-app Paste.
+   *
+   * We deliberately do NOT write NSFilenamesPboardType here — on some Electron
+   * / macOS builds that call freezes the process. Finder → app paste still works
+   * by reading the system pasteboard in pasteItems.
+   */
+  copyItems(ids: string[]): void {
+    const paths = ids
+      .map((id) => this.getItem(id)?.path)
+      .filter((p): p is string => Boolean(p))
+    if (paths.length === 0) throw new Error('Nothing to copy.')
+    this.clipboardIds = [...ids]
+    this.clipboardMode = 'copy'
+    this.clipboardCutFromPlaylistId = null
+  }
+
+  /**
+   * Marks backgrounds to move on Paste.
+   * `fromPlaylistId` — when set, Paste removes them from that playlist
+   * (playlist cut) after placing them at the destination.
+   */
+  cutItems(ids: string[], fromPlaylistId?: string): void {
+    const paths = ids
+      .map((id) => this.getItem(id)?.path)
+      .filter((p): p is string => Boolean(p))
+    if (paths.length === 0) throw new Error('Nothing to cut.')
+    this.clipboardIds = [...ids]
+    this.clipboardMode = 'cut'
+    this.clipboardCutFromPlaylistId =
+      fromPlaylistId && this.playlists.some((p) => p.id === fromPlaylistId)
+        ? fromPlaylistId
+        : null
+  }
+
+  clipboardHasFiles(): boolean {
+    if (this.clipboardIds && this.clipboardIds.length > 0) return true
+    try {
+      return readFilePathsFromClipboard().length > 0
+    } catch {
+      return false
+    }
+  }
+
+  /**
+   * Pastes into the media root (and optionally a playlist).
+   * Copy → duplicate with a unique name.
+   * Cut → move: into a playlist, out of the source playlist, and/or to the
+   * end of All-backgrounds order. Files already under the root stay on disk;
+   * files in a subfolder are moved up into the root.
+   */
+  async pasteItems(playlistId?: string): Promise<MediaLibrary> {
+    const root = this.root
+    if (!root) throw new Error('Choose a backgrounds folder first.')
+
+    const mode = this.clipboardMode
+    const ids = this.clipboardIds
+    const cutFromPlaylistId = this.clipboardCutFromPlaylistId
+
+    if (mode === 'cut' && ids && ids.length > 0) {
+      this.clipboardIds = null
+      this.clipboardMode = null
+      this.clipboardCutFromPlaylistId = null
+
+      const movedIds: string[] = []
+      for (const id of ids) {
+        const item = this.getItem(id)
+        if (!item) continue
+        // Already at the media root — keep the path; still reorder / re-playlist below.
+        if (dirname(item.path) === resolve(root)) {
+          movedIds.push(id)
+          continue
+        }
+        // Subfolder (or outside) → move into the root.
+        if (!isInsideRoot(item.path, root)) {
+          // Shouldn't happen for library items; fall through to path keep.
+          movedIds.push(id)
+          continue
+        }
+        const taken = new Set((await fs.readdir(root)).map((name) => name.toLowerCase()))
+        const destName = uniqueFileName(basename(item.path), taken)
+        const destPath = join(root, destName)
+        await fs.rename(item.path, destPath)
+        const newId = itemIdFor(root, destPath)
+        this.retargetItemId(id, newId, {
+          ...item,
+          id: newId,
+          name: basename(destName, extname(destName)),
+          path: destPath,
+          folder: '',
+        })
+        movedIds.push(newId)
+      }
+
+      if (movedIds.length === 0) throw new Error('Nothing to paste.')
+
+      // Drop from the playlist they were cut from (unless pasting back into it —
+      // then we still re-append at the end below).
+      if (cutFromPlaylistId && cutFromPlaylistId !== playlistId) {
+        this.removeFromPlaylist(cutFromPlaylistId, movedIds)
+      }
+
+      if (playlistId) {
+        // Paste into a playlist: remove then append so they land at the end.
+        this.removeFromPlaylist(playlistId, movedIds)
+        this.appendToPlaylist(playlistId, movedIds)
+      } else {
+        // Paste into All backgrounds: move to the end of the operator order.
+        const without = this.itemOrder.filter((id) => !movedIds.includes(id))
+        this.itemOrder = [...without, ...movedIds]
+      }
+
+      await this.savePlaylists()
+      // Rescan so subfolder→root moves show up with fresh paths.
+      return this.scan()
+    }
+
+    const sources: string[] = []
+    if (mode === 'copy' && ids && ids.length > 0) {
+      for (const id of ids) {
+        const path = this.getItem(id)?.path
+        if (path) sources.push(path)
+      }
+      // Keep copy on the clipboard so Paste can be repeated.
+    } else {
+      try {
+        sources.push(...readFilePathsFromClipboard())
+      } catch (err) {
+        log.warn('[Media] System clipboard read failed', (err as Error).message)
+      }
+      this.clipboardIds = null
+      this.clipboardMode = null
+      this.clipboardCutFromPlaylistId = null
+    }
+
+    if (sources.length === 0) throw new Error('Nothing to paste.')
+
+    const taken = new Set((await fs.readdir(root)).map((name) => name.toLowerCase()))
+    const pastedIds: string[] = []
+    for (const source of sources) {
+      const plan = planMediaPaste(source, root, taken)
+      if (plan.action === 'skip') continue
+      const dest = join(root, plan.destName)
+      await fs.copyFile(plan.from, dest)
+      taken.add(plan.destName.toLowerCase())
+      pastedIds.push(itemIdFor(root, dest))
+    }
+    if (pastedIds.length === 0) throw new Error('Nothing to paste.')
+
+    // Persist order before scan — scan reloads the manifest from disk.
+    if (mode === 'copy' && ids && ids[0]) {
+      const anchor = ids[0]
+      const without = this.itemOrder.filter((id) => !pastedIds.includes(id))
+      const at = without.indexOf(anchor)
+      this.itemOrder =
+        at >= 0
+          ? [...without.slice(0, at + 1), ...pastedIds, ...without.slice(at + 1)]
+          : [...without, ...pastedIds]
+    } else {
+      this.itemOrder = [...this.itemOrder.filter((id) => !pastedIds.includes(id)), ...pastedIds]
+    }
+    if (playlistId) this.appendToPlaylist(playlistId, pastedIds)
+    await this.savePlaylists()
+    return this.scan()
+  }
+
+  private appendToPlaylist(playlistId: string, itemIds: readonly string[]): void {
+    const playlist = this.playlists.find((p) => p.id === playlistId)
+    if (!playlist || itemIds.length === 0) return
+    const seen = new Set(playlist.itemIds)
+    const next = [...playlist.itemIds]
+    for (const id of itemIds) {
+      if (seen.has(id)) continue
+      seen.add(id)
+      next.push(id)
+    }
+    this.playlists = this.playlists.map((p) =>
+      p.id === playlistId ? { ...p, itemIds: next } : p,
+    )
+  }
+
+  private removeFromPlaylist(playlistId: string, itemIds: readonly string[]): void {
+    const drop = new Set(itemIds)
+    this.playlists = this.playlists.map((p) =>
+      p.id === playlistId ? { ...p, itemIds: p.itemIds.filter((id) => !drop.has(id)) } : p,
+    )
+  }
+
+  /** Rewires every stored reference when a file's relative id changes. */
+  private retargetItemId(oldId: string, newId: string, nextItem: MediaItem): void {
+    this.items = this.items.map((item) => (item.id === oldId ? nextItem : item))
+    this.itemOrder = this.itemOrder.map((id) => (id === oldId ? newId : id))
+    this.playlists = this.playlists.map((playlist) => ({
+      ...playlist,
+      itemIds: playlist.itemIds.map((id) => (id === oldId ? newId : id)),
+    }))
+    if (this.playback[oldId]) {
+      const { [oldId]: grade, ...rest } = this.playback
+      this.playback = { ...rest, [newId]: grade }
+    }
+    if (this.liveItemId === oldId) this.liveItemId = newId
+  }
+
   getLiveItem(): MediaItem | null {
     return this.liveItemId ? this.getItem(this.liveItemId) : null
   }
@@ -378,7 +739,24 @@ class MediaService {
 
   setLiveItem(id: string | null): void {
     this.liveItemId = id
+    this.livePaused = false
     this.emit()
+  }
+
+  /**
+   * Pause or resume the clip that is already on screen. Does not persist —
+   * the next push always starts playing.
+   */
+  setLivePaused(paused: boolean): MediaLibrary {
+    const live = this.getLiveItem()
+    if (!live || live.kind !== 'video') {
+      this.livePaused = false
+      this.emit()
+      return this.getLibrary()
+    }
+    this.livePaused = paused
+    this.emit()
+    return this.getLibrary()
   }
 
   /**
@@ -428,6 +806,19 @@ class MediaService {
   }
 
   /**
+   * Saves the operator's order for "All backgrounds". New files from a later
+   * scan that are not in this list still appear — they append after the saved
+   * ones — so rearranging never hides a drop-in.
+   */
+  async setItemOrder(itemIds: string[]): Promise<MediaLibrary> {
+    this.itemOrder = itemIds.filter((id) => typeof id === 'string' && id.length > 0)
+    this.items = applyItemOrder(this.items, this.itemOrder)
+    await this.savePlaylists()
+    this.emit()
+    return this.getLibrary()
+  }
+
+  /**
    * Adds files to a playlist in one gesture.
    *
    * Files already inside the media folder are referenced in place — copying
@@ -435,10 +826,10 @@ class MediaService {
    * outside is copied into the root (never moved) so the protocol allowlist
    * can serve it.
    */
-  async importIntoPlaylist(playlistId: string, sourcePaths: string[]): Promise<MediaLibrary> {
+  async importIntoPlaylist(playlistId: string | null, sourcePaths: string[]): Promise<MediaLibrary> {
     const root = this.root
     if (!root) throw new Error('Choose a backgrounds folder first.')
-    if (!this.playlists.some((playlist) => playlist.id === playlistId)) {
+    if (playlistId !== null && !this.playlists.some((playlist) => playlist.id === playlistId)) {
       throw new Error('That playlist is gone.')
     }
 
@@ -465,6 +856,7 @@ class MediaService {
     }
 
     await this.scan()
+    if (playlistId === null) return this.getLibrary()
     const playlist = this.playlists.find((candidate) => candidate.id === playlistId)
     if (!playlist) throw new Error('That playlist is gone.')
 
@@ -516,6 +908,22 @@ export function planMediaImport(
   if (!kindOf(ext)) return { action: 'skip' }
   const abs = resolve(sourcePath)
   if (isInsideRoot(abs, root)) return { action: 'reuse', absPath: abs }
+  return { action: 'copy', from: abs, destName: uniqueFileName(basename(abs), takenLower) }
+}
+
+/**
+ * Paste always writes a new file under the media root — including when the
+ * source is already in the library (Copy → Paste duplicates as `name 1.ext`).
+ * Import-to-playlist keeps `planMediaImport` so existing files are reused.
+ */
+export function planMediaPaste(
+  sourcePath: string,
+  _root: string,
+  takenLower: ReadonlySet<string>,
+): { action: 'copy'; from: string; destName: string } | { action: 'skip' } {
+  const ext = extname(sourcePath).slice(1).toLowerCase()
+  if (!kindOf(ext)) return { action: 'skip' }
+  const abs = resolve(sourcePath)
   return { action: 'copy', from: abs, destName: uniqueFileName(basename(abs), takenLower) }
 }
 

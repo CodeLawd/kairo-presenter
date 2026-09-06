@@ -24,7 +24,7 @@ import type {
   OverlayTheme,
 } from './ipc'
 import { boxesForLayoutPreset, clampOverlayBox } from './overlay-boxes'
-import { MAX_NDI_OUTPUTS, OVERLAY_OUTPUT_KINDS } from './overlay-outputs'
+import { MAX_NDI_OUTPUTS, OVERLAY_OUTPUT_KINDS, themeForContentKind } from './overlay-outputs'
 
 // ─── Theme defaults (schema locked — see docs/plans/2026-07-08-ndi-overlay.md) ─
 
@@ -423,7 +423,9 @@ function normalizeOutputVariant(raw: unknown, fallbackTemplate: string): Overlay
   const r = asObject(raw)
   return {
     themeId: typeof r.themeId === 'string' && r.themeId ? r.themeId : null,
-    theme: normalizeOverlayTheme(r.theme),
+    // This variant is lyrics-only. Strip a baked-in background so a restored
+    // store cannot put a scripture image back on the next lyric push.
+    theme: themeForContentKind(normalizeOverlayTheme(r.theme), 'lyrics'),
     template: safeString(r.template, fallbackTemplate),
   }
 }

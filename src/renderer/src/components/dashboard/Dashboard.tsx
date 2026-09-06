@@ -21,8 +21,8 @@ import {
   Volume2,
   VolumeX,
   Activity,
-  type LucideIcon,
-} from 'lucide-react'
+  type Icon,
+} from '@/icons'
 import { useAppStore } from '@/stores/useAppStore'
 import { cn } from '@/lib/utils'
 import type { ProPresenterStatus, AudioLevel, TranscriptResult, ScriptureSuggestion } from '@shared/ipc'
@@ -98,7 +98,7 @@ function CardHeader({
   title,
   badge,
 }: {
-  icon: LucideIcon
+  icon: Icon
   title: string
   badge?: React.ReactNode
 }): React.ReactElement {
@@ -149,7 +149,7 @@ function StatTile({
   sub,
   accent,
 }: {
-  icon: LucideIcon
+  icon: Icon
   label: string
   value: string
   sub?: string
@@ -632,11 +632,11 @@ export default function Dashboard(): React.ReactElement {
         const defaultDev = devs.find((d) => d.isDefault) || devs[0]
         await window.api.orchestrator.start({
           audioDeviceId: all.audio.deviceId || defaultDev?.id || '',
-          sttProvider: all.stt.apiKey ? 'deepgram' : all.stt.provider,
-          sttApiKey: all.stt.apiKey,
+          sttProvider: all.secretsConfigured.deepgram ? 'deepgram' : all.stt.provider,
+          sttApiKey: '',
           sttLanguage: all.stt.language || 'en',
           llmProvider: all.stt.llmProvider ?? 'anthropic',
-          llmApiKey: (all.stt.llmProvider ?? 'anthropic') === 'deepseek' ? all.stt.deepseekApiKey : all.stt.anthropicApiKey,
+          llmApiKey: '',
           scriptureTranslation: all.scripture.defaultTranslation,
           autoMode: autoModeEnabled,
           confidenceThreshold: all.scripture.confidenceThreshold,
@@ -662,11 +662,11 @@ export default function Dashboard(): React.ReactElement {
         const defaultDev = devs.find((d) => d.isDefault) || devs[0]
         await window.api.orchestrator.start({
           audioDeviceId: all.audio.deviceId || defaultDev?.id || '',
-          sttProvider: all.stt.apiKey ? 'deepgram' : all.stt.provider,
-          sttApiKey: all.stt.apiKey,
+          sttProvider: all.secretsConfigured.deepgram ? 'deepgram' : all.stt.provider,
+          sttApiKey: '',
           sttLanguage: all.stt.language || 'en',
           llmProvider: all.stt.llmProvider ?? 'anthropic',
-          llmApiKey: (all.stt.llmProvider ?? 'anthropic') === 'deepseek' ? all.stt.deepseekApiKey : all.stt.anthropicApiKey,
+          llmApiKey: '',
           scriptureTranslation: all.scripture.defaultTranslation,
           autoMode: autoModeEnabled,
           confidenceThreshold: all.scripture.confidenceThreshold,

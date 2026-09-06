@@ -1,10 +1,11 @@
 import log from 'electron-log/main'
+import { NDI_SENDER_NAME, PRODUCT_NAME } from '@shared/brand'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const WIDTH = 1920
 const HEIGHT = 1080
-const SENDER_NAME = 'ProAutomate Scripture'
+const SENDER_NAME = NDI_SENDER_NAME
 /** ~10fps repeat loop of the last rendered frame (D — NdiService.start()). */
 const FRAME_INTERVAL_MS = 100
 const FRAME_RATE_N = 30000
@@ -115,7 +116,7 @@ class NdiService {
       this.sending = false
       this.retryAfter = Date.now() + RETRY_COOLDOWN_MS
       log.error(
-        '[NDI] Sender creation failed — will retry. Is a second copy of ProAutomate running?',
+        `[NDI] Sender creation failed — will retry. Is a second copy of ${PRODUCT_NAME} running?`,
         this.senderError,
       )
     } finally {

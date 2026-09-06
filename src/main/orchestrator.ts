@@ -19,7 +19,10 @@ import type {
   OverlayTheme,
 } from "@shared/ipc";
 import { normalizeOverlaySettings } from "@shared/overlay-defaults";
+import { isOwnedNdiName } from "@shared/brand";
+import { normalizeResourceBindings } from "@shared/propresenter-resources";
 import {
+  chooseNdiVideoInputId,
   firstLookId,
   findNdiOutput,
   getDispatchPlan,
@@ -53,11 +56,11 @@ import { store } from "./db";
 /**
  * Lays the background pushed from the Media dock under a theme.
  *
- * Backgrounds live outside themes on purpose: a lyric theme is configured once,
- * while the loop behind it changes every song. So the theme supplies type and
- * placement, the dock supplies what is behind it, and they meet here — the one
- * place a frame is built. A theme that carries its own background (scripture
- * still can) keeps it when nothing is staged in the dock.
+ * Backgrounds live outside themes on purpose: a lyric theme is text only,
+ * while the loop behind it changes every song. Scripture may still bake in a
+ * look of its own. `force` is for the two cases where the dock must win: the
+ * dock's own push, and a lyric slide (which must never resurrect a scripture
+ * image over the file the operator just sent).
  */
 function withLiveBackground(theme: OverlayTheme, force = false): OverlayTheme {
   const live = mediaService.getLiveItem();
@@ -77,6 +80,8 @@ interface PushContent {
   reference: string;
   /** Verse body, verse numbers and maxVerses truncation already applied. */
   text: string;
+  /** Lyric gloss / paint colors, parallel to `text` lines. */
+  coloredLines?: Array<{ text: string; color?: string }>;
 }
 
 /** Milliseconds to let the offscreen overlay window paint at least once before triggering the PP video input (D — NDI push sequence). */
@@ -626,14 +631,18 @@ class Orchestrator {
    * operator's overlay theme instead of needing a presentation in the PP
    * library (which the PP19 REST API cannot create).
    */
-  async presentLyricSlide(reference: string, text: string): Promise<void> {
+  async presentLyricSlide(
+    reference: string,
+    text: string,
+    coloredLines?: Array<{ text: string; color?: string }>,
+  ): Promise<void> {
     const ppStatus = proPresenterService.getStatus();
     if (ppStatus.state !== "connected") {
       throw new Error("ProPresenter is not connected. Connect in Settings → ProPresenter first.");
     }
     if (!text.trim()) throw new Error("Slide is empty — nothing to push.");
 
-    const results = await this.dispatchContent({ reference, text }, "lyrics", null);
+    const results = await this.dispatchContent({ reference, text, coloredLines }, "lyrics", null);
     const failed = results.filter((r) => !r.ok);
 
     if (!results.some((r) => r.ok)) {
@@ -828,10 +837,49 @@ class Orchestrator {
   // ─── Presentation layer: existing PP library slides ────────────────────────
 
   private async pushScriptureLibrary(suggestion: ScriptureSuggestion): Promise<string | null> {
-    const match = await proPresenterService.rawClient.searchLibraries(suggestion.reference);
-    if (!match) return "no matching presentation in the ProPresenter library";
+    const client = proPresenterService.rawClient;
+    const match = await client.searchLibraries(suggestion.reference);
+    if (!match) {
+      // Native creation is an opt-in extension of the existing library path: a
+      // machine with no resource binding keeps the old no-match fallback. When
+      // an operator has chosen a scripture theme, create one native slide and
+      // apply it only after the UUID has been confirmed by ProPresenter.
+      const bindings = normalizeResourceBindings(store.get("propresenterResources"));
+      if (!bindings.scriptureThemeId) return "no matching presentation in the ProPresenter library";
 
-    const ok = await proPresenterService.rawClient.triggerLibraryPresentation(
+      let themeId: string | undefined;
+      try {
+        if (await client.resourceExists("theme", bindings.scriptureThemeId)) {
+          themeId = bindings.scriptureThemeId;
+        } else {
+          log.warn("[Orchestrator] Bound scripture theme is unavailable — using the unthemed creation path", {
+            themeId: bindings.scriptureThemeId,
+            reference: suggestion.reference,
+          });
+        }
+      } catch (err) {
+        log.warn("[Orchestrator] Could not confirm bound scripture theme — using the unthemed creation path", {
+          themeId: bindings.scriptureThemeId,
+          reference: suggestion.reference,
+          error: (err as Error).message,
+        });
+      }
+
+      const presentation = await client.createPresentation(
+        `Scripture — ${suggestion.reference}`,
+        [{
+          label: suggestion.reference,
+          notes: "scripture",
+          lines: [suggestion.reference, ...suggestion.verses.map((verse) => verse.text)],
+        }],
+        themeId ? { themeId } : {},
+      );
+      if (!presentation) return "no matching presentation in the ProPresenter library";
+      const triggered = await client.triggerSlide(presentation.id.uuid, 0);
+      return triggered ? null : "native scripture presentation trigger rejected by ProPresenter";
+    }
+
+    const ok = await client.triggerLibraryPresentation(
       match.libraryId,
       match.presentationName,
     );
@@ -849,7 +897,35 @@ class Orchestrator {
     kind: OverlayContentKind,
     content: PushContent,
   ): Promise<string | null> {
-    const shown = await proPresenterService.rawClient.showScriptureMessage(
+    const client = proPresenterService.rawClient;
+    const bindings = normalizeResourceBindings(store.get("propresenterResources"));
+    const boundMessageId = bindings.lowerThirdMessageId;
+
+    if (boundMessageId) {
+      let available = false;
+      try {
+        available = await client.resourceExists("message", boundMessageId);
+      } catch (err) {
+        log.warn("[Orchestrator] Could not confirm bound lower-third message — using the default message path", {
+          messageId: boundMessageId,
+          error: (err as Error).message,
+        });
+      }
+
+      if (available) {
+        const shownBound = await client.showBoundMessage(boundMessageId, content.reference, content.text);
+        if (shownBound) return null;
+        log.warn("[Orchestrator] Bound lower-third message was rejected — using the default message path", {
+          messageId: boundMessageId,
+        });
+      } else {
+        log.warn("[Orchestrator] Bound lower-third message is unavailable — using the default message path", {
+          messageId: boundMessageId,
+        });
+      }
+    }
+
+    const shown = await client.showScriptureMessage(
       content.reference,
       content.text,
       outputTemplateFor(output, kind),
@@ -898,10 +974,18 @@ class Orchestrator {
 
     // The theme comes off the output being pushed, not off the "live" lookup —
     // that one answers a preview question and would ignore this output's own
-    // per-content-kind override.
-    const theme = withLiveBackground(outputThemeFor(output, kind));
+    // per-content-kind override. Lyric slides never own a background: force
+    // the dock under them so a leftover scripture image cannot replace the
+    // loop the operator just pushed.
+    const theme = withLiveBackground(outputThemeFor(output, kind), kind === "lyrics");
 
-    await overlayWindow.showScripture(output.id, content.reference, content.text, theme);
+    await overlayWindow.showScripture(
+      output.id,
+      content.reference,
+      content.text,
+      theme,
+      content.coloredLines,
+    );
     // Let at least one 'paint' land in NdiService's frame buffer before
     // triggering PP onto the video input — otherwise PP may cut to a stale
     // (blank) frame for one repeat-loop tick.
@@ -933,10 +1017,25 @@ class Orchestrator {
    * — returns null if neither resolves.
    */
   private async ensureVideoInputBinding(output: OverlayOutput): Promise<string | null> {
+    const bindings = normalizeResourceBindings(store.get("propresenterResources"));
+    const durableId = bindings.ndiVideoInputId;
+    const client = proPresenterService.rawClient;
+    let inputs: Awaited<ReturnType<typeof client.getVideoInputs>> | null = null;
+
+    if (durableId) {
+      inputs = await client.getVideoInputs();
+      const confirmed = chooseNdiVideoInputId(durableId, "", inputs);
+      if (confirmed) return confirmed;
+      log.warn("[Orchestrator] Bound NDI video input is unavailable — checking existing output binding", {
+        uuid: durableId,
+        output: output.name,
+      });
+    }
+
     if (output.ppVideoInputUuid) return output.ppVideoInputUuid;
 
-    const inputs = await proPresenterService.rawClient.getVideoInputs();
-    const discovered = inputs.find((i) => i.name.includes("ProAutomate"));
+    inputs ??= await client.getVideoInputs();
+    const discovered = inputs.find((i) => isOwnedNdiName(i.name));
     if (discovered) {
       // `stored` is already normalized and the patch is a uuid straight from PP,
       // so a second normalize pass here would only re-clamp ~10 themes for nothing.
@@ -959,10 +1058,57 @@ class Orchestrator {
   }
 
   /**
-   * Puts the dock's live background on the NDI overlay and cuts ProPresenter
-   * to that video input. Works with no verse on screen yet — the click IS the
-   * push, not a note to wait for the next slide.
+   * Projects one imported document page onto the NDI overlay (contain-fit image).
+   * Matches media/scripture: paint first, then soft-trigger ProPresenter onto the
+   * video input when a binding exists. A missing binding must not block the push —
+   * the frame is already on the NDI source for anything already taking it.
    */
+  async presentDocumentPage(mediaPath: string): Promise<boolean> {
+    if (!ndiService.getStatus().available) throw new Error("NDI output is unavailable on this machine.");
+    const overlay = normalizeOverlaySettings(store.get("overlay"));
+    const ndi =
+      overlay.outputs.find((output) => output.kind === "ndi" && output.enabled) ??
+      findNdiOutput(overlay.outputs);
+    if (!ndi || !ndi.enabled) throw new Error("Enable an NDI output in Settings before projecting documents.");
+    this.cancelOverlayAutoClear();
+    this.activeLayers.add("presentation");
+    const theme = outputThemeFor(ndi, "scripture");
+    const shown = await overlayWindow.showDocument(ndi.id, {
+      ...theme,
+      background: {
+        ...theme.background,
+        type: "image",
+        mediaPath,
+        mediaFit: "contain",
+        hue: 0,
+        opacity: 1,
+        brightness: 1,
+        contrast: 1,
+        saturation: 1,
+      },
+    });
+    if (!shown) return false;
+    await new Promise((resolve) => setTimeout(resolve, NDI_PAINT_SETTLE_MS));
+
+    try {
+      const uuid = await this.ensureVideoInputBinding(ndi);
+      if (uuid) {
+        await proPresenterService.rawClient.triggerVideoInput(uuid);
+      } else {
+        log.warn("[Orchestrator] Document page on NDI without a bound ProPresenter video input", {
+          output: ndi.name,
+        });
+      }
+    } catch (err) {
+      log.warn("[Orchestrator] Could not trigger ProPresenter onto the document page", {
+        output: ndi.name,
+        error: (err as Error).message,
+      });
+    }
+    mediaService.setLiveItem(null);
+    return true;
+  }
+
   async presentLiveBackground(): Promise<boolean> {
     const live = mediaService.getLiveItem();
     if (!live) return false;
@@ -1056,16 +1202,49 @@ class Orchestrator {
   }
 
   /**
+   * Removes verse / lyric / message text and leaves the dock background running.
+   * Used by Clear text, Backspace, and the verse auto-clear timer.
+   */
+  async clearText(): Promise<boolean> {
+    this.cancelOverlayAutoClear();
+    const client = proPresenterService.rawClient;
+
+    const layers = this.activeLayers.size > 0
+      ? [...this.activeLayers]
+      : [...OVERLAY_LAYERS];
+
+    const results: boolean[] = [];
+    for (const layer of layers) {
+      if (layer === "presentation") {
+        const stripped = await overlayWindow.clearText();
+        if (!stripped) {
+          const keptBackground = await this.presentLiveBackground();
+          if (!keptBackground && !mediaService.getLiveItem()) {
+            await overlayWindow.clear();
+          }
+        }
+        results.push(true);
+      } else if (layer === "messages") {
+        const clearedMessage = await client.clearScriptureMessage();
+        const clearedLayer = await client.clearMessages();
+        results.push(clearedMessage && clearedLayer);
+      } else {
+        results.push(await client.clearStageMessage());
+      }
+    }
+
+    return results.every(Boolean);
+  }
+
+  /**
    * Clear is layer-aware: it takes down every PP layer this app most recently
    * pushed to, which under fan-out can be several at once.
    *   presentation → overlay window blanked + NDI frame reset, AND
-   *                  GET /v1/clear/layer/presentation (removes a triggered
-   *                  video input or library slide)
+   *                  GET /v1/clear/layer/slide (library slide). Video input stays.
    *   messages     → clearScriptureMessage + clearMessages
    *   stage        → DELETE /v1/stage/message
-   * With nothing recorded (e.g. after an app restart) it clears all three —
-   * idempotent and cheap. Used by the Theme "Clear" button, the header CLEAR,
-   * IPC CLEAR_OVERLAY, and the auto-clear timer.
+   * Also drops the media-dock live item so the operator preview matches the
+   * blank program. Header CLEAR and IPC CLEAR_OVERLAY use this.
    */
   async clearOverlay(): Promise<boolean> {
     this.cancelOverlayAutoClear();
@@ -1079,7 +1258,10 @@ class Orchestrator {
     for (const layer of layers) {
       if (layer === "presentation") {
         await overlayWindow.clear();
-        results.push(await client.clearAll());
+        // The NDI frame is ours to blank, but the PP video-input selection is
+        // operator-owned state. Keep it selected so the next frame is visible
+        // without requiring the operator to click the input again.
+        results.push(await client.clearAll({ clearVideoInput: false }));
       } else if (layer === "messages") {
         const clearedMessage = await client.clearScriptureMessage();
         const clearedLayer = await client.clearMessages();
@@ -1089,6 +1271,7 @@ class Orchestrator {
       }
     }
 
+    mediaService.setLiveItem(null);
     this.activeLayers.clear();
     return results.every(Boolean);
   }
@@ -1098,7 +1281,7 @@ class Orchestrator {
     if (autoClearSec > 0) {
       this.overlayClearTimer = setTimeout(() => {
         this.overlayClearTimer = null;
-        this.clearOverlay().catch((err) => {
+        this.clearText().catch((err) => {
           log.error("[Orchestrator] Overlay auto-clear failed", (err as Error).message);
         });
       }, autoClearSec * 1_000);

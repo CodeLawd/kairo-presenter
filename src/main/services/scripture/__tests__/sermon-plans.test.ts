@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { extractScriptureReferences } from '../sermon-plans'
+import { analyzeScriptureReferences, extractScriptureReferences } from '../sermon-plans'
 import {
   appendScriptureResultToPlan,
   appendScriptureResultsToPlan,
@@ -31,6 +31,51 @@ test('normalizes long translation names and verse ranges', () => {
   assert.equal(items[0]?.translation, 'AMPC')
   assert.equal(items[0]?.reference, 'Romans 8:28–30')
   assert.equal(items[1]?.translation, 'TPT')
+})
+
+test('extracts compact book abbreviations and references whose colon is omitted', () => {
+  const items = extractScriptureReferences('ps 12:2; 2sam 33 4', 'NKJV')
+
+  assert.deepEqual(items.map(({ reference, translation }) => ({ reference, translation })), [
+    { reference: 'Psalms 12:2', translation: 'NKJV' },
+    { reference: '2 Samuel 33:4', translation: 'NKJV' },
+  ])
+})
+
+test('creates one playlist item per trailing translation', () => {
+  const items = extractScriptureReferences('Mark 4:2 NLT, TPT, MSG', 'NKJV')
+
+  assert.deepEqual(items.map(({ reference, translation }) => ({ reference, translation })), [
+    { reference: 'Mark 4:2', translation: 'NLT' },
+    { reference: 'Mark 4:2', translation: 'TPT' },
+    { reference: 'Mark 4:2', translation: 'MSG' },
+  ])
+})
+
+test('returns source spans for every detected reference in editable notes', () => {
+  const analysis = analyzeScriptureReferences('Intro\nRead Ps 12:2, then Mark 4:2 NLT, TPT.\nClose', 'NKJV')
+
+  assert.deepEqual(analysis.matches, [
+    {
+      start: 11,
+      end: 18,
+      text: 'Ps 12:2',
+      reference: 'Psalms 12:2',
+      translations: ['NKJV'],
+    },
+    {
+      start: 25,
+      end: 42,
+      text: 'Mark 4:2 NLT, TPT',
+      reference: 'Mark 4:2',
+      translations: ['NLT', 'TPT'],
+    },
+  ])
+  assert.deepEqual(analysis.items.map(({ reference, translation }) => ({ reference, translation })), [
+    { reference: 'Psalms 12:2', translation: 'NKJV' },
+    { reference: 'Mark 4:2', translation: 'NLT' },
+    { reference: 'Mark 4:2', translation: 'TPT' },
+  ])
 })
 
 test('adds each loaded verse to a playlist as its own row', () => {

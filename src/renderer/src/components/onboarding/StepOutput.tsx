@@ -1,4 +1,4 @@
-import { Check } from 'lucide-react'
+import { Check } from '@/icons'
 import { layerLabel, layerOfKind } from '@shared/overlay-outputs'
 import { useBootstrapStore } from '@/bootstrap/useBootstrapStore'
 import StepShell from './StepShell'

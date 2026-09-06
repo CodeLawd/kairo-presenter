@@ -28,6 +28,28 @@ test('the gate only appears when the launch handshake cannot reach PP', () => {
   )
 })
 
+test('the gate stays behind an open account sign-in', () => {
+  assert.equal(
+    shouldOfferPpConnectGate({
+      sessionResolved: false,
+      launch: 'unavailable',
+      accountGateOpen: true,
+    }),
+    false,
+  )
+})
+
+test('the gate returns after the account offer is closed', () => {
+  assert.equal(
+    shouldOfferPpConnectGate({
+      sessionResolved: false,
+      launch: 'unavailable',
+      accountGateOpen: false,
+    }),
+    true,
+  )
+})
+
 test('skipping or finishing the gate hides it for the rest of the session', () => {
   assert.equal(
     shouldOfferPpConnectGate({ sessionResolved: true, launch: 'unavailable' }),

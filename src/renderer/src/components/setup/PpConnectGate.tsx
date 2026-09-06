@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Check, Loader } from 'lucide-react'
+import { Check, Loader } from '@/icons'
 import type { ProPresenterConnectionState } from '@shared/ipc'
 import { PP_CONNECT_SUCCESS_HOLD_MS } from '@shared/pp-connect-gate'
 import ProPresenterMark from '@/components/brand/ProPresenterMark'
@@ -25,6 +25,7 @@ export default function PpConnectGate({
 }: PpConnectGateProps): React.ReactElement {
   const [host, setHost] = useState(initialHost)
   const [port, setPort] = useState(String(initialPort))
+  /** Only a Connect click from this dialog — never background reconnect. */
   const [busy, setBusy] = useState(false)
   const [attempted, setAttempted] = useState(false)
   const patchSettings = useBootstrapStore((s) => s.patchSettings)
@@ -33,22 +34,24 @@ export default function PpConnectGate({
   const onResolvedRef = useRef(onResolved)
   onResolvedRef.current = onResolved
 
-  const connecting = busy || ppState === 'connecting'
   const connected = ppState === 'connected'
-  const failed = attempted && !connecting && !connected
+  const failed = attempted && !busy && !connected
+
+  // The launch probe schedules reconnects after a miss. Stop that loop so the
+  // form is editable and Skip is never trapped behind "Connecting…".
+  useEffect(() => {
+    if (connected) return
+    void window.api.propresenter.disconnect().catch(() => undefined)
+  }, [connected])
 
   const skip = useCallback(async (): Promise<void> => {
-    if (connected) {
-      onResolvedRef.current()
-      return
-    }
     try {
       await window.api.propresenter.disconnect()
     } catch {
       // Skip must always get the operator into the app.
     }
     onResolvedRef.current()
-  }, [connected])
+  }, [])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -91,7 +94,7 @@ export default function PpConnectGate({
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/55 animate-fade-in"
+      className="fixed inset-0 z-[55] flex items-center justify-center bg-black/55 animate-fade-in"
       role="dialog"
       aria-modal="true"
       aria-labelledby="pp-connect-title"
@@ -133,7 +136,7 @@ export default function PpConnectGate({
                   onChange={(e) => setHost(e.target.value)}
                   placeholder="192.168.1.100"
                   spellCheck={false}
-                  disabled={connecting}
+                  disabled={busy}
                   autoComplete="off"
                 />
               </div>
@@ -147,7 +150,7 @@ export default function PpConnectGate({
                   onChange={(e) => setPort(e.target.value)}
                   min={1}
                   max={65535}
-                  disabled={connecting}
+                  disabled={busy}
                   name="pp-gate-port"
                 />
               </div>
@@ -157,7 +160,7 @@ export default function PpConnectGate({
               className={`mt-4 text-[12px] ${failed ? 'text-rose-400' : 'text-zinc-500'}`}
               aria-live="polite"
             >
-              {connecting ? (
+              {busy ? (
                 <span className="inline-flex items-center gap-2 text-zinc-400">
                   <Loader size={13} className="animate-spin" aria-hidden="true" />
                   Connecting…
@@ -174,7 +177,6 @@ export default function PpConnectGate({
                 type="button"
                 className="btn-secondary"
                 onClick={() => void skip()}
-                disabled={connecting}
               >
                 Skip
               </button>
@@ -182,9 +184,9 @@ export default function PpConnectGate({
                 type="button"
                 className="btn-primary min-w-[7.5rem]"
                 onClick={() => void connect()}
-                disabled={connecting || !host.trim()}
+                disabled={busy || !host.trim()}
               >
-                {connecting ? 'Connecting…' : failed ? 'Try again' : 'Connect'}
+                {busy ? 'Connecting…' : failed ? 'Try again' : 'Connect'}
               </button>
             </div>
           </div>

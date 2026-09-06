@@ -3,7 +3,12 @@ import path from 'path'
 import Store from 'electron-store'
 import mammoth from 'mammoth'
 import pdfParse from 'pdf-parse'
-import type { ScriptureTranslation, SermonPlan, SermonPlanDraft } from '@shared/ipc'
+import type {
+  ScriptureTranslation,
+  SermonNotesAnalysis,
+  SermonPlan,
+  SermonPlanDraft,
+} from '@shared/ipc'
 import { BOOKS } from './bible-db'
 
 const TRANSLATION_ALIASES: Record<string, ScriptureTranslation> = {
@@ -24,8 +29,9 @@ const bookAliases = BOOKS.flatMap((book) => [book.name, book.abbr, ...book.alias
   .sort((a, b) => b.alias.length - a.alias.length)
 
 const bookPattern = bookAliases.map(({ alias }) => escapeRegex(alias)).join('|')
+const trailingTranslationsPattern = `(?:${translationPattern})(?:\\s*[,/]\\s*(?:${translationPattern}))*`
 const referencePattern = new RegExp(
-  `(?:\\b(${translationPattern})\\b[\\s:,-]*)?\\b(${bookPattern})\\s+(\\d{1,3}):(\\d{1,3})(?:\\s*[-–—]\\s*(\\d{1,3}))?(?:\\s*[([]?(${translationPattern})[)\\]]?)?`,
+  `(?:\\b(${translationPattern})\\b[\\s:,-]*)?\\b(${bookPattern})\\s+(\\d{1,3})(?:\\s*:\\s*|\\s+)(\\d{1,3})(?:\\s*[-–—]\\s*(\\d{1,3}))?(?:\\s*[([]?(${trailingTranslationsPattern})[)\\]]?)?`,
   'gi',
 )
 
@@ -47,21 +53,40 @@ export function extractScriptureReferences(
   text: string,
   defaultTranslation: ScriptureTranslation,
 ): SermonPlanDraft['items'] {
+  return analyzeScriptureReferences(text, defaultTranslation).items
+}
+
+export function analyzeScriptureReferences(
+  text: string,
+  defaultTranslation: ScriptureTranslation,
+): SermonNotesAnalysis {
   const items: SermonPlanDraft['items'] = []
+  const matches: SermonNotesAnalysis['matches'] = []
   const seen = new Set<string>()
   referencePattern.lastIndex = 0
   let match: RegExpExecArray | null
   while ((match = referencePattern.exec(text)) !== null) {
-    const translation = normalizeTranslation(match[1] || match[6], defaultTranslation)
     const book = canonicalBook(match[2])
     const range = match[5] ? `–${match[5]}` : ''
     const reference = `${book} ${match[3]}:${match[4]}${range}`
-    const key = `${reference}|${translation}`
-    if (seen.has(key)) continue
-    seen.add(key)
-    items.push({ id: `verse-${items.length + 1}-${Date.now()}`, reference, translation })
+    const translations = match[6]
+      ? match[6].split(/\s*[,/]\s*/).map((value) => normalizeTranslation(value, defaultTranslation))
+      : [normalizeTranslation(match[1], defaultTranslation)]
+    matches.push({
+      start: match.index,
+      end: match.index + match[0].length,
+      text: match[0],
+      reference,
+      translations,
+    })
+    for (const translation of translations) {
+      const key = `${reference}|${translation}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      items.push({ id: `verse-${items.length + 1}-${Date.now()}`, reference, translation })
+    }
   }
-  return items
+  return { matches, items }
 }
 
 export async function readSermonDocument(filePath: string): Promise<string> {

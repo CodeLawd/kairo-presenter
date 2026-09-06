@@ -1,0 +1,201 @@
+import { useRef, useState } from 'react'
+import { Loader } from '@/icons'
+import { createSingleFlight, MIN_PASSWORD_LENGTH, validateSignUp } from '@shared/cloud/auth-state'
+import { useAccountStore } from '@/stores/useAccountStore'
+import PasswordInput from '@/components/ui/password-input'
+
+type Mode = 'signIn' | 'signUp'
+
+/**
+ * Email + password, used by both the setup wizard and the account gate.
+ *
+ * Sign-in is the default for the launch gate; sign-up is one toggle away.
+ */
+export default function AuthPanel({
+  initialMode = 'signIn',
+  onDone,
+  onUsePairing,
+}: {
+  initialMode?: Mode
+  onDone?: () => void
+  onUsePairing?: () => void
+}): React.ReactElement {
+  const setSession = useAccountStore((s) => s.setSession)
+  const [mode, setMode] = useState<Mode>(initialMode)
+  const [name, setName] = useState('')
+  const [churchName, setChurchName] = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+  const submitFlight = useRef(createSingleFlight()).current
+
+  const submit = (): Promise<void> =>
+    submitFlight.run(async () => {
+      setError(null)
+      setNotice(null)
+
+      if (mode === 'signUp') {
+        // Checked here as well as on the server so the answer is instant and the
+        // message sits under the field it belongs to.
+        const invalid = validateSignUp({ name, churchName, email, password })
+        if (invalid) {
+          setError(invalid)
+          return
+        }
+      }
+
+      setBusy(true)
+      try {
+        const result =
+          mode === 'signUp'
+            ? await window.api.account.signUp({
+                email: email.trim(),
+                password,
+                name: name.trim(),
+                orgName: churchName.trim(),
+              })
+            : await window.api.account.signIn({ email: email.trim(), password })
+
+        if (!result.ok || !result.data) {
+          setError(result.error ?? 'Something went wrong.')
+          return
+        }
+        setSession(result.data)
+        onDone?.()
+      } finally {
+        setBusy(false)
+      }
+    })
+
+  const resetPassword = async (): Promise<void> => {
+    if (!email.trim()) {
+      setError('Enter your email address first')
+      return
+    }
+    await window.api.account.requestPasswordReset(email.trim())
+    // Deliberately unconditional: the API will not say whether the address is
+    // registered, and neither should this.
+    setNotice('If that address has an account, a reset link is on its way.')
+  }
+
+  return (
+    <div className="onboarding-step flex flex-col gap-4">
+      {mode === 'signUp' && (
+        <>
+          <div>
+            <label className="label" htmlFor="account-name">Your name</label>
+            <input
+              id="account-name"
+              className="input"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Joshua Alexander"
+              autoComplete="name"
+              disabled={busy}
+            />
+          </div>
+          <div>
+            <label className="label" htmlFor="account-church">Church name</label>
+            <input
+              id="account-church"
+              className="input"
+              value={churchName}
+              onChange={(e) => setChurchName(e.target.value)}
+              placeholder="Grace Chapel"
+              autoComplete="organization"
+              disabled={busy}
+            />
+          </div>
+        </>
+      )}
+
+      <div>
+        <label className="label" htmlFor="account-email">Email</label>
+        <input
+          id="account-email"
+          className="input"
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="you@church.org"
+          autoComplete="email"
+          spellCheck={false}
+          disabled={busy}
+        />
+      </div>
+
+      <div>
+        <div className="mb-1.5 flex items-baseline justify-between gap-3">
+          <label className="label mb-0" htmlFor="account-password">Password</label>
+          {mode === 'signIn' && (
+            <button
+              type="button"
+              className="text-[12px] text-slate-500 transition-colors hover:text-slate-300 focus-visible:outline-none focus-visible:text-slate-300 disabled:opacity-50"
+              onClick={() => void resetPassword()}
+              disabled={busy}
+            >
+              Forgot password
+            </button>
+          )}
+        </div>
+        <PasswordInput
+          id="account-password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') void submit()
+          }}
+          placeholder={mode === 'signUp' ? `At least ${MIN_PASSWORD_LENGTH} characters` : ''}
+          autoComplete={mode === 'signUp' ? 'new-password' : 'current-password'}
+          disabled={busy}
+        />
+      </div>
+
+      <p className="min-h-[1rem] text-[12px]" aria-live="polite">
+        {error && <span className="text-rose-400">{error}</span>}
+        {notice && !error && <span className="text-teal-400">{notice}</span>}
+      </p>
+
+      <button
+        type="button"
+        className="btn-primary inline-flex items-center justify-center gap-2"
+        onClick={() => void submit()}
+        disabled={busy}
+      >
+        {busy && <Loader size={14} className="animate-spin" aria-hidden="true" />}
+        {mode === 'signUp' ? 'Create account' : 'Sign in'}
+      </button>
+
+      <div className="flex flex-col gap-2.5 pt-0.5 text-[12px] leading-relaxed">
+        <p className="text-slate-500">
+          {mode === 'signUp' ? 'Already have an account?' : 'Don’t have an account?'}{' '}
+          <button
+            type="button"
+            className="text-slate-300 transition-colors hover:text-white focus-visible:outline-none focus-visible:text-white disabled:opacity-50"
+            onClick={() => {
+              setMode(mode === 'signUp' ? 'signIn' : 'signUp')
+              setError(null)
+              setNotice(null)
+            }}
+            disabled={busy}
+          >
+            {mode === 'signUp' ? 'Sign in' : 'Create one'}
+          </button>
+        </p>
+
+        {onUsePairing && (
+          <button
+            type="button"
+            className="self-start text-slate-600 transition-colors hover:text-slate-400 focus-visible:outline-none focus-visible:text-slate-400 disabled:opacity-50"
+            onClick={onUsePairing}
+            disabled={busy}
+          >
+            Pair with a code instead
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}

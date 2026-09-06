@@ -4,12 +4,12 @@
 
 @layer base {
   :root {
-    --surface: 23 23 23;
-    --surface-secondary: 28 28 28;
-    --surface-tertiary: 35 35 35;
-    --surface-elevated: 43 43 43;
-    --surface-border: 52 52 52;
-    --control-accent: 242 107 56;
+    --surface: 12 12 12;
+    --surface-secondary: 20 20 20;
+    --surface-tertiary: 28 28 28;
+    --surface-elevated: 38 38 38;
+    --surface-border: 40 40 40;
+    --control-accent: 245 158 11;
     --range-track: 63 63 70;
     --text-primary: 244 244 245;
     --neutral-50: 250 250 250;
@@ -34,7 +34,7 @@
     --surface-tertiary: 235 235 237;
     --surface-elevated: 255 255 255;
     --surface-border: 212 212 216;
-    --control-accent: 220 81 36;
+    --control-accent: 245 158 11;
     --range-track: 212 212 216;
     --text-primary: 24 24 27;
     --neutral-50: 9 9 11;
@@ -56,15 +56,16 @@
     height: 100%;
     margin: 0;
     padding: 0;
+    background: transparent;
   }
 
   html {
     color-scheme: dark;
-    background: rgb(var(--surface));
+    background: transparent;
   }
 
   body {
-    background: rgb(var(--surface));
+    background: transparent;
     color: rgb(var(--text-primary));
     font-family: 'Source Sans 3', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     font-size: 0.9375rem;
@@ -117,7 +118,7 @@
 
   [data-theme='light'] .text-teal-300,
   [data-theme='light'] .text-teal-400 {
-    color: #b54720;
+    color: #b45309;
   }
 
   [data-theme='light'] .text-emerald-400 {
@@ -153,7 +154,7 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    background: rgb(var(--surface-border));
+    background: rgb(255 255 255 / 0.12);
     border-radius: 3px;
   }
 
@@ -163,16 +164,30 @@
 }
 
 @layer components {
+  /* Real glass: the window is vibrant/transparent, so this pane frosts
+     whatever is behind the app (desktop wallpaper). Keep fills dark enough
+     that transcript text stays readable. */
+  .transcript-glass {
+    background: rgb(12 12 12 / 0.58);
+    backdrop-filter: blur(36px) saturate(1.8);
+    -webkit-backdrop-filter: blur(36px) saturate(1.8);
+    box-shadow: inset 0 1px 0 0 rgb(255 255 255 / 0.1);
+  }
+
+  [data-theme='light'] .transcript-glass {
+    background: rgb(255 255 255 / 0.62);
+  }
+
   .page-header {
     @apply text-xl font-semibold text-white tracking-[-0.02em] font-sans;
   }
 
   .page-subtitle {
-    @apply text-xs text-slate-500 mt-0.5 font-sans;
+    @apply mt-0.5 font-sans text-xs text-slate-500;
   }
 
   .card {
-    @apply bg-surface rounded-xl border border-surface-border/60 p-4;
+    @apply rounded-2xl border border-surface-border bg-surface-secondary p-4;
   }
 
   .double-bezel-outer {
@@ -259,10 +274,178 @@
     @apply font-serif text-slate-200 leading-relaxed text-base antialiased;
   }
 
+  .sermon-notes-editor mark[data-reference]::after {
+    content: "→ " attr(data-reference);
+    display: inline-block;
+    margin: 0 0.2rem 0 0.45rem;
+    padding: 0.05rem 0.42rem;
+    border: 1px solid rgb(180 83 9 / 0.2);
+    border-radius: 0.35rem;
+    background: rgb(254 243 199 / 0.88);
+    color: rgb(120 53 15);
+    font-family: "Source Sans 3 Variable", sans-serif;
+    font-size: 0.68rem;
+    font-weight: 650;
+    line-height: 1.15rem;
+    letter-spacing: 0.01em;
+    pointer-events: none;
+    user-select: none;
+    vertical-align: 0.08rem;
+    white-space: nowrap;
+  }
+
   /* Skip link for keyboard users */
   .skip-link {
     @apply sr-only focus-visible:not-sr-only focus-visible:absolute focus-visible:top-4 focus-visible:left-4 focus-visible:z-50
            focus-visible:bg-teal-600 focus-visible:text-white focus-visible:px-4 focus-visible:py-2 focus-visible:rounded-lg
            focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2 focus-visible:ring-offset-surface;
   }
+}
+
+/* Reserve the macOS traffic-light area only in the title row. Below 1600px,
+   service operation gets its own row instead of squeezing control labels. */
+.app-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: 'navigation live' 'toolbar statuses';
+  align-items: center;
+  column-gap: 16px;
+  row-gap: 8px;
+  padding: 12px 12px 8px;
+}
+.header-navigation { grid-area: navigation; padding-left: 68px; }
+.header-toolbar { grid-area: toolbar; }
+.header-statuses { grid-area: statuses; justify-self: end; }
+.header-live { grid-area: live; justify-self: end; }
+
+@media (min-width: 1600px) {
+  .app-header {
+    grid-template-columns: auto minmax(16px, 1fr) auto auto auto;
+    grid-template-areas: 'navigation . toolbar statuses live';
+    column-gap: 8px;
+    min-height: 56px;
+    padding-top: 12px;
+    --header-playlist-width: 208px;
+  }
+  .header-status-label { display: none; }
+  .header-status { padding-left: 8px; padding-right: 8px; }
+}
+
+@media (min-width: 1800px) {
+  .header-status-label { display: inline; }
+  .header-status { padding-left: 12px; padding-right: 12px; }
+}
+
+@media (max-width: 1099px) {
+  .header-navigation { gap: 2px; }
+  .header-navigation > button { padding-left: 9px; padding-right: 9px; }
+  .header-live-label { max-width: 120px; }
+  .header-status { padding-left: 8px; padding-right: 8px; }
+  .app-header { column-gap: 8px; --header-playlist-width: 192px; }
+}
+
+.splash-mark {
+  animation: splash-mark-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.splash-copy {
+  animation: splash-copy-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.12s both;
+}
+.splash-mark-sheen {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: 22%;
+}
+.splash-mark-sheen::after {
+  content: '';
+  position: absolute;
+  top: -20%;
+  bottom: -20%;
+  left: 0;
+  width: 42%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgb(255 255 255 / 0.38),
+    transparent
+  );
+  transform: translateX(-140%) rotate(18deg);
+  animation: splash-sheen 2.2s ease-in-out 0.45s infinite;
+}
+
+@keyframes splash-mark-in {
+  from { opacity: 0; transform: scale(0.9); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes splash-copy-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes splash-sheen {
+  0% { transform: translateX(-140%) rotate(18deg); }
+  45%, 100% { transform: translateX(280%) rotate(18deg); }
+}
+@keyframes splash-step-in {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.splash-step {
+  animation: splash-step-in 0.28s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .splash-mark,
+  .splash-copy,
+  .splash-mark-sheen::after,
+  .splash-step {
+    animation: none;
+  }
+}
+
+.operator-toolbar [data-slot='select-trigger'] { flex-shrink: 0; }
+.operator-toolbar [data-slot='select-value'] {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+/* ProPresenter-style settings window — scoped so the booth keeps Kairo tokens. */
+.kairo-pp-settings {
+  --surface: 30 30 30;
+  --surface-secondary: 44 44 44;
+  --surface-tertiary: 50 50 50;
+  --surface-elevated: 44 44 44;
+  --surface-border: 58 58 58;
+  --control-accent: 0 122 255;
+  color-scheme: dark;
+}
+
+.kairo-pp-settings [data-slot='switch'][data-state='checked'] {
+  background-color: #007aff !important;
+}
+
+.kairo-pp-settings .input {
+  @apply rounded-md border-[#3a3a3a] bg-[#1a1a1a] py-1.5 text-[13px];
+}
+
+.kairo-pp-settings .input:focus-visible {
+  border-color: #007aff;
+  --tw-ring-color: rgb(0 122 255 / 0.35);
+}
+
+.kairo-pp-settings .btn-secondary {
+  @apply rounded-[7px] border-0 bg-[#3a3a3a] text-[13px] font-medium text-white hover:bg-[#454545] hover:text-white;
+}
+
+.kairo-pp-settings .btn-primary {
+  @apply rounded-[7px] bg-[#007aff] hover:bg-[#0a84ff];
+}
+
+.kairo-pp-settings .label {
+  @apply mb-0 font-sans text-[13px] font-normal normal-case tracking-normal text-white;
 }

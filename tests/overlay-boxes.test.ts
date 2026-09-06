@@ -9,8 +9,14 @@ import {
   resizeOverlayBox,
 } from '../src/lib/overlay-boxes'
 import { DEFAULT_OVERLAY_THEME, normalizeOverlayTheme } from '../src/lib/overlay-defaults'
-import { estimateAutoFitVerseFontPx, renderOverlayHTML, SMART_FILL_REFERENCE } from '../src/lib/overlay-template'
-import { largestFontThatFits, overlayTextOverflows } from '../src/lib/overlay-fit'
+import {
+  estimateAutoFitVerseFontPx,
+  formatOverlayColoredText,
+  renderOverlayHTML,
+  sanitizeOverlayColor,
+  SMART_FILL_REFERENCE,
+} from '../src/lib/overlay-template'
+import { largestFontThatFits, overlayTextOverflows, playOverlayVideos, seekOverlayVideos, setOverlayVideosPaused } from '../src/lib/overlay-fit'
 
 test('clamps overlay boxes onto the canvas', () => {
   const boxed = clampOverlayBox({ xPct: -10, yPct: 90, widthPct: 40, heightPct: 40 })
@@ -140,6 +146,98 @@ test('overlay HTML constrains auto-fit verse so the text cannot grow the box', (
   assert.match(html, /overflow-wrap:break-word/)
 })
 
+test('playOverlayVideos starts muted videos after innerHTML insert', () => {
+  const played: string[] = []
+  const ready = {
+    muted: false,
+    playsInline: false,
+    readyState: 2,
+    play: async () => {
+      played.push('ready')
+    },
+    pause: () => undefined,
+    addEventListener: () => undefined,
+  }
+  const pending = {
+    muted: false,
+    playsInline: false,
+    readyState: 0,
+    play: async () => {
+      played.push('pending')
+    },
+    pause: () => undefined,
+    addEventListener: (type: string, listener: () => void) => {
+      if (type === 'canplay') listener()
+    },
+  }
+  playOverlayVideos({ querySelectorAll: () => [ready, pending] })
+  assert.equal(ready.muted, true)
+  assert.equal(ready.playsInline, true)
+  assert.deepEqual(played, ['ready', 'pending'])
+})
+
+test('playOverlayVideos leaves videos paused when asked', () => {
+  const played: string[] = []
+  const paused: string[] = []
+  const video = {
+    muted: false,
+    playsInline: false,
+    readyState: 2,
+    dataset: { paPaused: '' },
+    play: async () => {
+      played.push('play')
+    },
+    pause: () => {
+      paused.push('pause')
+    },
+    addEventListener: () => undefined,
+  }
+  playOverlayVideos({ querySelectorAll: () => [video] }, true)
+  assert.deepEqual(played, [])
+  assert.deepEqual(paused, ['pause'])
+  assert.equal(video.dataset.paPaused, '1')
+})
+
+test('setOverlayVideosPaused resumes from the start after the clip ends', () => {
+  const actions: string[] = []
+  const video = {
+    muted: true,
+    playsInline: true,
+    readyState: 4,
+    ended: true,
+    currentTime: 12,
+    dataset: { paPaused: '1' },
+    play: async () => {
+      actions.push('play')
+    },
+    pause: () => {
+      actions.push('pause')
+    },
+    addEventListener: () => undefined,
+  }
+  setOverlayVideosPaused({ querySelectorAll: () => [video] }, false)
+  assert.equal(video.currentTime, 0)
+  assert.deepEqual(actions, ['play'])
+  assert.equal(video.dataset.paPaused, '')
+})
+
+test('seekOverlayVideos clamps to the clip duration', () => {
+  const video = {
+    muted: true,
+    playsInline: true,
+    readyState: 4,
+    currentTime: 1,
+    duration: 10,
+    play: async () => undefined,
+    pause: () => undefined,
+    addEventListener: () => undefined,
+  }
+  seekOverlayVideos({ querySelectorAll: () => [video] }, 12)
+  assert.equal(video.currentTime, 10)
+  seekOverlayVideos({ querySelectorAll: () => [video] }, -3)
+  assert.equal(video.currentTime, 0)
+})
+
 test('largestFontThatFits binary-searches the last size that does not overflow', () => {
   assert.equal(
     largestFontThatFits(12, 80, (px) => px > 40),
@@ -160,4 +258,43 @@ test('auto-fit overflow uses the clip box when the verse element has grown with 
     overlayTextOverflows({ scrollHeight: 180, scrollWidth: 400 }, grownVerse, clipBox),
     false
   )
+})
+
+test('sanitizeOverlayColor only accepts hex', () => {
+  assert.equal(sanitizeOverlayColor('#d4a017'), '#D4A017')
+  assert.equal(sanitizeOverlayColor('#fc0'), '#FFCC00')
+  assert.equal(sanitizeOverlayColor('red'), undefined)
+  assert.equal(sanitizeOverlayColor('url(javascript:alert(1))'), undefined)
+})
+
+test('formatOverlayColoredText paints gloss lines and escapes the rest', () => {
+  const html = formatOverlayColoredText([
+    { text: 'Aka Aka ya' },
+    { text: '(The arm of the Lord)', color: '#D4A017' },
+  ])
+  assert.equal(
+    html,
+    'Aka Aka ya<br><span style="color:#D4A017">(The arm of the Lord)</span>',
+  )
+  assert.match(
+    formatOverlayColoredText([{ text: '<b>x</b>', color: '#D4A017' }]),
+    /&lt;b&gt;x&lt;\/b&gt;/,
+  )
+})
+
+test('overlay HTML keeps lyric gloss colors on the verse body', () => {
+  const html = renderOverlayHTML(
+    DEFAULT_OVERLAY_THEME,
+    'Song · Chorus',
+    'Aka Aka ya\n(The arm of the Lord)',
+    1920,
+    1080,
+    {
+      coloredLines: [
+        { text: 'Aka Aka ya' },
+        { text: '(The arm of the Lord)', color: '#D4A017' },
+      ],
+    },
+  )
+  assert.match(html, /<span style="color:#D4A017">\(The arm of the Lord\)<\/span>/)
 })

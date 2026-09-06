@@ -1,0 +1,28 @@
+{
+  "moduleFileExtensions": [
+    "js",
+    "json",
+    "ts",
+    "tsx"
+  ],
+  "rootDir": "..",
+  "testEnvironment": "node",
+  "testRegex": "test/.*\\.e2e-spec\\.ts$",
+  "transform": {
+    "^.+\\.(t|j)sx?$": [
+      "ts-jest",
+      {
+        "diagnostics": {
+          "exclude": [
+            "**/components/email/**"
+          ]
+        }
+      }
+    ]
+  },
+  "moduleNameMapper": {
+    "^@contracts/(.*)$": "<rootDir>/../src/lib/cloud/$1",
+    "^@/(.*)$": "<rootDir>/src/$1"
+  },
+  "testTimeout": 60000
+}

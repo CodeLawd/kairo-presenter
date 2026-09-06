@@ -1,3 +1,4 @@
+import { useImportRequest } from '@/hooks/useImportRequest'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
@@ -5,20 +6,27 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
+  ClipboardPaste,
+  Copy,
   Film,
   Folder,
+  FolderOpen,
   Image as ImageIcon,
   ListMusic,
+  Pause,
   Pencil,
+  Play,
   Plus,
   RefreshCw,
   Repeat,
+  Scissors,
   Trash2,
   X,
-} from 'lucide-react'
+} from '@/icons'
 import { cn } from '@/lib/utils'
 import { overlayMediaUrl } from '@shared/overlay-template'
 import { mediaFilterCss, normalizeMediaPlayback } from '@shared/media-playback'
+import { reorderIds } from '@shared/media-order'
 import type { MediaItem, MediaLibrary, MediaPlayback } from '@shared/ipc'
 
 // ─── Sizing ───────────────────────────────────────────────────────────────────
@@ -56,7 +64,8 @@ function clampHeight(value: number): number {
 }
 
 function storedHeight(): number {
-  const raw = Number(window.localStorage.getItem(STORAGE_KEY))
+  let raw = 0
+  try { raw = Number(window.localStorage.getItem(STORAGE_KEY)) } catch { /* Use default when storage is unavailable. */ }
   if (!Number.isFinite(raw) || raw <= 0) return clampHeight(DEFAULT_HEIGHT)
   return clampHeight(raw)
 }
@@ -68,6 +77,7 @@ const EMPTY_LIBRARY: MediaLibrary = {
   playlists: [],
   playback: {},
   liveItemId: null,
+  livePaused: false,
   error: null,
 }
 
@@ -92,7 +102,23 @@ export default function MediaDock(): React.ReactElement {
    */
   const [draft, setDraft] = useState(false)
   const [renamingId, setRenamingId] = useState<string | null>(null)
+  const [renamingItemId, setRenamingItemId] = useState<string | null>(null)
   const [addingMedia, setAddingMedia] = useState(false)
+  const [canPaste, setCanPaste] = useState(false)
+  /** Right-click / keyboard target for Copy · Cut. */
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
+  /** Right-click on empty grid chrome (not a thumbnail). */
+  const [bgMenu, setBgMenu] = useState<{ x: number; y: number } | null>(null)
+  /** Id being dragged to rearrange the grid; null when idle. */
+  const [draggingId, setDraggingId] = useState<string | null>(null)
+  const [dragOverId, setDragOverId] = useState<string | null>(null)
+  const [dropPosition, setDropPosition] = useState<'before' | 'after'>('before')
+  /**
+   * Refs mirror the drag state so `drop` can read them after `dragend` has
+   * already cleared React state — Chromium fires those in either order.
+   */
+  const draggingIdRef = useRef<string | null>(null)
+  const dropTargetRef = useRef<{ id: string; position: 'before' | 'after' } | null>(null)
   /**
    * Live height during a drag. State alone would re-enter this callback on every
    * pointermove and read a stale `height` from the closure — the old version
@@ -159,16 +185,34 @@ export default function MediaDock(): React.ReactElement {
     return () => window.removeEventListener('resize', onResize)
   }, [])
 
+  const rememberHeight = (value: number): void => {
+    try { window.localStorage.setItem(STORAGE_KEY, String(Math.round(value))) } catch { /* Resizing works without persistence. */ }
+  }
+  const resizeWithKeyboard = (event: React.KeyboardEvent<HTMLDivElement>): void => {
+    if (!['ArrowUp', 'ArrowDown', 'Home', 'End', 'Enter', ' '].includes(event.key)) return
+    event.preventDefault(); event.stopPropagation()
+    if (event.key === 'Home') { setCollapsed(true); return }
+    if (event.key === 'Enter' || event.key === ' ') {
+      if (!collapsed || availableRoom() >= MIN_HEIGHT) setCollapsed(!collapsed)
+      return
+    }
+    if (availableRoom() < MIN_HEIGHT) return
+    const next = event.key === 'End' ? maxHeight() : clampHeight(height + (event.key === 'ArrowUp' ? 24 : -24))
+    setCollapsed(false); setHeight(next); rememberHeight(next)
+  }
+
   const beginDrag = useCallback((event: React.PointerEvent<HTMLDivElement>): void => {
+    if (event.button !== 0) return
     event.preventDefault()
     const handle = event.currentTarget
+    handle.focus()
     // Pointer capture keeps the drag alive over the iframe-free but
     // pointer-hungry content below, and guarantees we get the release event.
     handle.setPointerCapture(event.pointerId)
 
     const startY = event.clientY
     const wasCollapsed = collapsed
-    const startHeight = wasCollapsed ? MIN_HEIGHT : heightRef.current
+    const startHeight = wasCollapsed ? RAIL_HEIGHT : heightRef.current
     let released = false
 
     const apply = (clientY: number): void => {
@@ -196,26 +240,41 @@ export default function MediaDock(): React.ReactElement {
     const finish = (upEvent: PointerEvent): void => {
       if (released) return
       released = true
-      handle.releasePointerCapture?.(event.pointerId)
+      if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId)
       handle.removeEventListener('pointermove', move)
       handle.removeEventListener('pointerup', finish)
       handle.removeEventListener('pointercancel', finish)
+      handle.removeEventListener('lostpointercapture', finish)
       if (frameRef.current !== null) {
         window.cancelAnimationFrame(frameRef.current)
         frameRef.current = null
       }
       setHeight(heightRef.current)
 
-      // A decisive downward drag puts it away; a click that never moved toggles.
       const travel = upEvent.clientY - startY
-      if (travel > 60) setCollapsed(true)
-      else if (Math.abs(travel) < 4 && wasCollapsed) setCollapsed(false)
-      else if (!wasCollapsed) window.localStorage.setItem(STORAGE_KEY, String(Math.round(heightRef.current)))
+      if (upEvent.type === 'pointercancel' || upEvent.type === 'lostpointercapture') {
+        setCollapsed(wasCollapsed)
+        setHeight(wasCollapsed ? storedHeight() : startHeight)
+        return
+      }
+      if (Math.abs(travel) < 4) {
+        if (wasCollapsed && availableRoom() >= MIN_HEIGHT) { setHeight(storedHeight()); setCollapsed(false) }
+        return
+      }
+      if (!wasCollapsed && startHeight - travel < MIN_HEIGHT - 40) {
+        setCollapsed(true)
+        setHeight(startHeight)
+      } else if (availableRoom() >= MIN_HEIGHT && (!wasCollapsed || travel < -8)) {
+        setCollapsed(false)
+        rememberHeight(heightRef.current)
+      }
+
     }
 
     handle.addEventListener('pointermove', move)
     handle.addEventListener('pointerup', finish)
     handle.addEventListener('pointercancel', finish)
+    handle.addEventListener('lostpointercapture', finish)
   }, [collapsed])
 
   useEffect(() => () => {
@@ -304,6 +363,206 @@ export default function MediaDock(): React.ReactElement {
     ))
   }, [library.playlists])
 
+  const deleteItem = useCallback(async (item: MediaItem): Promise<void> => {
+    if (!window.confirm(
+      `Delete “${item.name}” from the backgrounds folder?\n\nThis removes the file from disk and cannot be undone.`,
+    )) return
+    setError(null)
+    try {
+      setLibrary(await window.api.media.deleteItem(item.id))
+    } catch (err) {
+      setError((err as Error).message)
+    }
+  }, [])
+
+  const renameItem = useCallback(async (itemId: string, name: string): Promise<void> => {
+    setRenamingItemId(null)
+    setError(null)
+    try {
+      setLibrary(await window.api.media.renameItem(itemId, name))
+    } catch (err) {
+      setError((err as Error).message)
+    }
+  }, [])
+
+  const revealItem = useCallback(async (itemId: string): Promise<void> => {
+    try {
+      await window.api.media.revealItem(itemId)
+    } catch (err) {
+      setError((err as Error).message)
+    }
+  }, [])
+
+  const copyItem = useCallback(async (itemId: string): Promise<void> => {
+    setError(null)
+    if (typeof window.api.media.copyItems !== 'function') {
+      setError('Restart Kairo to enable copy and paste.')
+      return
+    }
+    try {
+      await window.api.media.copyItems([itemId])
+      setCanPaste(true)
+      setSelectedItemId(itemId)
+    } catch (err) {
+      setError((err as Error).message)
+    }
+  }, [])
+
+  const cutItem = useCallback(async (itemId: string): Promise<void> => {
+    setError(null)
+    if (typeof window.api.media.cutItems !== 'function') {
+      setError('Restart Kairo to enable copy and paste.')
+      return
+    }
+    try {
+      const fromPlaylistId = selection?.kind === 'playlist' ? selection.id : undefined
+      await window.api.media.cutItems([itemId], fromPlaylistId)
+      setCanPaste(true)
+      setSelectedItemId(itemId)
+    } catch (err) {
+      setError((err as Error).message)
+    }
+  }, [selection])
+
+  const pasteItems = useCallback(async (): Promise<void> => {
+    setError(null)
+    if (typeof window.api.media.pasteItems !== 'function') {
+      setError('Restart Kairo to enable copy and paste.')
+      return
+    }
+    try {
+      const playlistId = selection?.kind === 'playlist' ? selection.id : undefined
+      setLibrary(await window.api.media.pasteItems(playlistId))
+      const still = typeof window.api.media.clipboardHasFiles === 'function'
+        ? await window.api.media.clipboardHasFiles()
+        : false
+      setCanPaste(still)
+    } catch (err) {
+      setError((err as Error).message)
+    }
+  }, [selection])
+
+  // Paste availability changes when Finder or this app puts files on the clipboard.
+  useEffect(() => {
+    if (typeof window.api.media.clipboardHasFiles !== 'function') return
+    let cancelled = false
+    const poll = (): void => {
+      window.api.media
+        .clipboardHasFiles()
+        .then((next) => { if (!cancelled) setCanPaste(next) })
+        .catch(() => undefined)
+    }
+    poll()
+    const id = window.setInterval(poll, 2000)
+    const onFocus = (): void => poll()
+    window.addEventListener('focus', onFocus)
+    return () => {
+      cancelled = true
+      window.clearInterval(id)
+      window.removeEventListener('focus', onFocus)
+    }
+  }, [])
+
+  // Cmd/Ctrl+C · X · V while the dock is open (capture so Edit-menu roles don't win).
+  useEffect(() => {
+    if (collapsed) return
+
+    const typing = (target: EventTarget | null): boolean => {
+      const el = target as HTMLElement | null
+      return Boolean(el?.closest('input, textarea, select, [contenteditable="true"]'))
+    }
+
+    const targetId = (): string | null =>
+      selectedItemId ?? liveItem?.id ?? visibleItems[0]?.id ?? null
+
+    const onKey = (event: KeyboardEvent): void => {
+      if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return
+      if (typing(event.target)) return
+
+      const key = event.key.toLowerCase()
+      if (key === 'v') {
+        event.preventDefault()
+        event.stopPropagation()
+        void pasteItems()
+        return
+      }
+      const id = targetId()
+      if (!id) return
+      if (key === 'c') {
+        event.preventDefault()
+        event.stopPropagation()
+        void copyItem(id)
+      } else if (key === 'x') {
+        event.preventDefault()
+        event.stopPropagation()
+        void cutItem(id)
+      }
+    }
+
+    // Electron Edit-menu Paste synthesizes a paste event — catch that too.
+    const onPaste = (event: ClipboardEvent): void => {
+      if (typing(event.target)) return
+      event.preventDefault()
+      event.stopPropagation()
+      void pasteItems()
+    }
+
+    window.addEventListener('keydown', onKey, true)
+    window.addEventListener('paste', onPaste, true)
+    return () => {
+      window.removeEventListener('keydown', onKey, true)
+      window.removeEventListener('paste', onPaste, true)
+    }
+  }, [collapsed, selectedItemId, liveItem?.id, visibleItems, copyItem, cutItem, pasteItems])
+
+  /**
+   * Persist a rearrange. Playlist order is the playlist's own `itemIds`
+   * (including any missing entries, so a drag never quietly drops them). The
+   * All-backgrounds view writes the library `itemOrder` in the media manifest.
+   */
+  const reorderItems = useCallback(async (
+    draggedId: string,
+    targetId: string,
+    position: 'before' | 'after',
+  ): Promise<void> => {
+    if (draggedId === targetId) return
+    setError(null)
+    try {
+      if (selection?.kind === 'playlist') {
+        const playlist = library.playlists.find((p) => p.id === selection.id)
+        if (!playlist) return
+        const nextIds = reorderIds(playlist.itemIds, draggedId, targetId, position)
+        if (nextIds.join('\0') === playlist.itemIds.join('\0')) return
+        // Optimistic — the grid should move under the pointer before IPC returns.
+        setLibrary((current) => ({
+          ...current,
+          playlists: current.playlists.map((p) =>
+            p.id === selection.id ? { ...p, itemIds: nextIds } : p,
+          ),
+        }))
+        setLibrary(await window.api.media.setPlaylistItems(selection.id, nextIds))
+        return
+      }
+      const currentIds = library.items.map((item) => item.id)
+      const nextIds = reorderIds(currentIds, draggedId, targetId, position)
+      if (nextIds.join('\0') === currentIds.join('\0')) return
+      const byId = new Map(library.items.map((item) => [item.id, item]))
+      const optimistic = nextIds
+        .map((id) => byId.get(id))
+        .filter((item): item is MediaItem => Boolean(item))
+      setLibrary((current) => ({ ...current, items: optimistic }))
+      setLibrary(await window.api.media.setItemOrder(nextIds))
+    } catch (err) {
+      setError((err as Error).message)
+      // Pull the real library back if the write failed.
+      try {
+        setLibrary(await window.api.media.getLibrary())
+      } catch {
+        /* keep the error already shown */
+      }
+    }
+  }, [library.items, library.playlists, selection])
+
   const addMediaToPlaylist = useCallback(async (playlistId: string): Promise<void> => {
     setAddingMedia(true)
     setError(null)
@@ -313,6 +572,25 @@ export default function MediaDock(): React.ReactElement {
       setError((err as Error).message)
     } finally {
       setAddingMedia(false)
+    }
+  }, [])
+
+  useImportRequest(['image', 'video'], async kind => {
+    setAddingMedia(true)
+    setError(null)
+    try {
+      setLibrary(await window.api.media.importFiles(kind as 'image' | 'video'))
+      setSelection({ kind: 'all' })
+    } catch (err) { setError((err as Error).message) }
+    finally { setAddingMedia(false) }
+  }, !addingMedia)
+
+  const setPaused = useCallback(async (paused: boolean): Promise<void> => {
+    setLibrary((current) => ({ ...current, livePaused: paused }))
+    try {
+      setLibrary(await window.api.media.setPaused(paused))
+    } catch (err) {
+      setError((err as Error).message)
     }
   }, [])
 
@@ -335,36 +613,44 @@ export default function MediaDock(): React.ReactElement {
   // ── Collapsed rail ─────────────────────────────────────────────────────────
   if (collapsed) {
     return (
-      <div className="shrink-0 flex flex-col bg-surface-secondary border-t border-surface-border">
-        <DragHandle onPointerDown={beginDrag} />
-        <div className="flex items-center gap-3 px-5 py-2" style={{ height: RAIL_HEIGHT - 14 }}>
+      <div className="flex shrink-0 flex-col bg-surface">
+        <DragHandle onPointerDown={beginDrag} onKeyDown={resizeWithKeyboard} height={collapsed ? RAIL_HEIGHT : height} maximum={maxHeight()} />
+        <div className="flex items-center gap-3 px-5 py-2" style={{ height: RAIL_HEIGHT - 10 }}>
           <div className="flex items-center gap-1.5">
             <Film size={14} className="text-teal-400" aria-hidden="true" />
             <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">
-              Background
+              Media
             </span>
           </div>
           <div className="h-4 w-px bg-surface-border/80" aria-hidden="true" />
           {liveItem ? (
             <>
               <Thumb item={liveItem} className="h-[25px] w-11 rounded-[5px] border border-teal-500/55" muted />
-              <span className="text-xs font-semibold text-teal-300">{liveItem.name}</span>
-              <span className="text-[11px] text-slate-600">is on screen</span>
+              <span className="min-w-0 truncate text-xs font-medium text-teal-300">{liveItem.name}</span>
+              <span className="text-[11px] text-slate-600">
+                {liveItem.kind === 'video' && library.livePaused ? 'is paused' : 'is on screen'}
+              </span>
+              {liveItem.kind === 'video' && (
+                <LiveTransportButton
+                  paused={library.livePaused}
+                  onToggle={() => void setPaused(!library.livePaused)}
+                />
+              )}
             </>
           ) : (
             <span className="text-[11px] text-slate-600">Nothing on screen</span>
           )}
           <div className="flex-1" />
-          <span className="text-[11px] text-slate-600 hidden sm:inline">Drag up to change background</span>
+          <span className="text-[11px] text-slate-600 hidden lg:inline">Playback continues when collapsed</span>
           <button
             type="button"
             onClick={() => { if (availableRoom() >= MIN_HEIGHT) setCollapsed(false) }}
             disabled={availableRoom() < MIN_HEIGHT}
             title={availableRoom() < MIN_HEIGHT ? 'Not enough room — make the window taller' : 'Open background dock'}
-            className="grid h-[26px] w-[26px] place-items-center rounded-[7px] border border-surface-border text-slate-400 hover:text-white disabled:opacity-40"
+            className="flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs text-slate-400 hover:bg-white/5 hover:text-white disabled:opacity-40"
             aria-label="Open background dock"
           >
-            <ChevronUp size={13} aria-hidden="true" />
+            Open media <ChevronUp size={13} aria-hidden="true" />
           </button>
         </div>
       </div>
@@ -374,23 +660,26 @@ export default function MediaDock(): React.ReactElement {
   // ── Open dock ──────────────────────────────────────────────────────────────
   return (
     <div
-      className="shrink-0 flex flex-col bg-surface-secondary border-t border-surface-border"
+      className="flex shrink-0 flex-col bg-surface"
       style={{ height }}
     >
-      <DragHandle onPointerDown={beginDrag} />
+      <DragHandle onPointerDown={beginDrag} onKeyDown={resizeWithKeyboard} height={collapsed ? RAIL_HEIGHT : height} maximum={maxHeight()} />
 
       {!library.folder ? (
-        <EmptyState onChoose={chooseFolder} />
+        <div className="flex min-h-0 flex-1 flex-col">
+          <button type="button" onClick={() => setCollapsed(true)} className="self-end px-4 py-1 text-xs text-slate-400 hover:text-white">Collapse media</button>
+          <EmptyState onChoose={chooseFolder} />
+        </div>
       ) : (
         <div className="flex flex-1 min-h-0 overflow-hidden">
 
           {/* Collections */}
-          <div className="w-[196px] shrink-0 border-r border-surface-border/70 flex flex-col gap-2.5 p-2.5 overflow-y-auto">
+          <div className="flex w-[160px] shrink-0 flex-col gap-2.5 overflow-y-auto border-r border-surface-border/40 bg-transparent p-2.5">
             <div className="flex items-center justify-between gap-1.5 px-1">
               <div className="flex items-center gap-1.5">
                 <Film size={13} className="text-teal-400" aria-hidden="true" />
                 <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">
-                  Background
+                  Media
                 </span>
               </div>
               <button
@@ -458,7 +747,7 @@ export default function MediaDock(): React.ReactElement {
 
           {/* Content */}
           <div className="flex flex-1 min-w-0 flex-col overflow-hidden">
-            <div className="flex items-center gap-3 px-5 pt-2.5 shrink-0">
+            <div className="flex flex-wrap items-center gap-2 px-4 pt-2 shrink-0">
               <div className="flex items-baseline gap-2 min-w-0">
                 <span className="text-[13px] font-semibold text-slate-200 truncate">
                   {selectionLabel(selection, library)}
@@ -474,8 +763,16 @@ export default function MediaDock(): React.ReactElement {
                 <div className="flex items-center gap-2 rounded-lg border border-teal-500/30 bg-teal-500/10 px-2.5 py-1">
                   <span className="h-1.5 w-1.5 rounded-full bg-teal-500" aria-hidden="true" />
                   <span className="text-[11px] text-teal-300">
-                    On screen · <span className="font-semibold">{liveItem.name}</span>
+                    {liveItem.kind === 'video' && library.livePaused ? 'Paused' : 'On screen'}
+                    {' · '}
+                    <span className="font-semibold">{liveItem.name}</span>
                   </span>
+                  {liveItem.kind === 'video' && (
+                    <LiveTransportButton
+                      paused={library.livePaused}
+                      onToggle={() => void setPaused(!library.livePaused)}
+                    />
+                  )}
                 </div>
               )}
 
@@ -491,8 +788,8 @@ export default function MediaDock(): React.ReactElement {
                 </button>
               )}
 
-              <button type="button" onClick={() => void clearBackground()} className="btn-secondary flex items-center gap-1.5 px-2.5 py-1.5 text-xs">
-                <X size={11} aria-hidden="true" /> Clear
+              <button type="button" onClick={() => void clearBackground()} disabled={!liveItem} title="Remove the background from the live output" className="btn-secondary flex items-center gap-1.5 px-2.5 py-1.5 text-xs">
+                <X size={11} aria-hidden="true" /> Clear background
               </button>
               <button
                 type="button"
@@ -507,7 +804,8 @@ export default function MediaDock(): React.ReactElement {
                 type="button"
                 onClick={() => setCollapsed(true)}
                 className="grid h-[26px] w-[26px] place-items-center rounded-[7px] border border-surface-border text-slate-400 hover:text-white"
-                aria-label="Collapse background dock"
+                aria-label="Collapse media panel"
+                title="Collapse media panel — playback continues"
               >
                 <ChevronDown size={13} aria-hidden="true" />
               </button>
@@ -533,7 +831,14 @@ export default function MediaDock(): React.ReactElement {
               </p>
             )}
 
-            <div className="grid flex-1 min-h-0 content-start items-start gap-x-3.5 gap-y-3 overflow-y-auto px-5 py-2.5 [grid-template-columns:repeat(auto-fill,minmax(168px,1fr))]">
+            <div
+              className="grid flex-1 min-h-0 content-start items-start gap-x-3.5 gap-y-3 overflow-y-auto px-5 py-2.5 [grid-template-columns:repeat(auto-fill,minmax(168px,1fr))]"
+              onContextMenu={(event) => {
+                // Thumbnails stopPropagation; anything else is empty chrome.
+                event.preventDefault()
+                setBgMenu({ x: event.clientX, y: event.clientY })
+              }}
+            >
               {visibleItems.length === 0 && selection?.kind !== 'playlist' && (
                 <p className="col-span-full text-xs text-slate-500">
                   No backgrounds yet — drop files in the folder, or open a playlist and add media.
@@ -544,19 +849,74 @@ export default function MediaDock(): React.ReactElement {
                   key={item.id}
                   item={item}
                   live={item.id === library.liveItemId}
+                  paused={item.id === library.liveItemId && library.livePaused}
                   busy={item.id === busyId}
                   undecodable={undecodable.has(item.id)}
                   playlists={library.playlists}
                   playback={normalizeMediaPlayback(library.playback[item.id])}
-                  onPush={() => void pushItem(item)}
+                  dragging={draggingId === item.id}
+                  dragOver={dragOverId === item.id}
+                  dropPosition={dragOverId === item.id ? dropPosition : null}
+                  onPush={() => {
+                    setSelectedItemId(item.id)
+                    void pushItem(item)
+                  }}
+                  onSelect={() => setSelectedItemId(item.id)}
                   onPlaybackChange={(patch) => void setPlayback(item.id, patch)}
+                  onTogglePause={
+                    item.id === library.liveItemId && item.kind === 'video'
+                      ? () => void setPaused(!library.livePaused)
+                      : undefined
+                  }
                   onAddToPlaylist={(playlistId) => void addToPlaylist(playlistId, item.id)}
                   onRemoveFromPlaylist={
                     selection?.kind === 'playlist'
                       ? () => void removeFromPlaylist(selection.id, item.id)
                       : undefined
                   }
+                  renaming={renamingItemId === item.id}
+                  onRename={() => setRenamingItemId(item.id)}
+                  onRenameCommit={(name) => void renameItem(item.id, name)}
+                  onRenameCancel={() => setRenamingItemId(null)}
+                  onCopy={() => void copyItem(item.id)}
+                  onCut={() => void cutItem(item.id)}
+                  onPaste={() => void pasteItems()}
+                  canPaste={canPaste}
+                  onReveal={() => void revealItem(item.id)}
+                  onDelete={() => void deleteItem(item)}
                   onUndecodable={() => markUndecodable(item.id)}
+                  onDragStart={() => {
+                    draggingIdRef.current = item.id
+                    dropTargetRef.current = null
+                    setDraggingId(item.id)
+                    setDragOverId(null)
+                  }}
+                  onDragEnd={() => {
+                    // Drop may still be pending — clear React state for the
+                    // highlight, but leave the refs for onDrop to read.
+                    setDraggingId(null)
+                    setDragOverId(null)
+                  }}
+                  onDragOver={(position) => {
+                    if (draggingIdRef.current === item.id) return
+                    dropTargetRef.current = { id: item.id, position }
+                    setDragOverId(item.id)
+                    setDropPosition(position)
+                  }}
+                  onDrop={() => {
+                    const from = draggingIdRef.current
+                    const target = dropTargetRef.current
+                    draggingIdRef.current = null
+                    dropTargetRef.current = null
+                    setDraggingId(null)
+                    setDragOverId(null)
+                    if (!from || from === item.id) return
+                    void reorderItems(
+                      from,
+                      item.id,
+                      target?.id === item.id ? target.position : 'before',
+                    )
+                  }}
                 />
               ))}
               {selection?.kind === 'playlist' && (
@@ -573,6 +933,16 @@ export default function MediaDock(): React.ReactElement {
                 </button>
               )}
             </div>
+
+            {bgMenu && (
+              <BackgroundMenu
+                x={bgMenu.x}
+                y={bgMenu.y}
+                canPaste={canPaste}
+                onPaste={() => void pasteItems()}
+                onClose={() => setBgMenu(null)}
+              />
+            )}
           </div>
         </div>
       )}
@@ -582,16 +952,19 @@ export default function MediaDock(): React.ReactElement {
 
 // ─── Pieces ───────────────────────────────────────────────────────────────────
 
-function DragHandle({ onPointerDown }: { onPointerDown: (e: React.PointerEvent<HTMLDivElement>) => void }): React.ReactElement {
+function DragHandle({ onPointerDown, onKeyDown, height, maximum }: {
+  onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => void
+  onKeyDown: (event: React.KeyboardEvent<HTMLDivElement>) => void
+  height: number
+  maximum: number
+}): React.ReactElement {
   return (
-    <div
-      role="separator"
-      aria-orientation="horizontal"
-      aria-label="Resize background dock"
-      onPointerDown={onPointerDown}
-      className="h-3.5 shrink-0 grid place-items-center bg-surface-tertiary/50 cursor-ns-resize touch-none"
-    >
-      <div className="h-[3px] w-[46px] rounded-full bg-teal-500/55" />
+    <div role="separator" tabIndex={0} aria-orientation="horizontal" aria-label="Resize media panel"
+      aria-valuemin={RAIL_HEIGHT} aria-valuemax={maximum} aria-valuenow={height}
+      title="Drag to resize · Arrow keys adjust · Enter collapses or opens"
+      onPointerDown={onPointerDown} onKeyDown={onKeyDown}
+      className="group flex h-2.5 shrink-0 cursor-ns-resize touch-none items-center justify-center border-t border-white/[0.06] hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-teal-400">
+      <span className="h-0.5 w-8 rounded-full bg-white/15 group-hover:bg-teal-400/70" />
     </div>
   )
 }
@@ -661,22 +1034,28 @@ function SidebarRow({
 }
 
 /**
- * Names a new folder or playlist in place.
+ * Names a new folder or playlist in place, or renames a background.
  *
  * Electron does not implement `window.prompt`, and blur-to-commit fights both
  * Strict Mode remounts and the click that opened this row — the input would
- * mount, blur empty, and vanish. Save / Enter commit; Cancel / Escape abandon.
+ * mount, blur empty, and vanish. Enter commits; Escape abandons.
+ *
+ * `actions` shows Save / Cancel for playlist creation (where an empty field is
+ * common). Background rename stays a single field — Enter / Escape only.
  */
 function InlineNameInput({
   icon,
   initialValue = '',
   placeholder,
+  actions = true,
   onCommit,
   onCancel,
 }: {
   icon: React.ReactNode
   initialValue?: string
   placeholder: string
+  /** Save / Cancel buttons. Off for thumbnail rename. */
+  actions?: boolean
   onCommit: (name: string) => void
   onCancel: () => void
 }): React.ReactElement {
@@ -695,23 +1074,30 @@ function InlineNameInput({
     return () => window.cancelAnimationFrame(id)
   }, [])
 
-  const commit = (): void => {
-    if (settled.current) return
-    const name = value.trim()
-    if (!name) return
-    settled.current = true
-    onCommit(name)
-  }
-
   const cancel = (): void => {
     if (settled.current) return
     settled.current = true
     onCancel()
   }
 
+  const commit = (): void => {
+    if (settled.current) return
+    const name = value.trim()
+    if (!name) {
+      // Empty Enter on rename resets; on create it just stays open until Cancel.
+      if (!actions) cancel()
+      return
+    }
+    settled.current = true
+    onCommit(name)
+  }
+
   return (
     <div
-      className="flex flex-col gap-1.5 rounded-[7px] border border-teal-500/40 bg-surface-tertiary px-2 py-1.5"
+      className={cn(
+        'flex flex-col gap-1.5 rounded-[7px] border border-teal-500/40 bg-surface-tertiary px-2',
+        actions ? 'py-1.5' : 'py-1',
+      )}
       onClick={(event) => event.stopPropagation()}
     >
       <div className="flex items-center gap-2">
@@ -735,76 +1121,187 @@ function InlineNameInput({
           aria-label={placeholder}
         />
       </div>
-      <div className="flex items-center gap-1">
-        <button
-          type="button"
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={commit}
-          disabled={!value.trim()}
-          className="flex flex-1 items-center justify-center gap-1 rounded-md border border-teal-500/30 bg-teal-500/10 px-2 py-1 text-[10px] font-semibold text-teal-300 hover:bg-teal-500/15 disabled:opacity-40"
-        >
-          <Check size={11} aria-hidden="true" />
-          Save
-        </button>
-        <button
-          type="button"
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={cancel}
-          className="rounded-md px-2 py-1 text-[10px] font-semibold text-slate-400 hover:bg-surface-secondary hover:text-white"
-        >
-          Cancel
-        </button>
-      </div>
+      {actions && (
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={commit}
+            disabled={!value.trim()}
+            className="flex flex-1 items-center justify-center gap-1 rounded-md border border-teal-500/30 bg-teal-500/10 px-2 py-1 text-[10px] font-semibold text-teal-300 hover:bg-teal-500/15 disabled:opacity-40"
+          >
+            <Check size={11} aria-hidden="true" />
+            Save
+          </button>
+          <button
+            type="button"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={cancel}
+            className="rounded-md px-2 py-1 text-[10px] font-semibold text-slate-400 hover:bg-surface-secondary hover:text-white"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
     </div>
   )
 }
 
 /**
- * A background tile. Clicking pushes it — the card IS the button, matching the
- * lyrics slide grid where clicking a slide puts it on screen.
+ * A background tile.
+ *
+ * The thumbnail frame is the drag source — drag it to rearrange, click it to
+ * push. Right-click opens Finder-style actions (rename, copy, cut, reveal, delete).
  */
 function MediaCard({
   item,
   live,
+  paused,
   busy,
   undecodable,
   playlists,
   playback,
+  dragging,
+  dragOver,
+  dropPosition,
+  renaming,
   onPush,
+  onSelect,
   onPlaybackChange,
+  onTogglePause,
   onAddToPlaylist,
   onRemoveFromPlaylist,
+  onRename,
+  onRenameCommit,
+  onRenameCancel,
+  onCopy,
+  onCut,
+  onPaste,
+  canPaste,
+  onReveal,
+  onDelete,
   onUndecodable,
+  onDragStart,
+  onDragEnd,
+  onDragOver,
+  onDrop,
 }: {
   item: MediaItem
   live: boolean
+  paused: boolean
   busy: boolean
   undecodable: boolean
   playlists: MediaLibrary['playlists']
   playback: MediaPlayback
+  dragging: boolean
+  dragOver: boolean
+  dropPosition: 'before' | 'after' | null
+  renaming: boolean
   onPush: () => void
+  onSelect: () => void
   onPlaybackChange: (patch: Partial<MediaPlayback>) => void
+  onTogglePause?: () => void
   onAddToPlaylist: (playlistId: string) => void
   onRemoveFromPlaylist?: () => void
+  onRename: () => void
+  onRenameCommit: (name: string) => void
+  onRenameCancel: () => void
+  onCopy: () => void
+  onCut: () => void
+  onPaste: () => void
+  canPaste: boolean
+  onReveal: () => void
+  onDelete: () => void
   onUndecodable: () => void
+  onDragStart: () => void
+  onDragEnd: () => void
+  onDragOver: (position: 'before' | 'after') => void
+  onDrop: () => void
 }): React.ReactElement {
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
+  /** Set when a rearrange drag actually moved — blocks the click-to-push. */
+  const didDragRef = useRef(false)
+  const thumbRef = useRef<HTMLDivElement>(null)
   const filter = mediaFilterCss(playback)
 
   return (
-    <div className="relative flex min-w-0 flex-col gap-1.5">
-      <button
-        type="button"
-        onClick={onPush}
+    <div
+      data-media-card=""
+      className={cn(
+        'relative flex min-w-0 flex-col gap-1.5 transition-opacity',
+        dragging && 'opacity-40',
+      )}
+      onDragOver={(event) => {
+        event.preventDefault()
+        event.dataTransfer.dropEffect = 'move'
+        const rect = event.currentTarget.getBoundingClientRect()
+        onDragOver(event.clientX < rect.left + rect.width / 2 ? 'before' : 'after')
+      }}
+      onDrop={(event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        onDrop()
+      }}
+    >
+      {dragOver && dropPosition === 'before' && (
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute -left-2 top-0 bottom-6 w-0.5 rounded-full bg-teal-400"
+        />
+      )}
+      {dragOver && dropPosition === 'after' && (
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute -right-2 top-0 bottom-6 w-0.5 rounded-full bg-teal-400"
+        />
+      )}
+
+      <div
+        ref={thumbRef}
+        role="button"
+        draggable={!renaming}
+        onDragStart={(event) => {
+          event.dataTransfer.effectAllowed = 'move'
+          event.dataTransfer.setData('text/plain', item.id)
+          const node = thumbRef.current
+          if (node) {
+            const rect = node.getBoundingClientRect()
+            event.dataTransfer.setDragImage(
+              node,
+              Math.min(rect.width / 2, 80),
+              Math.min(rect.height / 2, 45),
+            )
+          }
+          didDragRef.current = false
+          onDragStart()
+        }}
+        onDrag={(event) => {
+          if (event.clientX !== 0 || event.clientY !== 0) didDragRef.current = true
+        }}
+        onDragEnd={onDragEnd}
+        onClick={() => {
+          if (didDragRef.current) {
+            didDragRef.current = false
+            return
+          }
+          onPush()
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault()
+            onPush()
+          }
+        }}
         onContextMenu={(event) => {
           event.preventDefault()
           event.stopPropagation()
+          onSelect()
           setMenu({ x: event.clientX, y: event.clientY })
         }}
-        title={`Push ${item.name} to screen`}
+        title={`Push ${item.name} · drag to rearrange · right-click for more`}
         aria-label={`Push ${item.name} to screen`}
         className={cn(
-          'relative w-full aspect-video overflow-hidden rounded-xl bg-black border transition-all duration-150',
+          'relative w-full aspect-video overflow-hidden rounded-xl bg-black border transition-all duration-150 cursor-grab active:cursor-grabbing',
           live
             ? 'border-teal-400/70 ring-1 ring-teal-400/40'
             : 'border-white/[0.08] hover:border-teal-500/40 hover:ring-1 hover:ring-teal-500/20',
@@ -813,20 +1310,28 @@ function MediaCard({
       >
         <Thumb
           item={item}
-          className="absolute inset-0 h-full w-full object-cover"
+          className="pointer-events-none absolute inset-0 h-full w-full object-cover"
           style={filter ? { filter } : undefined}
           onError={onUndecodable}
         />
 
         {live && (
-          <span className="absolute left-1.5 top-1.5 rounded border border-teal-500/45 bg-teal-500/20 px-1.5 py-px text-[8px] font-bold uppercase tracking-[0.14em] text-teal-300">
-            Live
+          <span className="pointer-events-none absolute left-1.5 top-1.5 rounded border border-teal-500/45 bg-teal-500/20 px-1.5 py-px text-[8px] font-bold uppercase tracking-[0.14em] text-teal-300">
+            {paused ? 'Paused' : 'Live'}
           </span>
+        )}
+
+        {live && item.kind === 'video' && onTogglePause && (
+          <LiveTransportButton
+            paused={paused}
+            onToggle={onTogglePause}
+            overlay
+          />
         )}
 
         {item.kind === 'video' && playback.loop && (
           <span
-            className="absolute right-1.5 top-1.5 flex items-center gap-1 rounded border border-teal-500/45 bg-black/55 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-[0.14em] text-teal-300"
+            className="pointer-events-none absolute right-1.5 top-1.5 flex items-center gap-1 rounded border border-teal-500/45 bg-black/55 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-[0.14em] text-teal-300"
             title="Loops"
           >
             <Repeat size={8} aria-hidden="true" />
@@ -835,20 +1340,33 @@ function MediaCard({
         )}
 
         {undecodable && (
-          <span className="absolute inset-x-0 bottom-0 flex items-center gap-1 bg-amber-500/20 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-wider text-amber-200">
+          <span className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center gap-1 bg-amber-500/20 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-wider text-amber-200">
             <AlertTriangle size={8} aria-hidden="true" /> Can’t play
           </span>
         )}
-      </button>
-
-      <div className="flex items-center gap-1.5">
-        {item.kind === 'video'
-          ? <Film size={10} className="shrink-0 text-slate-600" aria-hidden="true" />
-          : <ImageIcon size={10} className="shrink-0 text-slate-600" aria-hidden="true" />}
-        <span className={cn('truncate text-[11px]', live ? 'font-semibold text-teal-300' : 'text-slate-300')}>
-          {item.name}
-        </span>
       </div>
+
+      {renaming ? (
+        <InlineNameInput
+          icon={item.kind === 'video'
+            ? <Film size={10} aria-hidden="true" />
+            : <ImageIcon size={10} aria-hidden="true" />}
+          initialValue={item.name}
+          placeholder="Name"
+          actions={false}
+          onCommit={onRenameCommit}
+          onCancel={onRenameCancel}
+        />
+      ) : (
+        <div className="flex items-center gap-1.5 px-0.5">
+          {item.kind === 'video'
+            ? <Film size={10} className="shrink-0 text-slate-600" aria-hidden="true" />
+            : <ImageIcon size={10} className="shrink-0 text-slate-600" aria-hidden="true" />}
+          <span className={cn('truncate text-[11px]', live ? 'font-semibold text-teal-300' : 'text-slate-300')}>
+            {item.name}
+          </span>
+        </div>
+      )}
 
       {menu && (
         <ItemMenu
@@ -857,9 +1375,16 @@ function MediaCard({
           item={item}
           playback={playback}
           playlists={playlists}
+          canPaste={canPaste}
           onPlaybackChange={onPlaybackChange}
           onAddToPlaylist={onAddToPlaylist}
           onRemoveFromPlaylist={onRemoveFromPlaylist}
+          onRename={onRename}
+          onCopy={onCopy}
+          onCut={onCut}
+          onPaste={onPaste}
+          onReveal={onReveal}
+          onDelete={onDelete}
           onClose={() => setMenu(null)}
         />
       )}
@@ -867,30 +1392,22 @@ function MediaCard({
   )
 }
 
-function ItemMenu({
+function BackgroundMenu({
   x,
   y,
-  item,
-  playback,
-  playlists,
-  onPlaybackChange,
-  onAddToPlaylist,
-  onRemoveFromPlaylist,
+  canPaste,
+  onPaste,
   onClose,
 }: {
   x: number
   y: number
-  item: MediaItem
-  playback: MediaPlayback
-  playlists: MediaLibrary['playlists']
-  onPlaybackChange: (patch: Partial<MediaPlayback>) => void
-  onAddToPlaylist: (playlistId: string) => void
-  onRemoveFromPlaylist?: () => void
+  canPaste: boolean
+  onPaste: () => void
   onClose: () => void
 }): React.ReactElement {
   const rootRef = useRef<HTMLDivElement>(null)
-  const left = Math.min(x, Math.max(8, window.innerWidth - 268))
-  const top = Math.min(y, Math.max(8, window.innerHeight - 320))
+  const left = Math.min(x, Math.max(8, window.innerWidth - 200))
+  const top = Math.min(y, Math.max(8, window.innerHeight - 80))
 
   useEffect(() => {
     const onPointerDown = (event: PointerEvent): void => {
@@ -912,16 +1429,117 @@ function ItemMenu({
     <div
       ref={rootRef}
       role="menu"
+      className="fixed z-[80] w-[180px] overflow-hidden rounded-xl border border-surface-border bg-surface-elevated py-1 shadow-2xl"
+      style={{ left, top }}
+    >
+      <button
+        type="button"
+        role="menuitem"
+        disabled={!canPaste}
+        onClick={() => {
+          if (!canPaste) return
+          onClose()
+          onPaste()
+        }}
+        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-200 hover:bg-surface-tertiary disabled:cursor-default disabled:text-slate-600 disabled:hover:bg-transparent"
+      >
+        <ClipboardPaste size={12} className={canPaste ? 'text-slate-500' : 'text-slate-700'} aria-hidden="true" />
+        Paste
+      </button>
+    </div>,
+    document.body,
+  )
+}
+
+function ItemMenu({
+  x,
+  y,
+  item,
+  playback,
+  playlists,
+  canPaste,
+  onPlaybackChange,
+  onAddToPlaylist,
+  onRemoveFromPlaylist,
+  onRename,
+  onCopy,
+  onCut,
+  onPaste,
+  onReveal,
+  onDelete,
+  onClose,
+}: {
+  x: number
+  y: number
+  item: MediaItem
+  playback: MediaPlayback
+  playlists: MediaLibrary['playlists']
+  canPaste: boolean
+  onPlaybackChange: (patch: Partial<MediaPlayback>) => void
+  onAddToPlaylist: (playlistId: string) => void
+  onRemoveFromPlaylist?: () => void
+  onRename: () => void
+  onCopy: () => void
+  onCut: () => void
+  onPaste?: () => void
+  onReveal: () => void
+  onDelete: () => void
+  onClose: () => void
+}): React.ReactElement {
+  const rootRef = useRef<HTMLDivElement>(null)
+  const left = Math.min(x, Math.max(8, window.innerWidth - 268))
+  const top = Math.min(y, Math.max(8, window.innerHeight - 420))
+
+  useEffect(() => {
+    const onPointerDown = (event: PointerEvent): void => {
+      if (rootRef.current?.contains(event.target as Node)) return
+      onClose()
+    }
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('pointerdown', onPointerDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [onClose])
+
+  const run = (action: () => void): void => {
+    onClose()
+    action()
+  }
+
+  return createPortal(
+    <div
+      ref={rootRef}
+      role="menu"
       className="fixed z-[80] w-[252px] overflow-hidden rounded-xl border border-surface-border bg-surface-elevated py-1 shadow-2xl"
       style={{ left, top }}
     >
+      <MenuItem icon={<Pencil size={12} />} label="Rename" onClick={() => run(onRename)} />
+      <MenuItem icon={<Copy size={12} />} label="Copy" onClick={() => run(onCopy)} />
+      <MenuItem icon={<Scissors size={12} />} label="Cut" onClick={() => run(onCut)} />
+      <MenuItem
+        icon={<ClipboardPaste size={12} />}
+        label="Paste"
+        disabled={!canPaste || !onPaste}
+        onClick={() => { if (canPaste && onPaste) run(onPaste) }}
+      />
+      <MenuItem
+        icon={<FolderOpen size={12} />}
+        label={navigator.platform.startsWith('Mac') ? 'Show in Finder' : 'Show in folder'}
+        onClick={() => run(onReveal)}
+      />
+
       {item.kind === 'video' && (
         <button
           type="button"
           role="menuitemcheckbox"
           aria-checked={playback.loop}
           onClick={() => onPlaybackChange({ loop: !playback.loop })}
-          className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-200 hover:bg-surface-tertiary"
+          className="flex w-full items-center gap-2 border-t border-surface-border/80 px-3 py-2 text-left text-xs text-slate-200 hover:bg-surface-tertiary"
         >
           <Repeat size={12} className={playback.loop ? 'text-teal-300' : 'text-slate-500'} aria-hidden="true" />
           <span className="flex-1">Loop</span>
@@ -986,8 +1604,42 @@ function ItemMenu({
           Remove from playlist
         </button>
       )}
+
+      <button
+        type="button"
+        onClick={() => run(onDelete)}
+        className="flex w-full items-center gap-2 border-t border-surface-border/80 px-3 py-2 text-left text-xs text-red-400 hover:bg-red-500/10"
+      >
+        <Trash2 size={12} aria-hidden="true" />
+        Delete from folder…
+      </button>
     </div>,
     document.body,
+  )
+}
+
+function MenuItem({
+  icon,
+  label,
+  onClick,
+  disabled,
+}: {
+  icon: React.ReactNode
+  label: string
+  onClick: () => void
+  disabled?: boolean
+}): React.ReactElement {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      disabled={disabled}
+      onClick={onClick}
+      className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-200 hover:bg-surface-tertiary disabled:cursor-default disabled:text-slate-600 disabled:hover:bg-transparent"
+    >
+      <span className={disabled ? 'text-slate-700' : 'text-slate-500'}>{icon}</span>
+      {label}
+    </button>
   )
 }
 
@@ -1031,6 +1683,38 @@ function ColorSlider({
  * Chromium cannot decode fires `error`, which is how the "can't play" badge
  * knows: the check is the real decoder, not a guess from the extension.
  */
+function LiveTransportButton({
+  paused,
+  onToggle,
+  overlay = false,
+}: {
+  paused: boolean
+  onToggle: () => void
+  overlay?: boolean
+}): React.ReactElement {
+  return (
+    <button
+      type="button"
+      onClick={(event) => {
+        event.stopPropagation()
+        onToggle()
+      }}
+      onPointerDown={(event) => event.stopPropagation()}
+      title={paused ? 'Play' : 'Pause'}
+      aria-label={paused ? 'Play video' : 'Pause video'}
+      className={
+        overlay
+          ? 'absolute bottom-1.5 left-1/2 z-10 flex h-8 w-8 -translate-x-1/2 items-center justify-center rounded-full border border-white/20 bg-black/70 text-white hover:bg-black/85'
+          : 'grid h-[22px] w-[22px] place-items-center rounded-md border border-teal-500/40 bg-black/30 text-teal-200 hover:bg-teal-500/20 hover:text-white'
+      }
+    >
+      {paused
+        ? <Play size={overlay ? 13 : 11} fill="currentColor" aria-hidden="true" />
+        : <Pause size={overlay ? 13 : 11} fill="currentColor" aria-hidden="true" />}
+    </button>
+  )
+}
+
 function Thumb({
   item,
   className,
@@ -1046,11 +1730,22 @@ function Thumb({
 }): React.ReactElement {
   const src = overlayMediaUrl(item.path)
   if (item.kind === 'image') {
-    return <img src={src} alt="" className={className} style={style} onError={onError} loading="lazy" />
+    return (
+      <img
+        src={src}
+        alt=""
+        draggable={false}
+        className={className}
+        style={style}
+        onError={onError}
+        loading="lazy"
+      />
+    )
   }
   return (
     <video
       src={src}
+      draggable={false}
       className={className}
       style={style}
       muted={muted ?? true}
@@ -1070,7 +1765,7 @@ function EmptyState({ onChoose }: { onChoose: () => void }): React.ReactElement 
         </div>
         <p className="text-[15px] font-semibold text-white">Choose your backgrounds folder</p>
         <p className="text-xs leading-relaxed text-slate-400">
-          Point ProAutomate at the folder your motion backgrounds already live in. Files
+          Point Kairo at the folder your motion backgrounds already live in. Files
           already there stay put. Adding media to a playlist copies new files in.
         </p>
         <button type="button" onClick={onChoose} className="btn-primary mt-1 text-xs">

@@ -6,6 +6,7 @@ import {
 } from "@shared/overlay-content";
 import { renderOverlayHTML } from "@shared/overlay-template";
 import { ScaledOverlayPreview } from "@/components/overlay/ScaledOverlayPreview";
+import type { OverlayVideoTime } from "@shared/overlay-fit";
 import type { OverlayTheme, ScriptureResult } from "@shared/ipc";
 import type { SendStatus } from "./types";
 
@@ -15,6 +16,7 @@ export interface VerseThemePreviewProps {
   showTranslation: boolean;
   showVerseNumbers: boolean;
   maxVerses: number;
+  responsive?: boolean;
   width: number;
   height: number;
   /** Currently selected card in the loaded passage / playlist. */
@@ -31,6 +33,10 @@ export interface VerseThemePreviewProps {
    * itself matches NDI. Hide it on the operator live-output monitor.
    */
   chrome?: boolean;
+  /** Pause a live video background without rebuilding the slide. */
+  paused?: boolean;
+  seekTo?: { token: number; seconds: number } | null;
+  onTime?: (time: OverlayVideoTime) => void;
 }
 
 export function VerseThemePreview({
@@ -40,6 +46,7 @@ export function VerseThemePreview({
   maxVerses,
   width,
   height,
+  responsive = false,
   isActive = false,
   isFocused,
   isLive,
@@ -47,6 +54,9 @@ export function VerseThemePreview({
   onSelect,
   cardRef,
   chrome = true,
+  paused = false,
+  seekTo = null,
+  onTime,
 }: VerseThemePreviewProps): React.ReactElement {
   const reference = formatCardReference(result.reference);
   const text = formatOverlayVerseText(result.verses, {
@@ -74,12 +84,17 @@ export function VerseThemePreview({
       ref={cardRef}
       type="button"
       className={cn(
-        "group relative flex shrink-0 flex-col overflow-hidden rounded-xl border text-left shadow-sm transition-all focus-visible:outline-none",
-        isActive
-          ? "border-teal-400 ring-2 ring-teal-400/70"
-          : "border-surface-border/70 hover:border-slate-500 focus-visible:ring-1 focus-visible:ring-surface-border",
+        "group relative flex shrink-0 flex-col overflow-hidden text-left transition-all focus-visible:outline-none",
+        chrome
+          ? cn(
+              "rounded-xl border shadow-sm",
+              isActive
+                ? "border-teal-400 ring-2 ring-teal-400/70"
+                : "border-surface-border/70 hover:border-slate-500 focus-visible:ring-1 focus-visible:ring-surface-border",
+            )
+          : "rounded-none border-0 shadow-none",
       )}
-      style={{ width }}
+      style={{ width: responsive ? "100%" : width }}
       onClick={onSelect}
       aria-pressed={isActive || isLive || isFocused}
       aria-current={isActive ? "true" : undefined}
@@ -87,7 +102,7 @@ export function VerseThemePreview({
     >
       <div
         className="relative w-full overflow-hidden"
-        style={{ height }}
+        style={responsive ? { aspectRatio: `${width} / ${height}` } : { height }}
         aria-hidden={!html}
       >
         {html ? (
@@ -95,6 +110,9 @@ export function VerseThemePreview({
             html={html}
             autoFit={theme.layout.autoFitText}
             fill
+            paused={paused}
+            seekTo={seekTo}
+            onTime={onTime}
           />
         ) : (
           <div className="flex h-full items-center justify-center px-3">

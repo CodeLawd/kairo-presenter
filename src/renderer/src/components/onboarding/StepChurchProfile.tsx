@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
-import { X } from 'lucide-react'
+import { X } from '@/icons'
 import type { ChurchServiceTime } from '@shared/ipc'
 import { useBootstrapStore } from '@/bootstrap/useBootstrapStore'
+import { useAccountStore } from '@/stores/useAccountStore'
 import { CHURCH_ROLES, LOCAL_ZONE, timezoneOptions } from './church-options'
 import StepShell from './StepShell'
 import TimezoneSelect from './TimezoneSelect'
@@ -23,8 +24,9 @@ const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 export default function StepChurchProfile(): React.ReactElement {
   const church = useBootstrapStore((s) => s.settings.church)
   const patchSettings = useBootstrapStore((s) => s.patchSettings)
+  const orgName = useAccountStore((s) => s.session.org?.name ?? '')
 
-  const [name, setName] = useState(church.name)
+  const [name, setName] = useState(church.name || orgName)
   const [showTimes, setShowTimes] = useState(church.serviceTimes.length > 0)
 
   const zones = useMemo(timezoneOptions, [])
@@ -52,6 +54,16 @@ export default function StepChurchProfile(): React.ReactElement {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [church.timezone])
 
+  // Signup already named the org; write that into the local profile if this
+  // machine has none, so Continue records it instead of skipping a filled field.
+  useEffect(() => {
+    if (church.name.trim()) return
+    const seeded = name.trim()
+    if (!seeded) return
+    void save({ name: seeded })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const addServiceTime = (): void => {
     setShowTimes(true)
     void save({
@@ -72,7 +84,7 @@ export default function StepChurchProfile(): React.ReactElement {
   }
 
   return (
-    <StepShell title="Your church" blurb="Names this setup. Nothing here leaves your machine.">
+    <StepShell title="Your church" blurb="This is the name of your organization — it follows this account to every machine in the booth.">
       <div>
         <label className="label" htmlFor="ob-church-name">Church name</label>
         <input

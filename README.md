@@ -1,4 +1,4 @@
-# ProAutomate
+# Kairo
 
 Electron desktop app for ProPresenter church tech automation: live transcription,
 scripture detection and lookup, lyrics, and an NDI overlay.

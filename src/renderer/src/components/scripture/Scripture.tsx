@@ -1,13 +1,12 @@
+import { useImportRequest } from '@/hooks/useImportRequest'
 import { useState, useRef, useCallback, useEffect } from "react";
-import { AlertCircle, BookOpen, Loader, Upload } from "lucide-react";
+import { AlertCircle, BookOpen, Loader, Upload } from '@/icons';
 import { Button } from "@/components/ui/button";
 import { useAppStore } from "@/stores/useAppStore";
 import {
   appendScriptureResultsToPlan,
-  completeSermonPlanReview,
   insertScriptureResultInPlan,
   reorderSermonPlanItem,
-  sermonPlanNeedsReview,
 } from "@shared/ipc";
 import type {
   ScriptureResult,
@@ -15,6 +14,8 @@ import type {
   ScriptureTranslation,
   ScriptureTranslationOption,
   SermonPlan,
+  SermonNotesAnalysis,
+  SermonPlanDraft,
   SermonScriptureItem,
 } from "@shared/ipc";
 import {
@@ -28,9 +29,12 @@ import {
   shouldLiveSuggestScriptureQuery,
 } from "@shared/scripture-query";
 import { PlaylistSidebar } from "./PlaylistSidebar";
-import { PlanReviewPanel } from "./PlanReviewPanel";
 import { QueueDock } from "./QueueDock";
 import { ScriptureSearchBar } from "./ScriptureSearchBar";
+import { SermonNotesReviewModal } from "./SermonNotesReviewModal";
+import { LiveOutputRail } from "@/components/operator/LiveOutputRail";
+import { BoothWorkspace } from "@/components/layout/BoothWorkspace";
+import { useLiveRailWidth } from "@/components/operator/useLiveRailWidth";
 import { VerseCardGrid } from "./VerseCardGrid";
 import {
   CARD_BASE_HEIGHT,
@@ -49,6 +53,7 @@ import {
   normalizeOverlaySettings,
 } from "@shared/overlay-defaults";
 import { liveOverlayTheme } from "@shared/overlay-outputs";
+import { pushScriptureFromTab } from "@shared/scripture-tab-presentation";
 import {
   resolveSermonPlanItems,
   translationFallbackOrder,
@@ -79,6 +84,7 @@ function mapCardStatus(
 }
 
 export default function Scripture(): React.ReactElement {
+  const liveRail = useLiveRailWidth();
   const [query, setQuery] = useState("");
   const [rows, setRows] = useState<ResultRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -88,6 +94,7 @@ export default function Scripture(): React.ReactElement {
   const bootstrapSettings = useBootstrapStore((s) => s.settings);
   const bootstrapTranslations = useBootstrapStore((s) => s.translations);
   const bootstrapPlans = useBootstrapStore((s) => s.sermonPlans);
+  const livePlan = useBootstrapStore((s) => s.livePlan);
   const apiBibleAuth = useBootstrapStore((s) => s.apiBibleAuth);
   const bootstrapPhase = useBootstrapStore((s) => s.phase);
 
@@ -97,18 +104,14 @@ export default function Scripture(): React.ReactElement {
   const [translations, setTranslations] =
     useState<ScriptureTranslationOption[]>(bootstrapTranslations);
   const [plans, setPlans] = useState<SermonPlan[]>(bootstrapPlans);
-  const [activePlan, setActivePlan] = useState<SermonPlan | null>(null);
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const [cardsSource, setCardsSource] = useState<"search" | "plan" | null>(null);
-  const [draggingItemId, setDraggingItemId] = useState<string | null>(null);
-  const [dragOverItemId, setDragOverItemId] = useState<string | null>(null);
-  const [dropPosition, setDropPosition] = useState<"before" | "after">("before");
   const [pendingDeletePlanId, setPendingDeletePlanId] = useState<string | null>(null);
   const [renamingPlanId, setRenamingPlanId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [creatingPlaylist, setCreatingPlaylist] = useState(false);
   const [importing, setImporting] = useState(false);
-  const [savingReview, setSavingReview] = useState(false);
+  const [importDraft, setImportDraft] = useState<SermonPlanDraft | null>(null);
   const [searchSuggestions, setSearchSuggestions] = useState<ScriptureResult[]>([]);
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const [activeSuggestion, setActiveSuggestion] = useState(0);
@@ -150,8 +153,8 @@ export default function Scripture(): React.ReactElement {
   const cardHeight = Math.round(CARD_BASE_HEIGHT * (cardZoom / 100));
   const cards = flattenResultRows(rows);
   const selectedPlan = plans.find((plan) => plan.id === selectedPlanId) ?? null;
-  const showQueueDock = !activePlan && rows.length > 0;
-  const showVerseGrid = !activePlan && rows.length > 0;
+  const showQueueDock = rows.length > 0;
+  const showVerseGrid = rows.length > 0;
   const openPlanItems: SermonScriptureItem[] =
     cardsSource === "plan" && selectedPlan
       ? selectedPlan.items
@@ -327,7 +330,6 @@ export default function Scripture(): React.ReactElement {
           ),
         );
         setCardsSource("search");
-        setActivePlan(null);
         setAddedAllToPlan(null);
         setActiveCardIndex(0);
         if (results.length === 0) {
@@ -356,7 +358,6 @@ export default function Scripture(): React.ReactElement {
     setQuery(result.reference);
     setRows([createResultRow(result, { id: `suggest-${result.reference}` })]);
     setCardsSource("search");
-    setActivePlan(null);
     setError(null);
     setSuggestionsOpen(false);
     setSearchSuggestions([]);
@@ -496,15 +497,7 @@ export default function Scripture(): React.ReactElement {
     setFocusHighlight(false);
     setError(null);
 
-    if (sermonPlanNeedsReview(refreshed)) {
-      setActivePlan(refreshed);
-      setCardsSource("plan");
-      setRows([]);
-      return;
-    }
-
     // Every playlist item is a row — including multi-verse ranges
-    setActivePlan(null);
     setCardsSource("plan");
     setRows(
       refreshed.items.map((item) =>
@@ -579,12 +572,29 @@ export default function Scripture(): React.ReactElement {
     try {
       const draft = await window.api.scripture.importSermonNotes();
       if (!draft) return;
-      if (draft.items.length === 0) {
-        setError("No scripture references were found in that document.");
-        return;
-      }
+      setImportDraft(draft);
+    } catch (importError) {
+      setError(
+        (importError as Error).message || "Could not import sermon notes.",
+      );
+    } finally {
+      setImporting(false);
+    }
+  }, []);
+
+  useImportRequest(['sermon'], handleImport, !importing && !importDraft);
+
+  const confirmImport = useCallback(async (
+    title: string,
+    _text: string,
+    analysis: SermonNotesAnalysis,
+  ): Promise<void> => {
+    if (!importDraft) return;
+    setImporting(true);
+    setError(null);
+    try {
       const resolvedItems = await resolveSermonPlanItems(
-        draft.items.map((item) => ({
+        analysis.items.map((item) => ({
           ...item,
           verses: [],
           available: false,
@@ -597,13 +607,16 @@ export default function Scripture(): React.ReactElement {
       const now = Date.now();
       const plan = await window.api.scripture.saveSermonPlan({
         id: `sermon-${now}`,
-        title: draft.title,
-        sourceFileName: draft.sourceFileName,
+        title,
+        sourceFileName: importDraft.sourceFileName,
+        sourceText: _text,
         items: resolvedItems,
         createdAt: now,
         updatedAt: now,
       });
       setPlans((previous) => [plan, ...previous]);
+      useBootstrapStore.getState().setSermonPlans([plan, ...plans.filter((item) => item.id !== plan.id)]);
+      setImportDraft(null);
       await openPlan(plan);
     } catch (importError) {
       setError(
@@ -612,7 +625,18 @@ export default function Scripture(): React.ReactElement {
     } finally {
       setImporting(false);
     }
-  }, [openPlan, translation, translations]);
+  }, [importDraft, openPlan, plans, translation, translations]);
+
+  const useSelectedPlanForService = useCallback(async (): Promise<void> => {
+    if (!selectedPlan) return;
+    setError(null);
+    try {
+      const state = await window.api.scripture.setLivePlan(selectedPlan.id);
+      useBootstrapStore.getState().setLivePlan(state);
+    } catch (selectionError) {
+      setError((selectionError as Error).message || "Could not select this playlist for the service.");
+    }
+  }, [selectedPlan]);
 
   const deletePlan = useCallback(
     async (planId: string): Promise<void> => {
@@ -627,14 +651,13 @@ export default function Scripture(): React.ReactElement {
         setRenamingPlanId(null);
         setRenameDraft("");
       }
-      if (activePlan?.id === planId || (cardsSource === "plan" && selectedPlanId === planId)) {
-        setActivePlan(null);
+      if (cardsSource === "plan" && selectedPlanId === planId) {
         setRows([]);
         setCardsSource(null);
       }
       if (scriptureActivePlanId === planId) clearScriptureViewState();
     },
-    [activePlan, cardsSource, clearScriptureViewState, renamingPlanId, scriptureActivePlanId, selectedPlanId],
+    [cardsSource, clearScriptureViewState, renamingPlanId, scriptureActivePlanId, selectedPlanId],
   );
 
   const startRenamePlan = useCallback((plan: SermonPlan): void => {
@@ -666,9 +689,6 @@ export default function Scripture(): React.ReactElement {
     setPlans((previous) =>
       previous.map((plan) => (plan.id === optimistic.id ? optimistic : plan)),
     );
-    setActivePlan((current) =>
-      current?.id === optimistic.id ? { ...current, title } : current,
-    );
     cancelRenamePlan();
 
     try {
@@ -676,13 +696,9 @@ export default function Scripture(): React.ReactElement {
       setPlans((previous) =>
         previous.map((plan) => (plan.id === saved.id ? saved : plan)),
       );
-      setActivePlan((current) => (current?.id === saved.id ? saved : current));
     } catch (saveError) {
       setPlans((previous) =>
         previous.map((plan) => (plan.id === target.id ? target : plan)),
-      );
-      setActivePlan((current) =>
-        current?.id === target.id ? target : current,
       );
       setError((saveError as Error).message || "Could not rename that playlist.");
     }
@@ -701,7 +717,6 @@ export default function Scripture(): React.ReactElement {
         items: [],
         createdAt: now,
         updatedAt: now,
-        reviewedAt: now,
       });
       setPlans((previous) => [
         plan,
@@ -717,7 +732,6 @@ export default function Scripture(): React.ReactElement {
       setAddedAllToPlan(null);
       setRows([]);
       setCardsSource("plan");
-      setActivePlan(null);
       setActiveCardIndex(0);
       setCueHighlight(false);
       setFocusHighlight(false);
@@ -729,33 +743,6 @@ export default function Scripture(): React.ReactElement {
       setCreatingPlaylist(false);
     }
   }, [creatingPlaylist, setScriptureViewState]);
-
-  const finishReview = useCallback(async (): Promise<void> => {
-    if (!activePlan || savingReview) return;
-    const completed = completeSermonPlanReview(activePlan);
-    setSavingReview(true);
-    setActivePlan(null);
-    setPlans((previous) =>
-      previous.map((plan) => (plan.id === completed.id ? completed : plan)),
-    );
-    try {
-      const saved = await window.api.scripture.saveSermonPlan(completed);
-      setPlans((previous) =>
-        previous.map((plan) => (plan.id === saved.id ? saved : plan)),
-      );
-      await openPlan(saved);
-    } catch (saveError) {
-      setActivePlan(activePlan);
-      setPlans((previous) =>
-        previous.map((plan) => (plan.id === activePlan.id ? activePlan : plan)),
-      );
-      setError(
-        (saveError as Error).message || "Could not save review completion.",
-      );
-    } finally {
-      setSavingReview(false);
-    }
-  }, [activePlan, openPlan, savingReview]);
 
   const addAllResultsToPlaylist = useCallback(async (): Promise<void> => {
     const target = plans.find((plan) => plan.id === selectedPlanId);
@@ -782,46 +769,69 @@ export default function Scripture(): React.ReactElement {
     }
   }, [openPlan, plans, rows, selectedPlanId]);
 
+  /** Reorders the open playlist from the sidebar, rows and all. */
   const reorderPlanItem = useCallback(
     async (
       draggedId: string,
       targetId: string,
       position: "before" | "after",
     ): Promise<void> => {
-      if (!activePlan || draggedId === targetId) return;
+      if (draggedId === targetId || cardsSource !== "plan") return;
+      const openPlanRecord = plans.find((plan) => plan.id === selectedPlanId);
+      if (!openPlanRecord) return;
+
       const optimistic = reorderSermonPlanItem(
-        activePlan,
+        openPlanRecord,
         draggedId,
         targetId,
         position,
       );
-      if (optimistic === activePlan) return;
-      const previousPlan = activePlan;
-      setActivePlan(optimistic);
+      if (optimistic === openPlanRecord) return;
+
+      // Rows mirror plan items, so re-sort what is already on screen rather
+      // than re-resolving every passage through the Bible API.
+      const orderedRows = (current: ResultRow[]): ResultRow[] => {
+        const byItemId = new Map(
+          current.map((row) => [row.planItemId ?? row.id, row] as const),
+        );
+        const next = optimistic.items
+          .map((item) => byItemId.get(item.id))
+          .filter((row): row is ResultRow => row !== undefined);
+        return next.length === current.length ? next : current;
+      };
+
       setPlans((previous) =>
         previous.map((plan) => (plan.id === optimistic.id ? optimistic : plan)),
       );
+      setRows(orderedRows);
 
       try {
         const saved = await window.api.scripture.saveSermonPlan(optimistic);
-        setActivePlan(saved);
         setPlans((previous) =>
           previous.map((plan) => (plan.id === saved.id ? saved : plan)),
         );
       } catch (saveError) {
-        setActivePlan(previousPlan);
         setPlans((previous) =>
           previous.map((plan) =>
-            plan.id === previousPlan.id ? previousPlan : plan,
+            plan.id === openPlanRecord.id ? openPlanRecord : plan,
           ),
         );
+        setRows((current) => {
+          const byItemId = new Map(
+            current.map((row) => [row.planItemId ?? row.id, row] as const),
+          );
+          const reverted = openPlanRecord.items
+            .map((item) => byItemId.get(item.id))
+            .filter((row): row is ResultRow => row !== undefined);
+          return reverted.length === current.length ? reverted : current;
+        });
         setError(
           (saveError as Error).message ||
             "Could not save the new passage order.",
         );
       }
     },
-    [activePlan],
+    [cardsSource, plans, selectedPlanId],
   );
 
   const handleKeyDown = useCallback(
@@ -1095,9 +1105,16 @@ export default function Scripture(): React.ReactElement {
           source: "manual",
           triggerText: card.result.reference,
         };
-        await window.api.scripture.register(suggestion);
-        await window.api.scripture.approve(suggestion.id);
-        useAppStore.getState().markLiveOutput(card.result.reference);
+        await pushScriptureFromTab(window.api.scripture, suggestion);
+        const store = useAppStore.getState();
+        store.markLiveOutput(card.result.reference);
+        store.setLiveOutputPreview({
+          kind: "scripture",
+          reference: card.result.reference,
+          text: card.result.verses.map((verse) => verse.text).join(" "),
+          verses: card.result.verses,
+          translation: card.result.translation,
+        });
         setRows((prev) => mapCardStatus(prev, idx, "sent"));
         setTimeout(() => {
           setRows((prev) => mapCardStatus(prev, idx, "idle"));
@@ -1110,7 +1127,7 @@ export default function Scripture(): React.ReactElement {
   );
 
   useEffect(() => {
-    if (activePlan || cards.length === 0) return;
+    if (cards.length === 0) return;
 
     const handleQueueKeyboard = (event: KeyboardEvent): void => {
       const target = event.target as HTMLElement | null;
@@ -1170,7 +1187,6 @@ export default function Scripture(): React.ReactElement {
     return () => window.removeEventListener("keydown", handleQueueKeyboard);
   }, [
     activeCardIndex,
-    activePlan,
     cards.length,
     cardsSource,
     handleSend,
@@ -1193,13 +1209,23 @@ export default function Scripture(): React.ReactElement {
   }, [clearScriptureViewState]);
 
   return (
-    <div className="flex h-full min-h-0 w-full flex-1 overflow-hidden">
+    <>
+    <BoothWorkspace
+      rail={
+        <LiveOutputRail
+          width={liveRail.width}
+          onResizeStart={liveRail.onResizeStart}
+          onResizeKeyDown={liveRail.onResizeKeyDown}
+        />
+      }
+    >
+    <div className="flex h-full min-h-0 w-full flex-1 overflow-hidden bg-surface">
       <PlaylistSidebar
         plans={plans}
         selectedPlanId={selectedPlanId}
         openPlanItems={openPlanItems}
         activeItemId={activeItemId}
-        showItems={cardsSource === "plan" && !activePlan}
+        showItems={cardsSource === "plan"}
         renamingPlanId={renamingPlanId}
         renameDraft={renameDraft}
         pendingDeletePlanId={pendingDeletePlanId}
@@ -1215,6 +1241,9 @@ export default function Scripture(): React.ReactElement {
         onRequestDelete={setPendingDeletePlanId}
         onCancelDelete={() => setPendingDeletePlanId(null)}
         onConfirmDelete={(planId) => void deletePlan(planId)}
+        onReorderItem={(draggedId, targetId, position) =>
+          void reorderPlanItem(draggedId, targetId, position)
+        }
         onSelectedPlanChange={(planId) => {
           setSelectedPlanId(planId);
           setAddedAllToPlan(null);
@@ -1222,7 +1251,7 @@ export default function Scripture(): React.ReactElement {
       />
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <div className="shrink-0 space-y-4 border-b border-surface-border/70 bg-surface-secondary/95 px-5 pt-5 pb-4 backdrop-blur-xl lg:px-6">
+        <div className="shrink-0 space-y-4 border-b border-surface-border bg-surface px-5 pb-4 pt-5 lg:px-6">
           <div className="flex items-start justify-between gap-4">
             <div>
               <h1 className="page-header">Scripture</h1>
@@ -1230,14 +1259,27 @@ export default function Scripture(): React.ReactElement {
                 Search verses or prepare a reusable sermon playlist
               </p>
             </div>
-            <Button variant="outline" onClick={() => void handleImport()} disabled={importing}>
-              {importing ? (
-                <Loader data-icon="inline-start" className="animate-spin" />
-              ) : (
-                <Upload data-icon="inline-start" />
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {selectedPlan && (
+                <Button
+                  variant={livePlan?.planId === selectedPlan.id ? "secondary" : "default"}
+                  onClick={() => void useSelectedPlanForService()}
+                  disabled={livePlan?.planId === selectedPlan.id}
+                  title="Use this playlist to guide live scripture detection"
+                >
+                  <BookOpen data-icon="inline-start" />
+                  {livePlan?.planId === selectedPlan.id ? "In use for this service" : "Use for this service"}
+                </Button>
               )}
-              {importing ? "Extracting…" : "Import sermon notes"}
-            </Button>
+              <Button variant="outline" onClick={() => void handleImport()} disabled={importing}>
+                {importing ? (
+                  <Loader data-icon="inline-start" className="animate-spin" />
+                ) : (
+                  <Upload data-icon="inline-start" />
+                )}
+                {importing ? "Extracting…" : "Import sermon notes"}
+              </Button>
+            </div>
           </div>
 
           <ScriptureSearchBar
@@ -1272,7 +1314,7 @@ export default function Scripture(): React.ReactElement {
 
           {shouldShowApiBibleWarning(
             apiBibleAuth,
-            Boolean(bootstrapSettings.stt.bibleApiKey),
+            Boolean(bootstrapSettings.secretsConfigured.bible),
             bootstrapPhase === 'ready' || bootstrapPhase === 'ready-with-warnings',
           ) &&
             translation === "NKJV" &&
@@ -1318,24 +1360,7 @@ export default function Scripture(): React.ReactElement {
           style={{ scrollbarGutter: "stable" }}
         >
           <div className="w-full space-y-4 px-5 py-4 lg:px-6">
-            {activePlan && (
-              <PlanReviewPanel
-                activePlan={activePlan}
-                draggingItemId={draggingItemId}
-                dragOverItemId={dragOverItemId}
-                dropPosition={dropPosition}
-                savingReview={savingReview}
-                onFinishReview={() => void finishReview()}
-                onDraggingItemIdChange={setDraggingItemId}
-                onDragOverItemIdChange={setDragOverItemId}
-                onDropPositionChange={setDropPosition}
-                onReorder={(draggedId, targetId, position) =>
-                  void reorderPlanItem(draggedId, targetId, position)
-                }
-              />
-            )}
-
-            {!activePlan && rows.length === 0 && !loading && !error && (
+            {rows.length === 0 && !loading && !error && (
               <div className="double-bezel-outer">
                 <div className="double-bezel-inner flex flex-col items-center py-14 text-center">
                   <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-surface-secondary/60">
@@ -1446,5 +1471,16 @@ export default function Scripture(): React.ReactElement {
         )}
       </div>
     </div>
+    </BoothWorkspace>
+
+      {importDraft && (
+        <SermonNotesReviewModal
+          draft={importDraft}
+          confirming={importing}
+          onCancel={() => setImportDraft(null)}
+          onConfirm={(title, text, analysis) => void confirmImport(title, text, analysis)}
+        />
+      )}
+    </>
   );
 }

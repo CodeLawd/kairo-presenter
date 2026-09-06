@@ -8,6 +8,7 @@ import type {
   LyricsSong,
   OnboardingState,
   OrchestratorStatus,
+  SessionSnapshot,
   ProPresenterStatus,
   ScriptureTranslationOption,
   SermonPlan,
@@ -18,7 +19,7 @@ import type {
 export const BOOTSTRAP_TIMEOUT_MS = 8_000
 
 export interface BootstrapLoaders {
-  settings: () => Promise<AppSettings>
+  settings: () => Promise<AppSettings | import('@shared/ipc').SettingsWithSecretsStatus>
   orchestrator: () => Promise<OrchestratorStatus>
   propresenter: () => Promise<ProPresenterStatus>
   transcription: () => Promise<TranscriptResult[]>
@@ -27,11 +28,12 @@ export interface BootstrapLoaders {
   livePlan: () => Promise<LivePlanState>
   lyrics: () => Promise<LyricsSong[]>
   onboarding: () => Promise<OnboardingState>
+  account: () => Promise<SessionSnapshot>
 }
 
 export interface BootstrapStep {
   resource: BootstrapResource
-  /** Sentence fragment shown as "Loading {label}…". */
+  /** Full sentence shown on the splash while this resource is still pending. */
   label: string
 }
 
@@ -41,15 +43,16 @@ export interface BootstrapStep {
  * they hydrate in the background once the interface is open.
  */
 export const BOOTSTRAP_STEPS: BootstrapStep[] = [
-  { resource: 'settings', label: 'settings' },
-  { resource: 'orchestrator', label: 'automation status' },
-  { resource: 'propresenter', label: 'ProPresenter status' },
-  { resource: 'transcription', label: 'transcript history' },
-  { resource: 'translations', label: 'Bible translations' },
-  { resource: 'sermonPlans', label: 'scripture playlists' },
-  { resource: 'livePlan', label: 'live playlist' },
-  { resource: 'lyrics', label: 'song library' },
-  { resource: 'onboarding', label: 'setup progress' },
+  { resource: 'settings', label: 'Getting everything ready…' },
+  { resource: 'orchestrator', label: 'Starting automation…' },
+  { resource: 'propresenter', label: 'Checking ProPresenter…' },
+  { resource: 'transcription', label: 'Loading transcript history…' },
+  { resource: 'translations', label: 'Loading scriptures…' },
+  { resource: 'sermonPlans', label: 'Importing scripture playlists…' },
+  { resource: 'livePlan', label: 'Preparing live playlist…' },
+  { resource: 'lyrics', label: 'Getting lyrics ready…' },
+  { resource: 'onboarding', label: 'Checking setup…' },
+  { resource: 'account', label: 'Loading your account…' },
 ]
 
 export interface RunBootstrapOptions {
@@ -76,6 +79,15 @@ const EMPTY: Record<BootstrapResource, unknown> = {
     completedAt: 0,
     source: 'legacy',
   } satisfies OnboardingState,
+  // Signed out is the safe neutral: the app is fully usable either way, and a
+  // failed read must never present someone as signed in.
+  account: {
+    state: 'signed-out',
+    user: null,
+    org: null,
+    orgs: [],
+    lastSyncedAt: null,
+  } satisfies SessionSnapshot,
 }
 
 /**
@@ -102,10 +114,10 @@ export async function runBootstrap(
   }
   const nextLabel = (): string => {
     const pending = BOOTSTRAP_STEPS.find((step) => !settled.has(step.resource))
-    return pending ? `Loading ${pending.label}…` : 'Ready'
+    return pending ? pending.label : 'Ready'
   }
 
-  emit('Starting ProAutomate…')
+  emit('Getting everything ready…')
 
   const tasks = BOOTSTRAP_STEPS.map(async (step) => {
     try {
@@ -134,7 +146,7 @@ export async function runBootstrap(
     settled.add(step.resource)
     errors.push({
       resource: step.resource,
-      message: `Loading ${step.label} timed out after ${timeoutMs}ms.`,
+      message: `${step.label.replace(/…$/, '')} timed out after ${timeoutMs}ms.`,
     })
   }
   emit('Ready')
@@ -152,6 +164,7 @@ export async function runBootstrap(
     livePlan: read('livePlan'),
     lyrics: read('lyrics'),
     onboarding: read('onboarding'),
+    account: read('account'),
     errors,
     completedAt: Date.now(),
   }

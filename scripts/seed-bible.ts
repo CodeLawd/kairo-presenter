@@ -248,7 +248,7 @@ async function main(): Promise<void> {
   const { outputPath, translationIds } = parseArgs()
 
   console.log('\n═══════════════════════════════════════════════')
-  console.log('  ProAutomate Bible Database Seeder')
+  console.log('  Kairo Bible Database Seeder')
   console.log('═══════════════════════════════════════════════\n')
   console.log(`  Output: ${outputPath}`)
   console.log(`  Translations: ${translationIds.join(', ')}\n`)

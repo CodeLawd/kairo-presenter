@@ -7,6 +7,19 @@ export interface PPItemId {
   index: number
 }
 
+/** Tolerant envelopes used by the versioned ProPresenter resource endpoints. */
+export interface PPResourceCollectionEnvelope {
+  items?: unknown[]
+  collections?: unknown[]
+  data?: unknown[]
+  resources?: unknown[]
+}
+
+export interface PPBinaryAsset {
+  mimeType: string
+  bytes: Uint8Array
+}
+
 // ─── Version ──────────────────────────────────────────────────────────────────
 
 export interface PPVersionResponse {
@@ -137,6 +150,8 @@ export interface PPCreatePresentationRequest {
     name: string
     uuid?: string
   }
+  /** Existing ProPresenter theme to apply to the newly-created presentation. */
+  theme?: PPItemId
   slide_groups: {
     id: { name: string }
     slides: {

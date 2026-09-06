@@ -1,21 +1,30 @@
 import { useState } from 'react'
 import {
   BookOpen,
+  FileText,
   CircleGauge,
   Eraser,
   Music2,
   Palette,
+  Pause,
+  Play,
   Radio,
   Settings,
   Volume2,
-} from 'lucide-react'
+  Cloud,
+} from '@/icons'
 import type { NavRoute } from '@/App'
 import { useAppStore } from '@/stores/useAppStore'
+import { useAccountStore } from '@/stores/useAccountStore'
+import { describeSessionState } from '@shared/cloud/auth-state'
+import { useTracksPlaybackStore } from '@/stores/useTracksPlaybackStore'
+import { clearLiveAll } from '@/lib/clear-live-output'
 
 const workspaces: Array<{ id: NavRoute; label: string; icon: typeof CircleGauge }> = [
   { id: 'operator', label: 'Operator', icon: CircleGauge },
   { id: 'scripture', label: 'Scripture', icon: BookOpen },
   { id: 'lyrics', label: 'Lyrics', icon: Music2 },
+  { id: 'documents', label: 'Documents', icon: FileText },
   { id: 'theme', label: 'Theme', icon: Palette },
 ]
 
@@ -25,6 +34,10 @@ interface AppShellProps {
   onOpenSettings: () => void
   /** Route-specific controls rendered inline in the top bar (see OperatorToolbar). */
   toolbar?: React.ReactNode
+}
+
+function useCloudStatus(): ReturnType<typeof describeSessionState> {
+  return describeSessionState(useAccountStore((s) => s.session))
 }
 
 function StatusItem({
@@ -46,13 +59,17 @@ function StatusItem({
   }[state]
 
   return (
-    <div className="no-drag flex h-8 items-center gap-2 border-l border-surface-border/70 px-3" title={`${label}: ${detail}`}>
+    <div
+      className="header-status no-drag group relative flex h-8 shrink-0 items-center gap-2 rounded px-3 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/30"
+      tabIndex={0}
+      aria-label={`${label}: ${detail}`}
+    >
       <Icon size={13} className="text-zinc-500" aria-hidden="true" />
       <span className={`h-1.5 w-1.5 rounded-full ${dotClass}`} aria-hidden="true" />
-      <div className="hidden min-w-0 xl:block">
-        <p className="text-[11px] font-semibold leading-none text-zinc-300">{label}</p>
-        <p className="mt-1 max-w-24 truncate text-[10px] leading-none text-zinc-600">{detail}</p>
-      </div>
+      <span className="header-status-label whitespace-nowrap text-[11px] font-medium text-zinc-400">{label}</span>
+      <span className="pointer-events-none absolute right-0 top-full z-50 mt-2 hidden w-max max-w-72 rounded-lg border border-surface-border bg-surface-elevated px-3 py-2 text-xs text-zinc-200 shadow-xl group-hover:block group-focus-within:block">
+        {label}: {detail}
+      </span>
     </div>
   )
 }
@@ -65,7 +82,13 @@ export default function AppShell({
 }: AppShellProps): React.ReactElement {
   const { ppState, audioCapturing, audioDeviceName, liveOutputLabel, isTranscribing } =
     useAppStore()
+  const houseTrack = useTracksPlaybackStore((state) => {
+    const live = state.library.items.find((item) => item.id === state.library.liveId)
+    if (!live) return null
+    return { name: live.name, paused: state.library.livePaused || state.ended }
+  })
   const [clearing, setClearing] = useState(false)
+  const cloud = useCloudStatus()
   /** Session is live while the transcript pipeline runs; show output ref when one is up. */
   const isLive = isTranscribing || Boolean(liveOutputLabel?.trim())
   const liveDetail = liveOutputLabel?.trim() || (isTranscribing ? 'Listening' : null)
@@ -74,24 +97,15 @@ export default function AppShell({
     if (clearing) return
     setClearing(true)
     try {
-      // Mechanism-aware clear (NDI / message / library) — clearAll alone leaves
-      // overlays on screen when the last push was not a presentation layer.
-      if (ppState === 'connected') {
-        await window.api.propresenter.clearOverlay()
-      }
-      useAppStore.getState().clearScriptureLiveOutput()
-    } catch (err) {
-      console.error(err)
-      // Still drop local LIVE state so the booth UI matches “nothing on output”.
-      useAppStore.getState().clearScriptureLiveOutput()
+      await clearLiveAll()
     } finally {
       setClearing(false)
     }
   }
 
   return (
-    <header className="drag-region flex h-14 shrink-0 items-end border-b border-surface-border bg-surface px-3 pb-2 pl-20">
-      <div className="no-drag flex items-center gap-1" role="tablist" aria-label="Workspaces">
+    <header className="app-header drag-region shrink-0 border-b border-surface-border bg-surface">
+      <div className="header-navigation no-drag flex min-w-0 items-center gap-1" role="tablist" aria-label="Workspaces">
         {workspaces.map(({ id, label, icon: Icon }) => {
           const active = currentRoute === id
           return (
@@ -102,11 +116,11 @@ export default function AppShell({
               aria-selected={active}
               onClick={() => onNavigate(id)}
               className={[
-                'flex h-8 items-center gap-2 rounded px-3 text-xs font-medium transition-colors duration-150',
-                'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-teal-400',
+                'flex h-8 shrink-0 items-center gap-2 whitespace-nowrap rounded-lg px-3 text-xs font-medium transition-colors duration-150',
+                'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/30',
                 active
-                  ? 'bg-zinc-800 text-zinc-100'
-                  : 'text-zinc-500 hover:bg-zinc-900 hover:text-zinc-200',
+                  ? 'bg-white/10 text-zinc-50'
+                  : 'text-zinc-500 hover:bg-white/5 hover:text-zinc-200',
               ].join(' ')}
             >
               <Icon size={14} aria-hidden="true" />
@@ -116,16 +130,20 @@ export default function AppShell({
         })}
       </div>
 
-      <div className="min-w-4 flex-1" aria-hidden="true" />
+      <div className="header-toolbar min-w-0">{toolbar}</div>
 
-      {toolbar}
-
-      <div className="ml-2 flex items-center">
+      <div className="header-statuses flex items-center" aria-label="Service statuses">
         <StatusItem
           label="ProPresenter"
           detail={ppState === 'connected' ? 'Connected' : ppState === 'connecting' ? 'Connecting' : 'Offline'}
           state={ppState === 'connected' ? 'ready' : ppState === 'connecting' ? 'warning' : 'offline'}
           icon={Radio}
+        />
+        <StatusItem
+          label="Account"
+          detail={cloud.detail}
+          state={cloud.tone === 'good' ? 'ready' : cloud.tone === 'warn' ? 'warning' : 'offline'}
+          icon={Cloud}
         />
         <StatusItem
           label="Audio"
@@ -135,13 +153,26 @@ export default function AppShell({
         />
       </div>
 
-      <div className="no-drag ml-2 flex items-center gap-1 border-l border-surface-border pl-2">
+      <div className="header-live no-drag flex shrink-0 items-center gap-1 border-l border-white/10 pl-2">
+        {houseTrack && (
+          <button
+            type="button"
+            onClick={() => void window.api.tracks.setPaused(!houseTrack.paused)}
+            title={houseTrack.paused ? `Play ${houseTrack.name}` : `Pause ${houseTrack.name}`}
+            className="flex h-8 max-w-[9rem] items-center gap-1.5 rounded border border-teal-500/35 bg-teal-500/10 px-2 text-[11px] font-semibold text-teal-300 hover:bg-teal-500/15"
+          >
+            {houseTrack.paused
+              ? <Play size={11} fill="currentColor" aria-hidden="true" />
+              : <Pause size={11} fill="currentColor" aria-hidden="true" />}
+            <span className="min-w-0 truncate">{houseTrack.name}</span>
+          </button>
+        )}
         <div
           className={[
-            'flex h-8 max-w-[10rem] items-center gap-2 rounded border px-2.5 text-[11px] font-semibold',
+            'header-live-label flex h-8 min-w-0 max-w-[10rem] items-center gap-2 rounded border px-2.5 text-[11px] font-semibold',
             isLive
               ? 'border-teal-500/40 bg-teal-500/10 text-teal-300'
-              : 'border-zinc-800 text-zinc-500',
+              : 'border-white/10 text-zinc-500',
           ].join(' ')}
           title={
             liveOutputLabel?.trim()
@@ -166,17 +197,17 @@ export default function AppShell({
           onClick={() => void clearOutput()}
           disabled={clearing}
           className={[
-            'flex h-8 items-center gap-1.5 rounded border px-2.5 text-[11px] font-semibold transition-colors duration-150',
+            'flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded border px-2.5 text-[11px] font-semibold transition-colors duration-150',
             'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-rose-400',
             isLive || ppState === 'connected'
               ? 'border-rose-900/50 text-rose-300 hover:border-rose-700 hover:bg-rose-950/40'
-              : 'border-zinc-800 text-zinc-500 hover:border-rose-900 hover:bg-rose-950/30 hover:text-rose-300',
+              : 'border-white/10 text-zinc-500 hover:border-rose-900 hover:bg-rose-950/30 hover:text-rose-300',
             'disabled:cursor-not-allowed disabled:opacity-40',
           ].join(' ')}
-          aria-label="Clear live output"
+          aria-label="Clear text and background"
           title={
             ppState === 'connected'
-              ? 'Clear ProPresenter / NDI overlay and local LIVE state'
+              ? 'Clear text and the dock background'
               : 'Clear local LIVE state (connect ProPresenter to clear the booth output)'
           }
         >
@@ -186,7 +217,7 @@ export default function AppShell({
         <button
           type="button"
           onClick={onOpenSettings}
-          className="flex h-8 w-8 items-center justify-center rounded text-zinc-500 transition-colors duration-150 hover:bg-zinc-900 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-teal-400"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded text-zinc-500 transition-colors duration-150 hover:bg-white/10 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/30"
           aria-label="Open Settings"
           title="Settings"
         >

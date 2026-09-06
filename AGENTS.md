@@ -4,7 +4,7 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 ## Project
 
-ProAutomate — Electron desktop app for ProPresenter church tech automation. Built with electron-vite + React + TypeScript + Tailwind CSS.
+Kairo — Electron desktop app for ProPresenter church tech automation. Built with electron-vite + React + TypeScript + Tailwind CSS.
 
 ## Commands
 
@@ -38,7 +38,7 @@ Three Electron process contexts, each built by electron-vite:
 
 - `nodeIntegration: false`, `contextIsolation: true` — never bypass.
 - `externalizeDepsPlugin()` on main + preload — Node deps (electron-store, electron-log) are NOT bundled; they must be in `dependencies`, not `devDependencies`.
-- Renderer deps (React, lucide-react, Zustand, Tailwind) are bundled by Vite — fine in `devDependencies`.
+- Renderer deps (React, @phosphor-icons/react, Zustand, Tailwind) are bundled by Vite — fine in `devDependencies`.
 - electron-store v8 (not v9+) — v9+ is ESM-only and breaks with Electron's CJS main process.
 - electron-log: import as `electron-log/main` in main process, `electron-log/renderer` in renderer if needed.
 

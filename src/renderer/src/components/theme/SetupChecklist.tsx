@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react'
-import { AlertCircle, Check, CircleDashed, Loader, X } from 'lucide-react'
+import { AlertCircle, Check, CircleDashed, Loader, X } from '@/icons'
 import { cn } from '@/lib/utils'
 import { findNdiOutput } from '@shared/overlay-outputs'
 import type { NdiStatus, OverlayOutput, PPLook } from '@shared/ipc'
@@ -119,7 +119,7 @@ export default function SetupChecklist({
       {
         id: 'ndi-input',
         label: 'ProPresenter video input bound',
-        hint: 'Add a Video Input in ProPresenter pointed at the “ProAutomate Scripture” NDI source, then pick it below. ProPresenter labels inputs “Input 1”, “Input 2” — it never shows the NDI source name, so you have to know which one you made.',
+        hint: 'Add a Video Input in ProPresenter pointed at the “Kairo Scripture” NDI source, then pick it below. ProPresenter labels inputs “Input 1”, “Input 2” — it never shows the NDI source name, so you have to know which one you made.',
         state: ndiStatus.ppInputConfigured ? 'ok' : 'todo',
       },
     )

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { makeOverlayOutput } from "../src/lib/overlay-defaults";
-import { firstLookId, getDispatchPlan, layerOfKind } from "../src/lib/overlay-outputs";
+import { chooseNdiVideoInputId, firstLookId, getDispatchPlan, layerOfKind } from "../src/lib/overlay-outputs";
 
 test("each output kind maps onto the ProPresenter layer it actually writes to", () => {
   assert.equal(layerOfKind("ndi"), "presentation");
@@ -77,4 +77,14 @@ test("themed NDI runs before a library match even when the library is ordered fi
     plan.groups[0].outputs.map((o) => o.kind),
     ["ndi", "library"],
   );
+});
+
+test("a confirmed durable NDI binding wins over name discovery", () => {
+  const inputs = [
+    { uuid: "discovered", name: "ProAutomate NDI" },
+    { uuid: "bound", name: "Camera feed" },
+  ];
+  assert.equal(chooseNdiVideoInputId("bound", "output-old", inputs), "bound");
+  assert.equal(chooseNdiVideoInputId("missing", "output-old", inputs), "output-old");
+  assert.equal(chooseNdiVideoInputId("", "", inputs), "discovered");
 });

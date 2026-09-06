@@ -1,69 +1,113 @@
-import { useState } from 'react'
 import { useBootstrapStore } from '@/bootstrap/useBootstrapStore'
+import { SecretKeyField, useSecretDraft } from '@/components/ui/secret-key-field'
 import StepShell from './StepShell'
 
 /**
- * Both keys are optional and independently skippable — the app searches
- * downloaded Bibles and runs manual mode without either. Keys are written
- * straight to the same settings the Settings modal edits; nothing is stored
- * anywhere else.
+ * Both keys are optional. Once saved they are write-only in the UI and sync
+ * to the church org vault when signed in.
  */
 export default function StepApiKeys(): React.ReactElement {
   const stt = useBootstrapStore((s) => s.settings.stt)
-  const patchSettings = useBootstrapStore((s) => s.patchSettings)
-  const [bibleKey, setBibleKey] = useState(stt.bibleApiKey)
-  const [deepgramKey, setDeepgramKey] = useState(stt.apiKey)
+  const configured = useBootstrapStore((s) => s.settings.secretsConfigured)
+  const bible = useSecretDraft(configured.bible)
+  const deepgram = useSecretDraft(configured.deepgram)
 
-  const save = async (patch: Partial<typeof stt>): Promise<void> => {
-    const next = { ...stt, ...patch }
-    patchSettings('stt', next)
-    await window.api.settings.set('stt', next)
+  const saveBible = async (): Promise<void> => {
+    const value = bible.takeSaveValue()
+    if (value === undefined) return
+    await window.api.settings.set('stt', {
+      ...stt,
+      bibleApiKey: value,
+    })
+    bible.markSaved()
+  }
+
+  const saveDeepgram = async (): Promise<void> => {
+    const value = deepgram.takeSaveValue()
+    if (value === undefined) return
+    await window.api.settings.set('stt', {
+      ...stt,
+      apiKey: value,
+      provider: value ? 'deepgram' : stt.provider,
+    })
+    deepgram.markSaved()
   }
 
   return (
     <StepShell
       title="API keys"
-      blurb="Both are optional — paste what you have, add the rest later in Settings."
+      blurb="Both are optional — paste what you have, add the rest later in Settings. Saved keys sync across your devices and cannot be viewed again."
     >
-      <div>
+      <div className="space-y-2">
         <label className="label" htmlFor="ob-bible-key">
           API.Bible <span className="text-slate-600">— online translations</span>
         </label>
-        <input
-          id="ob-bible-key"
-          className="input font-mono"
-          value={bibleKey}
-          onChange={(e) => setBibleKey(e.target.value)}
-          onBlur={() => void save({ bibleApiKey: bibleKey.trim() })}
+        <SecretKeyField
+          configured={configured.bible}
+          draft={bible.draft}
+          onDraftChange={bible.setDraft}
+          replacing={bible.replacing}
+          onReplace={bible.beginReplace}
+          onCancelReplace={bible.cancelReplace}
+          onRemove={() => {
+            void window.api.settings.set('stt', {
+              ...stt,
+              bibleApiKey: '',
+              clearKeys: ['bibleApiKey'],
+            })
+            bible.markSaved()
+          }}
           placeholder="Paste key"
-          spellCheck={false}
-          autoComplete="off"
+          aria-label="API.Bible key"
+          name="ob-bible-key"
         />
+        {(!configured.bible || bible.replacing) && (
+          <button
+            type="button"
+            className="text-[11px] font-semibold text-teal-400 hover:text-teal-300"
+            onClick={() => void saveBible()}
+          >
+            Save key
+          </button>
+        )}
       </div>
 
-      <div>
+      <div className="space-y-2">
         <label className="label" htmlFor="ob-deepgram-key">
           Deepgram <span className="text-slate-600">— live transcription</span>
         </label>
-        <input
-          id="ob-deepgram-key"
-          className="input font-mono"
-          value={deepgramKey}
-          onChange={(e) => setDeepgramKey(e.target.value)}
-          onBlur={() =>
-            void save({
-              apiKey: deepgramKey.trim(),
-              provider: deepgramKey.trim() ? 'deepgram' : stt.provider,
+        <SecretKeyField
+          configured={configured.deepgram}
+          draft={deepgram.draft}
+          onDraftChange={deepgram.setDraft}
+          replacing={deepgram.replacing}
+          onReplace={deepgram.beginReplace}
+          onCancelReplace={deepgram.cancelReplace}
+          onRemove={() => {
+            void window.api.settings.set('stt', {
+              ...stt,
+              apiKey: '',
+              clearKeys: ['apiKey'],
             })
-          }
+            deepgram.markSaved()
+          }}
           placeholder="Paste key"
-          spellCheck={false}
-          autoComplete="off"
+          aria-label="Deepgram API key"
+          name="ob-deepgram-key"
         />
+        {(!configured.deepgram || deepgram.replacing) && (
+          <button
+            type="button"
+            className="text-[11px] font-semibold text-teal-400 hover:text-teal-300"
+            onClick={() => void saveDeepgram()}
+          >
+            Save key
+          </button>
+        )}
       </div>
 
       <p className="text-[12px] leading-relaxed text-slate-600">
-        Without these, ProAutomate still runs: offline translations and manual scripture search work
+        Without these, Kairo still runs: offline translations and manual scripture search work
         with no keys at all.
       </p>
     </StepShell>

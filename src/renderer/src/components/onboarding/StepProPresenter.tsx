@@ -1,7 +1,9 @@
 import { useState } from 'react'
-import { Check, Loader } from 'lucide-react'
+import { Check, Loader } from '@/icons'
 import { isLocalProPresenterHost } from '@shared/pp-http'
+import ProPresenterMark from '@/components/brand/ProPresenterMark'
 import { useBootstrapStore } from '@/bootstrap/useBootstrapStore'
+import PasswordInput from '@/components/ui/password-input'
 import { useAppStore } from '@/stores/useAppStore'
 import StepShell from './StepShell'
 
@@ -54,8 +56,11 @@ export default function StepProPresenter({
 
   return (
     <StepShell
+      // The one step that is about someone else's software — the mark says so
+      // faster than the heading does.
+      mark={<ProPresenterMark className="h-7 w-auto" />}
       title="Connect ProPresenter"
-      blurb="ProAutomate drives ProPresenter over your network. Both machines must be on the same one."
+      blurb="Kairo drives ProPresenter over your network. Both machines must be on the same one."
     >
       <div className="grid grid-cols-3 gap-3">
         <div className="col-span-2">
@@ -89,10 +94,8 @@ export default function StepProPresenter({
       {showPassword ? (
         <div>
           <label className="label" htmlFor="ob-pp-password">Network password</label>
-          <input
+          <PasswordInput
             id="ob-pp-password"
-            className="input"
-            type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             autoComplete="off"
