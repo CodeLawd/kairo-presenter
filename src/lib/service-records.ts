@@ -39,8 +39,23 @@ export interface ServicesAPI {
 
 /** Only accept quotations actually present in the supplied transcript. */
 export function extractNuggetQuotes(raw: string, transcript: TranscriptResult[]): string[] {
-  const cleaned = raw.trim().replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '')
-  const parsed: unknown = JSON.parse(cleaned)
+  const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
+  // Empty model replies (or max-token cutoffs with no closing bracket) used to
+  // surface as the opaque "Unexpected end of JSON input".
+  if (!cleaned) return []
+
+  const start = cleaned.indexOf('[')
+  const end = cleaned.lastIndexOf(']')
+  if (start === -1 || end === -1 || end < start) {
+    throw new Error('Nugget selection returned incomplete JSON. Retry selection.')
+  }
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(cleaned.slice(start, end + 1))
+  } catch {
+    throw new Error('Nugget selection returned invalid JSON. Retry selection.')
+  }
   if (!Array.isArray(parsed)) throw new Error('Invalid nugget response')
   const source = transcript.map(segment => segment.text).join(' ').replace(/\s+/g, ' ').trim()
   return [...new Set(parsed.filter((item): item is string => typeof item === 'string')

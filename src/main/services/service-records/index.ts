@@ -22,8 +22,8 @@ export const serviceRecords = new ServiceRecords(
       } else {
         const client = new Anthropic({ apiKey: key, maxRetries: 0 })
         const response = await client.messages.create({ model: 'claude-haiku-4-5-20251001', max_tokens: 1200, temperature: 0, system: PROMPT, messages: [{ role: 'user', content: text }] }, { signal: AbortSignal.timeout(30000) })
-        raw = response.content.filter(block => block.type === 'text').map(block => block.text).join('')
+        raw = response.content.filter(block => block.type === 'text').map(block => block.text).join('') || '[]'
       }
-    return raw
+    return raw.trim() ? raw : '[]'
   },
 )

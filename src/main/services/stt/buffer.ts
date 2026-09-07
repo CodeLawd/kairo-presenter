@@ -140,8 +140,8 @@ export class TranscriptionBuffer extends EventEmitter {
 
     this.evictExpired()
     this.processSentences(segment.text, segment.timestamp)
-    this.checkTriggerPhrases(segment.text, segment.timestamp)
     this.dirtyAfterLastAnalyze = true
+    this.checkTriggerPhrases(segment.text, segment.timestamp)
   }
 
   // ─── Context accessors ──────────────────────────────────────────────────────

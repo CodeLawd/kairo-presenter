@@ -4,8 +4,11 @@ import test from "node:test";
 import {
   OPERATOR_PANEL_BOUNDS,
   OPERATOR_PANEL_DEFAULTS,
+  OPERATOR_REFERENCE_HEIGHT,
   normalizeOperatorPanelWidth,
+  normalizeOperatorReferenceHeight,
   resizeOperatorPanel,
+  resizeOperatorReferenceHeight,
 } from "../src/lib/operator-layout";
 
 test("left resize follows the pointer and stays inside its usable bounds", () => {
@@ -38,4 +41,17 @@ test("persisted widths fall back when missing or malformed", () => {
 test("legacy default widths migrate to the new startup sizes", () => {
   assert.equal(normalizeOperatorPanelWidth("left", "240"), OPERATOR_PANEL_DEFAULTS.left);
   assert.equal(normalizeOperatorPanelWidth("right", "320"), OPERATOR_PANEL_DEFAULTS.right);
+});
+
+test("reference panel height grows when dragging the top edge up", () => {
+  assert.equal(resizeOperatorReferenceHeight(200, -40), 240);
+  assert.equal(resizeOperatorReferenceHeight(200, 100), OPERATOR_REFERENCE_HEIGHT.min);
+  assert.equal(resizeOperatorReferenceHeight(400, -100), OPERATOR_REFERENCE_HEIGHT.max);
+});
+
+test("persisted reference heights clamp and fall back when malformed", () => {
+  assert.equal(normalizeOperatorReferenceHeight("180"), 180);
+  assert.equal(normalizeOperatorReferenceHeight("not-a-number"), OPERATOR_REFERENCE_HEIGHT.default);
+  assert.equal(normalizeOperatorReferenceHeight(null), OPERATOR_REFERENCE_HEIGHT.default);
+  assert.equal(normalizeOperatorReferenceHeight("80"), OPERATOR_REFERENCE_HEIGHT.min);
 });

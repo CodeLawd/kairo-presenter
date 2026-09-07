@@ -7,7 +7,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import type { SermonNotesAnalysis, SermonPlanDraft } from "@shared/ipc";
-import { normalizedReferenceLabel } from "@shared/sermon-notes-review";
+import {
+  mapTextRangeToPos,
+  normalizedReferenceLabel,
+  plainTextToEditorHtml,
+  SERMON_NOTES_BLOCK_SEPARATOR,
+} from "@shared/sermon-notes-review";
 
 const ScriptureHighlight = Highlight.extend({
   addAttributes() {
@@ -41,12 +46,14 @@ interface SermonNotesReviewModalProps {
 /** Where in the notes viewport a reference counts as "the one being read". */
 const READING_LINE_RATIO = 0.28
 
-function editorHtml(text: string): string {
-  const escaped = text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-  return `<p>${escaped.replace(/\n/g, "<br>")}</p>`
+function editorPlainText(editor: Editor): string {
+  return editor.getText({ blockSeparator: SERMON_NOTES_BLOCK_SEPARATOR })
+}
+
+function draftEditorHtml(draft: SermonPlanDraft): string {
+  const html = draft.html?.trim()
+  if (html) return html
+  return plainTextToEditorHtml(draft.text)
 }
 
 function paintMatches(
@@ -60,8 +67,15 @@ function paintMatches(
   const maxPosition = editor.state.doc.content.size
   const transaction = editor.state.tr.removeMark(0, maxPosition, markType)
   analysis.matches.forEach((match, index) => {
-    const from = Math.min(match.start + 1, maxPosition)
-    const to = Math.min(match.end + 1, maxPosition)
+    const range = mapTextRangeToPos(
+      editor.state.doc,
+      match.start,
+      match.end,
+      SERMON_NOTES_BLOCK_SEPARATOR,
+    )
+    if (!range) return
+    const from = Math.min(range.from, maxPosition)
+    const to = Math.min(range.to, maxPosition)
     if (from < to) {
       transaction.addMark(from, to, markType.create({
         color: "#facc15",
@@ -81,11 +95,14 @@ export function SermonNotesReviewModal({
   onConfirm,
 }: SermonNotesReviewModalProps): React.ReactElement {
   const [title, setTitle] = useState(draft.title)
+  // Import-time matches are indexed against raw file text, which can diverge from
+  // the TipTap document (HTML whitespace, paragraphs). Start empty and scan the
+  // live editor so highlights land on the same string they were detected in.
   const [analysis, setAnalysis] = useState<SermonNotesAnalysis>({
-    matches: draft.matches,
+    matches: [],
     items: draft.items,
   })
-  const [scanning, setScanning] = useState(false)
+  const [scanning, setScanning] = useState(true)
   const [activeMatch, setActiveMatch] = useState(0)
   const scanTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const scanSequenceRef = useRef(0)
@@ -113,19 +130,22 @@ export function SermonNotesReviewModal({
 
   const editor = useEditor({
     extensions: [StarterKit, ScriptureHighlight.configure({ multicolor: true })],
-    content: editorHtml(draft.text),
+    content: draftEditorHtml(draft),
     editorProps: {
       attributes: {
         class:
-          "min-h-full whitespace-pre-wrap break-words px-8 py-7 font-sans text-[15px] leading-7 text-slate-800 outline-none selection:bg-teal-200/70",
+          "sermon-notes-tiptap min-h-full break-words px-8 py-7 font-sans text-[15px] leading-7 text-slate-800 outline-none selection:bg-teal-200/70",
         spellcheck: "true",
         "aria-label": "Editable sermon notes",
       },
     },
+    onCreate: ({ editor: currentEditor }) => {
+      void scan(editorPlainText(currentEditor))
+    },
     onUpdate: ({ editor: currentEditor }) => {
       if (paintingRef.current) return
       if (scanTimerRef.current) clearTimeout(scanTimerRef.current)
-      scanTimerRef.current = setTimeout(() => void scan(currentEditor.getText()), 300)
+      scanTimerRef.current = setTimeout(() => void scan(editorPlainText(currentEditor)), 300)
     },
   })
 
@@ -153,13 +173,19 @@ export function SermonNotesReviewModal({
 
     const bounds = container.getBoundingClientRect()
     const readingLine = bounds.top + container.clientHeight * READING_LINE_RATIO
-    const documentSize = editor.state.doc.content.size
     let next = 0
     for (let index = 0; index < analysis.matches.length; index += 1) {
-      const position = Math.min(analysis.matches[index].start + 1, documentSize)
+      const match = analysis.matches[index]
+      const range = mapTextRangeToPos(
+        editor.state.doc,
+        match.start,
+        match.end,
+        SERMON_NOTES_BLOCK_SEPARATOR,
+      )
+      if (!range) continue
       let top: number
       try {
-        top = editor.view.coordsAtPos(position).top
+        top = editor.view.coordsAtPos(range.from).top
       } catch {
         continue
       }
@@ -190,19 +216,26 @@ export function SermonNotesReviewModal({
     if (!editor || analysis.matches.length === 0) return
     const normalized = (index + analysis.matches.length) % analysis.matches.length
     const match = analysis.matches[normalized]
+    const range = mapTextRangeToPos(
+      editor.state.doc,
+      match.start,
+      match.end,
+      SERMON_NOTES_BLOCK_SEPARATOR,
+    )
+    if (!range) return
     ignoreSyncUntilRef.current = Date.now() + 400
     setActiveMatch(normalized)
     editor
       .chain()
       .focus()
-      .setTextSelection({ from: match.start + 1, to: match.end + 1 })
+      .setTextSelection({ from: range.from, to: range.to })
       .scrollIntoView()
       .run()
   }, [analysis.matches, editor])
 
   const confirm = (): void => {
     if (!editor || scanning || analysis.items.length === 0) return
-    onConfirm(title.trim() || draft.title, editor.getText(), analysis)
+    onConfirm(title.trim() || draft.title, editorPlainText(editor), analysis)
   }
 
   const matchCount = analysis.matches.length
@@ -284,9 +317,13 @@ export function SermonNotesReviewModal({
             >
               {matchCount === 0 ? (
                 <div className="m-1 rounded-lg border border-dashed border-surface-border px-4 py-6 text-center">
-                  <p className="text-[13px] font-medium text-slate-300">No references found</p>
+                  <p className="text-[13px] font-medium text-slate-300">
+                    {scanning ? "Scanning for references…" : "No references found"}
+                  </p>
                   <p className="mt-1 text-xs leading-5 text-slate-500">
-                    Add one such as “John 3:16” directly in the notes.
+                    {scanning
+                      ? "Highlights appear once the notes finish scanning."
+                      : "Add one such as “John 3:16” directly in the notes."}
                   </p>
                 </div>
               ) : analysis.matches.map((match, index) => {

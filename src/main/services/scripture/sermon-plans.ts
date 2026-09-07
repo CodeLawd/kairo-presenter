@@ -9,7 +9,13 @@ import type {
   SermonPlan,
   SermonPlanDraft,
 } from '@shared/ipc'
+import { plainTextToEditorHtml } from '@shared/sermon-notes-review'
 import { BOOKS } from './bible-db'
+
+export interface SermonDocumentContent {
+  text: string
+  html: string
+}
 
 const TRANSLATION_ALIASES: Record<string, ScriptureTranslation> = {
   NKJV: 'NKJV', KJV: 'KJV', BSB: 'BSB', WEB: 'WEB', ASV: 'ASV', OEB: 'OEB',
@@ -89,11 +95,23 @@ export function analyzeScriptureReferences(
   return { matches, items }
 }
 
-export async function readSermonDocument(filePath: string): Promise<string> {
+export async function readSermonDocument(filePath: string): Promise<SermonDocumentContent> {
   const ext = path.extname(filePath).toLowerCase()
-  if (ext === '.docx') return (await mammoth.extractRawText({ path: filePath })).value
-  if (ext === '.pdf') return (await pdfParse(await fs.readFile(filePath))).text
-  if (ext === '.txt' || ext === '.md' || ext === '.rtf') return fs.readFile(filePath, 'utf8')
+  if (ext === '.docx') {
+    const [htmlResult, textResult] = await Promise.all([
+      mammoth.convertToHtml({ path: filePath }),
+      mammoth.extractRawText({ path: filePath }),
+    ])
+    return { text: textResult.value, html: htmlResult.value || plainTextToEditorHtml(textResult.value) }
+  }
+  if (ext === '.pdf') {
+    const text = (await pdfParse(await fs.readFile(filePath))).text
+    return { text, html: plainTextToEditorHtml(text) }
+  }
+  if (ext === '.txt' || ext === '.md' || ext === '.rtf') {
+    const text = await fs.readFile(filePath, 'utf8')
+    return { text, html: plainTextToEditorHtml(text) }
+  }
   throw new Error('Unsupported document. Choose a DOCX, PDF, TXT, MD, or RTF file.')
 }
 

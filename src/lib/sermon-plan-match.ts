@@ -24,6 +24,8 @@ export interface PlanVerseEntry {
 
 export interface SermonPlanIndex {
   planId: string;
+  ordered: PlanVerseEntry[];
+  expectedIndex: number;
   /** `${book}|${chapter}|${verse}` (lowercased book) → entry. */
   byVerseKey: Map<string, PlanVerseEntry>;
   /** Entries with enough distinct text to be matched by quotation. */
@@ -65,6 +67,7 @@ function isUsableItem(item: SermonScriptureItem): boolean {
  */
 export function buildSermonPlanIndex(plan: SermonPlan): SermonPlanIndex {
   const byVerseKey = new Map<string, PlanVerseEntry>();
+  const ordered: PlanVerseEntry[] = [];
 
   for (const item of plan.items) {
     if (!isUsableItem(item)) continue;
@@ -79,6 +82,7 @@ export function buildSermonPlanIndex(plan: SermonPlan): SermonPlanIndex {
         indexInItem,
         itemLength: item.verses.length,
       };
+      ordered.push(entry);
       const key = verseKey(verse.book, verse.chapter, verse.verse);
       const existing = byVerseKey.get(key);
       // Narrower item wins: a bare single-verse call must not drag a whole
@@ -95,7 +99,7 @@ export function buildSermonPlanIndex(plan: SermonPlan): SermonPlanIndex {
     quotable.push({ entry, tokens });
   }
 
-  return { planId: plan.id, byVerseKey, quotable };
+  return { planId: plan.id, byVerseKey, quotable, ordered, expectedIndex: 0 };
 }
 
 /**
@@ -163,7 +167,21 @@ export function matchPlanQuote(
     const coverage = matched / distinct.length;
     if (coverage < minCoverage) continue;
     if (!hasOrderedRun(tokens, heardSequence, RUN_LENGTH)) continue;
-    if (!best || coverage > best.coverage) best = { entry, coverage };
+    const expected = index.ordered[index.expectedIndex];
+    const expectedBonus = (candidate: PlanVerseEntry): number => candidate.reference === expected?.reference ? 0.04 : 0;
+    if (!best || coverage + expectedBonus(entry) > best.coverage + expectedBonus(best.entry)) best = { entry, coverage };
   }
   return best;
+}
+
+/** Reading/presenting a verse advances expectation; order alone never emits a match. */
+export function advancePlanExpectation(index: SermonPlanIndex, reference: string, itemId?: string): boolean {
+  const current = index.ordered[index.expectedIndex - 1];
+  if (current?.reference === reference && (!itemId || current.planItemId === itemId)) return false;
+  const candidates = index.ordered.map((entry, position) => ({ entry, position }))
+    .filter(({ entry }) => entry.reference === reference && (!itemId || entry.planItemId === itemId));
+  const match = candidates.find(({ position }) => position >= index.expectedIndex) ?? candidates[0];
+  if (!match || index.expectedIndex === match.position + 1) return false;
+  index.expectedIndex = match.position + 1;
+  return true;
 }

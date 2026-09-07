@@ -89,6 +89,8 @@ class STTService {
 
   stop(): void {
     this.active = false
+    // Keep the saved transcript, but never analyze a previous capture window on restart.
+    this.buffer.clear()
     log.info('[STT] Stopped', { provider: this.provider })
 
     if (this.provider === 'deepgram') {

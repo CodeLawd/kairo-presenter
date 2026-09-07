@@ -1,5 +1,5 @@
 import type { InterimResult, TranscriptResult } from "@shared/ipc";
-import type { ScriptureDetector } from "./detector";
+import { hasCorruptedScriptureCitation, type ScriptureDetector } from "./detector";
 
 interface LiveTranscriptSource {
   onTranscript(callback: (result: TranscriptResult) => void): void;
@@ -18,7 +18,9 @@ export function subscribeExplicitScriptureDetection(
     // never announced. Interims stay citation-only — half-sentences would
     // retrigger the quote matcher on every partial update.
     if (detector.analyzeExplicit(result.text, true, false)) return;
-    detector.analyzePlanQuote(result.text);
+    if (detector.analyzePlanQuote(result.text)) return;
+    // Ask for contextual recovery on finals; never guess a split for damaged numbers.
+    if (hasCorruptedScriptureCitation(result.text)) detector.analyze(result.text);
   };
   const analyzeInterim = (result: InterimResult): void => {
     detector.analyzeExplicit(result.text, true, true);

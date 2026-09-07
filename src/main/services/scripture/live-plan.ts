@@ -1,6 +1,6 @@
 import log from 'electron-log/main'
 import type { LivePlanState, SermonPlan } from '@shared/ipc'
-import { buildSermonPlanIndex, type SermonPlanIndex } from '@shared/sermon-plan-match'
+import { advancePlanExpectation, buildSermonPlanIndex, type SermonPlanIndex } from '@shared/sermon-plan-match'
 import { sermonPlanStore } from './sermon-plans'
 
 const EMPTY_STATE: LivePlanState = {
@@ -58,11 +58,19 @@ export class LivePlanService {
     return this.index
   }
 
+  observe(reference: string, itemId?: string): void {
+    if (!this.index || !advancePlanExpectation(this.index, reference, itemId)) return
+    const state = this.getState()
+    this.listeners.forEach(listener => listener(state))
+  }
+
   getState(): LivePlanState {
     if (!this.plan) return EMPTY_STATE
     return {
       planId: this.plan.id,
       title: this.plan.title,
+      nextReference: this.index?.ordered[this.index.expectedIndex]?.reference ?? null,
+      nextPlanItemId: this.index?.ordered[this.index.expectedIndex]?.planItemId ?? null,
       itemCount: this.plan.items.length,
       unavailableCount: this.plan.items.filter(
         (item) => !item.available || item.verses.length === 0,

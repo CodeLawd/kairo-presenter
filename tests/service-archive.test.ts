@@ -96,5 +96,9 @@ test('notes are snapshots and failures retain speech for retry', async () => {
 test('automatic selection accepts only exact quotes and can select nothing', () => {
   assert.deepEqual(extractNuggetQuotes(JSON.stringify([quote, 'Invented teaching that was never actually said in this transcript.', quote]), [segment('one')]), [quote])
   assert.deepEqual(extractNuggetQuotes('[]', [segment('one')]), [])
-  assert.throws(() => extractNuggetQuotes('not json', []))
+  assert.deepEqual(extractNuggetQuotes('', [segment('one')]), [])
+  assert.deepEqual(extractNuggetQuotes('   ', [segment('one')]), [])
+  assert.deepEqual(extractNuggetQuotes(`Here you go:\n${JSON.stringify([quote])}\n`, [segment('one')]), [quote])
+  assert.throws(() => extractNuggetQuotes('not json', []), /incomplete JSON/)
+  assert.throws(() => extractNuggetQuotes('["unterminated', []), /incomplete JSON/)
 })

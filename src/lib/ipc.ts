@@ -741,6 +741,57 @@ export function insertScriptureResultInPlan(
   return { ...plan, items, updatedAt: addedAt }
 }
 
+/** Grow an existing playlist item with the previous/next verse (same row). */
+export function extendSermonPlanItemWithAdjacent(
+  plan: SermonPlan,
+  itemId: string,
+  adjacent: ScriptureResult,
+  direction: 'previous' | 'next',
+  updatedAt = Date.now(),
+): SermonPlan {
+  const items = [...plan.items]
+  const index = items.findIndex((item) => item.id === itemId)
+  if (index < 0) return plan
+
+  const item = items[index]
+  const seen = new Set(
+    item.verses.map((verse) => `${verse.book}:${verse.chapter}:${verse.verse}`),
+  )
+  const incoming = adjacent.verses.filter(
+    (verse) => !seen.has(`${verse.book}:${verse.chapter}:${verse.verse}`),
+  )
+  if (incoming.length === 0) return plan
+
+  const verses =
+    direction === 'next'
+      ? [...item.verses, ...incoming]
+      : [...incoming, ...item.verses]
+  const first = verses[0]
+  const last = verses.at(-1)
+  if (!first || !last) return plan
+
+  let reference: string
+  if (first.book !== last.book) {
+    reference = `${first.book} ${first.chapter}:${first.verse}, ${last.book} ${last.chapter}:${last.verse}`
+  } else if (first.chapter !== last.chapter) {
+    reference = `${first.book} ${first.chapter}:${first.verse}–${last.chapter}:${last.verse}`
+  } else if (first.verse !== last.verse) {
+    reference = `${first.book} ${first.chapter}:${first.verse}–${last.verse}`
+  } else {
+    reference = `${first.book} ${first.chapter}:${first.verse}`
+  }
+
+  items[index] = {
+    ...item,
+    reference,
+    verses,
+    translation: adjacent.translation || item.translation,
+    available: true,
+    error: undefined,
+  }
+  return { ...plan, items, updatedAt }
+}
+
 /** Append each result as its own playlist item (passage row). Multi-verse results stay one item. */
 export function appendScriptureResultsToPlan(
   plan: SermonPlan,
@@ -804,6 +855,8 @@ export function reorderSermonPlanItem(
 
 /** Summary of the sermon playlist currently referenced by live transcription. */
 export interface LivePlanState {
+  nextReference?: string | null
+  nextPlanItemId?: string | null
   planId: string | null
   title: string | null
   itemCount: number
@@ -815,6 +868,8 @@ export interface SermonPlanDraft {
   title: string
   sourceFileName: string
   text: string
+  /** TipTap/HTML body that preserves document formatting when available. */
+  html: string
   matches: SermonReferenceMatch[]
   items: Array<Pick<SermonScriptureItem, 'id' | 'reference' | 'translation'>>
 }

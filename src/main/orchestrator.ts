@@ -1,3 +1,4 @@
+import { singleVerseSuggestion } from "@shared/single-verse-presentation";
 import path from "path";
 import fs from "fs";
 import { app } from "electron";
@@ -220,6 +221,7 @@ class Orchestrator {
       model: config.scriptureModel,
     });
     this.detector.setPlanIndexProvider(() => livePlanService.getIndex());
+    this.detector.on("planProgress", (reference, itemId) => livePlanService.observe(reference, itemId));
 
     this.detector.on("detection", (refs) => {
       this.handleDetection(refs).catch((err) =>
@@ -315,6 +317,7 @@ class Orchestrator {
   async stop(): Promise<void> {
     if (!this.running) return;
     log.info("[Orchestrator] Stopping");
+    this.running = false;
 
     // Cancel all auto-present countdowns
     for (const [id, timer] of this.autoTimers) {
@@ -425,7 +428,8 @@ class Orchestrator {
   // ─── Detection handler ─────────────────────────────────────────────────────
 
   private async handleDetection(refs: ScriptureReference[]): Promise<void> {
-    if (!this.cfg) return;
+    if (!this.cfg || !this.running) return;
+    const detectionSession = this.session;
 
     for (const ref of refs) {
       // Live sermon playlist first: its verses are already resolved, in the
@@ -434,6 +438,7 @@ class Orchestrator {
       // through to the normal path untouched, so off-plan verses still detect.
       const planEntries = matchPlanReference(livePlanService.getIndex(), ref);
       const planEntry = planEntries[0] ?? null;
+      if (planEntry) livePlanService.observe(planEntry.reference, planEntry.planItemId);
       const translation = planEntry
         ? planEntry.translation
         : this.cfg.scriptureTranslation;
@@ -455,6 +460,9 @@ class Orchestrator {
           });
         }
       }
+
+      // A lookup can finish after stop or after another service has started.
+      if (!this.running || this.session !== detectionSession) return;
 
       // One Operator suggestion per verse — never jumble a range into a single card
       const requestedVerseItems: ScriptureVerse[] =
@@ -585,6 +593,7 @@ class Orchestrator {
   // ─── ProPresenter presentation ─────────────────────────────────────────────
 
   private async presentScripture(suggestion: ScriptureSuggestion): Promise<void> {
+    suggestion = singleVerseSuggestion(suggestion);
     const ppStatus = proPresenterService.getStatus();
     if (ppStatus.state !== "connected") {
       log.warn("[Orchestrator] PP not connected — queueing scripture projection", {
@@ -608,6 +617,7 @@ class Orchestrator {
       throw new Error(msg);
     }
 
+    livePlanService.observe(suggestion.reference, suggestion.planItemId);
     if (this.session) this.session.totalPresentations++;
     // Partial success is still on screen somewhere, so it is degraded, not an
     // error — but the operator needs to know which screen missed out.
@@ -689,6 +699,7 @@ class Orchestrator {
   private async dispatchScripture(
     suggestion: ScriptureSuggestion,
   ): Promise<OverlayDispatchResult[]> {
+    suggestion = singleVerseSuggestion(suggestion);
     const overlay = normalizeOverlaySettings(store.get("overlay"));
 
     // The verse text depends only on the suggestion and the global content
@@ -1373,6 +1384,7 @@ class Orchestrator {
           model: this.cfg.scriptureModel,
         });
         this.detector.setPlanIndexProvider(() => livePlanService.getIndex());
+        this.detector.on("planProgress", (reference, itemId) => livePlanService.observe(reference, itemId));
 
         this.detector.on("detection", (refs) => {
           this.handleDetection(refs).catch((err) =>

@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { useAppStore } from "@/stores/useAppStore";
 import {
   appendScriptureResultsToPlan,
-  insertScriptureResultInPlan,
+  extendSermonPlanItemWithAdjacent,
   reorderSermonPlanItem,
 } from "@shared/ipc";
 import type {
@@ -704,20 +704,25 @@ export default function Scripture(): React.ReactElement {
     }
   }, [cancelRenamePlan, plans, renameDraft, renamingPlanId]);
 
-  const createPlaylist = useCallback(async (): Promise<void> => {
+  const createPlaylist = useCallback(async (includeLoaded = false): Promise<void> => {
     if (creatingPlaylist) return;
     setCreatingPlaylist(true);
     setError(null);
     try {
       const now = Date.now();
-      const plan = await window.api.scripture.saveSermonPlan({
+      const emptyPlan: SermonPlan = {
         id: `sermon-${now}`,
         title: "Untitled playlist",
         sourceFileName: "Manual",
         items: [],
         createdAt: now,
         updatedAt: now,
-      });
+      };
+      const loaded = rows.map(row => combineScriptureResults(row.cards.map(card => card.result)))
+        .filter((result): result is ScriptureResult => result !== null && result.verses.length > 0);
+      const plan = await window.api.scripture.saveSermonPlan(
+        includeLoaded ? appendScriptureResultsToPlan(emptyPlan, loaded, `manual-${now}`) : emptyPlan,
+      );
       setPlans((previous) => [
         plan,
         ...previous.filter((candidate) => candidate.id !== plan.id),
@@ -729,9 +734,11 @@ export default function Scripture(): React.ReactElement {
         cardInRow: 0,
         mode: "none",
       });
-      setAddedAllToPlan(null);
-      setRows([]);
-      setCardsSource("plan");
+      setAddedAllToPlan(includeLoaded ? plan.title : null);
+      if (cardsSource !== "search") {
+        setRows([]);
+        setCardsSource("plan");
+      }
       setActiveCardIndex(0);
       setCueHighlight(false);
       setFocusHighlight(false);
@@ -742,10 +749,10 @@ export default function Scripture(): React.ReactElement {
     } finally {
       setCreatingPlaylist(false);
     }
-  }, [creatingPlaylist, setScriptureViewState]);
+  }, [creatingPlaylist, cardsSource, rows, setScriptureViewState]);
 
-  const addAllResultsToPlaylist = useCallback(async (): Promise<void> => {
-    const target = plans.find((plan) => plan.id === selectedPlanId);
+  const addAllResultsToPlaylist = useCallback(async (targetId: string): Promise<void> => {
+    const target = plans.find((plan) => plan.id === targetId);
     // One playlist item per row (keep multi-verse passages together)
     const results = rows
       .map((row) => combineScriptureResults(row.cards.map((card) => card.result)))
@@ -900,7 +907,6 @@ export default function Scripture(): React.ReactElement {
           : activeRow.cards[0];
       if (!anchorCard) return;
 
-      // Next/Previous relative to the selected item (row), not the playlist ends
       const queries = getAdjacentVerseQueries([anchorCard.result], direction);
       if (queries.length === 0) return;
 
@@ -910,28 +916,36 @@ export default function Scripture(): React.ReactElement {
         let adjacent: ScriptureResult | undefined;
         const lookupTranslation =
           (anchorCard.result.translation as ScriptureTranslation) || translation;
-        for (const adjacentQuery of queries) {
-          const [result] = await window.api.scripture.search(
-            adjacentQuery,
-            lookupTranslation,
-          );
-          const expanded = result ? expandScriptureResult(result) : [];
-          adjacent = direction === "previous" ? expanded.at(-1) : expanded[0];
-          if (adjacent) break;
-        }
-        if (!adjacent) {
-          // Fall back to the operator's selected translation if the item's Bible failed
-          if (lookupTranslation !== translation) {
-            for (const adjacentQuery of queries) {
-              const [result] = await window.api.scripture.search(
-                adjacentQuery,
-                translation,
-              );
-              const expanded = result ? expandScriptureResult(result) : [];
-              adjacent = direction === "previous" ? expanded.at(-1) : expanded[0];
-              if (adjacent) break;
+
+        const resolveAdjacent = async (
+          tx: ScriptureTranslation,
+        ): Promise<ScriptureResult | undefined> => {
+          for (const adjacentQuery of queries) {
+            const [result] = await window.api.scripture.search(
+              adjacentQuery,
+              tx,
+            );
+            if (!result || result.verses.length === 0) continue;
+            // Chapter-range fallback (prev at v1): keep only the last verse.
+            if (result.verses.length > 1 && direction === "previous") {
+              const last = result.verses.at(-1)!;
+              return {
+                reference: `${last.book} ${last.chapter}:${last.verse}`,
+                translation: result.translation,
+                verses: [last],
+              };
             }
+            const expanded = expandScriptureResult(result);
+            return direction === "previous"
+              ? expanded.at(-1)
+              : expanded[0];
           }
+          return undefined;
+        };
+
+        adjacent = await resolveAdjacent(lookupTranslation);
+        if (!adjacent && lookupTranslation !== translation) {
+          adjacent = await resolveAdjacent(translation);
         }
         if (!adjacent) {
           setError(
@@ -950,12 +964,12 @@ export default function Scripture(): React.ReactElement {
           setActiveCardIndex(existingIndex);
           setCueHighlight(true);
           setFocusHighlight(true);
-          const location = locateFlatCard(rows, existingIndex);
-          if (cardsSource === "plan" && selectedPlanId && location) {
+          const existingLocation = locateFlatCard(rows, existingIndex);
+          if (cardsSource === "plan" && selectedPlanId && existingLocation) {
             persistPlanView(
               selectedPlanId,
-              rows[location.rowIndex]?.planItemId ?? null,
-              location.cardIndex,
+              rows[existingLocation.rowIndex]?.planItemId ?? null,
+              existingLocation.cardIndex,
               "live",
             );
           }
@@ -966,28 +980,20 @@ export default function Scripture(): React.ReactElement {
           return;
         }
 
-        const relativeItemId = activeRow.planItemId ?? null;
-        let planItemId: string | undefined;
-        if (cardsSource === "plan" && selectedPlanId) {
+        let planItemId = activeRow.planItemId;
+        if (cardsSource === "plan" && selectedPlanId && planItemId) {
           const target = plans.find((plan) => plan.id === selectedPlanId);
           if (target) {
-            planItemId = `manual-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-            const updated = insertScriptureResultInPlan(
+            const updated = extendSermonPlanItemWithAdjacent(
               target,
-              adjacent,
               planItemId,
-              relativeItemId,
-              direction === "next" ? "after" : "before",
+              adjacent,
+              direction,
             );
             const saved = await window.api.scripture.saveSermonPlan(updated);
             setPlans((previous) =>
               previous.map((plan) => (plan.id === saved.id ? saved : plan)),
             );
-            const savedItem = saved.items.find((item) => item.id === planItemId)
-              ?? (direction === "next"
-                ? saved.items[saved.items.findIndex((item) => item.id === relativeItemId) + 1]
-                : saved.items[saved.items.findIndex((item) => item.id === relativeItemId) - 1]);
-            planItemId = savedItem?.id ?? planItemId;
           }
         }
 
@@ -996,69 +1002,39 @@ export default function Scripture(): React.ReactElement {
           sendStatus: "idle" as const,
           planItemId,
         };
-
-        if (cardsSource === "search") {
-          const insertCardAt =
-            direction === "next" ? activeRow.cards.length : 0;
-          const updatedRows = rows.map((row, idx) => {
-            if (idx !== location.rowIndex) return row;
-            const cards =
-              direction === "next"
-                ? [...row.cards, newCard]
-                : [newCard, ...row.cards];
-            const combined = combineScriptureResults(
-              cards.map((card) => card.result),
-            );
-            return {
-              ...row,
-              reference: combined?.reference ?? row.reference,
-              cards,
-            };
-          });
-          const newFlatIndex = flatIndexAt(
-            updatedRows,
-            location.rowIndex,
-            insertCardAt,
+        const insertCardAt =
+          direction === "next" ? activeRow.cards.length : 0;
+        const updatedRows = rows.map((row, idx) => {
+          if (idx !== location.rowIndex) return row;
+          const nextCards =
+            direction === "next"
+              ? [...row.cards, newCard]
+              : [newCard, ...row.cards];
+          const combined = combineScriptureResults(
+            nextCards.map((card) => card.result),
           );
-          setRows(updatedRows);
-          setActiveCardIndex(newFlatIndex);
-          setCueHighlight(true);
-          setFocusHighlight(true);
-          requestAnimationFrame(() => {
-            cardRefs.current[newFlatIndex]?.scrollIntoView({
-              behavior: "smooth",
-              block: "nearest",
-            });
-          });
-          setAddedAllToPlan(null);
-          return;
-        }
-
-        const nextRow = createResultRow(adjacent, {
-          id: planItemId ?? `adj-${adjacent.reference}-${Date.now()}`,
-          planItemId,
-        });
-        const insertAt =
-          direction === "next" ? location.rowIndex + 1 : location.rowIndex;
-        setRows((previous) => {
-          const copy = [...previous];
-          copy.splice(insertAt, 0, nextRow);
-          return copy;
+          return {
+            ...row,
+            reference: combined?.reference ?? row.reference,
+            cards: nextCards,
+          };
         });
         const newFlatIndex = flatIndexAt(
-          [
-            ...rows.slice(0, insertAt),
-            nextRow,
-            ...rows.slice(insertAt),
-          ],
-          insertAt,
-          0,
+          updatedRows,
+          location.rowIndex,
+          insertCardAt,
         );
+        setRows(updatedRows);
         setActiveCardIndex(newFlatIndex);
         setCueHighlight(true);
         setFocusHighlight(true);
         if (cardsSource === "plan" && selectedPlanId) {
-          persistPlanView(selectedPlanId, planItemId ?? null, 0, "live");
+          persistPlanView(
+            selectedPlanId,
+            planItemId ?? null,
+            insertCardAt,
+            "live",
+          );
         }
         requestAnimationFrame(() => {
           cardRefs.current[newFlatIndex]?.scrollIntoView({
@@ -1230,7 +1206,7 @@ export default function Scripture(): React.ReactElement {
         renameDraft={renameDraft}
         pendingDeletePlanId={pendingDeletePlanId}
         creatingPlaylist={creatingPlaylist}
-        showAddTarget={showQueueDock && cardsSource === "search" && plans.length > 0}
+        showAddTarget={false}
         onCreate={() => void createPlaylist()}
         onOpenPlan={(plan) => void openPlan(plan)}
         onSelectItem={selectPlanItem}
@@ -1251,14 +1227,9 @@ export default function Scripture(): React.ReactElement {
       />
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <div className="shrink-0 space-y-4 border-b border-surface-border bg-surface px-5 pb-4 pt-5 lg:px-6">
+        <div className="shrink-0 space-y-2 border-b border-surface-border bg-surface px-3 py-2">
           <div className="flex items-start justify-between gap-4">
-            <div>
-              <h1 className="page-header">Scripture</h1>
-              <p className="page-subtitle">
-                Search verses or prepare a reusable sermon playlist
-              </p>
-            </div>
+            <h1 className="self-center text-xs font-medium text-slate-400">Scripture</h1>
             <div className="flex flex-wrap items-center justify-end gap-2">
               {selectedPlan && (
                 <Button
@@ -1399,10 +1370,7 @@ export default function Scripture(): React.ReactElement {
                 </p>
                 <p className="mt-0.5 text-[11px] text-slate-500">
                   {rows.length} item{rows.length !== 1 ? "s" : ""} · {cards.length}{" "}
-                  verse{cards.length !== 1 ? "s" : ""} · theme preview
-                  {cardsSource === "plan"
-                    ? " · Previous / Next adds more · arrows send"
-                    : " · Previous / Next fills the row · arrows send · Enter goes live"}
+                  verse{cards.length !== 1 ? "s" : ""}
                 </p>
               </div>
             )}
@@ -1450,9 +1418,10 @@ export default function Scripture(): React.ReactElement {
             activeCardIndex={activeCardIndex}
             cardZoom={cardZoom}
             navigating={navigating}
-            selectedPlanId={selectedPlanId}
             addedAllToPlan={addedAllToPlan}
-            plansCount={plans.length}
+            plans={plans}
+            creatingPlaylist={creatingPlaylist}
+            onCreatePlaylist={() => void createPlaylist(true)}
             cardsSource={cardsSource}
             queueLabel={
               cardsSource === "plan"
@@ -1465,7 +1434,7 @@ export default function Scripture(): React.ReactElement {
             onPrevious={() => void loadAdjacentVerse("previous")}
             onNext={() => void loadAdjacentVerse("next")}
             onSendSelected={() => void handleSend(activeCardIndex)}
-            onAddAll={() => void addAllResultsToPlaylist()}
+            onAddAll={(planId) => void addAllResultsToPlaylist(planId)}
             onClear={handleClearResults}
           />
         )}

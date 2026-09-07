@@ -1,7 +1,10 @@
+import { useContentAutoScroll } from "./useContentAutoScroll";
+import { singleVerseSuggestion, splitVerseSuggestions } from "@shared/single-verse-presentation";
 import {
   commandForShortcut,
   shortcutFromEvent,
 } from "@shared/keyboard-shortcuts";
+import { ReferenceLibrary } from "./ReferenceLibrary";
 import { ServicePanel, useServiceRecords } from "./ServicePanel";
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
@@ -25,7 +28,9 @@ import { useAppStore } from "@/stores/useAppStore";
 import { cn, downloadFile } from "@/lib/utils";
 import {
   normalizeOperatorPanelWidth,
+  normalizeOperatorReferenceHeight,
   resizeOperatorPanel,
+  resizeOperatorReferenceHeight,
 } from "@shared/operator-layout";
 import type { OperatorPanelSide } from "@shared/operator-layout";
 import { Button } from "@/components/ui/button";
@@ -57,6 +62,7 @@ import type {
   MediaLibrary,
   ScriptureResult,
   ScriptureSuggestion,
+  SermonScriptureItem,
   PendingAutoPresent,
   ServiceHealth,
   TranscriptResult,
@@ -65,6 +71,7 @@ import type {
 import { normalizeMediaPlayback } from "@shared/media-playback";
 import { useBootstrapStore } from "@/bootstrap/useBootstrapStore";
 import { OperatorQueueSearch } from "@/components/operator/OperatorQueueSearch";
+import { displayPlanTitle } from "@/components/operator/OperatorToolbar";
 import { useBoothToolboxStore } from "@/stores/useBoothToolboxStore";
 import { clearLiveText } from "@/lib/clear-live-output";
 
@@ -89,11 +96,13 @@ function detectionCaption(
   suggestion: ScriptureSuggestion,
   flags: { isLive: boolean; isReading: boolean; isUpNext: boolean },
 ): string | null {
+  if (suggestion.planMatch) {
+    const origin = suggestion.planMatch === "quote" ? "From sermon · matched reading" : "From sermon";
+    return flags.isLive ? `${origin} · Live` : flags.isReading ? `${origin} · Reading` : flags.isUpNext ? `${origin} · Up next` : origin;
+  }
   if (flags.isLive) return null;
   if (flags.isReading) return "Reading";
   if (flags.isUpNext) return "Up next";
-  if (suggestion.planMatch === "quote") return "Playlist · read";
-  if (suggestion.planMatch) return "Playlist";
   if (suggestion.preloadedNext) return "Preloaded";
   return null;
 }
@@ -271,6 +280,8 @@ function resultToSegment(r: TranscriptResult): DisplaySegment {
 
 export default function Operator(): React.ReactElement {
   const bootstrapSettings = useBootstrapStore((state) => state.settings);
+  const livePlan = useBootstrapStore((state) => state.livePlan);
+  const sermonPlans = useBootstrapStore((state) => state.sermonPlans);
   const {
     isTranscribing,
     setIsTranscribing,
@@ -298,8 +309,10 @@ export default function Operator(): React.ReactElement {
   const [pipelineBusy, setPipelineBusy] = useState(false);
   const [nuggetsOpen, setNuggetsOpen] = useState(false);
   const [interimText, setInterimText] = useState("");
-  const transcriptEndRef = useRef<HTMLDivElement>(null);
-  const isAutoScrolling = useRef(true);
+  const transcriptScrollRef = useContentAutoScroll(
+    "bottom",
+    JSON.stringify([segments.map(({ id, text }) => [id, text]), interimText]),
+  );
 
   useEffect(() => {
     try {
@@ -360,10 +373,10 @@ export default function Operator(): React.ReactElement {
   const suggestionsRef = useRef<ScriptureSuggestion[]>([]);
   const recentReadingTextRef = useRef("");
   const verseCardRefs = useRef(new Map<string, HTMLButtonElement>());
-  const queueScrollRef = useRef<HTMLDivElement>(null);
-  /** True while the operator is browsing the queue by hand — auto-follow yields. */
-  const queueUserBrowsingRef = useRef(false);
-  const queueGroupCountRef = useRef(0);
+  const queueScrollRef = useContentAutoScroll(
+    "top",
+    JSON.stringify(suggestions.map(({ id, reference, verses }) => [id, reference, verses.map((verse) => verse.text)])),
+  );
   /** Detections withheld from the list while the operator scrolls it by hand. */
   const [heldSuggestions, setHeldSuggestions] = useState<ScriptureSuggestion[]>(
     [],
@@ -415,6 +428,11 @@ export default function Operator(): React.ReactElement {
       localStorage.getItem("operator-transcript-width"),
     ),
   );
+  const [referenceHeight, setReferenceHeight] = useState(() =>
+    normalizeOperatorReferenceHeight(
+      localStorage.getItem("operator-reference-height"),
+    ),
+  );
   // The rail width is shared app state, not local: Operator stays mounted while
   // hidden, so resizing the rail on Lyrics or Scripture must land here too.
   const liveRail = useLiveRailWidth();
@@ -451,6 +469,21 @@ export default function Operator(): React.ReactElement {
     () => partitionOperatorSuggestionGroups(suggestionGroups, activeGroupId, 3),
     [suggestionGroups, activeGroupId],
   );
+  const allDetectedGroups = useMemo(
+    () => [...suggestionGroups].reverse(),
+    [suggestionGroups],
+  );
+  const livePlaylist = useMemo(() => {
+    if (!livePlan?.planId) return null;
+    return sermonPlans.find((plan) => plan.id === livePlan.planId) ?? null;
+  }, [livePlan?.planId, sermonPlans]);
+  const matchedPlanItemIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const suggestion of suggestions) {
+      if (suggestion.planItemId && suggestion.source === "auto") ids.add(suggestion.planItemId);
+    }
+    return ids;
+  }, [suggestions]);
   const visibleSuggestionIds = useMemo(
     () =>
       suggestionSections.current.flatMap((group) =>
@@ -458,15 +491,6 @@ export default function Operator(): React.ReactElement {
       ),
     [suggestionSections.current],
   );
-
-  // A newly detected passage is worth jumping to, so it re-arms auto-follow.
-  // Verses added to a passage already on screen do not.
-  useEffect(() => {
-    if (suggestionGroups.length > queueGroupCountRef.current) {
-      queueUserBrowsingRef.current = false;
-    }
-    queueGroupCountRef.current = suggestionGroups.length;
-  }, [suggestionGroups]);
 
   // Held detections must not outlive the list they belong to.
   useEffect(() => {
@@ -513,6 +537,48 @@ export default function Operator(): React.ReactElement {
       localStorage.setItem("operator-transcript-width", String(nextWidth));
     },
     [transcriptWidth],
+  );
+
+  const startReferenceResize = useCallback(
+    (event: React.PointerEvent): void => {
+      event.preventDefault();
+      const startY = event.clientY;
+      const startHeight = referenceHeight;
+      let finalHeight = startHeight;
+
+      const handlePointerMove = (pointerEvent: PointerEvent): void => {
+        finalHeight = resizeOperatorReferenceHeight(
+          startHeight,
+          pointerEvent.clientY - startY,
+        );
+        setReferenceHeight(finalHeight);
+      };
+      const handlePointerUp = (): void => {
+        window.removeEventListener("pointermove", handlePointerMove);
+        window.removeEventListener("pointerup", handlePointerUp);
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+        localStorage.setItem(
+          "operator-reference-height",
+          String(finalHeight),
+        );
+      };
+
+      document.body.style.cursor = "row-resize";
+      document.body.style.userSelect = "none";
+      window.addEventListener("pointermove", handlePointerMove);
+      window.addEventListener("pointerup", handlePointerUp, { once: true });
+    },
+    [referenceHeight],
+  );
+
+  const resizeReferenceByKeyboard = useCallback(
+    (deltaY: number): void => {
+      const nextHeight = resizeOperatorReferenceHeight(referenceHeight, deltaY);
+      setReferenceHeight(nextHeight);
+      localStorage.setItem("operator-reference-height", String(nextHeight));
+    },
+    [referenceHeight],
   );
   const livePreviewResult = useMemo(() => {
     if (!activeProjection) return null;
@@ -624,20 +690,6 @@ export default function Operator(): React.ReactElement {
       });
   }, []);
 
-  /**
-   * Auto-follow scrolls the queue to the verse being read. It must never fight
-   * the operator: reading progress recomputes on every final transcript segment,
-   * and the follow target is usually mid-passage, so an unconditional
-   * `scrollIntoView` yanked the list away from whoever was reaching for the
-   * newest card. Hand-scrolling suspends it until genuinely new content lands.
-   */
-  // Only real scroll gestures count. Clicking a card must not suspend follow —
-  // advancing to the next verse of the passage is exactly what should happen
-  // after the operator sends one.
-  const noteQueueBrowsing = useCallback((): void => {
-    queueUserBrowsingRef.current = true;
-  }, []);
-
   const insertSuggestion = useCallback(
     (incoming: ScriptureSuggestion): void => {
       setSuggestions((prev) => {
@@ -663,28 +715,11 @@ export default function Operator(): React.ReactElement {
 
   /** Releases withheld detections and hands the list back to auto-follow. */
   const flushHeldSuggestions = useCallback((): void => {
-    queueUserBrowsingRef.current = false;
     setHeldSuggestions((held) => {
       held.forEach(insertSuggestion);
       return [];
     });
   }, [insertSuggestion]);
-
-  useEffect(() => {
-    if (!readingProgress || queueUserBrowsingRef.current) return;
-    const card = verseCardRefs.current.get(readingProgress.nextId);
-    if (!card) return;
-
-    // Already on screen — scrolling again would only jitter the list.
-    const container = queueScrollRef.current;
-    if (container) {
-      const view = container.getBoundingClientRect();
-      const target = card.getBoundingClientRect();
-      if (target.top >= view.top && target.bottom <= view.bottom) return;
-    }
-
-    card.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  }, [readingProgress]);
 
   // Queue search — Cmd/Ctrl+K focuses the combobox inside OperatorQueueSearch.
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -875,6 +910,10 @@ export default function Operator(): React.ReactElement {
 
     const unsubStatus = window.api.orchestrator.onStatus((status) => {
       setHealth(status.health);
+      if (!status.running) {
+        setInterimText("");
+        setPendingAuto([]);
+      }
       setIsTranscribing(status.running);
       setAutoMode(status.autoMode, confidenceThreshold);
     });
@@ -922,21 +961,6 @@ export default function Operator(): React.ReactElement {
     });
     return () => timers.forEach(clearTimeout);
   }, [pendingAuto, suggestions]);
-
-  // ── Auto-scroll Transcript ──────────────────────────────────────────────────
-
-  useEffect(() => {
-    if (isAutoScrolling.current) {
-      transcriptEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }
-  }, [segments, interimText]);
-
-  const handleTranscriptScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    const target = e.currentTarget;
-    const isAtBottom =
-      target.scrollHeight - target.scrollTop - target.clientHeight < 20;
-    isAutoScrolling.current = isAtBottom;
-  };
 
   // ── Actions ──────────────────────────────────────────────────────────────────
 
@@ -1010,7 +1034,17 @@ export default function Operator(): React.ReactElement {
             query,
             edge.translation,
           );
-          const expanded = result ? expandScriptureResult(result) : [];
+          if (!result || result.verses.length === 0) continue;
+          if (result.verses.length > 1 && direction === "previous") {
+            const last = result.verses.at(-1)!;
+            adjacent = {
+              reference: `${last.book} ${last.chapter}:${last.verse}`,
+              translation: result.translation,
+              verses: [last],
+            };
+            break;
+          }
+          const expanded = expandScriptureResult(result);
           adjacent = direction === "previous" ? expanded.at(-1) : expanded[0];
           if (adjacent) break;
         }
@@ -1057,11 +1091,7 @@ export default function Operator(): React.ReactElement {
           return merged;
         });
         setSelectedSuggestionId(suggestion.id);
-        requestAnimationFrame(() =>
-          verseCardRefs.current
-            .get(suggestion.id)
-            ?.scrollIntoView({ behavior: "smooth", block: "nearest" }),
-        );
+
       } catch (error) {
         console.error(error);
       } finally {
@@ -1090,6 +1120,7 @@ export default function Operator(): React.ReactElement {
   /** Queue rows push straight to ProPresenter; the themed preview follows. */
   const handlePresentQueued = useCallback(
     async (entry: ScriptureSuggestion): Promise<void> => {
+      entry = singleVerseSuggestion(entry);
       setQueueBusyId(entry.id);
       try {
         await window.api.scripture.register(entry);
@@ -1116,24 +1147,76 @@ export default function Operator(): React.ReactElement {
     setHeldSuggestions([]);
     setReadingProgress(null);
     followStateRef.current = null;
-    queueUserBrowsingRef.current = false;
   }, []);
 
-  const handleClearHistory = useCallback((): void => {
-    const historyIds = new Set(
-      suggestionSections.history.flatMap((group) =>
-        group.suggestions.map((item) => item.id),
-      ),
-    );
-    historyIds.forEach((id) => {
-      window.api.orchestrator.dismissSuggestion(id).catch(console.error);
-    });
-    setSuggestions((prev) => {
-      const next = prev.filter((item) => !historyIds.has(item.id));
-      suggestionsRef.current = next;
-      return next;
-    });
-  }, [suggestionSections.history]);
+  const handlePresentPlaylistItem = useCallback(
+    async (item: SermonScriptureItem): Promise<void> => {
+      setQueueBusyId(item.id);
+      try {
+        let reference = item.reference;
+        let verses = item.verses;
+        let translation = item.translation;
+        if (!item.available || verses.length === 0) {
+          const [result] = await window.api.scripture.search(
+            item.reference,
+            item.translation,
+          );
+          if (!result || result.verses.length === 0) {
+            setServiceError(`Could not load ${item.reference}.`);
+            return;
+          }
+          reference = result.reference;
+          verses = result.verses;
+          translation = result.translation;
+        }
+        const suggestion: ScriptureSuggestion = {
+          id: `playlist-${item.id}-${Date.now()}`,
+          reference,
+          verses,
+          translation,
+          confidence: 1,
+          source: "manual",
+          triggerText: reference,
+          planId: livePlan?.planId ?? undefined,
+          planItemId: item.id,
+          planMatch: "reference",
+        };
+        const slides = splitVerseSuggestions(suggestion);
+        const first = slides[0];
+        if (!first) return;
+        await Promise.all(slides.map((slide) => window.api.scripture.register(slide)));
+        await window.api.scripture.presentDirectly(first);
+        slides.forEach(insertSuggestion);
+        const sent = new Set(sentSuggestionIdsRef.current).add(first.id);
+        sentSuggestionIdsRef.current = sent;
+        setSentSuggestionIds(sent);
+        followStateRef.current = { passageId: first.passageId!, currentIndex: 0, matchedTokenIndexes: [] };
+        reference = first.reference;
+        verses = first.verses;
+        const text = verses[0].text;
+        setActiveProjection({ reference, text });
+        const store = useAppStore.getState();
+        store.markLiveOutput(reference);
+        store.setLiveOutputPreview({
+          kind: "scripture",
+          reference,
+          text,
+          verses,
+          translation,
+        });
+      } catch (err) {
+        console.error(err);
+        setServiceError(
+          err instanceof Error
+            ? err.message
+            : `Could not present ${item.reference}.`,
+        );
+      } finally {
+        setQueueBusyId(null);
+      }
+    },
+    [livePlan?.planId, insertSuggestion],
+  );
 
   const handleDismissSuggestion = useCallback(
     async (id: string): Promise<void> => {
@@ -1282,7 +1365,6 @@ export default function Operator(): React.ReactElement {
           );
           setSelectedSuggestionId(nextId);
           const nextCard = verseCardRefs.current.get(nextId);
-          nextCard?.scrollIntoView({ behavior: "smooth", block: "nearest" });
           if (controllingCards) {
             nextCard?.focus({ preventScroll: true });
             void handleApproveSuggestion(nextId);
@@ -1575,7 +1657,10 @@ export default function Operator(): React.ReactElement {
         <div className="flex h-full min-h-0 w-full">
           {/* LEFT COLUMN: compact live transcript */}
           <section
-            className="transcript-glass relative flex shrink-0 flex-col border-r border-white/10"
+            className={cn(
+              "transcript-glass relative flex shrink-0 flex-col border-r border-white/10",
+              nuggetsOpen && "z-40",
+            )}
             style={{ width: transcriptWidth }}
           >
             <button
@@ -1591,109 +1676,30 @@ export default function Operator(): React.ReactElement {
                   resizePanelByKeyboard("left", 16);
               }}
             />
-            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-white/10 bg-black/20 px-3 py-1.5">
-              <span className="font-narrow text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">
+            <div className="relative z-20 flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-white/[0.07] px-3 py-2.5">
+              <span className="text-xs font-medium tracking-normal text-zinc-200">
                 Live transcript
               </span>
               <div className="flex items-center gap-1.5">
-                <div className="relative">
-                  <button
-                    type="button"
-                    onClick={() => setNuggetsOpen((open) => !open)}
-                    className={cn(
-                      "flex h-6 items-center gap-1 rounded px-2 text-[10px] font-semibold",
-                      nuggetsOpen
-                        ? "bg-amber-500/15 text-amber-300"
-                        : "text-zinc-500 hover:bg-white/5 hover:text-zinc-200",
-                    )}
-                    aria-expanded={nuggetsOpen}
-                    aria-label={`Saved message nuggets: ${nuggets.length}`}
-                  >
-                    <BookmarkSimple
-                      size={11}
-                      weight={nuggets.length ? "fill" : "regular"}
-                    />
-                    Nuggets {nuggets.length > 0 ? nuggets.length : ""}
-                  </button>
-                  {nuggetsOpen && (
-                    <div className="absolute left-0 top-full z-40 mt-2 w-72 overflow-hidden rounded-lg border border-white/10 bg-zinc-900 shadow-2xl">
-                      <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
-                        <span className="text-[11px] font-semibold text-zinc-200">
-                          {activeService
-                            ? "This service’s nuggets"
-                            : "Legacy nuggets"}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={exportNuggets}
-                          disabled={nuggets.length === 0}
-                          className="flex items-center gap-1 text-[10px] text-zinc-400 hover:text-white disabled:opacity-30"
-                        >
-                          <Download size={11} /> Export
-                        </button>
-                      </div>
-                      <div className="max-h-72 overflow-y-auto p-2">
-                        {nuggets.length === 0 ? (
-                          <p className="px-2 py-5 text-center text-[11px] leading-relaxed text-zinc-500">
-                            Bookmark a transcript line to save a quote for after
-                            service.
-                          </p>
-                        ) : (
-                          nuggets.map((nugget) => (
-                            <div
-                              key={nugget.id}
-                              className="group/nugget flex gap-2 rounded-md px-2 py-2 hover:bg-white/[0.04]"
-                            >
-                              <div className="min-w-0 flex-1">
-                                <p className="text-[11px] leading-relaxed text-zinc-300">
-                                  {nugget.text}
-                                </p>
-                                <p className="mt-1 text-[9px] text-zinc-600">
-                                  {new Date(
-                                    nugget.capturedAt,
-                                  ).toLocaleTimeString([], {
-                                    hour: "2-digit",
-                                    minute: "2-digit",
-                                  })}
-                                </p>
-                              </div>
-                              <div className="flex self-start opacity-0 group-hover/nugget:opacity-100 focus-within:opacity-100">
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    void navigator.clipboard.writeText(
-                                      nugget.text,
-                                    )
-                                  }
-                                  className="grid size-6 place-items-center text-zinc-600 hover:text-white"
-                                  aria-label="Copy nugget"
-                                  title="Copy nugget"
-                                >
-                                  <Copy size={11} />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => removeNugget(nugget.id)}
-                                  className="grid size-6 place-items-center text-zinc-600 hover:text-rose-400"
-                                  aria-label="Remove nugget"
-                                  title="Remove nugget"
-                                >
-                                  <X size={11} />
-                                </button>
-                              </div>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </div>
+                <button
+                  type="button"
+                  onClick={() => setNuggetsOpen((open) => !open)}
+                  className={cn(
+                    "flex h-7 items-center gap-1 rounded-md px-1.5 text-[10px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/60",
+                    nuggetsOpen
+                      ? "bg-amber-500/15 text-amber-300"
+                      : "text-zinc-500 hover:bg-white/5 hover:text-zinc-200",
                   )}
-                </div>
-                {isTranscribing && (
-                  <span className="flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-emerald-400">
-                    <span className="size-1 rounded-full bg-emerald-400" />
-                    Live
-                  </span>
-                )}
+                  aria-expanded={nuggetsOpen}
+                  aria-label={`Saved message nuggets: ${nuggets.length}`}
+                  title={`Saved quotes (${nuggets.length})`}
+                >
+                  <BookmarkSimple
+                    size={11}
+                    weight={nuggets.length ? "fill" : "regular"}
+                  />
+                  {nuggets.length > 0 && <span className="tabular-nums">{nuggets.length}</span>}
+                </button>
                 <button
                   type="button"
                   onClick={() => void handleTogglePipeline()}
@@ -1706,7 +1712,7 @@ export default function Operator(): React.ReactElement {
                         : "Create a service and start transcription"
                   }
                   className={cn(
-                    "flex h-6 items-center gap-1 rounded px-2 text-[10px] font-semibold uppercase tracking-wider",
+                    "flex h-7 items-center gap-1.5 rounded-md px-2 text-[11px] font-medium transition-colors disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/60",
                     isTranscribing
                       ? "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
                       : "bg-teal-500 text-[#111827] hover:bg-teal-400",
@@ -1720,6 +1726,91 @@ export default function Operator(): React.ReactElement {
                   {isTranscribing ? "Pause" : "Start"}
                 </button>
               </div>
+              {nuggetsOpen && (
+                <div
+                  className="absolute inset-x-2 top-full z-50 mt-1.5 overflow-hidden rounded-lg border border-white/10 bg-zinc-950 shadow-2xl"
+                  role="dialog"
+                  aria-label={
+                    activeService
+                      ? "This service’s nuggets"
+                      : "Legacy nuggets"
+                  }
+                >
+                  <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
+                    <span className="text-[11px] font-semibold text-zinc-200">
+                      {activeService
+                        ? "This service’s nuggets"
+                        : "Legacy nuggets"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={exportNuggets}
+                      disabled={nuggets.length === 0}
+                      className="flex items-center gap-1 text-[10px] text-zinc-400 hover:text-white disabled:opacity-30"
+                    >
+                      <Download size={11} /> Export
+                    </button>
+                  </div>
+                  <div className="max-h-72 overflow-y-auto p-2">
+                    {nuggets.length === 0 ? (
+                      <p className="px-2 py-5 text-center text-[11px] leading-relaxed text-zinc-500">
+                        Bookmark a transcript line to save a quote for after
+                        service.
+                      </p>
+                    ) : (
+                      nuggets.map((nugget) => (
+                        <div
+                          key={nugget.id}
+                          className="group/nugget flex gap-2 rounded-md px-2 py-2 hover:bg-white/[0.04]"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <p className="text-[11px] leading-relaxed text-zinc-300">
+                              {nugget.text}
+                            </p>
+                            <p className="mt-1 text-[9px] text-zinc-600">
+                              {new Date(
+                                nugget.capturedAt,
+                              ).toLocaleTimeString([], {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </p>
+                          </div>
+                          <div className="flex self-start opacity-0 group-hover/nugget:opacity-100 focus-within:opacity-100">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void navigator.clipboard.writeText(nugget.text)
+                              }
+                              className="grid size-6 place-items-center text-zinc-600 hover:text-white"
+                              aria-label="Copy nugget"
+                              title="Copy nugget"
+                            >
+                              <Copy size={11} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => removeNugget(nugget.id)}
+                              className="grid size-6 place-items-center text-zinc-600 hover:text-rose-400"
+                              aria-label="Remove nugget"
+                              title="Remove nugget"
+                            >
+                              <X size={11} />
+                            </button>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="flex shrink-0 items-center justify-between px-3 py-1.5 text-[10px] text-zinc-500">
+              <span className="flex items-center gap-1.5">
+                <span aria-hidden="true" className={cn("size-1.5 rounded-full", isTranscribing ? "bg-teal-400" : "bg-zinc-600")} />
+                {isTranscribing ? sttHealth?.status === "error" || sttHealth?.status === "degraded" ? "Reconnecting" : "Listening" : "Paused"}
+              </span>
+              <span>Auto-scroll on</span>
             </div>
             <ServicePanel
               onStartTranscription={handleTogglePipeline}
@@ -1729,36 +1820,37 @@ export default function Operator(): React.ReactElement {
             {resilienceStatus &&
               (sttHealth?.status === "degraded" ||
                 sttHealth?.status === "error") && (
-                <div className="bg-amber-950/20 border-b border-amber-500/30 px-4 py-2 text-[10px] font-bold text-amber-400 flex items-center justify-between animate-pulse shrink-0">
-                  <span>TRANSCRIPTION PAUSED — RECONNECTING</span>
+                <div className="border-b border-amber-500/15 bg-amber-500/[0.04] px-3 py-2 text-[11px] text-amber-300 flex flex-wrap items-center gap-1.5 shrink-0">
+                  <span>Reconnecting…</span>
                   <span className="bg-amber-500/10 px-1.5 py-0.5 rounded text-[9px]">
-                    BUFFERING AUDIO
+                    Audio is buffered
                   </span>
                 </div>
               )}
             <div
-              onScroll={handleTranscriptScroll}
+              ref={transcriptScrollRef}
               className={cn(
-                "flex-1 overflow-y-auto p-4 scroll-smooth font-sans text-zinc-100 leading-relaxed text-sm antialiased select-text",
+                "min-h-0 flex-1 overflow-y-auto px-4 py-4 font-sans text-[14px] leading-[1.75] text-zinc-300 antialiased select-text break-words",
                 segments.length === 0 &&
                   !interimText &&
                   !activeService &&
                   !isTranscribing
                   ? "flex flex-col"
-                  : "space-y-3",
+                  : "space-y-2",
               )}
             >
-              {segments.map((seg) => {
+              {segments.map((seg, segmentIndex) => {
                 const saved = nuggets.some((item) => item.text === seg.text);
                 return (
                   <div
                     key={seg.id}
                     className={cn(
-                      "group/segment relative rounded-md py-1 pr-7 transition-colors",
-                      saved && "bg-amber-500/[0.06]",
+                      "group/segment relative rounded-md py-1 pr-5",
+                      saved && "bg-amber-500/[0.04]",
+                      segmentIndex === segments.length - 1 && "text-zinc-100",
                     )}
                   >
-                    <p className="transition-all duration-300">
+                    <p>
                       <HighlightedText
                         text={seg.text}
                         scriptureHighlights={seg.scriptureHighlights}
@@ -1768,7 +1860,7 @@ export default function Operator(): React.ReactElement {
                       type="button"
                       onClick={() => toggleNugget(seg)}
                       className={cn(
-                        "absolute right-1 top-1 grid size-6 place-items-center rounded opacity-0 transition-opacity hover:bg-amber-500/10 hover:text-amber-300 group-hover/segment:opacity-100 focus-visible:opacity-100",
+                        "absolute -right-1 top-1.5 grid size-6 place-items-center rounded opacity-0 transition-opacity hover:bg-amber-500/10 hover:text-amber-300 group-hover/segment:opacity-100 focus-visible:opacity-100",
                         saved && "text-amber-400 opacity-100",
                       )}
                       disabled={saved || !activeService}
@@ -1788,7 +1880,7 @@ export default function Operator(): React.ReactElement {
                 );
               })}
               {interimText && (
-                <p className="animate-pulse italic text-zinc-300">
+                <p className="border-l-2 border-teal-500/40 pl-3 text-zinc-400">
                   {interimText}
                 </p>
               )}
@@ -1830,7 +1922,6 @@ export default function Operator(): React.ReactElement {
                       : "Transcription paused."}
                   </p>
                 ))}
-              <div ref={transcriptEndRef} />
             </div>
 
             {/* Audio Signal Level Indicator */}
@@ -1885,9 +1976,9 @@ export default function Operator(): React.ReactElement {
                 <span className="font-narrow text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">
                   Detected content
                 </span>
-                {suggestions.length > 0 && (
+                {suggestionSections.current.length > 0 && (
                   <span className="tabular-nums text-[10px] text-zinc-600">
-                    {suggestions.length}
+                    {suggestionSections.current.length}
                   </span>
                 )}
               </div>
@@ -1915,9 +2006,7 @@ export default function Operator(): React.ReactElement {
             </div>
             <div
               ref={queueScrollRef}
-              onWheel={noteQueueBrowsing}
-              onTouchMove={noteQueueBrowsing}
-              className="flex flex-1 flex-col overflow-y-auto px-4 py-3"
+              className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-3"
             >
               <div className="flex w-full min-w-0 flex-col space-y-5">
                 {suggestionSections.current.map((group) => {
@@ -2083,46 +2172,6 @@ export default function Operator(): React.ReactElement {
                     </section>
                   );
                 })}
-                {suggestionSections.history.length > 0 && (
-                  <section className="w-full max-w-md border-t border-surface-border pt-4">
-                    <div className="mb-2 flex items-center justify-between gap-3">
-                      <p className="font-narrow text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-600">
-                        History
-                        <span className="ml-2 font-sans font-medium normal-case tracking-normal tabular-nums">
-                          {suggestionSections.history.length}
-                        </span>
-                      </p>
-                      <button
-                        type="button"
-                        onClick={handleClearHistory}
-                        className="text-[10px] font-semibold text-zinc-600 hover:text-rose-400 focus-visible:outline-none"
-                      >
-                        Clear
-                      </button>
-                    </div>
-                    <div className="flex flex-col">
-                      {suggestionSections.history.slice(0, 5).map((group) => (
-                        <button
-                          key={group.id}
-                          type="button"
-                          onClick={() =>
-                            void handleApproveSuggestion(
-                              group.suggestions[0].id,
-                            )
-                          }
-                          className="flex items-baseline justify-between gap-3 py-1.5 text-left hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
-                        >
-                          <span className="truncate text-[12px] font-medium text-zinc-300">
-                            {group.reference}
-                          </span>
-                          <span className="shrink-0 text-[10px] tabular-nums text-zinc-600">
-                            {group.suggestions.length}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  </section>
-                )}
               </div>
 
               {suggestions.length === 0 && (
@@ -2140,6 +2189,45 @@ export default function Operator(): React.ReactElement {
                 </div>
               )}
             </div>
+
+            <aside
+              className="transcript-glass relative shrink-0 border-t border-white/10"
+              style={{ height: referenceHeight }}
+            >
+              <button
+                type="button"
+                aria-label="Resize reference panel"
+                title="Drag to resize reference panel"
+                className="absolute inset-x-0 -top-1 z-10 h-2 cursor-row-resize bg-transparent outline-none hover:bg-teal-500/15 focus-visible:bg-teal-500/20"
+                onPointerDown={startReferenceResize}
+                onKeyDown={(event) => {
+                  if (event.key === "ArrowUp") resizeReferenceByKeyboard(-16);
+                  if (event.key === "ArrowDown") resizeReferenceByKeyboard(16);
+                }}
+              />
+              <ReferenceLibrary
+                listening={isTranscribing}
+                planTitle={livePlaylist ? displayPlanTitle(livePlaylist.title) : undefined}
+                detected={allDetectedGroups.map((group) => ({
+                  id: group.id,
+                  reference: group.reference,
+                  detail: group.suggestions[0]?.verses[0]?.text,
+                  fromSermon: group.suggestions.some((item) => Boolean(item.planMatch)),
+                  live: group.suggestions.some((item) => item.reference === activeProjection?.reference),
+                  present: () => { void handleApproveSuggestion(group.suggestions[0].id); },
+                }))}
+                passages={(livePlaylist?.items ?? []).map((item) => ({
+                  id: item.id,
+                  reference: item.reference,
+                  detail: item.verses[0]?.text,
+                  live: activeProjection?.reference === item.reference || item.verses.some((verse) => `${verse.book} ${verse.chapter}:${verse.verse}` === activeProjection?.reference),
+                  heard: matchedPlanItemIds.has(item.id),
+                  expectedReference: livePlan?.nextPlanItemId === item.id ? livePlan.nextReference ?? undefined : undefined,
+                  busy: queueBusyId === item.id,
+                  present: () => { void handlePresentPlaylistItem(item); },
+                }))}
+              />
+            </aside>
           </section>
         </div>
       </BoothWorkspace>

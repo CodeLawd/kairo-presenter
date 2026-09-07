@@ -88,11 +88,11 @@ test('builds next and previous queries from the loaded queue edges', () => {
   assert.deepEqual(getAdjacentVerseQueries(loaded, 'previous'), ['Joshua 1:7'])
 })
 
-test('uses a chapter range fallback when navigating before verse one', () => {
+test('uses a capped chapter range when navigating before verse one', () => {
   const loaded: ScriptureResult[] = [
     { reference: 'Joshua 2:1', translation: 'KJV', verses: [{ book: 'Joshua', chapter: 2, verse: 1, text: 'One' }] },
   ]
-  assert.deepEqual(getAdjacentVerseQueries(loaded, 'previous'), ['Joshua 1:1–999'])
+  assert.deepEqual(getAdjacentVerseQueries(loaded, 'previous'), ['Joshua 1:1–176'])
 })
 
 test('combines loaded verses into one same-chapter passage result', () => {

@@ -156,7 +156,8 @@ export function getAdjacentVerseQueries(
   }
   if (verse > 1) return [`${book} ${chapter}:${verse - 1}`]
   if (chapter <= 1) return []
-  return [`${book} ${chapter - 1}:1–999`]
+  // Cap at Psalm 119 length — avoids a 1–999 API.Bible range blow-up.
+  return [`${book} ${chapter - 1}:1–176`]
 }
 
 /**

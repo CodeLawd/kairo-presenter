@@ -65,6 +65,7 @@ interface RawRef {
 
 interface DetectorEvents {
   detection: [refs: ScriptureReference[]];
+  planProgress: [reference: string, itemId: string];
   processing: [text: string];
   error: [err: Error];
   requestSuccess: [];
@@ -331,6 +332,7 @@ Output:
 
 export class ScriptureDetector extends EventEmitter {
   private cfg: Required<DetectorConfig>;
+  private readonly lifetime = new AbortController();
   private anthropic: Anthropic | null = null;
   private openaiCompat: OpenAI | null = null;
 
@@ -407,12 +409,13 @@ export class ScriptureDetector extends EventEmitter {
 
   /** Submit transcript text for analysis. Queues; only latest text is sent. */
   analyze(text: string): void {
-    if (!text.trim()) return;
+    if (this.lifetime.signal.aborted || !text.trim()) return;
 
     // Explicit citations are deterministic and latency-sensitive. Resolve them
     // locally before entering the throttled AI queue; the AI remains the path
     // for quotation/paraphrase detection when no explicit reference is present.
     if (this.analyzeExplicit(text, true)) return;
+    if (!this.cfg.apiKey.trim()) return;
 
     this.pendingText = text;
 
@@ -437,11 +440,14 @@ export class ScriptureDetector extends EventEmitter {
     requireVerse = false,
     deferAmbiguousRepeatedPair = false,
   ): boolean {
+    if (this.lifetime.signal.aborted) return false;
     const now = Date.now();
     if (this.explicitContext && now - this.explicitContext.updatedAt > 12_000) {
       this.explicitContext = null;
     }
 
+    // Never carry a previous chapter into an unreadable new citation.
+    if (hasCorruptedScriptureCitation(text)) this.explicitContext = null;
     const direct = matchExplicitScriptures(text);
     const directWithVerse = direct.filter(
       (ref) =>
@@ -536,6 +542,7 @@ export class ScriptureDetector extends EventEmitter {
     const match = matchPlanQuote(index, this.planQuoteWindow);
     if (!match) return false;
 
+    this.emit("planProgress", match.entry.reference, match.entry.planItemId);
     const { verse } = match.entry;
     const ref: ScriptureReference = {
       book: verse.book,
@@ -613,6 +620,7 @@ export class ScriptureDetector extends EventEmitter {
   }
 
   destroy(): void {
+    this.lifetime.abort();
     if (this.flushTimer) {
       clearTimeout(this.flushTimer);
       this.flushTimer = null;
@@ -625,7 +633,7 @@ export class ScriptureDetector extends EventEmitter {
   // ─── Queue / flush ─────────────────────────────────────────────────────────
 
   private flush(): void {
-    if (!this.pendingText || this.processing) return;
+    if (this.lifetime.signal.aborted || !this.pendingText || this.processing) return;
 
     if (this.fallbackMode) {
       const text = this.pendingText;
@@ -694,8 +702,10 @@ export class ScriptureDetector extends EventEmitter {
         await sleep(backoff);
       }
 
+      if (this.lifetime.signal.aborted) return;
       try {
         const raw = await this.callModel(text);
+        if (this.lifetime.signal.aborted) return;
         const latency = Date.now() - start;
 
         this.statsData.totalCalls++;
@@ -728,6 +738,7 @@ export class ScriptureDetector extends EventEmitter {
         });
         return;
       } catch (err) {
+        if (this.lifetime.signal.aborted) return;
         lastErr = err as Error;
 
         if (isRateLimitError(err)) {
@@ -757,7 +768,7 @@ export class ScriptureDetector extends EventEmitter {
   // ─── Model call ────────────────────────────────────────────────────────────
 
   private async callModel(text: string): Promise<string> {
-    const signal = AbortSignal.timeout(this.cfg.timeoutMs);
+    const signal = AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(this.cfg.timeoutMs)]);
     const userContent = `Detect Bible scripture references in this sermon transcript excerpt:\n\n${text}`;
 
     if (this.cfg.provider === "deepseek" && this.openaiCompat) {
@@ -1149,7 +1160,7 @@ function normalizeWordNumbers(text: string): string {
     ninety: "90",
   };
 
-  let normalized = text.toLowerCase();
+  let normalized = text.toLowerCase().replace(/\bpslams?\b/g, "psalms").replace(/[–—]/g, "-");
   normalized = normalized.replace(/\bchapter\s+number\s+/g, "chapter ");
 
   // Deepgram occasionally joins one half of a spoken compound number while
@@ -1203,6 +1214,14 @@ function normalizeWordNumbers(text: string): string {
   return normalized;
 }
 
+// Only flag mixed alphanumeric number tokens immediately following a book.
+// Known recoverable forms (e.g. twenty4) have already been normalized.
+export function hasCorruptedScriptureCitation(text: string): boolean {
+  const normalized = normalizeWordNumbers(text);
+  const books = Object.keys(CANONICAL_BOOKS).sort((a, b) => b.length - a.length).join("|");
+  return new RegExp(`\\b(?:${books})\\b\\s+(?:chapter\\s+)?(?=[a-z0-9]*[a-z])(?=[a-z0-9]*\\d)[a-z0-9]+\\b`, "i").test(normalized);
+}
+
 export function matchExplicitScriptures(text: string): ScriptureReference[] {
   const normalized = normalizeWordNumbers(text);
   const results: ScriptureReference[] = [];
@@ -1219,7 +1238,7 @@ export function matchExplicitScriptures(text: string): ScriptureReference[] {
 
   // Match book name, followed by chapter, optionally verse, optionally verse range
   const regex = new RegExp(
-    `\\b(${bookRegexStr})\\b\\s*(?:chapter\\s+)?(\\d+)(?:\\s+\\2(?=\\s+(?:verse\\s+)?\\d+\\s*(?:-|thru|through|to)))?(?:\\s*[:\\s]\\s*(?:verse\\s+)?(\\d+)(?:(?:\\s*(?:-|thru|through|to)\\s*|\\s+)(\\d+))?)?`,
+    `\\b(${bookRegexStr})\\b\\s*(?:chapter\\s+)?(\\d+)\\b(?:\\s+\\2(?=\\s+(?:verses?\\s+)?\\d+\\s*(?:-|thru|through|to)))?(?:\\s*[:\\s]\\s*(?:verses?\\s+)?(\\d+)(?:(?:\\s*(?:-|thru|through|to)\\s*|\\s+)(\\d+))?)?`,
     "gi",
   );
 

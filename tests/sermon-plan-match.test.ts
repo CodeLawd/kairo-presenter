@@ -203,3 +203,29 @@ test("a null index and empty speech never quote-match", () => {
   const index = buildSermonPlanIndex(plan([singleVerseItem]));
   assert.equal(matchPlanQuote(index, "   "), null);
 });
+
+test("sermon expectation follows verses then the next uploaded passage", async () => {
+  const { advancePlanExpectation } = await import('../src/lib/sermon-plan-match');
+  const next = item({ id: 'next', reference: 'John 3:16', verses: [verse('John', 3, 16, 'For God so loved the world that he gave his only begotten son')] });
+  const index = buildSermonPlanIndex(plan([rangeItem, next]));
+  assert.equal(index.ordered[index.expectedIndex].reference, 'Romans 8:28');
+  advancePlanExpectation(index, 'Romans 8:28');
+  assert.equal(index.ordered[index.expectedIndex].reference, 'Romans 8:29');
+  assert.equal(advancePlanExpectation(index, 'Romans 8:28'), false);
+  advancePlanExpectation(index, 'Romans 8:29');
+  assert.equal(index.ordered[index.expectedIndex].reference, 'John 3:16');
+  assert.equal(advancePlanExpectation(index, 'Genesis 1:1'), false);
+  advancePlanExpectation(index, 'John 3:16');
+  assert.equal(index.ordered[index.expectedIndex], undefined);
+});
+
+test("expected order breaks a quotation tie but never creates a match without evidence", () => {
+  const wording = 'the Lord has been mindful of us and he will bless us';
+  const index = buildSermonPlanIndex(plan([
+    item({ id: 'earlier', reference: 'Psalms 115:12', verses: [verse('Psalms', 115, 12, wording)] }),
+    item({ id: 'expected', reference: 'Psalms 116:12', verses: [verse('Psalms', 116, 12, wording)] }),
+  ]));
+  index.expectedIndex = 1;
+  assert.equal(matchPlanQuote(index, wording)?.entry.planItemId, 'expected');
+  assert.equal(matchPlanQuote(index, 'good morning church'), null);
+});

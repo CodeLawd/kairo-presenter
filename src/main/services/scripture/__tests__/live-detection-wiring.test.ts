@@ -163,3 +163,36 @@ test("with no live playlist the quote path is inert", () => {
   unsubscribe();
   detector.destroy();
 });
+
+test("corrupted final citations reach contextual analysis without waiting for the buffer", () => {
+  let finalListener!: (result: TranscriptResult) => void;
+  let interimListener!: (result: InterimResult) => void;
+  const source = {
+    onTranscript(cb: typeof finalListener) { finalListener = cb; }, offTranscript() {},
+    onInterim(cb: typeof interimListener) { interimListener = cb; }, offInterim() {},
+  };
+  const detector = new ScriptureDetector({ apiKey: 'test-key' });
+  const analyzed: string[] = [];
+  detector.analyze = (text) => { analyzed.push(text); };
+  const unsubscribe = subscribeExplicitScriptureDetection(source, detector);
+  const text = 'Psalm 1one512-thirteen says, The Lord has been mindful of you';
+  interimListener({ text, stability: 0.8, timestamp: Date.now() });
+  assert.deepEqual(analyzed, []);
+  finalListener({ text, id: 'corrupt', words: [], timestamp: Date.now(), duration: 2, isFinal: true });
+  assert.deepEqual(analyzed, [text]);
+  unsubscribe();
+  detector.destroy();
+});
+
+test('a quote updates sermon progress even when its detection is deduplicated', () => {
+  const detector = new ScriptureDetector({ apiKey: '' });
+  const text = 'And we know that all things work together for good to those who love God';
+  const index = buildSermonPlanIndex({ id: 'plan', title: 'Sunday', sourceFileName: 'notes', createdAt: 0, updatedAt: 0, items: [{ id: 'item', reference: 'Romans 8:28', translation: 'NKJV', available: true, verses: [{ book: 'Romans', chapter: 8, verse: 28, text }] }] });
+  detector.setPlanIndexProvider(() => index);
+  const progress: string[] = [];
+  detector.on('planProgress', reference => progress.push(reference));
+  detector.analyzeExplicit('Romans 8:28', true);
+  detector.analyzePlanQuote(text);
+  assert.deepEqual(progress, ['Romans 8:28']);
+  detector.destroy();
+});

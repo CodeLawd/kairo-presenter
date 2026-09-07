@@ -235,13 +235,14 @@ function registerScriptureHandlers(): void {
     const result = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
     if (result.canceled || !result.filePaths[0]) return null;
     const filePath = result.filePaths[0];
-    const text = await readSermonDocument(filePath);
+    const { text, html } = await readSermonDocument(filePath);
     const defaultTranslation = store.get('scripture').defaultTranslation;
     const analysis = analyzeScriptureReferences(text, defaultTranslation);
     return {
       title: path.basename(filePath, path.extname(filePath)),
       sourceFileName: path.basename(filePath),
       text,
+      html,
       ...analysis,
     };
   });

@@ -1,3 +1,4 @@
+import { createAudioCapture } from '@/audio/capture'
 import { IMPORT_OPTIONS, isImportKind } from '@shared/import-menu'
 import { requestImport } from '@/hooks/useImportRequest'
 import Documents from '@/components/documents/Documents'
@@ -106,17 +107,13 @@ function AudioPipeline(): null {
     captureDeviceId,
   } = useAppStore()
 
-  const micStreamRef = useRef<MediaStream | null>(null)
-  const audioCtxRef  = useRef<AudioContext | null>(null)
-  const processorRef = useRef<ScriptProcessorNode | null>(null)
-
   // Runtime state is hydrated once by the startup bootstrap; the push
   // subscriptions below keep it current from then on.
   // Sync running state from orchestrator push events
   useEffect(() => {
     const unsubOrch = window.api.orchestrator.onStatus((s) => {
       useAppStore.getState().setIsTranscribing(s.running)
-      useAppStore.getState().setAudioCapturing(s.running)
+      if (!s.running) useAppStore.getState().setAudioCapturing(false)
       useAppStore.setState({ scriptureProjectedCount: s.totalPresentations })
     })
     const unsubPP = window.api.propresenter.onStatusChange((status) => {
@@ -125,70 +122,39 @@ function AudioPipeline(): null {
     return () => { unsubOrch(); unsubPP() }
   }, [])
 
-  // Start / stop capture when isTranscribing changes
   useEffect(() => {
     if (!isTranscribing) {
-      processorRef.current?.disconnect()
-      processorRef.current = null
-      audioCtxRef.current?.close().catch(() => {})
-      audioCtxRef.current = null
-      micStreamRef.current?.getTracks().forEach((t) => t.stop())
-      micStreamRef.current = null
       setAudioCapturing(false)
       setAudioLevel(null)
       return
     }
-
     let cancelled = false
-    ;(async () => {
-      try {
-        const constraints: MediaTrackConstraints = {
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false,
-        }
-        const devId = captureDeviceId || useBootstrapStore.getState().settings.audio.deviceId
-        if (devId && devId !== 'default') constraints.deviceId = { exact: devId }
-
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: constraints })
-        if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return }
-        micStreamRef.current = stream
-
-        const ctx = new AudioContext({ sampleRate: 16000 })
-        audioCtxRef.current = ctx
-        const source = ctx.createMediaStreamSource(stream)
-        // eslint-disable-next-line deprecation/deprecation
-        const processor = ctx.createScriptProcessor(4096, 1, 1)
-        processorRef.current = processor
-
-        processor.onaudioprocess = (e) => {
-          const float32 = e.inputBuffer.getChannelData(0)
-          const int16 = new Int16Array(float32.length)
-          let sum = 0, peak = 0
-          for (let i = 0; i < float32.length; i++) {
-            const s = Math.max(-1, Math.min(1, float32[i]))
-            int16[i] = s < 0 ? s * 0x8000 : s * 0x7fff
-            sum += s * s
-            if (Math.abs(s) > peak) peak = Math.abs(s)
-          }
-          setAudioLevel({ rms: Math.sqrt(sum / float32.length), peak, clipping: peak > 0.99, timestamp: Date.now() })
-          window.api.audio.sendPCMChunk(int16.buffer)
-        }
-
-        source.connect(processor)
-        processor.connect(ctx.destination)
-        setAudioCapturing(true)
-      } catch (err) {
-        if (!cancelled) {
-          console.error('[AudioPipeline] getUserMedia failed:', err)
-          setIsTranscribing(false)
-          setAudioCapturing(false)
-        }
-      }
-    })()
-
-    return () => { cancelled = true }
-  }, [isTranscribing, captureDeviceId])
+    const capture = createAudioCapture({
+      deviceId: captureDeviceId || useBootstrapStore.getState().settings.audio.deviceId,
+      workletUrl: `${import.meta.env.BASE_URL}audio/pcm-capture.worklet.js`,
+      onPCM: (pcm) => window.api.audio.sendPCMChunk(pcm),
+      onLevel: setAudioLevel,
+      onError: (error) => {
+        if (cancelled) return
+        console.error('[AudioPipeline] Capture failed:', error)
+        setIsTranscribing(false)
+        setAudioCapturing(false)
+        setAudioLevel(null)
+        void window.api.orchestrator.stop().catch((stopError) => {
+          console.error('[AudioPipeline] Stop failed:', stopError)
+        })
+      },
+    })
+    void capture.ready.then((active) => {
+      if (!cancelled && active) setAudioCapturing(true)
+    }).catch(() => { /* onError reports setup failure */ })
+    return () => {
+      cancelled = true
+      capture.stop()
+      setAudioCapturing(false)
+      setAudioLevel(null)
+    }
+  }, [isTranscribing, captureDeviceId, setIsTranscribing, setAudioCapturing, setAudioLevel])
 
   return null
 }

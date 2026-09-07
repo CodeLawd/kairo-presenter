@@ -114,21 +114,22 @@ export function PlaylistSidebar({
     >
       <div className="flex shrink-0 items-center justify-between gap-2 border-b border-surface-border bg-surface-tertiary px-3 py-2">
         <h2 className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">
-          Playlist
+          Playlists
         </h2>
         <button
           type="button"
-          className="flex h-6 w-6 items-center justify-center rounded text-slate-400 hover:bg-surface-tertiary hover:text-white disabled:opacity-50"
+          className="flex h-7 items-center justify-center gap-1 rounded-md bg-white/5 px-2 text-[11px] font-medium text-slate-300 hover:bg-white/10 hover:text-white disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400"
           onClick={onCreate}
           disabled={creatingPlaylist}
-          aria-label="Create empty playlist"
+          aria-label="New playlist"
           title="New playlist"
         >
           {creatingPlaylist ? (
             <Loader size={12} className="animate-spin" />
           ) : (
-            <Plus size={14} />
+            <Plus size={12} />
           )}
+          New playlist
         </button>
       </div>
 
@@ -141,7 +142,7 @@ export function PlaylistSidebar({
             <div className="px-3 py-8 text-center">
               <p className="text-xs font-medium text-slate-400">No playlists yet</p>
               <p className="mt-1 text-[11px] leading-relaxed text-slate-600">
-                Tap + to create one, then add verses later.
+                Create a playlist, search for scripture, then choose Add to playlist.
               </p>
             </div>
           )}

@@ -78,6 +78,7 @@ export declare interface DeepgramSTTService {
 // ─── Service ──────────────────────────────────────────────────────────────────
 
 export class DeepgramSTTService extends EventEmitter {
+  private connectionGeneration = 0
   private apiKey   = ''
   private language = 'en'
   private client:  DeepgramClient | null = null
@@ -131,7 +132,8 @@ export class DeepgramSTTService extends EventEmitter {
   }
 
   disconnect(): void {
-    this.destroyed        = false
+    this.connectionGeneration++
+    this.destroyed        = true
     this.active           = false
     this.reconnecting     = false
     this.reconnectAttempt = 0
@@ -157,18 +159,24 @@ export class DeepgramSTTService extends EventEmitter {
     this.audioSource = stream
 
     stream.on('data', this.onAudioChunk)
-    stream.once('end', () => this.detachStream())
-    stream.once('error', (err) => {
-      log.error('[Deepgram] Audio stream error', err.message)
-      this.detachStream()
-    })
+    stream.once('end', this.onAudioEnd)
+    stream.once('error', this.onAudioError)
 
     log.info('[Deepgram] Audio stream attached')
+  }
+
+  private onAudioEnd = (): void => { this.detachStream() }
+
+  private onAudioError = (err: Error): void => {
+    log.error('[Deepgram] Audio stream error', err.message)
+    this.detachStream()
   }
 
   detachStream(): void {
     if (!this.audioSource) return
     this.audioSource.off('data', this.onAudioChunk)
+    this.audioSource.off('end', this.onAudioEnd)
+    this.audioSource.off('error', this.onAudioError)
     this.audioSource = null
   }
 
@@ -202,17 +210,20 @@ export class DeepgramSTTService extends EventEmitter {
   // ─── Internal: socket lifecycle ────────────────────────────────────────────
 
   private async openSocket(): Promise<void> {
-    if (!this.client || this.destroyed) return
+    if (!this.client || !this.active || this.destroyed) return
+    const generation = ++this.connectionGeneration
 
     this.connectStartedAt = Date.now()
     log.info('[Deepgram] Opening WebSocket', { attempt: this.reconnectAttempt })
 
     try {
-      this.socket = await this.client.listen.v1.connect({
+      const candidate = await this.client.listen.v1.connect({
         model:            'nova-3',
         language:         this.language,
         punctuate:        'true',
         smart_format:     'true',
+        // Avoid the smart formatter holding unfinished number entities for 3s.
+        queryParams:      { no_delay: true },
         interim_results:  'true',
         utterance_end_ms: 1500,
         vad_events:       'true',
@@ -222,15 +233,23 @@ export class DeepgramSTTService extends EventEmitter {
         Authorization:    `Token ${this.apiKey}`,
         reconnectAttempts: 0,
       })
+      if (!this.active || generation !== this.connectionGeneration) {
+        candidate.close()
+        return
+      }
+      this.socket = candidate
     } catch (err) {
+      if (generation !== this.connectionGeneration || !this.active) return
       log.error('[Deepgram] connect() threw', (err as Error).message)
       this.handleSocketClose()
       return
     }
 
     const socket = this.socket
+    const isCurrent = (): boolean => this.active && generation === this.connectionGeneration && this.socket === socket
 
     socket.on('open', () => {
+      if (!isCurrent()) return
       log.info('[Deepgram] WebSocket open', {
         connectMs: Date.now() - this.connectStartedAt,
         attempt:   this.reconnectAttempt,
@@ -242,13 +261,19 @@ export class DeepgramSTTService extends EventEmitter {
       // Drain resilience buffer
       if (this.audioBuffer.length > 0) {
         log.info(`[Deepgram] Draining buffered audio: ${this.audioBuffer.length} chunks (${this.audioBufferBytes} bytes)`)
+        let sent = 0
         for (const b of this.audioBuffer) {
           try {
             const ab = b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer
-            this.socket.sendMedia(ab)
+            socket.sendMedia(ab)
+            sent++
           } catch (err) {
             log.error('[Deepgram] Failed to drain buffer chunk:', (err as Error).message)
-            break
+            this.audioBuffer = this.audioBuffer.slice(sent)
+            this.audioBufferBytes = this.audioBuffer.reduce((sum, chunk) => sum + chunk.length, 0)
+            this.closeSocket()
+            this.handleSocketClose()
+            return
           }
         }
         this.audioBuffer = []
@@ -258,15 +283,19 @@ export class DeepgramSTTService extends EventEmitter {
       this.emit('connected')
     })
 
-    socket.on('message', (msg: DGMessage) => this.handleMessage(msg))
+    socket.on('message', (msg: DGMessage) => {
+      if (isCurrent()) this.handleMessage(msg)
+    })
 
     socket.on('close', () => {
+      if (!isCurrent()) return
       log.info('[Deepgram] WebSocket closed')
       this.clearKeepAlive()
       this.handleSocketClose()
     })
 
     socket.on('error', (err: Error) => {
+      if (!isCurrent()) return
       log.error('[Deepgram] WebSocket error', err?.message)
       this.emit('error', err instanceof Error ? err : new Error(String(err)))
     })
@@ -276,13 +305,14 @@ export class DeepgramSTTService extends EventEmitter {
 
   private closeSocket(): void {
     if (!this.socket) return
-    try {
-      this.socket.sendCloseStream({ type: 'CloseStream' })
-      this.socket.close()
-    } catch {
-      // already closed
-    }
+    const socket = this.socket
     this.socket = null
+    try {
+      socket.sendCloseStream({ type: 'CloseStream' })
+    } catch {
+      // The stream may no longer accept control messages.
+    }
+    try { socket.close() } catch { /* already closed */ }
   }
 
   private handleSocketClose(): void {
@@ -420,18 +450,22 @@ export class DeepgramSTTService extends EventEmitter {
         const ab = chunk.buffer.slice(chunk.byteOffset, chunk.byteOffset + chunk.byteLength) as ArrayBuffer
         this.socket.sendMedia(ab)
       } catch {
-        // swallow — reconnect will resume
+        this.bufferAudio(chunk)
+        this.closeSocket()
+        this.handleSocketClose()
       }
     } else if (this.active && !this.destroyed) {
-      // Buffer audio up to 30 seconds (16kHz mono 16-bit PCM = 32000 bytes/sec)
-      // 30s * 32000 bytes/s = 960,000 bytes
-      this.audioBuffer.push(chunk)
-      this.audioBufferBytes += chunk.length
+      this.bufferAudio(chunk)
+    }
+  }
 
-      while (this.audioBufferBytes > 960000 && this.audioBuffer.length > 0) {
-        const oldest = this.audioBuffer.shift()!
-        this.audioBufferBytes -= oldest.length
-      }
+  private bufferAudio(chunk: Buffer): void {
+    // Retain at most 30s of 16kHz mono 16-bit PCM during reconnect.
+    this.audioBuffer.push(chunk)
+    this.audioBufferBytes += chunk.length
+    while (this.audioBufferBytes > 960000 && this.audioBuffer.length > 0) {
+      const oldest = this.audioBuffer.shift()!
+      this.audioBufferBytes -= oldest.length
     }
   }
 }

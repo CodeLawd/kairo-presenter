@@ -49,3 +49,32 @@ export function normalizeOperatorPanelWidth(
   }
   return resizeOperatorPanel(side, parsed, 0);
 }
+
+/** Bottom reference strip under Detected content (detections + playlist). */
+export const OPERATOR_REFERENCE_HEIGHT = {
+  default: 200,
+  min: 120,
+  max: 420,
+} as const;
+
+/** Dragging the top edge up increases height (negative deltaY → taller). */
+export function resizeOperatorReferenceHeight(
+  startHeight: number,
+  pointerDeltaY: number,
+): number {
+  const requested = startHeight - pointerDeltaY;
+  return Math.min(
+    OPERATOR_REFERENCE_HEIGHT.max,
+    Math.max(OPERATOR_REFERENCE_HEIGHT.min, Math.round(requested)),
+  );
+}
+
+export function normalizeOperatorReferenceHeight(
+  storedValue: string | null,
+  fallback: number = OPERATOR_REFERENCE_HEIGHT.default,
+): number {
+  if (storedValue === null) return resizeOperatorReferenceHeight(fallback, 0);
+  const parsed = Number(storedValue);
+  if (!Number.isFinite(parsed)) return resizeOperatorReferenceHeight(fallback, 0);
+  return resizeOperatorReferenceHeight(parsed, 0);
+}

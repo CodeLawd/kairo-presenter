@@ -239,3 +239,39 @@ test("normalizes hybrid digit-word numbers produced by STT", () => {
     );
   }
 });
+
+test("recognizes Psalm 115 ranges across written and spoken number formats", () => {
+  for (const text of [
+    "Psalms 115:2-13",
+    "pslams 115:2–13",
+    "Psalm one hundred and fifteen verses two through thirteen",
+    "Psalm 115 verses twelve to thirteen",
+  ]) {
+    const refs = matchExplicitScriptures(text);
+    assert.deepEqual(refs.map((r) => [r.book, r.chapter, r.verseStart, r.verseEnd]),
+      [["Psalms", 115, text.includes('twelve') ? 12 : 2, 13]], text);
+  }
+});
+
+test("does not invent a chapter from a corrupted alphanumeric citation", () => {
+  assert.deepEqual(matchExplicitScriptures("Psalm 1one512-thirteen says, The Lord has been mindful of you"), []);
+});
+
+test("corrupted citations without an AI key stay local", () => {
+  const detector = new ScriptureDetector({ apiKey: "" });
+  let calls = 0;
+  detector.on("processing", () => { calls++; });
+  detector.analyze("Psalm 1one512-thirteen says");
+  assert.equal(calls, 0);
+  detector.destroy();
+});
+
+test("destroying a detector suppresses a late model error", async () => {
+  const detector = new ScriptureDetector({ apiKey: "test" });
+  let reject!: (error: Error) => void;
+  Object.assign(detector, { callModel: () => new Promise<string>((_resolve, fail) => { reject = fail; }) });
+  const request = (detector as unknown as { runDetection(text: string): Promise<void> }).runDetection("a quotation");
+  detector.destroy();
+  reject(new Error("late network failure"));
+  await assert.doesNotReject(request);
+});

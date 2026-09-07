@@ -5,6 +5,7 @@ import {
   appendScriptureResultToPlan,
   appendScriptureResultsToPlan,
   expandSermonPlanItems,
+  extendSermonPlanItemWithAdjacent,
   insertScriptureResultInPlan,
 } from '../../../../lib/ipc'
 import type { ScriptureResult, SermonPlan } from '../../../../lib/ipc'
@@ -173,4 +174,35 @@ test('insertScriptureResultInPlan inserts after the selected playlist item', () 
   )
   assert.equal(updated.items[1]?.reference, 'Isaiah 40:32')
   assert.equal(updated.updatedAt, 99)
+})
+
+test('extends a playlist item in place when previous/next stays on the same passage', () => {
+  const plan: SermonPlan = {
+    id: 'plan-1',
+    title: 'Sunday',
+    sourceFileName: 'manual',
+    items: [
+      {
+        id: 'a',
+        reference: 'John 1:1',
+        translation: 'KJV',
+        verses: [{ book: 'John', chapter: 1, verse: 1, text: 'In the beginning' }],
+        available: true,
+      },
+    ],
+    createdAt: 1,
+    updatedAt: 1,
+  }
+  const next: ScriptureResult = {
+    reference: 'John 1:2',
+    translation: 'KJV',
+    verses: [{ book: 'John', chapter: 1, verse: 2, text: 'The same was' }],
+  }
+
+  const updated = extendSermonPlanItemWithAdjacent(plan, 'a', next, 'next', 50)
+
+  assert.equal(updated.items.length, 1)
+  assert.equal(updated.items[0]?.reference, 'John 1:1–2')
+  assert.equal(updated.items[0]?.verses.length, 2)
+  assert.equal(updated.updatedAt, 50)
 })

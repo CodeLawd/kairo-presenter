@@ -294,6 +294,61 @@
     white-space: nowrap;
   }
 
+  /* Preserve imported DOCX structure inside the cream review surface. */
+  .sermon-notes-editor .sermon-notes-tiptap {
+    white-space: pre-wrap;
+  }
+
+  .sermon-notes-editor .sermon-notes-tiptap p {
+    margin: 0 0 0.65em;
+  }
+
+  .sermon-notes-editor .sermon-notes-tiptap p:last-child {
+    margin-bottom: 0;
+  }
+
+  .sermon-notes-editor .sermon-notes-tiptap h1,
+  .sermon-notes-editor .sermon-notes-tiptap h2,
+  .sermon-notes-editor .sermon-notes-tiptap h3 {
+    margin: 0.9em 0 0.4em;
+    color: rgb(15 23 42);
+    font-weight: 700;
+    line-height: 1.25;
+  }
+
+  .sermon-notes-editor .sermon-notes-tiptap h1 { font-size: 1.35em; }
+  .sermon-notes-editor .sermon-notes-tiptap h2 { font-size: 1.2em; }
+  .sermon-notes-editor .sermon-notes-tiptap h3 { font-size: 1.08em; }
+
+  .sermon-notes-editor .sermon-notes-tiptap ul,
+  .sermon-notes-editor .sermon-notes-tiptap ol {
+    margin: 0.35em 0 0.75em;
+    padding-left: 1.35em;
+  }
+
+  .sermon-notes-editor .sermon-notes-tiptap li {
+    margin: 0.2em 0;
+  }
+
+  .sermon-notes-editor .sermon-notes-tiptap li p {
+    margin: 0;
+  }
+
+  .sermon-notes-editor .sermon-notes-tiptap strong {
+    font-weight: 700;
+  }
+
+  .sermon-notes-editor .sermon-notes-tiptap em {
+    font-style: italic;
+  }
+
+  .sermon-notes-editor .sermon-notes-tiptap blockquote {
+    margin: 0.75em 0;
+    padding-left: 0.85em;
+    border-left: 3px solid rgb(202 138 4 / 0.45);
+    color: rgb(51 65 85);
+  }
+
   /* Skip link for keyboard users */
   .skip-link {
     @apply sr-only focus-visible:not-sr-only focus-visible:absolute focus-visible:top-4 focus-visible:left-4 focus-visible:z-50
