@@ -6,6 +6,7 @@ import { Suspense, useState } from 'react'
 import { AuthSplit } from '@/components/auth/AuthSplit'
 import { btnPrimary, input, label, linkBtn, msg, msgError, msgOk } from '@/components/auth/styles'
 import { api, ApiError } from '@/lib/api'
+import { getSession, mintAccessToken } from '@/lib/session'
 
 const BRAND = {
   kind: 'quote',
@@ -34,7 +35,19 @@ function LoginPageContent(): React.ReactElement {
     setError(null)
     try {
       await api('/v1/auth/login', { method: 'POST', body: { email, password } })
-      router.push(returnTo)
+
+      // Someone who signed up but never confirmed their address would otherwise
+      // land on a page that cannot work for them. One extra round trip on a
+      // route already waiting on the network.
+      const unverified = await getSession(await mintAccessToken())
+        .then((session) => !session.user.emailVerified)
+        .catch(() => false)
+
+      router.push(
+        unverified
+          ? `/onboarding?returnTo=${encodeURIComponent(returnTo)}`
+          : returnTo,
+      )
     } catch (failure) {
       setError(failure instanceof ApiError ? failure.message : 'Something went wrong.')
     } finally {
