@@ -12,7 +12,7 @@ export function Privacy(): React.ReactElement {
         className="arc pointer-events-none absolute left-1/2 top-0 z-0 aspect-[2.6/1] w-[160%] max-w-[1900px] -translate-x-1/2"
       />
       <Reveal>
-        <Kicker n="10" label="Privacy" />
+        <Kicker n="05" label="Privacy" />
         <h2 className={cx(display, 'mt-[22px] max-w-[18ch] text-[clamp(31px,3.9vw,52px)]')}>
           <span className={thin}>Your service stays</span> on your machine.
         </h2>

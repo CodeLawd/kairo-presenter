@@ -4,18 +4,12 @@ import { Hero } from '@/components/landing/Hero'
 import { Privacy } from '@/components/landing/Privacy'
 import { SiteFooter } from '@/components/landing/SiteFooter'
 import { SiteHeader } from '@/components/landing/SiteHeader'
-import {
-  Audience,
-  Features,
-  FeaturesDivider,
-  Output,
-  Problem,
-} from '@/components/landing/sections'
+import { AlsoDoes, Features, FeaturesDivider, Problem } from '@/components/landing/sections'
 
 /**
  * Server component. Only the header's scroll listener and the scroll-reveal
- * observer ship as client JavaScript; everything else — the copy, the icons,
- * the FAQ accordion — is rendered on the server.
+ * observer ship as client JavaScript; everything else — the copy, the FAQ
+ * accordion — is rendered on the server.
  */
 export default function HomePage(): React.ReactElement {
   return (
@@ -24,10 +18,9 @@ export default function HomePage(): React.ReactElement {
       <main id="top">
         <Hero />
         <Problem />
-        <Audience />
         <FeaturesDivider />
         <Features />
-        <Output />
+        <AlsoDoes />
         <Privacy />
         <GetKairo />
         <Faq />

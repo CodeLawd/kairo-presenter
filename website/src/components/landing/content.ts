@@ -15,24 +15,6 @@ export const STRIP = [
   'Lyric translation',
 ] as const
 
-export const AUDIENCE: { icon: IconName; who: string; body: string }[] = [
-  {
-    icon: 'monitor',
-    who: 'Projection operators',
-    body: 'Stop typing during the sermon. The verse is already loaded and waiting for you to send it.',
-  },
-  {
-    icon: 'mic',
-    who: 'Pastors and preachers',
-    body: 'Quote a passage without checking whether the booth caught it. Preach at your own pace.',
-  },
-  {
-    icon: 'camera',
-    who: 'Media and stream teams',
-    body: 'One less thing to go wrong on camera. Slides land on time, service after service.',
-  },
-]
-
 export const PRIVACY: { icon: IconName; title: string; body: string }[] = [
   {
     icon: 'lock',
@@ -108,24 +90,10 @@ export const FAQ: { q: string; a: string[] }[] = [
     ],
   },
   {
-    q: 'Can we prepare verses before the service?',
-    a: [
-      'Yes. Import your sermon notes and Kairo pulls out every reference in the document, looks each one up, and saves the result as a named playlist.',
-      'On Sunday you step through it with Previous and Next. Detection still runs alongside it, so anything that was not in the notes still gets caught.',
-    ],
-  },
-  {
     q: 'Which translations can we use?',
     a: [
       'KJV, WEB, ASV and the other public-domain translations ship inside the app and need no key and no internet.',
-      'NKJV, NIV, NLT and the rest come from API.Bible, using a key your church requests and enables for the translations you are licensed to use. The app only lists the ones your key can actually reach.',
-    ],
-  },
-  {
-    q: 'Does it work without internet?',
-    a: [
-      'The bundled translations always do. Licensed ones work offline once they are cached, and you can download a whole translation ahead of a service, one chapter at a time, with pause and resume.',
-      'API.Bible requires cached text to be refreshed every 30 days. Past that point the app asks you to refresh rather than showing text that has gone stale.',
+      'NKJV, NIV, NLT and the rest come from API.Bible, using a key your church requests and enables for the translations you are licensed to use.',
     ],
   },
   {
@@ -135,16 +103,23 @@ export const FAQ: { q: string; a: string[] }[] = [
       'The NDI output is independent. If you run a different playback system, or you would rather the switcher composite the verse, that path works on its own.',
     ],
   },
+]
+
+export const ALSO: { title: string; body: string }[] = [
   {
-    q: 'What does it run on?',
-    a: [
-      'macOS and Windows. It needs an audio input it can listen to and a network route to the ProPresenter machine. A feed off the sound desk works far better than a laptop microphone.',
-    ],
+    title: 'Prepare on Saturday',
+    body: 'Import the sermon notes and every reference becomes a looked-up verse in a playlist you step through live.',
   },
   {
-    q: 'Where do our API keys go?',
-    a: [
-      'They stay on the machine, held by the main process and never handed to the interface layer. Cached scripture is encrypted with AES-256-GCM using a key from the OS keychain.',
-    ],
+    title: 'Your translation',
+    body: 'Public-domain versions ship inside the app; licensed ones come through your church\'s own API.Bible key.',
+  },
+  {
+    title: 'Themes that match',
+    body: 'Build the slide look on a live canvas — what you approve in the preview is exactly what leaves the machine.',
+  },
+  {
+    title: 'Songs too',
+    body: 'Import a song, keep its labelled sections, and push the set to ProPresenter from the same place.',
   },
 ]

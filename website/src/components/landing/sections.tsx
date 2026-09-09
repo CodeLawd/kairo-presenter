@@ -1,9 +1,8 @@
-import { AUDIENCE } from './content'
-import { ICONS } from './icons'
+import { ALSO } from './content'
 import { Kicker } from './Kicker'
 import { Reveal } from './Reveal'
 import { SplitFeature } from './SplitFeature'
-import { card, cx, display, feature, iconTile, lede, section, thin, wrap } from './primitives'
+import { card, cx, display, lede, section, thin, wrap } from './primitives'
 
 export function Problem(): React.ReactElement {
   return (
@@ -30,35 +29,6 @@ export function Problem(): React.ReactElement {
   )
 }
 
-export function Audience(): React.ReactElement {
-  return (
-    <section className={cx(wrap, 'relative pb-[clamp(72px,8.5vw,124px)]')}>
-      <Reveal>
-        <Kicker n="01" label="Who it is for" />
-        <h2 className={cx(display, 'mt-[22px] max-w-[18ch] text-[clamp(31px,3.9vw,52px)]')}>
-          <span className={thin}>Built for the people</span> running the service.
-        </h2>
-        <div className="mt-[clamp(34px,4vw,52px)] grid gap-4 min-[860px]:grid-cols-3">
-          {AUDIENCE.map((item) => {
-            const Icon = ICONS[item.icon]
-            return (
-              <div key={item.who} className={card}>
-                <div className={iconTile}>
-                  <Icon />
-                </div>
-                <h3 className="mb-2 mt-4 font-display text-[17px] font-bold tracking-[-0.025em]">
-                  {item.who}
-                </h3>
-                <p className="m-0 text-[14.5px] leading-[1.6] text-mute">{item.body}</p>
-              </div>
-            )
-          })}
-        </div>
-      </Reveal>
-    </section>
-  )
-}
-
 export function FeaturesDivider(): React.ReactElement {
   return (
     <div className={wrap}>
@@ -76,12 +46,12 @@ export function FeaturesDivider(): React.ReactElement {
 
 const Rule = (): React.ReactElement => <hr className="hairline m-0 h-px border-0" />
 
-/** The eight feature sections. Text-only for now — the screenshots are off. */
+/** The core loop — the three sections that carry the pitch. */
 export function Features(): React.ReactElement {
   return (
     <>
       <SplitFeature
-        n="02"
+        n="01"
         label="Listening"
         title="It hears the room."
         lede="Point Kairo at any audio input on the machine. The transcript runs down the side of the operator view as the service happens, with the input level underneath so you can see it is still hearing something."
@@ -95,7 +65,7 @@ export function Features(): React.ReactElement {
       <Rule />
 
       <SplitFeature
-        n="03"
+        n="02"
         label="Detection"
         title="It finds verses nobody announced."
         lede={
@@ -116,7 +86,7 @@ export function Features(): React.ReactElement {
       <Rule />
 
       <SplitFeature
-        n="04"
+        n="03"
         label="The desk"
         title="You approve every slide."
         lede="Live output at the top, the queue underneath. Stage a verse with the plus on a detection, or search for one yourself, then click the row to send it to ProPresenter."
@@ -124,92 +94,31 @@ export function Features(): React.ReactElement {
           { lead: 'Stage before you send', rest: 'Line up the next few moments while the current verse is still on screen.' },
           { lead: 'Search by reference or by memory', rest: 'Type John 3:16, or type “love is patient” and let it find the rest.' },
           { lead: 'Watch the pipeline', rest: 'ProPresenter, speech-to-text and detection each report their own state, so you know which one went quiet.' },
-          { lead: 'Clear actually clears', rest: 'One control that knows how the last slide was sent and clears that path, not a different one.' },
+          { lead: 'Two ways to the screen', rest: 'ProPresenter over its network API, or a transparent 1080p NDI source straight into the switcher.' },
         ]}
       />
-
-      <Rule />
-
-      <SplitFeature
-        n="05"
-        label="Preparing"
-        title="Most of Sunday can be ready by Saturday."
-        lede="Drop in the sermon notes. Kairo pulls out every reference, looks each one up, and saves them as a playlist you can walk through with Previous and Next while the message runs."
-        bullets={[
-          { lead: 'Import sermon notes', rest: 'Every reference in the document becomes a verse in the list, already looked up.' },
-          { lead: 'One playlist per message', rest: 'Named and saved, so the same series opens again the next time it is preached.' },
-          { lead: 'Walk it live', rest: 'Previous and Next step the playlist. Go live sends whatever is selected.' },
-          { lead: 'Or skip it entirely', rest: 'Detection still runs alongside. The playlist is a head start, not a requirement.' },
-        ]}
-      />
-
-      <Rule />
-
-      <SplitFeature
-        n="06"
-        label="Translations"
-        title="Your translation, and an honest fallback."
-        lede="Pick the translation once. Public-domain versions live inside the app; licensed ones come through your church's own API.Bible key. When a verse is not available in your pick, the app says so on the card instead of quietly failing."
-        bullets={[
-          { lead: 'Public domain ships inside', rest: 'KJV, WEB, ASV and others. No key, no network, no expiry.' },
-          { lead: 'Licensed versions use your key', rest: 'You only ever see the ones your key is actually licensed for.' },
-          { lead: 'Download one for offline use', rest: 'A chapter at a time, with pause and resume if the download is interrupted.' },
-          { lead: 'It never shows stale text', rest: 'API.Bible wants a refresh every 30 days. Past that the app asks you rather than showing old text.' },
-          { lead: 'The fallback is labelled', rest: '“NLT unavailable — showing KJV” sits right on the verse, so nobody is guessing which one went out.' },
-        ]}
-      />
-
-      <Rule />
-
-      <SplitFeature
-        n="07"
-        label="Themes"
-        title="Slides that match your service."
-        lede="Build the look inside the app and drag the verse where you want it. The canvas is the renderer, so what you approve in the preview is exactly what leaves the machine."
-        bullets={[
-          { lead: 'Place it by hand', rest: 'Drag the verse and the reference around the canvas. Resize either from the corners.' },
-          { lead: 'Backgrounds', rest: 'Transparent, solid, gradient, image or video, set to cover, contain or stretch, with an opacity control.' },
-          { lead: 'Fit text to box', rest: 'Turn it on and a long passage stays inside the frame instead of running off the bottom.' },
-          { lead: 'Keep a library', rest: 'Broadcast, Warm paper and Midnight are built in. Save your own next to them.' },
-          { lead: 'Draft without risk', rest: 'Adjustments preview privately. Apply to output when you are ready, or discard the draft.' },
-        ]}
-      />
-
-      <Rule />
-
-      <SplitFeature
-        n="08"
-        label="Songs"
-        title="Your songs live here too."
-        lede="Import a song, let it break into labelled sections, and push the set to ProPresenter from the same place you send scripture."
-        bullets={[
-          { lead: 'Search your library or the web', rest: 'By title, by artist, or by a line you only half-remember.' },
-          { lead: 'Sections keep their labels', rest: 'Chorus, Verse 2, Verse 3, each with its own slide count.' },
-          { lead: 'Translate a song inline', rest: 'Auto-detect the language and render an English line under the original. Undo it if you would rather not.' },
-          { lead: 'Push, preview or export', rest: 'Send the set to ProPresenter, check it first, or take it out of the app entirely.' },
-        ]}
-      />
-
-      <Rule />
     </>
   )
 }
 
-export function Output(): React.ReactElement {
+/** Everything else, in one compact grid instead of four more full sections. */
+export function AlsoDoes(): React.ReactElement {
   return (
-    <section className={cx(feature, wrap)}>
+    <section className={cx(section, wrap)}>
       <Reveal>
-        <div className="text-center">
-          <Kicker n="09" label="Output" className="text-left" />
-          <h2 className={cx(display, 'mx-auto mt-[22px] max-w-[18ch] text-[clamp(31px,4vw,52px)]')}>
-            <span className={thin}>Two ways</span> to reach the screen.
-          </h2>
-          <p className={cx(lede, 'mx-auto mt-5 max-w-[62ch]')}>
-            Kairo drives ProPresenter&rsquo;s message layer over its network API, which is the
-            quickest route when ProPresenter is your playback. If it is not, or you would rather the
-            switcher handle the composite, the app puts out a transparent 1080p NDI source of its
-            own. Set it per theme, or leave it on Auto and let the app take whichever path is up.
-          </p>
+        <Kicker n="04" label="And more" />
+        <h2 className={cx(display, 'mt-[22px] max-w-[18ch] text-[clamp(31px,3.9vw,52px)]')}>
+          <span className={thin}>Everything else</span> the booth needs.
+        </h2>
+        <div className="mt-[clamp(34px,4vw,52px)] grid gap-4 min-[860px]:grid-cols-2">
+          {ALSO.map((item) => (
+            <div key={item.title} className={card}>
+              <h3 className="m-0 font-display text-[17px] font-bold tracking-[-0.025em]">
+                {item.title}
+              </h3>
+              <p className="m-0 mt-2 text-[14.5px] leading-[1.6] text-mute">{item.body}</p>
+            </div>
+          ))}
         </div>
       </Reveal>
     </section>

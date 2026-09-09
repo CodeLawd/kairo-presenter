@@ -15,7 +15,7 @@ export function GetKairo(): React.ReactElement {
   return (
     <section id="get" className={cx(section, wrap, 'text-center')}>
       <Reveal>
-        <Kicker n="11" label="Get Kairo" />
+        <Kicker n="06" label="Get Kairo" />
         <h2 className={cx(display, 'mx-auto mt-[22px] max-w-[16ch] text-[clamp(32px,4.4vw,58px)]')}>
           <span className={thin}>Put it in the booth</span> this Sunday.
         </h2>
