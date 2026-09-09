@@ -1,20 +1,17 @@
 import Link from 'next/link'
 
+/** Placeholder — replaced by the migrated landing page. */
 export default function HomePage(): React.ReactElement {
   return (
-    <div className="card">
-      <p className="wordmark">Kairo</p>
-      <h1>Scripture on the wall, without the scramble</h1>
-      <p className="lead">
-        Kairo listens to the sermon, finds the passage, and puts it on screen through
-        ProPresenter. Create an account to share your setup with the rest of your team.
-      </p>
-      <Link href="/signup">
-        <button className="primary" type="button">Create an account</button>
-      </Link>
-      <button className="link" type="button">
-        <Link href="/login">I already have one</Link>
-      </button>
-    </div>
+    <main className="mx-auto grid min-h-dvh max-w-2xl place-items-center px-6">
+      <div>
+        <h1 className="font-display text-4xl font-extrabold tracking-[-0.03em]">Kairo</h1>
+        <p className="mt-3 text-mute">Scripture and lyrics automation for ProPresenter.</p>
+        <div className="mt-6 flex gap-4 text-sm">
+          <Link className="text-accent" href="/signup">Create an account</Link>
+          <Link className="text-dim" href="/login">Sign in</Link>
+        </div>
+      </div>
+    </main>
   )
 }

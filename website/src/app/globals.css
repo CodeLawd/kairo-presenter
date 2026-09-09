@@ -1,89 +1,159 @@
-/* The desktop app's palette, so the two surfaces read as one product. */
-:root {
-  --surface: #0d0f12;
-  --surface-secondary: #14171c;
-  --surface-elevated: #191d23;
-  --surface-border: #262b33;
-  --text: #f4f6f8;
-  --text-muted: #8b95a3;
-  --text-dim: #5d6674;
-  --teal: #f59e0b;
-  --teal-hover: #fbbf24;
-  --rose: #fb7185;
+@import 'tailwindcss';
+
+/* ============================================================
+   Design tokens. Everything here becomes a Tailwind utility:
+   --color-paper   -> bg-paper / text-paper / border-paper
+   --font-display  -> font-display
+   --animate-drift -> animate-drift
+   ============================================================ */
+@theme {
+  /* Surfaces, darkest to lightest */
+  --color-ink: #000000;
+  --color-panel: #121010;
+  --color-panel-2: #171513;
+  --color-inset: #1d1a17;
+
+  /* Text, brightest to dimmest */
+  --color-paper: #f7f6f2;
+  --color-dim: #a5a8a6;
+  --color-mute: #6d716f;
+  --color-faint: #4a4e4d;
+
+  /* Hairlines */
+  --color-line: rgba(247, 246, 242, 0.09);
+  --color-line-soft: rgba(247, 246, 242, 0.055);
+
+  /* Accents */
+  --color-accent: #F59E0B;
+  --color-accent-dim: #D97706;
+
+  --animate-drift: drift 42s linear infinite;
+  --animate-pulse-dot: pulse-dot 1.9s ease-in-out infinite;
+  --animate-bounce-bar: bounce-bar 1.4s ease-in-out infinite;
+  --animate-caret: caret 1.2s steps(1) infinite;
+
+  @keyframes drift {
+    to { transform: translateX(-50%); }
+  }
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.28; }
+  }
+  @keyframes bounce-bar {
+    0%, 100% { transform: scaleY(0.55); }
+    50% { transform: scaleY(1); }
+  }
+  @keyframes caret {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
 }
 
-* { box-sizing: border-box; }
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+  }
 
-body {
-  margin: 0;
-  background: var(--surface);
-  color: var(--text);
-  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
-  -webkit-font-smoothing: antialiased;
+  body {
+    background: var(--color-ink);
+    color: var(--color-paper);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background: var(--color-accent);
+    color: #231703;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+  }
 }
 
-main.shell {
-  min-height: 100vh;
-  display: grid;
-  place-items: center;
-  padding: 2rem 1rem;
+/* ============================================================
+   The handful of things utilities can't express cleanly:
+   layered gradients, masks, and the scroll-reveal state.
+   ============================================================ */
+
+/* Scattered stars behind the hero, fading out toward the fold. */
+@utility starfield {
+  background-image:
+    radial-gradient(1.4px 1.4px at 12% 22%, rgba(247, 246, 242, 0.5), transparent),
+    radial-gradient(1.2px 1.2px at 78% 14%, rgba(247, 246, 242, 0.42), transparent),
+    radial-gradient(1px 1px at 32% 48%, rgba(247, 246, 242, 0.3), transparent),
+    radial-gradient(1.6px 1.6px at 88% 42%, rgba(247, 246, 242, 0.34), transparent),
+    radial-gradient(1px 1px at 55% 8%, rgba(247, 246, 242, 0.3), transparent),
+    radial-gradient(1.2px 1.2px at 6% 62%, rgba(247, 246, 242, 0.24), transparent),
+    radial-gradient(1px 1px at 66% 66%, rgba(247, 246, 242, 0.22), transparent),
+    radial-gradient(1.3px 1.3px at 42% 30%, rgba(247, 246, 242, 0.28), transparent),
+    radial-gradient(900px 420px at 50% -8%, rgba(245, 158, 11, 0.10), transparent 70%);
+  mask-image: linear-gradient(180deg, #000 0%, #000 55%, transparent 100%);
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 55%, transparent 100%);
 }
 
-.card {
-  width: 100%;
-  max-width: 26rem;
-  background: var(--surface-secondary);
-  border: 1px solid var(--surface-border);
-  border-radius: 14px;
-  padding: 2rem;
+/* Faint horizon curve sitting behind a section heading. */
+@utility arc {
+  border-top: 1px solid rgba(247, 246, 242, 0.075);
+  border-radius: 50%;
+  mask-image: radial-gradient(60% 90% at 50% 0%, #000 30%, transparent 72%);
+  -webkit-mask-image: radial-gradient(60% 90% at 50% 0%, #000 30%, transparent 72%);
 }
 
-.wordmark { font-size: 13px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-dim); }
-h1 { font-size: 22px; letter-spacing: -0.02em; margin: 1rem 0; }
-p.lead { color: var(--text-muted); font-size: 14px; line-height: 1.6; margin: 0.6rem 0 0; }
-
-label { display: block; font-size: 12px; color: var(--text-muted); margin: 1.1rem 0 0.4rem; }
-
-input {
-  width: 100%;
-  padding: 0.6rem 0.75rem;
-  border-radius: 9px;
-  border: 1px solid var(--surface-border);
-  background: var(--surface);
-  color: var(--text);
-  font-size: 14px;
-  font-family: inherit;
+/* Divider rule that dissolves at both ends. */
+@utility hairline {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--color-line) 18%,
+    var(--color-line) 82%,
+    transparent
+  );
 }
-input:focus-visible { outline: none; border-color: var(--teal); box-shadow: 0 0 0 3px rgb(245 158 11 / 0.22); }
-input.code { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 20px; letter-spacing: 0.18em; text-align: center; text-transform: uppercase; }
 
-button.primary {
-  width: 100%;
-  margin-top: 1.4rem;
-  padding: 0.65rem 1rem;
-  border: none;
-  border-radius: 9px;
-  background: var(--teal);
-  color: #111827;
-  font-size: 14px;
-  font-weight: 650;
-  font-family: inherit;
-  cursor: pointer;
+/* Label rules that dissolve outward from a centred word. */
+@utility rule-left {
+  background: linear-gradient(90deg, transparent, var(--color-line));
 }
-button.primary:hover:not(:disabled) { background: var(--teal-hover); }
-button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
-
-button.link {
-  background: none; border: none; padding: 0; margin-top: 1rem;
-  color: var(--text-dim); font-size: 12px; font-family: inherit; cursor: pointer; text-decoration: underline;
-  text-underline-offset: 2px;
+@utility rule-right {
+  background: linear-gradient(90deg, var(--color-line), transparent);
 }
-button.link:hover { color: var(--text); }
 
-.message { min-height: 1.2rem; margin-top: 0.9rem; font-size: 12px; }
-.message.error { color: var(--rose); }
-.message.ok { color: var(--teal); }
+/* Scroll reveal - toggled to .is-in by an IntersectionObserver. */
+@utility reveal {
+  opacity: 0;
+  transform: translateY(18px);
+  transition:
+    opacity 0.7s cubic-bezier(0.22, 0.8, 0.28, 1),
+    transform 0.7s cubic-bezier(0.22, 0.8, 0.28, 1);
 
-.divider { margin: 1.4rem 0; border: none; border-top: 1px solid var(--surface-border); }
+  &.is-in {
+    opacity: 1;
+    transform: none;
+  }
 
-a { color: var(--text-muted); font-size: 12px; }
+  @media (prefers-reduced-motion: reduce) {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}
+
+/* ============================================================
+   next/font injects each family as a CSS variable on <html>.
+   `inline` is required here: without it the variable is resolved
+   in the wrong scope and the family silently falls back.
+   ============================================================ */
+@theme inline {
+  --font-sans: var(--font-barlow), system-ui, -apple-system, sans-serif;
+  --font-display: var(--font-manrope), system-ui, -apple-system, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, 'SF Mono', Menlo, monospace;
+}
