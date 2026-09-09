@@ -1,17 +1,38 @@
-import Link from 'next/link'
+import { Faq } from '@/components/landing/Faq'
+import { GetKairo } from '@/components/landing/GetKairo'
+import { Hero } from '@/components/landing/Hero'
+import { Privacy } from '@/components/landing/Privacy'
+import { SiteFooter } from '@/components/landing/SiteFooter'
+import { SiteHeader } from '@/components/landing/SiteHeader'
+import {
+  Audience,
+  Features,
+  FeaturesDivider,
+  Output,
+  Problem,
+} from '@/components/landing/sections'
 
-/** Placeholder — replaced by the migrated landing page. */
+/**
+ * Server component. Only the header's scroll listener and the scroll-reveal
+ * observer ship as client JavaScript; everything else — the copy, the icons,
+ * the FAQ accordion — is rendered on the server.
+ */
 export default function HomePage(): React.ReactElement {
   return (
-    <main className="mx-auto grid min-h-dvh max-w-2xl place-items-center px-6">
-      <div>
-        <h1 className="font-display text-4xl font-extrabold tracking-[-0.03em]">Kairo</h1>
-        <p className="mt-3 text-mute">Scripture and lyrics automation for ProPresenter.</p>
-        <div className="mt-6 flex gap-4 text-sm">
-          <Link className="text-accent" href="/signup">Create an account</Link>
-          <Link className="text-dim" href="/login">Sign in</Link>
-        </div>
-      </div>
-    </main>
+    <div className="overflow-x-clip">
+      <SiteHeader />
+      <main id="top">
+        <Hero />
+        <Problem />
+        <Audience />
+        <FeaturesDivider />
+        <Features />
+        <Output />
+        <Privacy />
+        <GetKairo />
+        <Faq />
+      </main>
+      <SiteFooter />
+    </div>
   )
 }
