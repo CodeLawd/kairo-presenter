@@ -1,0 +1,89 @@
+/* The desktop app's palette, so the two surfaces read as one product. */
+:root {
+  --surface: #0d0f12;
+  --surface-secondary: #14171c;
+  --surface-elevated: #191d23;
+  --surface-border: #262b33;
+  --text: #f4f6f8;
+  --text-muted: #8b95a3;
+  --text-dim: #5d6674;
+  --teal: #f59e0b;
+  --teal-hover: #fbbf24;
+  --rose: #fb7185;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--surface);
+  color: var(--text);
+  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+main.shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 2rem 1rem;
+}
+
+.card {
+  width: 100%;
+  max-width: 26rem;
+  background: var(--surface-secondary);
+  border: 1px solid var(--surface-border);
+  border-radius: 14px;
+  padding: 2rem;
+}
+
+.wordmark { font-size: 13px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-dim); }
+h1 { font-size: 22px; letter-spacing: -0.02em; margin: 1rem 0; }
+p.lead { color: var(--text-muted); font-size: 14px; line-height: 1.6; margin: 0.6rem 0 0; }
+
+label { display: block; font-size: 12px; color: var(--text-muted); margin: 1.1rem 0 0.4rem; }
+
+input {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  border-radius: 9px;
+  border: 1px solid var(--surface-border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 14px;
+  font-family: inherit;
+}
+input:focus-visible { outline: none; border-color: var(--teal); box-shadow: 0 0 0 3px rgb(245 158 11 / 0.22); }
+input.code { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 20px; letter-spacing: 0.18em; text-align: center; text-transform: uppercase; }
+
+button.primary {
+  width: 100%;
+  margin-top: 1.4rem;
+  padding: 0.65rem 1rem;
+  border: none;
+  border-radius: 9px;
+  background: var(--teal);
+  color: #111827;
+  font-size: 14px;
+  font-weight: 650;
+  font-family: inherit;
+  cursor: pointer;
+}
+button.primary:hover:not(:disabled) { background: var(--teal-hover); }
+button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+button.link {
+  background: none; border: none; padding: 0; margin-top: 1rem;
+  color: var(--text-dim); font-size: 12px; font-family: inherit; cursor: pointer; text-decoration: underline;
+  text-underline-offset: 2px;
+}
+button.link:hover { color: var(--text); }
+
+.message { min-height: 1.2rem; margin-top: 0.9rem; font-size: 12px; }
+.message.error { color: var(--rose); }
+.message.ok { color: var(--teal); }
+
+.divider { margin: 1.4rem 0; border: none; border-top: 1px solid var(--surface-border); }
+
+a { color: var(--text-muted); font-size: 12px; }
