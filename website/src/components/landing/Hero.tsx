@@ -1,7 +1,5 @@
-import { AppShot } from './AppShot'
 import { IconArrow } from './icons'
 import { STRIP } from './content'
-import { Reveal } from './Reveal'
 import { btn, btnGhost, btnPrimary, cx, wrap } from './primitives'
 
 export function Hero(): React.ReactElement {
@@ -46,17 +44,7 @@ export function Hero(): React.ReactElement {
           </p>
         </div>
 
-        <div className="relative z-10 mt-[clamp(48px,7vw,84px)]">
-          <Reveal>
-            <AppShot
-              eager
-              glow
-              src="/shots/operator.png"
-              alt="The Kairo operator view: a live transcript on the left, detected scripture rendered as themed slides in the centre, and the live output and staging queue on the right."
-              caption="The operator view — live transcript, detected scripture, and what is on screen right now"
-            />
-          </Reveal>
-        </div>
+        <div className="pb-[clamp(48px,7vw,84px)]" />
       </section>
 
       <div

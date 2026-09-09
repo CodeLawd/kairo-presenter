@@ -1,6 +1,4 @@
-import { AppShot } from './AppShot'
 import { AUDIENCE } from './content'
-import { Detail } from './Detail'
 import { ICONS } from './icons'
 import { Kicker } from './Kicker'
 import { Reveal } from './Reveal'
@@ -78,12 +76,7 @@ export function FeaturesDivider(): React.ReactElement {
 
 const Rule = (): React.ReactElement => <hr className="hairline m-0 h-px border-0" />
 
-/**
- * The eight feature sections.
- *
- * The `zoom`/`x`/`y` numbers on each Detail are tuned to the 2200x1365
- * screenshot geometry — see public/shots/README.md before replacing a capture.
- */
+/** The eight feature sections. Text-only for now — the screenshots are off. */
 export function Features(): React.ReactElement {
   return (
     <>
@@ -97,16 +90,6 @@ export function Features(): React.ReactElement {
           { lead: 'Deepgram or local Whisper', rest: 'Stream it out for accuracy, or run the model on the machine and keep the audio in the building.' },
           { lead: 'You can see it working', rest: 'A live signal meter, and a pipeline you can pause at any point without closing anything.' },
         ]}
-        visual={
-          <Detail
-            src="/shots/operator.png"
-            alt="The live transcript panel in Kairo, filling with the sermon as it is spoken, with an audio input signal meter at the bottom."
-            zoom={430}
-            x={0}
-            y={50}
-            ratio="4 / 5"
-          />
-        }
       />
 
       <Rule />
@@ -128,16 +111,6 @@ export function Features(): React.ReactElement {
           { lead: 'Auto-follow a reading', rest: 'Arm it on a passage and the next verse moves up on its own as the reading carries on.' },
           { lead: 'Ranges come through whole', rest: 'Ephesians 3:14–21 arrives as eight slides in order, not one wall of text.' },
         ]}
-        visual={
-          <Detail
-            src="/shots/operator.png"
-            alt="Detected scripture in Kairo, shown as a grid of themed slide previews with confidence scores and auto-follow armed."
-            zoom={230}
-            x={34}
-            y={16}
-          />
-        }
-        flipped
       />
 
       <Rule />
@@ -153,16 +126,6 @@ export function Features(): React.ReactElement {
           { lead: 'Watch the pipeline', rest: 'ProPresenter, speech-to-text and detection each report their own state, so you know which one went quiet.' },
           { lead: 'Clear actually clears', rest: 'One control that knows how the last slide was sent and clears that path, not a different one.' },
         ]}
-        visual={
-          <Detail
-            src="/shots/operator.png"
-            alt="The live output preview and staging queue in Kairo, with ProPresenter, speech-to-text and detection status indicators."
-            zoom={364}
-            x={100}
-            y={16}
-            ratio="4 / 5"
-          />
-        }
       />
 
       <Rule />
@@ -178,17 +141,6 @@ export function Features(): React.ReactElement {
           { lead: 'Walk it live', rest: 'Previous and Next step the playlist. Go live sends whatever is selected.' },
           { lead: 'Or skip it entirely', rest: 'Detection still runs alongside. The playlist is a head start, not a requirement.' },
         ]}
-        visual={
-          <Detail
-            src="/shots/scripture.png"
-            alt="Saved sermon playlists in Kairo with their verse counts, and the ordered list of references built from imported sermon notes."
-            zoom={380}
-            x={0}
-            y={6}
-            ratio="4 / 5"
-          />
-        }
-        flipped
       />
 
       <Rule />
@@ -205,12 +157,6 @@ export function Features(): React.ReactElement {
           { lead: 'It never shows stale text', rest: 'API.Bible wants a refresh every 30 days. Past that the app asks you rather than showing old text.' },
           { lead: 'The fallback is labelled', rest: '“NLT unavailable — showing KJV” sits right on the verse, so nobody is guessing which one went out.' },
         ]}
-        visual={
-          <AppShot
-            src="/shots/scripture.png"
-            alt="The scripture workspace in Kairo: the NKJV translation picker, verse cards rendered in the current theme, and a notice reading NLT unavailable, showing KJV."
-          />
-        }
       />
 
       <Rule />
@@ -227,13 +173,6 @@ export function Features(): React.ReactElement {
           { lead: 'Keep a library', rest: 'Broadcast, Warm paper and Midnight are built in. Save your own next to them.' },
           { lead: 'Draft without risk', rest: 'Adjustments preview privately. Apply to output when you are ready, or discard the draft.' },
         ]}
-        visual={
-          <AppShot
-            src="/shots/theme.png"
-            alt="The Kairo theme editor: background and fit controls beside a live 1920x1080 canvas with a draggable verse and reference."
-          />
-        }
-        flipped
       />
 
       <Rule />
@@ -249,12 +188,6 @@ export function Features(): React.ReactElement {
           { lead: 'Translate a song inline', rest: 'Auto-detect the language and render an English line under the original. Undo it if you would rather not.' },
           { lead: 'Push, preview or export', rest: 'Send the set to ProPresenter, check it first, or take it out of the app entirely.' },
         ]}
-        visual={
-          <AppShot
-            src="/shots/lyrics.png"
-            alt="The lyrics workspace in Kairo showing a Hausa worship song split into labelled sections with English translations under each line."
-          />
-        }
       />
 
       <Rule />
@@ -277,19 +210,6 @@ export function Output(): React.ReactElement {
             switcher handle the composite, the app puts out a transparent 1080p NDI source of its
             own. Set it per theme, or leave it on Auto and let the app take whichever path is up.
           </p>
-          <div className="mx-auto mt-[clamp(38px,5vw,62px)] max-w-[900px]">
-            <Detail
-              src="/shots/theme.png"
-              alt="The NDI status panel in Kairo: sender available, sending frames and ProPresenter video input bound, each reporting ready."
-              zoom={180}
-              x={100}
-              y={95}
-              ratio="16 / 5"
-            />
-            <p className="mt-4 font-mono text-[10.5px] uppercase tracking-[0.16em] text-faint">
-              Every leg of the output path reports for itself
-            </p>
-          </div>
         </div>
       </Reveal>
     </section>
