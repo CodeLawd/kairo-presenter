@@ -36,6 +36,7 @@ import { useSecretDraft } from '@/components/ui/secret-key-field'
 import { Switch } from '@/components/ui/switch'
 import { Slider } from '@/components/ui/slider'
 import { useAppStore } from '@/stores/useAppStore'
+import { listAudioInputDevices, resolveCaptureDeviceId } from '@/audio/devices'
 import { applyAppTheme } from '@/lib/appTheme'
 import { DEFAULT_OVERLAY_SETTINGS, normalizeOverlaySettings } from '@shared/overlay-defaults'
 import type {
@@ -48,6 +49,7 @@ import type {
 import { OfflineBibleManager } from './OfflineBibleManager'
 import { DEFAULT_SETTINGS } from '@/lib/defaultSettings'
 import { useBootstrapStore } from '@/bootstrap/useBootstrapStore'
+import { useUpdates } from '@/hooks/useUpdates'
 import { useAccountStore } from '@/stores/useAccountStore'
 import ProPresenterMark from '@/components/brand/ProPresenterMark'
 import { ProviderLogo, type ProviderId } from '@/components/brand/ProviderLogos'
@@ -647,29 +649,24 @@ function AudioSection({
   const ctxRef = useRef<AudioContext | null>(null)
   const processorRef = useRef<ScriptProcessorNode | null>(null)
 
-  // Enumerate devices using Web Audio API — works natively in Electron renderer
+  // Enumerate in the renderer: these IDs go straight into getUserMedia.
   useEffect(() => {
-    navigator.mediaDevices.enumerateDevices().then((all) => {
-      const inputs = all
-        .filter((d) => d.kind === 'audioinput')
-        .map((d, idx) => ({
-          id: d.deviceId || `device-${idx}`,
-          label: d.label || `Microphone ${idx + 1}`,
-          kind: 'audioinput' as const,
-          isDefault: d.deviceId === 'default' || idx === 0,
-        }))
-      if (inputs.length > 0) {
+    let cancelled = false
+    const refresh = (): void => {
+      void listAudioInputDevices().then((inputs) => {
+        if (cancelled) return
         setDevices(inputs)
-      } else {
-        window.api.audio.getDevices().then((ipcDevices) => setDevices(ipcDevices))
-      }
-      setDevicesLoading(false)
-    }).catch(() => {
-      window.api.audio.getDevices().then((ipcDevices) => {
-        setDevices(ipcDevices)
         setDevicesLoading(false)
       })
-    })
+    }
+    refresh()
+    // Labels and IDs fill in once permission is granted, and change when a
+    // microphone is plugged in or removed.
+    navigator.mediaDevices.addEventListener('devicechange', refresh)
+    return () => {
+      cancelled = true
+      navigator.mediaDevices.removeEventListener('devicechange', refresh)
+    }
   }, [])
 
   const stopMonitor = useCallback(() => {
@@ -683,7 +680,9 @@ function AudioSection({
     setLocalLevel(null)
   }, [])
 
-  const selectedId = settings.audio.deviceId || devices[0]?.id || ''
+  // Same resolution the capture path uses, so the meter never targets a
+  // device the session has already resolved away from.
+  const selectedId = devicesLoading ? '' : resolveCaptureDeviceId(devices, settings.audio.deviceId)
 
   // Live input meter while this pane is open — same idea as System Settings → Sound.
   useEffect(() => {
@@ -1405,6 +1404,63 @@ function OverlaySection({
 
 // ─── Section: General ─────────────────────────────────────────────────────────
 
+// ─── Software update ──────────────────────────────────────────────────────────
+
+const UPDATE_BTN =
+  'inline-flex items-center gap-1.5 rounded-[7px] bg-[#3a3a3a] px-3 py-1.5 text-[12px] font-medium text-white transition-colors hover:bg-[#454545] disabled:cursor-default disabled:opacity-40'
+
+/**
+ * Reads 'idle' with no action in dev and in unpackaged builds, because the main
+ * process refuses to check there — the row stays visible rather than vanishing,
+ * so the version is always somewhere the operator can read it.
+ */
+function UpdateGroup(): React.ReactElement {
+  const { status, busy, check, download, install } = useUpdates()
+
+  const label = (() => {
+    switch (status.state) {
+      case 'checking':
+        return 'Checking…'
+      case 'available':
+        return `Version ${status.version} is available`
+      case 'downloading':
+        return `Downloading${typeof status.percent === 'number' ? ` — ${status.percent}%` : '…'}`
+      case 'downloaded':
+        return `Version ${status.version} is ready — installs on the next quit`
+      case 'error':
+        return status.message
+      default:
+        return status.currentVersion ? `Kairo ${status.currentVersion} — up to date` : 'Up to date'
+    }
+  })()
+
+  return (
+    <PrefGroup title="Software update">
+      <PrefRow label="Updates" hint={label}>
+        {status.state === 'available' ? (
+          <button className={UPDATE_BTN} onClick={() => void download()}>
+            Download
+          </button>
+        ) : status.state === 'downloaded' ? (
+          <button className={UPDATE_BTN} onClick={() => void install()}>
+            Restart &amp; install
+          </button>
+        ) : (
+          <button
+            className={UPDATE_BTN}
+            disabled={busy || status.state === 'checking' || status.state === 'downloading'}
+            onClick={() => void check()}
+          >
+            Check now
+          </button>
+        )}
+      </PrefRow>
+    </PrefGroup>
+  )
+}
+
+// ─── Section: General ─────────────────────────────────────────────────────────
+
 function GeneralSection({
   settings,
   update,
@@ -1505,6 +1561,8 @@ function GeneralSection({
           </div>
         </PrefRow>
       </PrefGroup>
+
+      <UpdateGroup />
 
       <SaveBar sectionId="general" savedSection={savedSection} onSave={onSave} />
     </div>

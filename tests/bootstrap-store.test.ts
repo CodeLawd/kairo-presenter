@@ -11,6 +11,21 @@ let translationsResult: () => Promise<unknown>
 let progressListener: ((progress: BootstrapProgress) => void) | null = null
 let unsubscribed = 0
 
+// Renderer-side device enumeration. IDs here are MediaDeviceInfo.deviceId
+// values, the only kind getUserMedia's `exact` constraint accepts.
+// Node defines its own read-only `navigator`, so this must be redefined.
+Object.defineProperty(globalThis, 'navigator', {
+  configurable: true,
+  value: {
+    mediaDevices: {
+      enumerateDevices: async () => [
+        { kind: 'audioinput', deviceId: 'default', label: 'Built-in Microphone' },
+        { kind: 'audiooutput', deviceId: 'out-1', label: 'Speakers' },
+      ],
+    },
+  },
+})
+
 Object.assign(globalThis, {
   document: {
     documentElement: {
@@ -39,7 +54,8 @@ Object.assign(globalThis, {
           }
         },
       },
-      audio: { getDevices: async () => [{ id: 'mic-1', name: 'Built-in' }] },
+      // audio.getDevices is gone; enumeration is renderer-side (see the
+      // navigator.mediaDevices stub below).
       ndi: {
         getStatus: async () => ({ available: true, sending: false, ppInputConfigured: false }),
       },

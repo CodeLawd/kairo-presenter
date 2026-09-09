@@ -275,17 +275,7 @@ class Orchestrator {
       this.updateHealth("stt", "error", msg);
     }
 
-    // Create renderer-fed PCM stream and attach to Deepgram.
-    // The renderer will start getUserMedia and push chunks via audio:pcmChunk IPC.
-    try {
-      const pcmStream = audioService.createRendererStream();
-      sttService.deepgram.attachStream(pcmStream);
-      this.updateHealth("audio", "ok");
-    } catch (err) {
-      const msg = (err as Error).message;
-      log.error("[Orchestrator] Audio stream setup failed", msg);
-      this.updateHealth("audio", "error", msg);
-    }
+    this.attachAudioStream();
 
     // Init session
     this.session = {
@@ -1199,6 +1189,24 @@ class Orchestrator {
     }
   }
 
+  /**
+   * Creates the renderer-fed PCM stream and hands it to Deepgram. The renderer
+   * runs getUserMedia and pushes chunks over the audio:pcmChunk IPC; the main
+   * process only relays. Cold start and session recovery share this so the two
+   * cannot drift.
+   */
+  private attachAudioStream(): void {
+    try {
+      const pcmStream = audioService.createRendererStream();
+      sttService.deepgram.attachStream(pcmStream);
+      this.updateHealth("audio", "ok");
+    } catch (err) {
+      const msg = (err as Error).message;
+      log.error("[Orchestrator] Audio stream setup failed", msg);
+      this.updateHealth("audio", "error", msg);
+    }
+  }
+
   private updateHealth(
     service: ServiceName,
     status: ServiceHealth["status"],
@@ -1433,17 +1441,7 @@ class Orchestrator {
         this.updateHealth("stt", "error", (err as Error).message);
       }
 
-      try {
-        await audioService.startCapture(this.cfg.audioDeviceId);
-        const pcmStream = audioService.getPCMStream();
-        if (pcmStream) {
-          sttService.deepgram.attachStream(pcmStream);
-        }
-        this.updateHealth("audio", "ok");
-      } catch (err) {
-        log.error("[Orchestrator] Audio capture start failed on recovery", (err as Error).message);
-        this.updateHealth("audio", "error", (err as Error).message);
-      }
+      this.attachAudioStream();
     }
 
     this.emitStatus();

@@ -1044,8 +1044,6 @@ export interface PPLook {
 }
 
 export interface AudioAPI {
-  getDevices: () => Promise<AudioDevice[]>
-  startCapture: (deviceId: string) => Promise<void>
   stopCapture: () => Promise<void>
   /** Send raw Int16 PCM chunk (16kHz mono) from renderer to main for Deepgram. */
   sendPCMChunk: (buffer: ArrayBuffer) => void
@@ -1241,7 +1239,6 @@ export interface ResilienceStatus {
   ppReconnectCountdown: number | null
   ppQueueSize: number
   claudeFallbackActive: boolean
-  audioDeviceLost: boolean
   recoverySessionAvailable: boolean
   health: ServiceHealth[]
 }
@@ -1341,6 +1338,26 @@ export interface AccountAPI {
   ) => Unsubscribe
 }
 
+export type UpdateStatus =
+  | { state: 'idle'; currentVersion?: string }
+  | { state: 'checking' }
+  | { state: 'available'; version: string; notes?: string }
+  | { state: 'downloading'; version?: string; notes?: string; percent?: number }
+  | { state: 'downloaded'; version: string; notes?: string }
+  | { state: 'error'; message: string }
+
+export interface UpdatesAPI {
+  /** Last known status; 'idle' in dev and in unpackaged builds. */
+  getStatus: () => Promise<UpdateStatus>
+  /** Manual check. Resolves once the check settles. */
+  check: () => Promise<UpdateStatus>
+  /** Downloads a pending update. No-op unless status is 'available'. */
+  download: () => Promise<UpdateStatus>
+  /** Quits and installs. No-op unless status is 'downloaded'. */
+  install: () => Promise<void>
+  onStatus: (callback: (status: UpdateStatus) => void) => Unsubscribe
+}
+
 export interface ProAutomateAPI {
   services: import('./service-records').ServicesAPI
   app: AppAPI
@@ -1358,6 +1375,7 @@ export interface ProAutomateAPI {
   tracks: TracksAPI
   onboarding: OnboardingAPI
   account: AccountAPI
+  updates: UpdatesAPI
 }
 
 export interface MediaAPI {
@@ -1436,8 +1454,6 @@ export const IPC = {
     STATUS_CHANGE:  'propresenter:statusChange',    // push
   },
   AUDIO: {
-    GET_DEVICES:    'audio:getDevices',             // invoke
-    START_CAPTURE:  'audio:startCapture',           // invoke
     STOP_CAPTURE:   'audio:stopCapture',            // invoke
     PCM_CHUNK:      'audio:pcmChunk',               // renderer→main send
     LEVEL:          'audio:level',                  // push
@@ -1531,6 +1547,13 @@ export const IPC = {
     PUSH_SLIDE:      'lyrics:pushSlide',             // invoke
     ADD_TO_PLAYLIST: 'lyrics:addToPlaylist',        // invoke
     TRANSLATE:       'lyrics:translate',            // invoke
+  },
+  UPDATES: {
+    GET_STATUS: 'updates:getStatus',   // invoke — UpdateStatus
+    CHECK:      'updates:check',       // invoke — UpdateStatus
+    DOWNLOAD:   'updates:download',    // invoke — UpdateStatus
+    INSTALL:    'updates:install',     // invoke — quits the app
+    STATUS:     'updates:status',      // push (UpdateStatus)
   },
   SETTINGS: {
     GET:            'settings:get',                 // invoke

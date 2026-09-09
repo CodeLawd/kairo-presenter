@@ -50,6 +50,7 @@ import { buildSlides } from "@shared/lyrics-slides";
 import { normalizeGlossColor } from "@shared/lyrics-style";
 import { orchestrator } from "../orchestrator";
 import { resilienceManager } from "../services/resilience";
+import { updaterService } from "../services/updater";
 import { ndiService } from "../services/ndi";
 import { mediaService, MEDIA_FILE_EXTENSIONS } from "../services/media";
 import { tracksService } from "../services/tracks";
@@ -173,16 +174,8 @@ function registerProPresenterHandlers(): void {
 // ─── Audio handlers ───────────────────────────────────────────────────────────
 
 function registerAudioHandlers(): void {
-  ipcMain.handle(IPC.AUDIO.GET_DEVICES, async () => {
-    return audioService.getDevices();
-  });
-
-  // Renderer calls this when orchestrator starts — creates the PassThrough stream
-  // that Deepgram will consume. The renderer then streams PCM via audio:pcmChunk.
-  ipcMain.handle(IPC.AUDIO.START_CAPTURE, async () => {
-    audioService.createRendererStream();
-  });
-
+  // The relay stream is created by the orchestrator (attachAudioStream), not by
+  // the renderer. The renderer only pushes PCM via audio:pcmChunk.
   ipcMain.handle(IPC.AUDIO.STOP_CAPTURE, () => {
     audioService.stopCapture();
   });
@@ -537,6 +530,19 @@ function registerLyricsHandlers(): void {
       });
     },
   );
+}
+
+// ─── Update handlers ──────────────────────────────────────────────────────────
+
+function registerUpdateHandlers(): void {
+  ipcMain.handle(IPC.UPDATES.GET_STATUS, () => updaterService.getStatus());
+  ipcMain.handle(IPC.UPDATES.CHECK, () => updaterService.check());
+  ipcMain.handle(IPC.UPDATES.DOWNLOAD, () => updaterService.download());
+  ipcMain.handle(IPC.UPDATES.INSTALL, () => {
+    updaterService.install();
+  });
+
+  updaterService.onChange((status) => broadcast(IPC.UPDATES.STATUS, status));
 }
 
 // ─── Resilience handlers ──────────────────────────────────────────────────────
@@ -1167,6 +1173,7 @@ export function registerIpcHandlers(): void {
   registerLyricsHandlers();
   registerSettingsHandlers();
   registerResilienceHandlers();
+  registerUpdateHandlers();
   registerNdiHandlers();
   registerDocumentHandlers();
   registerMediaHandlers();

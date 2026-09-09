@@ -49,7 +49,23 @@ export function createAudioCapture(options: CaptureOptions): { ready: Promise<bo
       if (options.deviceId && options.deviceId !== 'default') {
         constraints.deviceId = { exact: options.deviceId }
       }
-      const acquired = await navigator.mediaDevices.getUserMedia({ audio: constraints })
+      let acquired: MediaStream
+      try {
+        acquired = await navigator.mediaDevices.getUserMedia({ audio: constraints })
+      } catch (error) {
+        // The device vanished between selection and capture — unplugged, or a
+        // saved id that predates renderer-side enumeration. `exact` rejects, so
+        // retry on the default input rather than failing the whole session.
+        const name = (error as Error)?.name
+        const recoverable =
+          constraints.deviceId && (name === 'OverconstrainedError' || name === 'NotFoundError')
+        if (!recoverable) throw error
+        console.warn(
+          `[capture] Audio device "${options.deviceId}" is unavailable; using the system default.`,
+        )
+        delete constraints.deviceId
+        acquired = await navigator.mediaDevices.getUserMedia({ audio: constraints })
+      }
       if (stopped) { acquired.getTracks().forEach((track) => track.stop()); return false }
       stream = acquired
       stream.getAudioTracks().forEach((track) => {
@@ -63,16 +79,19 @@ export function createAudioCapture(options: CaptureOptions): { ready: Promise<bo
         numberOfInputs: 1, numberOfOutputs: 1,
         channelCount: 1, channelCountMode: 'explicit', outputChannelCount: [1],
       })
-      let lastMeterAt = -Infinity
-      processor.port.onmessage = (event: MessageEvent<{ pcm: ArrayBuffer; rms: number; peak: number }>) => {
+      // The worklet posts two independent message shapes: a 100ms PCM chunk
+      // (transferred) and a ~10Hz meter update. Neither gates the other.
+      processor.port.onmessage = (
+        event: MessageEvent<{ pcm: ArrayBuffer } | { rms: number; peak: number }>,
+      ) => {
         if (stopped) return
-        const { pcm, rms, peak } = event.data
-        options.onPCM(pcm)
-        const now = performance.now()
-        if (now - lastMeterAt >= 100) {
-          lastMeterAt = now
-          options.onLevel({ rms, peak, clipping: peak > 0.99, timestamp: Date.now() })
+        const data = event.data
+        if ('pcm' in data) {
+          options.onPCM(data.pcm)
+          return
         }
+        const { rms, peak } = data
+        options.onLevel({ rms, peak, clipping: peak > 0.99, timestamp: Date.now() })
       }
       processor.onprocessorerror = () => fail(new Error('Audio capture processor failed'))
       source = context.createMediaStreamSource(stream)

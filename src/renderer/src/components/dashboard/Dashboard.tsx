@@ -24,6 +24,7 @@ import {
   type Icon,
 } from '@/icons'
 import { useAppStore } from '@/stores/useAppStore'
+import { listAudioInputDevices, resolveCaptureDeviceId } from '@/audio/devices'
 import { cn } from '@/lib/utils'
 import type { ProPresenterStatus, AudioLevel, TranscriptResult, ScriptureSuggestion } from '@shared/ipc'
 
@@ -628,10 +629,9 @@ export default function Dashboard(): React.ReactElement {
     } else {
       try {
         const all = await window.api.settings.getAll()
-        const devs = await window.api.audio.getDevices()
-        const defaultDev = devs.find((d) => d.isDefault) || devs[0]
+        const devs = await listAudioInputDevices()
         await window.api.orchestrator.start({
-          audioDeviceId: all.audio.deviceId || defaultDev?.id || '',
+          audioDeviceId: resolveCaptureDeviceId(devs, all.audio.deviceId),
           sttProvider: all.secretsConfigured.deepgram ? 'deepgram' : all.stt.provider,
           sttApiKey: '',
           sttLanguage: all.stt.language || 'en',
@@ -658,10 +658,9 @@ export default function Dashboard(): React.ReactElement {
     } else {
       try {
         const all = await window.api.settings.getAll()
-        const devs = await window.api.audio.getDevices()
-        const defaultDev = devs.find((d) => d.isDefault) || devs[0]
+        const devs = await listAudioInputDevices()
         await window.api.orchestrator.start({
-          audioDeviceId: all.audio.deviceId || defaultDev?.id || '',
+          audioDeviceId: resolveCaptureDeviceId(devs, all.audio.deviceId),
           sttProvider: all.secretsConfigured.deepgram ? 'deepgram' : all.stt.provider,
           sttApiKey: '',
           sttLanguage: all.stt.language || 'en',

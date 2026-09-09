@@ -5,6 +5,7 @@ import Documents from '@/components/documents/Documents'
 import { useState, useEffect, useRef, type PointerEvent } from 'react'
 import { AlertTriangle, RefreshCw, X } from '@/icons'
 import AppShell from '@/components/layout/AppShell'
+import UpdateToast from '@/components/layout/UpdateToast'
 import MediaDock from '@/components/media/MediaDock'
 import { TracksPlayer } from '@/components/tracks/TracksPlayer'
 import OperatorToolbar from '@/components/operator/OperatorToolbar'
@@ -408,6 +409,7 @@ export default function App(): React.ReactElement {
           </button>
         </div>
       )}
+      <UpdateToast />
       <AppShell
         currentRoute={route}
         onNavigate={setRoute}

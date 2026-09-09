@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import {
   formatCardReference,
@@ -37,6 +37,52 @@ export interface VerseThemePreviewProps {
   paused?: boolean;
   seekTo?: { token: number; seconds: number } | null;
   onTime?: (time: OverlayVideoTime) => void;
+  /**
+   * Build the 1920×1080 slide only once the card nears the viewport.
+   *
+   * Each slide costs a full-HD DOM subtree, and with auto-fit enabled a
+   * binary-search font fit that forces synchronous layout ~8 times over. A
+   * 54-item playlist is 360 cards, so mounting them all up front costs ~1s of
+   * blocked main thread to draw the dozen that are actually on screen.
+   *
+   * Opt-in: never enable it for the live output, which must be ready before it
+   * is looked at.
+   */
+  lazy?: boolean;
+}
+
+/**
+ * Latches true once the element first comes within `rootMargin` of the viewport.
+ * Cards stay mounted after that — scrolling back should never re-pay the fit.
+ */
+function useNearViewport(
+  enabled: boolean,
+  ref: React.RefObject<Element | null>,
+): boolean {
+  const [seen, setSeen] = useState(!enabled);
+
+  useEffect(() => {
+    if (!enabled || seen) return;
+    const element = ref.current;
+    if (!element) return;
+    // No IntersectionObserver (jsdom, very old runtimes): render everything
+    // rather than render nothing.
+    if (typeof IntersectionObserver === "undefined") {
+      setSeen(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) setSeen(true);
+      },
+      // Start a screen early so a scroll lands on a drawn card, not a placeholder.
+      { rootMargin: "600px 0px" },
+    );
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [enabled, seen, ref]);
+
+  return seen;
 }
 
 export function VerseThemePreview({
@@ -57,7 +103,11 @@ export function VerseThemePreview({
   paused = false,
   seekTo = null,
   onTime,
+  lazy = false,
 }: VerseThemePreviewProps): React.ReactElement {
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const drawSlide = useNearViewport(lazy, buttonRef);
+
   const reference = formatCardReference(result.reference);
   const text = formatOverlayVerseText(result.verses, {
     showVerseNumbers,
@@ -65,9 +115,11 @@ export function VerseThemePreview({
   });
 
   const html = useMemo(() => {
-    if (!text) return null;
+    // Skipped entirely while off-screen: building the markup is the cheap half,
+    // but mounting it is what costs, and neither is needed yet.
+    if (!text || !drawSlide) return null;
     return renderOverlayHTML(theme, reference, text);
-  }, [theme, reference, text]);
+  }, [theme, reference, text, drawSlide]);
 
   const showLiveBadge = isLive || sendStatus === "sent";
   const status =
@@ -81,7 +133,10 @@ export function VerseThemePreview({
 
   return (
     <button
-      ref={cardRef}
+      ref={(element) => {
+        buttonRef.current = element;
+        cardRef(element);
+      }}
       type="button"
       className={cn(
         "group relative flex shrink-0 flex-col overflow-hidden text-left transition-all focus-visible:outline-none",
@@ -103,7 +158,7 @@ export function VerseThemePreview({
       <div
         className="relative w-full overflow-hidden"
         style={responsive ? { aspectRatio: `${width} / ${height}` } : { height }}
-        aria-hidden={!html}
+        aria-hidden={!html || undefined}
       >
         {html ? (
           <ScaledOverlayPreview
@@ -114,12 +169,14 @@ export function VerseThemePreview({
             seekTo={seekTo}
             onTime={onTime}
           />
-        ) : (
+        ) : drawSlide ? (
           <div className="flex h-full items-center justify-center px-3">
             <p className="text-center font-sans text-[11px] italic text-slate-500">
               Verse text unavailable
             </p>
           </div>
+        ) : (
+          <div className="h-full w-full bg-surface-secondary" />
         )}
       </div>
 

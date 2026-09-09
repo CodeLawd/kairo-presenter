@@ -13,7 +13,6 @@ import type {
   ProPresenterStatus,
   ProPresenterLibrary,
   ProPresenterPlaylist,
-  AudioDevice,
   AudioLevel,
   AudioError,
   ScriptureSuggestion,
@@ -128,14 +127,6 @@ const propresenter: ProAutomateAPI['propresenter'] = {
 // ─── audio ────────────────────────────────────────────────────────────────────
 
 const audio: ProAutomateAPI['audio'] = {
-  getDevices(): Promise<AudioDevice[]> {
-    return ipcRenderer.invoke(IPC.AUDIO.GET_DEVICES)
-  },
-
-  startCapture(deviceId: string): Promise<void> {
-    return ipcRenderer.invoke(IPC.AUDIO.START_CAPTURE, deviceId)
-  },
-
   stopCapture(): Promise<void> {
     return ipcRenderer.invoke(IPC.AUDIO.STOP_CAPTURE)
   },
@@ -651,11 +642,19 @@ const documents: ProAutomateAPI['documents'] = {
   push: (id, page) => ipcRenderer.invoke(DOCUMENTS.PUSH, id, page),
 }
 
+const updates: ProAutomateAPI['updates'] = {
+  getStatus: () => ipcRenderer.invoke(IPC.UPDATES.GET_STATUS),
+  check: () => ipcRenderer.invoke(IPC.UPDATES.CHECK),
+  download: () => ipcRenderer.invoke(IPC.UPDATES.DOWNLOAD),
+  install: () => ipcRenderer.invoke(IPC.UPDATES.INSTALL),
+  onStatus: (callback) => subscribe(IPC.UPDATES.STATUS, callback),
+}
+
 const services: ProAutomateAPI['services'] = {
   command: (command) => ipcRenderer.invoke('services:command', command),
   onChanged: (callback) => subscribe('services:changed', callback),
 }
-const api: ProAutomateAPI = { services, documents, app: appApi, propresenter, audio, scripture, transcription, lyrics, settings, orchestrator, resilience, ndi, media, tracks, onboarding, account }
+const api: ProAutomateAPI = { services, documents, app: appApi, propresenter, audio, scripture, transcription, lyrics, settings, orchestrator, resilience, ndi, media, tracks, onboarding, account, updates }
 
 if (process.contextIsolated) {
   try {

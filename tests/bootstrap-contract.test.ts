@@ -100,7 +100,9 @@ test('screens publish their mutations back to the shared snapshot', () => {
 test('integration hydration runs after the interface opens, never before', () => {
   const store = read('src/renderer/src/bootstrap/useBootstrapStore.ts')
   assert.match(store, /export async function hydrateIntegrations/)
-  for (const call of ['audio.getDevices', 'ndi.getStatus', 'scripture.getTranslations']) {
+  // Devices are enumerated in the renderer now: getUserMedia needs a real
+  // MediaDeviceInfo.deviceId, which the main process cannot supply.
+  for (const call of ['listAudioInputDevices', 'ndi.getStatus', 'scripture.getTranslations']) {
     assert.ok(store.slice(store.indexOf('hydrateIntegrations')).includes(call), `${call} must hydrate in the background`)
   }
   const app = read('src/renderer/src/App.tsx')

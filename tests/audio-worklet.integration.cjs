@@ -33,11 +33,11 @@ app.whenReady().then(async () => {
       let packets = 0, levels = 0, nonzero = false, error;
       const capture = CaptureTest.createAudioCapture({
         deviceId: 'default', workletUrl: './pcm-capture.worklet.js',
-        onPCM(pcm) { if (pcm.byteLength !== 1024) throw new Error('Wrong batch size'); packets++; nonzero ||= new Int16Array(pcm).some(x => x !== 0); },
+        onPCM(pcm) { if (pcm.byteLength !== 3200) throw new Error('Wrong batch size: ' + pcm.byteLength); packets++; nonzero ||= new Int16Array(pcm).some(x => x !== 0); },
         onLevel() { levels++; }, onError(e) { error = e.message; }
       });
       const ready = await capture.ready;
-      await new Promise(r => setTimeout(r, 400));
+      await new Promise(r => setTimeout(r, 800));
       capture.stop();
       const count = packets;
       await new Promise(r => setTimeout(r, 100));
@@ -51,29 +51,52 @@ app.whenReady().then(async () => {
     const lateStream = destination.stream.clone(); resolve(lateStream);
     const canceledReady = await canceled.ready;
     navigator.mediaDevices.getUserMedia = async () => { acquired = destination.stream.clone(); return acquired; };
+    // A stale/unknown device id must fall back to the default input, not fail.
+    let sawExact = false, sawFallback = false;
+    navigator.mediaDevices.getUserMedia = async (c) => {
+      if (c.audio.deviceId) {
+        sawExact = true;
+        const e = new Error('over'); e.name = 'OverconstrainedError'; throw e;
+      }
+      sawFallback = true;
+      acquired = destination.stream.clone();
+      return acquired;
+    };
+    const stale = CaptureTest.createAudioCapture({ deviceId: 'Built-in Microphone', workletUrl: './pcm-capture.worklet.js', onPCM() {}, onLevel() {}, onError() {} });
+    const staleReady = await stale.ready;
+    stale.stop();
+    navigator.mediaDevices.getUserMedia = async () => { acquired = destination.stream.clone(); return acquired; };
     let failures = 0;
     const broken = CaptureTest.createAudioCapture({ deviceId: 'default', workletUrl: './missing-worklet.js', onPCM() {}, onLevel() {}, onError() { failures++; } });
     let rejected = false;
     try { await broken.ready; } catch { rejected = true; }
     const failureStopped = acquired.getTracks().every(t => t.readyState === 'ended');
     oscillator.stop(); destination.stream.getTracks().forEach(t => t.stop()); await input.close();
-    return { first, second, canceledReady, failures, rejected, failureStopped, lateStopped: lateStream.getTracks().every(t => t.readyState === 'ended') };
+    return { first, second, canceledReady, staleReady, sawExact, sawFallback, failures, rejected, failureStopped, lateStopped: lateStream.getTracks().every(t => t.readyState === 'ended') };
   })()`)
   for (const run of [result.first, result.second]) {
     assert.equal(run.ready, true)
+    // ~800ms at 100ms/chunk. Lower bound is loose: CI scheduling steals time.
     assert.ok(run.packets >= 4, JSON.stringify(run))
-    assert.ok(run.levels < run.packets)
+    assert.ok(run.packets <= 12, 'chunks must be 100ms, not smaller: ' + JSON.stringify(run))
+    // Meters run on their own ~10Hz clock now, so they no longer trail the PCM
+    // rate — they track it. Both must keep flowing.
+    assert.ok(run.levels >= 4, 'meter stopped reporting: ' + JSON.stringify(run))
+    assert.ok(run.levels <= 16, 'meter over-reporting: ' + JSON.stringify(run))
     assert.equal(run.nonzero, true)
     assert.equal(run.stopped, true)
     assert.equal(run.noLatePackets, true)
     assert.equal(run.error, undefined)
   }
   assert.equal(result.canceledReady, false)
+  assert.equal(result.sawExact, true, 'the saved device id must be tried first')
+  assert.equal(result.sawFallback, true, 'an unavailable device must fall back to the default')
+  assert.equal(result.staleReady, true, 'a stale device id must not fail the session')
   assert.equal(result.lateStopped, true)
   assert.equal(result.failures, 1)
   assert.equal(result.rejected, true)
   assert.equal(result.failureStopped, true)
-  console.log('PASS: Electron worklet loads under production CSP, streams 32ms PCM, throttles meters, restarts, and cleans up canceled capture.', JSON.stringify(result))
+  console.log('PASS: Electron worklet loads under production CSP, streams 100ms PCM, meters independently, restarts, recovers from a stale device id, and cleans up canceled capture.', JSON.stringify(result))
 }).catch(error => { console.error(error); process.exitCode = 1 }).finally(() => {
   clearTimeout(timeout)
   win?.destroy()

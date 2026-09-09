@@ -19,6 +19,7 @@ import { useAccountStore } from '@/stores/useAccountStore'
 import { describeSessionState } from '@shared/cloud/auth-state'
 import { useTracksPlaybackStore } from '@/stores/useTracksPlaybackStore'
 import { clearLiveAll } from '@/lib/clear-live-output'
+import UpdatePill from './UpdatePill'
 
 const workspaces: Array<{ id: NavRoute; label: string; icon: typeof CircleGauge }> = [
   { id: 'operator', label: 'Operator', icon: CircleGauge },
@@ -214,6 +215,7 @@ export default function AppShell({
           <Eraser size={13} aria-hidden="true" />
           {clearing ? 'CLEARING' : 'CLEAR'}
         </button>
+        <UpdatePill />
         <button
           type="button"
           onClick={onOpenSettings}

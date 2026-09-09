@@ -21,6 +21,7 @@ import { overlayWindow } from './services/ndi/overlay-window'
 import { isPickedOverlayMediaAllowed } from './services/ndi/media-allowlist'
 import { isInsideRoot, mediaService } from './services/media'
 import { tracksService } from './services/tracks'
+import { updaterService } from './services/updater'
 
 log.initialize()
 log.transports.file.level = 'info'
@@ -174,6 +175,10 @@ function setupApplicationMenu(): void {
           label: app.name,
           submenu: [
             { role: 'about' as const },
+            {
+              label: 'Check for Updates…',
+              click: () => { void updaterService.check() },
+            },
             { type: 'separator' as const },
             { role: 'services' as const },
             { type: 'separator' as const },
@@ -298,6 +303,10 @@ app.whenReady().then(() => {
 
   // First ProPresenter handshake is the launch gate in the renderer — connecting
   // here would retry (and log timeouts) before the operator has confirmed PP is open.
+
+  // Checks GitHub Releases in the background; a download is never started
+  // without the operator asking for it.
+  updaterService.init()
 
   createWindow()
 

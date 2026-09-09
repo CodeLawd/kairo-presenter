@@ -16,6 +16,7 @@ import {
   type Icon,
 } from '@/icons'
 import { useAppStore } from '@/stores/useAppStore'
+import { listAudioInputDevices, resolveCaptureDeviceId } from '@/audio/devices'
 import { cn, downloadFile } from '@/lib/utils'
 import type {
   AudioDevice,
@@ -650,30 +651,11 @@ export default function Transcription(): React.ReactElement {
   // ── Load devices and settings on mount ──────────────────────────────────────
 
   useEffect(() => {
-    navigator.mediaDevices.enumerateDevices().then((all) => {
-      const inputs = all
-        .filter((d) => d.kind === 'audioinput')
-        .map((d, idx) => ({
-          id: d.deviceId || `device-${idx}`,
-          label: d.label || `Microphone ${idx + 1}`,
-          kind: 'audioinput' as const,
-          isDefault: d.deviceId === 'default' || idx === 0,
-        }))
-      if (inputs.length > 0) {
-        setDevices(inputs)
-        if (!captureDeviceId) {
-          const def = inputs.find((d) => d.isDefault) ?? inputs[0]
-          if (def) setCaptureDeviceId(def.id)
-        }
+    void listAudioInputDevices().then((inputs) => {
+      setDevices(inputs)
+      if (!captureDeviceId) {
+        setCaptureDeviceId(resolveCaptureDeviceId(inputs))
       }
-    }).catch(() => {
-      window.api.audio.getDevices().then((devs) => {
-        setDevices(devs)
-        if (!captureDeviceId) {
-          const def = devs.find((d) => d.isDefault) ?? devs[0]
-          if (def) setCaptureDeviceId(def.id)
-        }
-      })
     })
 
     window.api.settings.get('stt').then((stt) => {

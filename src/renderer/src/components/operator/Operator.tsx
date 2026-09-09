@@ -25,6 +25,7 @@ import {
   Mic,
 } from "@/icons";
 import { useAppStore } from "@/stores/useAppStore";
+import { listAudioInputDevices, resolveCaptureDeviceId } from "@/audio/devices";
 import { cn, downloadFile } from "@/lib/utils";
 import {
   normalizeOperatorPanelWidth,
@@ -1295,10 +1296,9 @@ export default function Operator(): React.ReactElement {
         setIsTranscribing(false);
       } else {
         const all = await window.api.settings.getAll();
-        const devs = await window.api.audio.getDevices();
-        const defaultDev = devs.find((d) => d.isDefault) || devs[0];
+        const devs = await listAudioInputDevices();
         const config = {
-          audioDeviceId: all.audio.deviceId || defaultDev?.id || "",
+          audioDeviceId: resolveCaptureDeviceId(devs, all.audio.deviceId),
           sttProvider: all.secretsConfigured.deepgram
             ? "deepgram"
             : all.stt.provider,

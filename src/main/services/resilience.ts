@@ -6,7 +6,6 @@ import { app, BrowserWindow } from 'electron'
 import log from 'electron-log/main'
 import type { ResilienceStatus, ScriptureSuggestion, ServiceHealth, ServiceName } from '@shared/ipc'
 import { proPresenterService } from './propresenter'
-import { audioService } from './audio'
 import { sttService } from './stt'
 import { transitionDetectorRecovery } from '@shared/detector-recovery'
 
@@ -20,7 +19,6 @@ class ResilienceManager extends EventEmitter {
   private claudeFallbackActive = false
   private claudeErrorCount = 0
   private claudeProbeActive = false
-  private audioDeviceLost = false
   private recoverySessionAvailable = false
 
   private healthMap = new Map<ServiceName, ServiceHealth>()
@@ -164,35 +162,6 @@ class ResilienceManager extends EventEmitter {
       } else {
         log.info('[Resilience] Internet restored. Normalizing detector API check.')
         this.setClaudeFallback(false)
-      }
-    }
-
-    // 2. Audio Capture Device Check (capture now renderer-side; stream exists if active)
-    if (audioService.getPCMStream() !== null) {
-      const activeId = (audioService as any).getCapturedDeviceId ? (audioService as any).getCapturedDeviceId() : null
-      if (activeId && activeId !== 'default') {
-        const devices = await audioService.getDevices()
-        const deviceStillExists = devices.some(d => d.id === activeId)
-        
-        if (!deviceStillExists) {
-          log.error(`[Resilience] Selected audio device disappeared: ${activeId}`)
-          this.audioDeviceLost = true
-          this.updateServiceHealth('audio', 'error', `Device lost: ${activeId}`)
-          
-          // Switch to default device
-          const defaultDev = devices.find(d => d.isDefault) || devices[0]
-          if (defaultDev) {
-            log.info(`[Resilience] Auto-switching to default device: ${defaultDev.id}`)
-            try {
-              await audioService.startCapture(defaultDev.id)
-              this.audioDeviceLost = false
-              this.updateServiceHealth('audio', 'ok')
-            } catch (err) {
-              log.error('[Resilience] Failed to auto-switch audio devices:', (err as Error).message)
-            }
-          }
-          this.emitStatus()
-        }
       }
     }
 
@@ -468,7 +437,6 @@ class ResilienceManager extends EventEmitter {
       ppReconnectCountdown: this.ppReconnectCountdown,
       ppQueueSize: this.ppQueuedProjections.length,
       claudeFallbackActive: this.claudeFallbackActive,
-      audioDeviceLost: this.audioDeviceLost,
       recoverySessionAvailable: this.recoverySessionAvailable,
       health: Array.from(this.healthMap.values()),
     }

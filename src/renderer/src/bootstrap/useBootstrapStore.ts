@@ -19,6 +19,7 @@ import type {
 import { normalizeOverlaySettings } from '@shared/overlay-defaults'
 import { useAppStore } from '@/stores/useAppStore'
 import { useAccountStore } from '@/stores/useAccountStore'
+import { listAudioInputDevices } from '@/audio/devices'
 import { applyAppTheme } from '@/lib/appTheme'
 import { DEFAULT_SETTINGS } from '@/lib/defaultSettings'
 import { DEFAULT_ONBOARDING_STATE } from '@shared/cloud/onboarding'
@@ -238,7 +239,7 @@ export async function hydrateIntegrations(): Promise<void> {
   await Promise.allSettled([
     validateApiBible(),
     // Device labels only — never prompts for microphone permission.
-    window.api.audio.getDevices().then(setAudioDevices),
+    listAudioInputDevices().then(setAudioDevices),
     window.api.ndi.getStatus().then(setNdiStatus),
   ])
 }

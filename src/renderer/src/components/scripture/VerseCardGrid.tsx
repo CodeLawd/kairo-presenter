@@ -67,6 +67,8 @@ export function VerseCardGrid({
               isFocused={focusHighlight && idx === activeCardIndex && !cueHighlight}
               isLive={cueHighlight && idx === activeCardIndex}
               sendStatus={card.sendStatus}
+              // A playlist is hundreds of cards; only draw the ones on screen.
+              lazy
               onSelect={() => onSelectCard(idx)}
               cardRef={(element) => {
                 cardRefs.current[idx] = element;

@@ -92,3 +92,6 @@ typings/
 out/
 
 docs/
+
+# electron-builder output
+release/
