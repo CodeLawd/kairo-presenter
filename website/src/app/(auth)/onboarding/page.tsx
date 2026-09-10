@@ -27,20 +27,26 @@ const COPY: { title: string; blurb: string; brand: BrandPanel }[] = [
     title: 'About your church',
     blurb: 'This name follows the account to every machine in the booth.',
     brand: {
-      kind: 'shot',
-      src: '/shots/scripture.png',
-      alt: 'The scripture workspace in Kairo, with verse cards rendered in the current theme.',
-      caption: 'Scripture, in your translation and your theme',
+      kind: 'quote',
+      quote: (
+        <>
+          One name. <span className="font-semibold">Every booth machine stays in sync.</span>
+        </>
+      ),
+      attribution: 'Kairo for ProPresenter',
     },
   },
   {
     title: 'Get Kairo',
     blurb: 'Install it on the booth machine, or pair one that already has it.',
     brand: {
-      kind: 'shot',
-      src: '/shots/operator.png',
-      alt: 'The Kairo operator view running during a service.',
-      caption: 'The operator view — transcript, detected scripture, live output',
+      kind: 'quote',
+      quote: (
+        <>
+          Your pastor says the verse. <span className="font-semibold">It&rsquo;s already on screen.</span>
+        </>
+      ),
+      attribution: 'Kairo for ProPresenter',
     },
   },
 ]
