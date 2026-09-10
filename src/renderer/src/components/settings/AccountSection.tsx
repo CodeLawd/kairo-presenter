@@ -3,7 +3,6 @@ import { Check, LogOut, RefreshCw } from '@/icons'
 import { describeSessionState, needsEmailConfirmation } from '@shared/cloud/auth-state'
 import { useAccountStore } from '@/stores/useAccountStore'
 import AuthPanel from '@/components/account/AuthPanel'
-import DevicePairingPanel from '@/components/account/DevicePairingPanel'
 import VerifyEmailNotice from '@/components/account/VerifyEmailNotice'
 
 /**
@@ -20,7 +19,6 @@ export default function AccountSection({
 }): React.ReactElement {
   const session = useAccountStore((s) => s.session)
   const setSession = useAccountStore((s) => s.setSession)
-  const [mode, setMode] = useState<'auth' | 'pairing'>('auth')
   const [busy, setBusy] = useState(false)
   const status = describeSessionState(session)
   const signedIn = session.state !== 'signed-out'
@@ -77,10 +75,8 @@ export default function AccountSection({
             </div>
           </div>
         </section>
-      ) : mode === 'pairing' ? (
-        <DevicePairingPanel onUsePassword={() => setMode('auth')} />
       ) : (
-        <AuthPanel initialMode="signIn" onUsePairing={() => setMode('pairing')} />
+        <AuthPanel initialMode="signIn" />
       )}
 
       <section className="space-y-1.5">

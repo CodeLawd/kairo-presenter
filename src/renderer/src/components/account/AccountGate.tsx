@@ -4,21 +4,17 @@ import { needsEmailConfirmation } from '@shared/cloud/auth-state'
 import { KairoMark } from '@/components/brand/KairoMark'
 import { useAccountStore } from '@/stores/useAccountStore'
 import AuthPanel from './AuthPanel'
-import DevicePairingPanel from './DevicePairingPanel'
 import VerifyEmailNotice from './VerifyEmailNotice'
-
-type Mode = 'auth' | 'pairing'
 
 /**
  * Full-screen wall until the operator has a confirmed session.
  *
- * Sign-in (or pairing) first; a newly created account stays here for the
- * email code; only then do setup and the booth open.
+ * Sign-in first; a newly created account stays here for the email code; only
+ * then do setup and the booth open.
  */
 export default function AccountGate(): React.ReactElement {
   const session = useAccountStore((s) => s.session)
   const setSession = useAccountStore((s) => s.setSession)
-  const [mode, setMode] = useState<Mode>('auth')
   const [signingOut, setSigningOut] = useState(false)
   const verifying = needsEmailConfirmation(session)
 
@@ -26,23 +22,16 @@ export default function AccountGate(): React.ReactElement {
     setSigningOut(true)
     try {
       setSession(await window.api.account.signOut())
-      setMode('auth')
     } finally {
       setSigningOut(false)
     }
   }
 
-  const title = verifying
-    ? 'Confirm your email'
-    : mode === 'pairing'
-      ? 'Pair this machine'
-      : `Sign in to ${PRODUCT_NAME}`
+  const title = verifying ? 'Confirm your email' : `Sign in to ${PRODUCT_NAME}`
 
   const blurb = verifying
     ? 'We sent a 6-digit code. Enter it here — no browser needed.'
-    : mode === 'pairing'
-      ? 'Approve this computer from a phone — no password typed here.'
-      : `An account is required to use ${PRODUCT_NAME}. Sign in, or create one if you don’t have one yet.`
+    : `An account is required to use ${PRODUCT_NAME}. Sign in, or create one if you don’t have one yet.`
 
   return (
     <div className="relative flex h-screen w-screen items-center justify-center overflow-hidden bg-surface animate-fade-in">
@@ -78,10 +67,8 @@ export default function AccountGate(): React.ReactElement {
                   {signingOut ? 'Signing out…' : 'Use a different email'}
                 </button>
               </div>
-            ) : mode === 'pairing' ? (
-              <DevicePairingPanel onUsePassword={() => setMode('auth')} />
             ) : (
-              <AuthPanel initialMode="signIn" onUsePairing={() => setMode('pairing')} />
+              <AuthPanel initialMode="signIn" />
             )}
           </div>
         </div>

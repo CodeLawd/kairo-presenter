@@ -1,11 +1,10 @@
-import { useState } from 'react'
 import { Check } from '@/icons'
 import { needsEmailConfirmation } from '@shared/cloud/auth-state'
 import AuthPanel from '@/components/account/AuthPanel'
-import DevicePairingPanel from '@/components/account/DevicePairingPanel'
 import VerifyEmailNotice from '@/components/account/VerifyEmailNotice'
 import { useAccountStore } from '@/stores/useAccountStore'
 import StepShell from './StepShell'
+import { useState } from 'react'
 
 /**
  * The account step.
@@ -17,7 +16,6 @@ import StepShell from './StepShell'
 export default function StepAccount(): React.ReactElement {
   const session = useAccountStore((s) => s.session)
   const setSession = useAccountStore((s) => s.setSession)
-  const [mode, setMode] = useState<'auth' | 'pairing'>('auth')
   const [signingOut, setSigningOut] = useState(false)
 
   const signOut = async (): Promise<void> => {
@@ -77,11 +75,7 @@ export default function StepAccount(): React.ReactElement {
       title="Create an account"
       blurb="An account is required to use Kairo. It also shares your themes and settings across every machine in your church."
     >
-      {mode === 'pairing' ? (
-        <DevicePairingPanel onUsePassword={() => setMode('auth')} />
-      ) : (
-        <AuthPanel initialMode="signUp" onUsePairing={() => setMode('pairing')} />
-      )}
+      <AuthPanel initialMode="signUp" />
     </StepShell>
   )
 }

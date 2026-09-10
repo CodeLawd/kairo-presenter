@@ -26,15 +26,9 @@ export function StepGetKairo({ onFinish }: { onFinish: () => void }): React.Reac
         Early access
       </p>
 
-      <div className="mt-1 border-t border-line-soft pt-6">
-        <p className="m-0 text-[13.5px] leading-relaxed text-mute">
-          Already installed it? Kairo shows a code on the booth machine — enter it here and that
-          computer signs itself in, with no password typed at the desk.
-        </p>
-        <Link className={`${btnSecondary} mt-4`} href="/activate">
-          Pair this machine
-        </Link>
-      </div>
+      <p className="m-0 text-[13.5px] leading-relaxed text-mute">
+        Install Kairo on the booth machine, then sign in with the same account you use here.
+      </p>
 
       <button className={btnPrimary} type="button" onClick={onFinish}>
         Finish

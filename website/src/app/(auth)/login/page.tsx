@@ -28,7 +28,7 @@ function LoginPageContent(): React.ReactElement {
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
 
-  const returnTo = params.get('returnTo') ?? '/activate'
+  const returnTo = params.get('returnTo') ?? '/dashboard'
 
   const submit = async (event: React.FormEvent): Promise<void> => {
     event.preventDefault()

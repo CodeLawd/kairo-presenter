@@ -1,4 +1,8 @@
 @import 'tailwindcss';
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
 
 /* ============================================================
    Design tokens. Everything here becomes a Tailwind utility:
@@ -53,6 +57,7 @@
   html {
     scroll-behavior: smooth;
     -webkit-text-size-adjust: 100%;
+    @apply font-sans;
   }
 
   body {
@@ -61,6 +66,7 @@
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
+    @apply bg-background text-foreground;
   }
 
   ::selection {
@@ -76,6 +82,9 @@
 
   @media (prefers-reduced-motion: reduce) {
     html { scroll-behavior: auto; }
+  }
+  * {
+    @apply border-border outline-ring/50;
   }
 }
 
@@ -192,7 +201,94 @@
    in the wrong scope and the family silently falls back.
    ============================================================ */
 @theme inline {
-  --font-sans: var(--font-barlow), system-ui, -apple-system, sans-serif;
+  --font-sans: var(--font-sans);
   --font-display: var(--font-manrope), system-ui, -apple-system, sans-serif;
   --font-mono: var(--font-jetbrains), ui-monospace, 'SF Mono', Menlo, monospace;
+  --font-heading: var(--font-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  --radius: 0.625rem;
+}
+
+/* Site is dark by default. Keep marketing --color-accent (amber) working by
+   mapping shadcn primary to the same brand colour. */
+:root,
+.dark {
+  --background: #000000;
+  --foreground: #f7f6f2;
+  --card: #121010;
+  --card-foreground: #f7f6f2;
+  --popover: #121010;
+  --popover-foreground: #f7f6f2;
+  --primary: #f59e0b;
+  --primary-foreground: #231703;
+  --secondary: #171513;
+  --secondary-foreground: #f7f6f2;
+  --muted: #1d1a17;
+  --muted-foreground: #8b908d;
+  --accent: #171513;
+  --accent-foreground: #f7f6f2;
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: rgba(247, 246, 242, 0.09);
+  --input: rgba(247, 246, 242, 0.12);
+  --ring: #f59e0b;
+  --chart-1: #f59e0b;
+  --chart-2: #d97706;
+  --chart-3: #a5a8a6;
+  --chart-4: #767b78;
+  --chart-5: #1d1a17;
+  --sidebar: #121010;
+  --sidebar-foreground: #f7f6f2;
+  --sidebar-primary: #f59e0b;
+  --sidebar-primary-foreground: #231703;
+  --sidebar-accent: #171513;
+  --sidebar-accent-foreground: #f7f6f2;
+  --sidebar-border: rgba(247, 246, 242, 0.09);
+  --sidebar-ring: #f59e0b;
+}
+
+/* Landing utilities (`bg-accent`, `text-accent`) must stay amber — shadcn's
+   `--color-accent` map above would otherwise steal the brand token. */
+@theme {
+  --color-accent: #f59e0b;
+  --color-accent-dim: #d97706;
 }

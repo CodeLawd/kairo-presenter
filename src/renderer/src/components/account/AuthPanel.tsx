@@ -14,11 +14,9 @@ type Mode = 'signIn' | 'signUp'
 export default function AuthPanel({
   initialMode = 'signIn',
   onDone,
-  onUsePairing,
 }: {
   initialMode?: Mode
   onDone?: () => void
-  onUsePairing?: () => void
 }): React.ReactElement {
   const setSession = useAccountStore((s) => s.setSession)
   const [mode, setMode] = useState<Mode>(initialMode)
@@ -184,17 +182,6 @@ export default function AuthPanel({
             {mode === 'signUp' ? 'Sign in' : 'Create one'}
           </button>
         </p>
-
-        {onUsePairing && (
-          <button
-            type="button"
-            className="self-start text-slate-600 transition-colors hover:text-slate-400 focus-visible:outline-none focus-visible:text-slate-400 disabled:opacity-50"
-            onClick={onUsePairing}
-            disabled={busy}
-          >
-            Pair with a code instead
-          </button>
-        )}
       </div>
     </div>
   )

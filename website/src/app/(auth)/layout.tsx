@@ -6,7 +6,7 @@ import type { Metadata } from 'next'
  * layout receives no page props and so cannot vary the brand panel per route.
  *
  * The group parentheses keep it out of the URL: /login, /verify-email,
- * /reset-password and /activate are the exact paths the API's transactional
+ * /reset-password is the exact path the API's transactional emails use.
  * emails link to.
  */
 export const metadata: Metadata = {

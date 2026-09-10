@@ -1,6 +1,9 @@
 import type { Metadata } from 'next'
-import { Barlow, JetBrains_Mono, Manrope } from 'next/font/google'
+import { Barlow, JetBrains_Mono, Manrope, Geist } from 'next/font/google'
 import './globals.css'
+import { cn } from "@/lib/utils";
+
+const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
 const barlow = Barlow({
   subsets: ['latin'],
@@ -44,7 +47,7 @@ export default function RootLayout({
     <html
       lang="en"
       data-scroll-behavior="smooth"
-      className={`${barlow.variable} ${manrope.variable} ${jetbrainsMono.variable}`}
+      className={cn(barlow.variable, manrope.variable, jetbrainsMono.variable, "font-sans", geist.variable)}
     >
       <head>
         <meta name="theme-color" content="#000000" />

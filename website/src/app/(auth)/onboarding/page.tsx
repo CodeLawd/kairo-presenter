@@ -59,7 +59,7 @@ function OnboardingContent(): React.ReactElement {
   const [session, setSession] = useState<SessionSnapshot | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
 
-  const returnTo = params.get('returnTo') ?? '/activate'
+  const returnTo = params.get('returnTo') ?? '/dashboard'
   const afterVerify = params.get('afterVerify') === '1'
   const raw = Number(params.get('step'))
   const step = Number.isFinite(raw) && raw >= 1 && raw <= TOTAL ? Math.trunc(raw) : 1
