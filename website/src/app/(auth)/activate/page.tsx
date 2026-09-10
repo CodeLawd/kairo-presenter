@@ -1,8 +1,18 @@
 'use client'
 
-import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useState } from 'react'
+import { AuthSplit } from '@/components/auth/AuthSplit'
+import { btnPrimary, codeInput, label, msg, msgError } from '@/components/auth/styles'
 import { api, ApiError } from '@/lib/api'
+import { mintAccessToken } from '@/lib/session'
+
+const BRAND = {
+  kind: 'shot',
+  src: '/shots/theme.png',
+  alt: 'The Kairo theme editor, running on a booth machine.',
+  caption: 'Pair a booth machine — no password typed at the desk',
+} as const
 
 /**
  * Approves a booth machine.
@@ -26,10 +36,7 @@ export default function ActivatePage(): React.ReactElement {
       // The page has no access token in memory (the refresh cookie is HttpOnly),
       // so mint one first. A 401 here means "not signed in" — send them to do so
       // and come straight back.
-      const { accessToken } = await api<{ accessToken: string }>('/v1/auth/refresh', {
-        method: 'POST',
-        body: {},
-      })
+      const accessToken = await mintAccessToken()
       const result = await api<{ deviceName: string }>('/v1/auth/device/approve', {
         method: 'POST',
         body: { userCode: code },
@@ -49,39 +56,47 @@ export default function ActivatePage(): React.ReactElement {
 
   if (approved) {
     return (
-      <div className="card">
-        <p className="wordmark">Kairo</p>
-        <h1>{approved} is signed in</h1>
-        <p className="lead">
-          You can close this page. The machine will finish signing itself in within a few seconds.
-        </p>
-      </div>
+      <AuthSplit
+        title={`${approved} is signed in`}
+        blurb="You can close this page. The machine will finish signing itself in within a few seconds."
+        brand={BRAND}
+      >
+        {null}
+      </AuthSplit>
     )
   }
 
   return (
-    <form className="card" onSubmit={approve}>
-      <p className="wordmark">Kairo</p>
-      <h1>Activate a machine</h1>
-      <p className="lead">Enter the code shown in Kairo on the computer you are signing in.</p>
+    <AuthSplit
+      title="Activate a machine"
+      blurb="Enter the code shown in Kairo on the computer you are signing in."
+      brand={BRAND}
+    >
+      <form className="flex flex-col gap-5" onSubmit={approve}>
+        <div>
+          <label className={label} htmlFor="code">
+            Code
+          </label>
+          <input
+            id="code"
+            className={codeInput}
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            placeholder="PROA-7K2X"
+            autoComplete="off"
+            spellCheck={false}
+            required
+          />
+        </div>
 
-      <label htmlFor="code">Code</label>
-      <input
-        id="code"
-        className="code"
-        value={code}
-        onChange={(e) => setCode(e.target.value)}
-        placeholder="PROA-7K2X"
-        autoComplete="off"
-        spellCheck={false}
-        required
-      />
+        <p className={`${msg} ${msgError}`} aria-live="polite">
+          {error}
+        </p>
 
-      <p className="message error" aria-live="polite">{error}</p>
-
-      <button className="primary" type="submit" disabled={busy}>
-        {busy ? 'Approving…' : 'Approve this machine'}
-      </button>
-    </form>
+        <button className={btnPrimary} type="submit" disabled={busy}>
+          {busy ? 'Approving…' : 'Approve this machine'}
+        </button>
+      </form>
+    </AuthSplit>
   )
 }

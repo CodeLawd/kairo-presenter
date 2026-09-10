@@ -1,8 +1,15 @@
 'use client'
 
-import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
+import { Suspense, useEffect, useState } from 'react'
+import { AuthSplit } from '@/components/auth/AuthSplit'
 import { api, ApiError } from '@/lib/api'
+
+const BRAND = {
+  kind: 'quote',
+  quote: <>One account for your church, on every machine in the booth.</>,
+  attribution: 'Kairo for ProPresenter',
+} as const
 
 function VerifyEmailPageContent(): React.ReactElement {
   const params = useSearchParams()
@@ -25,19 +32,21 @@ function VerifyEmailPageContent(): React.ReactElement {
   }, [params])
 
   return (
-    <div className="card">
-      <p className="wordmark">Kairo</p>
-      <h1>
-        {state === 'working' ? 'Confirming…' : state === 'done' ? 'Email confirmed' : 'Link expired'}
-      </h1>
-      <p className="lead">
-        {state === 'done'
+    <AuthSplit
+      title={
+        state === 'working' ? 'Confirming…' : state === 'done' ? 'Email confirmed' : 'Link expired'
+      }
+      blurb={
+        state === 'done'
           ? 'Thanks — your address is confirmed. You can close this page and go back to Kairo.'
           : state === 'failed'
             ? (error ?? 'Ask for a new link from the app.')
-            : 'One moment.'}
-      </p>
-    </div>
+            : 'One moment.'
+      }
+      brand={BRAND}
+    >
+      {null}
+    </AuthSplit>
   )
 }
 
@@ -47,14 +56,7 @@ function VerifyEmailPageContent(): React.ReactElement {
  */
 export default function VerifyEmailPage(): React.ReactElement {
   return (
-    <Suspense
-      fallback={
-        <div className="card">
-          <p className="wordmark">Kairo</p>
-          <h1>Confirming…</h1>
-        </div>
-      }
-    >
+    <Suspense fallback={<AuthSplit title="Confirming…" brand={BRAND}>{null}</AuthSplit>}>
       <VerifyEmailPageContent />
     </Suspense>
   )

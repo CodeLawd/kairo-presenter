@@ -1,89 +1,198 @@
-/* The desktop app's palette, so the two surfaces read as one product. */
-:root {
-  --surface: #0d0f12;
-  --surface-secondary: #14171c;
-  --surface-elevated: #191d23;
-  --surface-border: #262b33;
-  --text: #f4f6f8;
-  --text-muted: #8b95a3;
-  --text-dim: #5d6674;
-  --teal: #f59e0b;
-  --teal-hover: #fbbf24;
-  --rose: #fb7185;
+@import 'tailwindcss';
+
+/* ============================================================
+   Design tokens. Everything here becomes a Tailwind utility:
+   --color-paper   -> bg-paper / text-paper / border-paper
+   --font-display  -> font-display
+   --animate-pulse-dot -> animate-pulse-dot
+   ============================================================ */
+@theme {
+  /* Surfaces, darkest to lightest */
+  --color-ink: #000000;
+  --color-panel: #121010;
+  --color-panel-2: #171513;
+  --color-inset: #1d1a17;
+
+  /* Text, brightest to dimmest.
+     Every step clears 4.5:1 on --color-ink, and each is ~1.35x separated from
+     its neighbour so the hierarchy still reads. Anything set over the hero
+     gradient has to move one step brighter than it would sit on black — the
+     gradient lifts the background to roughly #3a2e21 under the nav. */
+  --color-paper: #f7f6f2;  /* 19.4:1 */
+  --color-dim: #a5a8a6;    /*  8.8:1 — and 5.5:1 over the gradient */
+  --color-mute: #8b908d;   /*  6.5:1 */
+  --color-faint: #767b78;  /*  4.9:1 */
+
+  /* Hairlines */
+  --color-line: rgba(247, 246, 242, 0.09);
+  --color-line-soft: rgba(247, 246, 242, 0.055);
+
+  /* Accents */
+  --color-accent: #F59E0B;
+  --color-accent-dim: #D97706;
+
+  --animate-pulse-dot: pulse-dot 1.9s ease-in-out infinite;
+  --animate-bounce-bar: bounce-bar 1.4s ease-in-out infinite;
+  --animate-caret: caret 1.2s steps(1) infinite;
+
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.28; }
+  }
+  @keyframes bounce-bar {
+    0%, 100% { transform: scaleY(0.55); }
+    50% { transform: scaleY(1); }
+  }
+  @keyframes caret {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
 }
 
-* { box-sizing: border-box; }
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+  }
 
-body {
-  margin: 0;
-  background: var(--surface);
-  color: var(--text);
-  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
-  -webkit-font-smoothing: antialiased;
+  body {
+    background: var(--color-ink);
+    color: var(--color-paper);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background: var(--color-accent);
+    color: #231703;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+  }
 }
 
-main.shell {
-  min-height: 100vh;
-  display: grid;
-  place-items: center;
-  padding: 2rem 1rem;
+/* ============================================================
+   The handful of things utilities can't express cleanly:
+   layered gradients, masks, and the scroll-reveal state.
+   ============================================================ */
+
+/* Scattered stars behind the auth split panel. The landing hero used to sit on
+   this too; it uses `field` now. */
+@utility starfield {
+  background-image:
+    radial-gradient(1.4px 1.4px at 12% 22%, rgba(247, 246, 242, 0.5), transparent),
+    radial-gradient(1.2px 1.2px at 78% 14%, rgba(247, 246, 242, 0.42), transparent),
+    radial-gradient(1px 1px at 32% 48%, rgba(247, 246, 242, 0.3), transparent),
+    radial-gradient(1.6px 1.6px at 88% 42%, rgba(247, 246, 242, 0.34), transparent),
+    radial-gradient(1px 1px at 55% 8%, rgba(247, 246, 242, 0.3), transparent),
+    radial-gradient(1.2px 1.2px at 6% 62%, rgba(247, 246, 242, 0.24), transparent),
+    radial-gradient(1px 1px at 66% 66%, rgba(247, 246, 242, 0.22), transparent),
+    radial-gradient(1.3px 1.3px at 42% 30%, rgba(247, 246, 242, 0.28), transparent),
+    radial-gradient(900px 420px at 50% -8%, rgba(245, 158, 11, 0.10), transparent 70%);
+  mask-image: linear-gradient(180deg, #000 0%, #000 55%, transparent 100%);
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 55%, transparent 100%);
 }
 
-.card {
-  width: 100%;
-  max-width: 26rem;
-  background: var(--surface-secondary);
-  border: 1px solid var(--surface-border);
-  border-radius: 14px;
-  padding: 2rem;
+/* ============================================================
+   The backdrop behind the hero and the closing CTA.
+
+   Deliberately CSS rather than a photograph. Kairo's product is
+   invisible — audio in, a verse on a screen — so there is nothing
+   honest to photograph, and stock worship imagery reads as a
+   customer base that does not exist yet. A warm field grades to
+   --color-accent by construction, ships no bytes, and survives a
+   rebrand. Swap in a real photo here when there is one to use.
+   ============================================================ */
+@utility field {
+  background-image:
+    radial-gradient(115% 74% at 50% -10%, rgba(245, 158, 11, 0.26), transparent 60%),
+    radial-gradient(72% 54% at 12% 2%, rgba(217, 119, 6, 0.16), transparent 66%),
+    radial-gradient(64% 50% at 90% 10%, rgba(247, 246, 242, 0.06), transparent 68%),
+    radial-gradient(100% 56% at 50% 0%, rgba(29, 26, 23, 0.45), transparent 72%);
+  mask-image: linear-gradient(180deg, #000 0%, #000 52%, transparent 100%);
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 52%, transparent 100%);
 }
 
-.wordmark { font-size: 13px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-dim); }
-h1 { font-size: 22px; letter-spacing: -0.02em; margin: 1rem 0; }
-p.lead { color: var(--text-muted); font-size: 14px; line-height: 1.6; margin: 0.6rem 0 0; }
-
-label { display: block; font-size: 12px; color: var(--text-muted); margin: 1.1rem 0 0.4rem; }
-
-input {
-  width: 100%;
-  padding: 0.6rem 0.75rem;
-  border-radius: 9px;
-  border: 1px solid var(--surface-border);
-  background: var(--surface);
-  color: var(--text);
-  font-size: 14px;
-  font-family: inherit;
+/* The quieter variant under the closing CTA, so the two do not compete. */
+@utility field-soft {
+  background-image:
+    radial-gradient(110% 70% at 50% 110%, rgba(245, 158, 11, 0.10), transparent 64%),
+    radial-gradient(70% 50% at 82% 96%, rgba(247, 246, 242, 0.035), transparent 72%);
+  mask-image: linear-gradient(0deg, #000 0%, #000 56%, transparent 100%);
+  -webkit-mask-image: linear-gradient(0deg, #000 0%, #000 56%, transparent 100%);
 }
-input:focus-visible { outline: none; border-color: var(--teal); box-shadow: 0 0 0 3px rgb(245 158 11 / 0.22); }
-input.code { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 20px; letter-spacing: 0.18em; text-align: center; text-transform: uppercase; }
 
-button.primary {
-  width: 100%;
-  margin-top: 1.4rem;
-  padding: 0.65rem 1rem;
-  border: none;
-  border-radius: 9px;
-  background: var(--teal);
-  color: #111827;
-  font-size: 14px;
-  font-weight: 650;
-  font-family: inherit;
-  cursor: pointer;
+/* Film grain over the field. Without it the gradients band on wide screens. */
+@utility grain {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
+  /* No blend mode: `overlay` and `soft-light` both collapse to nothing over a
+     near-black ground, which is most of this page. Plain low opacity is what
+     actually breaks the banding. */
+  opacity: 0.045;
 }
-button.primary:hover:not(:disabled) { background: var(--teal-hover); }
-button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
 
-button.link {
-  background: none; border: none; padding: 0; margin-top: 1rem;
-  color: var(--text-dim); font-size: 12px; font-family: inherit; cursor: pointer; text-decoration: underline;
-  text-underline-offset: 2px;
+/* Faint horizon curve sitting behind a section heading. */
+@utility arc {
+  border-top: 1px solid rgba(247, 246, 242, 0.075);
+  border-radius: 50%;
+  mask-image: radial-gradient(60% 90% at 50% 0%, #000 30%, transparent 72%);
+  -webkit-mask-image: radial-gradient(60% 90% at 50% 0%, #000 30%, transparent 72%);
 }
-button.link:hover { color: var(--text); }
 
-.message { min-height: 1.2rem; margin-top: 0.9rem; font-size: 12px; }
-.message.error { color: var(--rose); }
-.message.ok { color: var(--teal); }
+/* Divider rule that dissolves at both ends. */
+@utility hairline {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--color-line) 18%,
+    var(--color-line) 82%,
+    transparent
+  );
+}
 
-.divider { margin: 1.4rem 0; border: none; border-top: 1px solid var(--surface-border); }
+/* Label rules that dissolve outward from a centred word. */
+@utility rule-left {
+  background: linear-gradient(90deg, transparent, var(--color-line));
+}
+@utility rule-right {
+  background: linear-gradient(90deg, var(--color-line), transparent);
+}
 
-a { color: var(--text-muted); font-size: 12px; }
+/* Scroll reveal - toggled to .is-in by an IntersectionObserver. */
+@utility reveal {
+  opacity: 0;
+  transform: translateY(18px);
+  transition:
+    opacity 0.45s cubic-bezier(0.22, 0.8, 0.28, 1),
+    transform 0.45s cubic-bezier(0.22, 0.8, 0.28, 1);
+
+  &.is-in {
+    opacity: 1;
+    transform: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}
+
+/* ============================================================
+   next/font injects each family as a CSS variable on <html>.
+   `inline` is required here: without it the variable is resolved
+   in the wrong scope and the family silently falls back.
+   ============================================================ */
+@theme inline {
+  --font-sans: var(--font-barlow), system-ui, -apple-system, sans-serif;
+  --font-display: var(--font-manrope), system-ui, -apple-system, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, 'SF Mono', Menlo, monospace;
+}
