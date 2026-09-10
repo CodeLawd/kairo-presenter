@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Suspense, useState } from 'react'
 import { AuthSplit } from '@/components/auth/AuthSplit'
+import { PasswordField } from '@/components/auth/PasswordField'
 import { btnPrimary, input, label, msg, msgError } from '@/components/auth/styles'
 import { api, ApiError } from '@/lib/api'
 
@@ -109,22 +110,16 @@ function SignUpPageContent(): React.ReactElement {
           />
         </div>
 
-        <div>
-          <label className={label} htmlFor="password">
-            Password
-          </label>
-          <input
-            id="password"
-            className={input}
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete="new-password"
-            minLength={10}
-            placeholder="At least 10 characters"
-            required
-          />
-        </div>
+        <PasswordField
+          id="password"
+          label="Password"
+          value={password}
+          onChange={setPassword}
+          autoComplete="new-password"
+          minLength={10}
+          placeholder="At least 10 characters"
+          required
+        />
 
         <p className={`${msg} ${msgError}`} aria-live="polite">
           {error}

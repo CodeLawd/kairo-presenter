@@ -3,7 +3,8 @@
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Suspense, useState } from 'react'
 import { AuthSplit } from '@/components/auth/AuthSplit'
-import { btnPrimary, input, label, msg, msgError } from '@/components/auth/styles'
+import { PasswordField } from '@/components/auth/PasswordField'
+import { btnPrimary, msg, msgError } from '@/components/auth/styles'
 import { api, ApiError } from '@/lib/api'
 
 const BRAND = {
@@ -58,22 +59,16 @@ function ResetPasswordPageContent(): React.ReactElement {
   return (
     <AuthSplit title="Choose a new password" brand={BRAND}>
       <form className="flex flex-col gap-5" onSubmit={submit}>
-        <div>
-          <label className={label} htmlFor="password">
-            New password
-          </label>
-          <input
-            id="password"
-            className={input}
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete="new-password"
-            minLength={10}
-            placeholder="At least 10 characters"
-            required
-          />
-        </div>
+        <PasswordField
+          id="password"
+          label="New password"
+          value={password}
+          onChange={setPassword}
+          autoComplete="new-password"
+          minLength={10}
+          placeholder="At least 10 characters"
+          required
+        />
 
         <p className={`${msg} ${msgError}`} aria-live="polite">
           {error}

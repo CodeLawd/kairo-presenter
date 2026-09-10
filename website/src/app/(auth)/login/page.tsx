@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Suspense, useState } from 'react'
 import { AuthSplit } from '@/components/auth/AuthSplit'
+import { PasswordField } from '@/components/auth/PasswordField'
 import { btnPrimary, input, label, linkBtn, msg, msgError, msgOk } from '@/components/auth/styles'
 import { api, ApiError } from '@/lib/api'
 import { getSession, mintAccessToken } from '@/lib/session'
@@ -107,25 +108,19 @@ function LoginPageContent(): React.ReactElement {
           />
         </div>
 
-        <div>
-          <div className="flex items-baseline justify-between gap-3">
-            <label className={label} htmlFor="password">
-              Password
-            </label>
+        <PasswordField
+          id="password"
+          label="Password"
+          value={password}
+          onChange={setPassword}
+          autoComplete="current-password"
+          required
+          labelAccessory={
             <button className={linkBtn} type="button" onClick={() => void forgot()} disabled={busy}>
               Forgot password
             </button>
-          </div>
-          <input
-            id="password"
-            className={input}
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete="current-password"
-            required
-          />
-        </div>
+          }
+        />
 
         <p className={`${msg} ${error ? msgError : msgOk}`} aria-live="polite">
           {error ?? notice}
