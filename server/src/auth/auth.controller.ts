@@ -30,9 +30,7 @@ import { UsersService } from '../users/users.service'
 import { OrgsService } from '../orgs/orgs.service'
 import { APP_CONFIG } from '../config/config.module'
 import type { AppConfig } from '../config/env'
-
-/** Name of the web refresh cookie. Desktop never sees it. */
-const REFRESH_COOKIE = 'pa_refresh'
+import { clearRefreshCookie, REFRESH_COOKIE, setRefreshCookie } from './refresh-cookie'
 
 @Controller('v1/auth')
 export class AuthController {
@@ -86,7 +84,7 @@ export class AuthController {
       ip: request.ip,
     })
     if (isWeb(request)) {
-      this.setRefreshCookie(response, pair.refreshToken)
+      setRefreshCookie(response, pair.refreshToken, this.config)
       return { accessToken: pair.accessToken, expiresIn: pair.expiresIn }
     }
     return pair
@@ -100,7 +98,7 @@ export class AuthController {
     @Res({ passthrough: true }) response: Response,
   ): Promise<void> {
     await this.auth.signOut(new Types.ObjectId(user.sub), user.deviceId)
-    response.clearCookie(REFRESH_COOKIE, { path: '/v1/auth' })
+    clearRefreshCookie(response, this.config)
   }
 
   /**
@@ -197,20 +195,9 @@ export class AuthController {
     response: Response,
   ): AuthResult | Omit<AuthResult, 'refreshToken'> {
     if (!isWeb(request)) return result
-    this.setRefreshCookie(response, result.refreshToken)
+    setRefreshCookie(response, result.refreshToken, this.config)
     const { refreshToken: _omitted, ...rest } = result
     return rest
-  }
-
-  private setRefreshCookie(response: Response, token: string): void {
-    response.cookie(REFRESH_COOKIE, token, {
-      httpOnly: true,
-      secure: this.config.nodeEnv === 'production',
-      sameSite: 'lax',
-      // Scoped to the auth routes: no other endpoint has any use for it.
-      path: '/v1/auth',
-      maxAge: this.config.refreshTokenTtlDays * 24 * 60 * 60 * 1000,
-    })
   }
 }
 

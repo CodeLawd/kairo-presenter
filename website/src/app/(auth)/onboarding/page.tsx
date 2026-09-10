@@ -54,6 +54,7 @@ function OnboardingContent(): React.ReactElement {
   const [loadError, setLoadError] = useState<string | null>(null)
 
   const returnTo = params.get('returnTo') ?? '/activate'
+  const afterVerify = params.get('afterVerify') === '1'
   const raw = Number(params.get('step'))
   const step = Number.isFinite(raw) && raw >= 1 && raw <= TOTAL ? Math.trunc(raw) : 1
 
@@ -62,9 +63,10 @@ function OnboardingContent(): React.ReactElement {
       const query = new URLSearchParams()
       query.set('step', String(next))
       if (params.get('returnTo')) query.set('returnTo', returnTo)
+      if (afterVerify) query.set('afterVerify', '1')
       router.replace(`/onboarding?${query.toString()}`, { scroll: false })
     },
-    [params, returnTo, router],
+    [afterVerify, params, returnTo, router],
   )
 
   const finish = useCallback((): void => router.push(returnTo), [router, returnTo])
@@ -77,11 +79,14 @@ function OnboardingContent(): React.ReactElement {
         if (cancelled) return
         setSession(snapshot)
         // Someone who confirmed their address already should not be asked again.
-        if (snapshot.user.emailVerified && step === 1) goTo(2)
+        if (snapshot.user.emailVerified && step === 1) {
+          if (afterVerify) finish()
+          else goTo(2)
+        }
       } catch (failure) {
         if (cancelled) return
         if (failure instanceof ApiError && failure.status === 401) {
-          router.push(`/login?returnTo=${encodeURIComponent('/onboarding')}`)
+          router.push(`/login?returnTo=${encodeURIComponent(returnTo)}`)
           return
         }
         setLoadError(
@@ -119,7 +124,15 @@ function OnboardingContent(): React.ReactElement {
       }
     >
       {step === 1 && session && (
-        <StepEmail email={session.user.email} onDone={() => goTo(2)} />
+        <StepEmail
+          email={session.user.email}
+          onDone={() => {
+            // Login of an unverified account only needs the email step — then
+            // take them where they were headed (activate / dashboard).
+            if (afterVerify) finish()
+            else goTo(2)
+          }}
+        />
       )}
       {step === 2 && (
         <StepChurch

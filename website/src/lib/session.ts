@@ -10,18 +10,56 @@ export interface SessionSnapshot {
   orgs: { id: string; name: string; role: string }[]
 }
 
+const SEED_KEY = 'pa_access_seed'
+
+/** In-flight refresh shared across callers — Strict Mode remounts must not rotate twice. */
+let refreshInFlight: Promise<string> | null = null
+
 /**
- * Trades the HttpOnly refresh cookie for a short-lived access token.
- *
- * The page cannot read the cookie — that is the point of it — so any call that
- * needs a Bearer token mints one first and uses it immediately.
+ * Stash the access token returned by signup/login so the next page can talk to
+ * the API without an immediate refresh round-trip.
+ */
+export function seedAccessToken(token: string): void {
+  try {
+    sessionStorage.setItem(SEED_KEY, JSON.stringify({ token, at: Date.now() }))
+  } catch {
+    // Private mode / disabled storage — refresh cookie is the fallback.
+  }
+}
+
+function consumeAccessTokenSeed(): string | null {
+  try {
+    const raw = sessionStorage.getItem(SEED_KEY)
+    if (!raw) return null
+    sessionStorage.removeItem(SEED_KEY)
+    const parsed = JSON.parse(raw) as { token?: unknown; at?: unknown }
+    if (typeof parsed.token !== 'string' || typeof parsed.at !== 'number') return null
+    if (Date.now() - parsed.at >= 14 * 60 * 1000) return null
+    return parsed.token
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Returns a short-lived access token: prefer a just-seeded one from login/
+ * signup, otherwise trade the HttpOnly refresh cookie via `/v1/auth/refresh`.
  */
 export async function mintAccessToken(): Promise<string> {
-  const { accessToken } = await api<{ accessToken: string; expiresIn: string }>(
-    '/v1/auth/refresh',
-    { method: 'POST', body: {} },
-  )
-  return accessToken
+  const seeded = consumeAccessTokenSeed()
+  if (seeded) return seeded
+
+  if (!refreshInFlight) {
+    refreshInFlight = api<{ accessToken: string; expiresIn: string }>('/v1/auth/refresh', {
+      method: 'POST',
+      body: {},
+    })
+      .then((result) => result.accessToken)
+      .finally(() => {
+        refreshInFlight = null
+      })
+  }
+  return refreshInFlight
 }
 
 export async function getSession(accessToken: string): Promise<SessionSnapshot> {

@@ -7,6 +7,7 @@ import { AuthSplit } from '@/components/auth/AuthSplit'
 import { PasswordField } from '@/components/auth/PasswordField'
 import { btnPrimary, input, label, msg, msgError } from '@/components/auth/styles'
 import { api, ApiError } from '@/lib/api'
+import { seedAccessToken } from '@/lib/session'
 
 const BRAND = {
   kind: 'quote',
@@ -33,10 +34,13 @@ function SignUpPageContent(): React.ReactElement {
     setBusy(true)
     setError(null)
     try {
-      await api('/v1/auth/signup', {
+      const result = await api<{ accessToken: string }>('/v1/auth/signup', {
         method: 'POST',
         body: { name, email, password, orgName: orgName.trim() },
       })
+      // Seed the access token so onboarding can load the session even when the
+      // cross-origin refresh cookie has not settled yet.
+      seedAccessToken(result.accessToken)
       // A new account is unverified and its org is bare, so setup comes first.
       // Anyone who arrived mid-flow keeps their destination through it.
       const returnTo = params.get('returnTo')

@@ -7,8 +7,7 @@ import { Public } from '../common/decorators/public.decorator'
 import { APP_CONFIG } from '../config/config.module'
 import type { AppConfig } from '../config/env'
 import type { GoogleProfile } from './strategies/google.strategy'
-
-const REFRESH_COOKIE = 'pa_refresh'
+import { setRefreshCookie } from './refresh-cookie'
 
 /**
  * Google sign-in, browser only.
@@ -44,13 +43,7 @@ export class GoogleController {
       ip: request.ip,
     })
 
-    response.cookie(REFRESH_COOKIE, result.refreshToken, {
-      httpOnly: true,
-      secure: this.config.nodeEnv === 'production',
-      sameSite: 'lax',
-      path: '/v1/auth',
-      maxAge: this.config.refreshTokenTtlDays * 24 * 60 * 60 * 1000,
-    })
+    setRefreshCookie(response, result.refreshToken, this.config)
 
     // `state` carries where the person was going — commonly /activate, when
     // they started this to pair a booth machine.

@@ -1,11 +1,11 @@
 /**
  * The one place the web app talks to the API.
  *
- * `credentials: 'include'` on every call because the refresh token is an
- * HttpOnly cookie the page cannot read — that is deliberate, and it means the
- * browser must be allowed to carry it.
+ * Requests stay same-origin (`/v1/...`) and are proxied by
+ * `src/app/v1/[...path]/route.ts`. That keeps the HttpOnly refresh cookie
+ * first-party — required when the site is on Vercel and the API on Render.
  */
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3000'
+const API_URL = ''
 
 export class ApiError extends Error {
   constructor(

@@ -7,7 +7,7 @@ import { AuthSplit } from '@/components/auth/AuthSplit'
 import { PasswordField } from '@/components/auth/PasswordField'
 import { btnPrimary, input, label, linkBtn, msg, msgError, msgOk } from '@/components/auth/styles'
 import { api, ApiError } from '@/lib/api'
-import { getSession, mintAccessToken } from '@/lib/session'
+import { getSession, seedAccessToken } from '@/lib/session'
 
 const BRAND = {
   kind: 'quote',
@@ -35,18 +35,22 @@ function LoginPageContent(): React.ReactElement {
     setBusy(true)
     setError(null)
     try {
-      await api('/v1/auth/login', { method: 'POST', body: { email, password } })
+      const result = await api<{ accessToken: string }>('/v1/auth/login', {
+        method: 'POST',
+        body: { email, password },
+      })
+      seedAccessToken(result.accessToken)
 
       // Someone who signed up but never confirmed their address would otherwise
       // land on a page that cannot work for them. One extra round trip on a
       // route already waiting on the network.
-      const unverified = await getSession(await mintAccessToken())
+      const unverified = await getSession(result.accessToken)
         .then((session) => !session.user.emailVerified)
         .catch(() => false)
 
       router.push(
         unverified
-          ? `/onboarding?returnTo=${encodeURIComponent(returnTo)}`
+          ? `/onboarding?step=1&afterVerify=1&returnTo=${encodeURIComponent(returnTo)}`
           : returnTo,
       )
     } catch (failure) {
@@ -82,7 +86,7 @@ function LoginPageContent(): React.ReactElement {
           <p className="m-0 mt-3">
             <a
               className={linkBtn}
-              href={`${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3000'}/v1/auth/google?returnTo=${encodeURIComponent(returnTo)}`}
+              href={`/v1/auth/google?returnTo=${encodeURIComponent(returnTo)}`}
             >
               Continue with Google
             </a>
