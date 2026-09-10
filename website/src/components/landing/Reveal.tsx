@@ -36,7 +36,9 @@ export function Reveal({
           }
         }
       },
-      { rootMargin: '0px 0px -12% 0px', threshold: 0.06 },
+      // Positive bottom margin: start the fade just before the element
+      // reaches the fold, so a fast scroll never lands on a blank section.
+      { rootMargin: '0px 0px 12% 0px', threshold: 0 },
     )
     io.observe(el)
     return () => io.disconnect()

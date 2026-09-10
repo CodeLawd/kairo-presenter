@@ -25,7 +25,7 @@ const jetbrainsMono = JetBrains_Mono({
 
 const title = 'Kairo — Your pastor says the verse. It’s already on screen.'
 const description =
-  'Kairo listens to the sermon and finds the passage before you can type it — including verses that are quoted without a reference. Review the match, send it to ProPresenter or NDI. A desktop app for church tech teams.'
+  'Kairo listens to your service, finds the passage, and hands it to you ready to send — including verses that are quoted without a reference. Approve the match, send it to ProPresenter or NDI. A desktop app for church tech teams.'
 
 export const metadata: Metadata = {
   title,

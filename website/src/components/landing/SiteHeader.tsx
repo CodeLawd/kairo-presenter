@@ -6,15 +6,15 @@ import { Wordmark } from '@/components/brand/Wordmark'
 import { btn, btnPrimary, cx, wrap } from './primitives'
 
 const NAV = [
+  { href: '#how', label: 'How it works' },
   { href: '#features', label: 'Features' },
-  { href: '#privacy', label: 'Privacy' },
   { href: '#faq', label: 'FAQ' },
 ]
 
 /**
- * Client-side only for the scroll listener: the header's bottom hairline stays
- * invisible until the page has moved, so the hero meets the top of the window
- * without a rule across it.
+ * Client-side only for the scroll listener: until the page has moved the header
+ * has no background and no bottom hairline, so the hero's gradient passes
+ * behind it in one piece. Both fade in on scroll.
  */
 export function SiteHeader(): React.ReactElement {
   const [stuck, setStuck] = useState(false)
@@ -29,8 +29,12 @@ export function SiteHeader(): React.ReactElement {
   return (
     <header
       className={cx(
-        'sticky top-0 z-50 border-b bg-ink/70 backdrop-blur-[14px] backdrop-saturate-150 transition-colors duration-300',
-        stuck ? 'border-line-soft' : 'border-transparent',
+        'sticky top-0 z-50 border-b transition-colors duration-300',
+        // Transparent at the top so the hero field runs up behind the bar
+        // unbroken; the scrim and blur only appear once content is under it.
+        stuck
+          ? 'border-line-soft bg-ink/70 backdrop-blur-[14px] backdrop-saturate-150'
+          : 'border-transparent bg-transparent',
       )}
     >
       <div className={cx(wrap, 'flex h-[62px] items-center gap-[26px]')}>
@@ -39,7 +43,7 @@ export function SiteHeader(): React.ReactElement {
           {NAV.map((item) => (
             <a
               key={item.href}
-              className="text-sm text-mute transition-colors hover:text-paper"
+              className="text-sm text-dim transition-colors hover:text-paper"
               href={item.href}
             >
               {item.label}
@@ -48,7 +52,7 @@ export function SiteHeader(): React.ReactElement {
         </nav>
         <span className="flex-1" />
         <Link
-          className="hidden text-sm text-mute transition-colors hover:text-paper sm:block"
+          className="hidden text-sm text-dim transition-colors hover:text-paper sm:block"
           href="/login"
         >
           Sign in

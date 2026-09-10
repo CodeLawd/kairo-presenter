@@ -1,9 +1,14 @@
 import { PRIVACY } from './content'
 import { ICONS } from './icons'
-import { Kicker } from './Kicker'
 import { Reveal } from './Reveal'
-import { card, cx, display, iconTile, lede, section, thin, wrap } from './primitives'
+import { card, cx, display, iconTile, lede, section, wrap } from './primitives'
 
+/**
+ * Three plain claims. The mechanics behind them — AES-256-GCM, the OS keychain,
+ * which Electron process holds a key — are true and worth publishing, but they
+ * are the wrong altitude for a landing page, so they belong on a security page
+ * rather than here.
+ */
 export function Privacy(): React.ReactElement {
   return (
     <section id="privacy" className={cx(section, wrap)}>
@@ -12,16 +17,14 @@ export function Privacy(): React.ReactElement {
         className="arc pointer-events-none absolute left-1/2 top-0 z-0 aspect-[2.6/1] w-[160%] max-w-[1900px] -translate-x-1/2"
       />
       <Reveal>
-        <Kicker n="05" label="Privacy" />
-        <h2 className={cx(display, 'mt-[22px] max-w-[18ch] text-[clamp(31px,3.9vw,52px)]')}>
-          <span className={thin}>Your service stays</span> on your machine.
+        <h2 className={cx(display, 'max-w-[18ch] text-[clamp(30px,3.7vw,48px)]')}>
+          Your service stays on your machine
         </h2>
-        <p className={cx(lede, 'mt-5 max-w-[56ch]')}>
-          Kairo is a desktop app, not a service you upload your Sunday to. Nothing about the room is
-          sent off for processing or storage.
+        <p className={cx(lede, 'mt-5')}>
+          Kairo is a desktop app, not a service you upload your Sunday to.
         </p>
 
-        <div className="mt-[clamp(34px,4vw,52px)] grid gap-4 min-[860px]:grid-cols-3">
+        <div className="mt-[clamp(32px,4vw,52px)] grid gap-4 min-[860px]:grid-cols-3">
           {PRIVACY.map((item) => {
             const Icon = ICONS[item.icon]
             return (
