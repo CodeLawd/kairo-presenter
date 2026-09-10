@@ -853,6 +853,26 @@ function ApiKeysSection({
   const brave = useSecretDraft(configured.brave)
   const googleTranslate = useSecretDraft(configured.googleTranslate)
 
+  // When this section opens, pull the church vault so website edits show up
+  // without restarting the app.
+  useEffect(() => {
+    if (!signedIn) return
+    let cancelled = false
+    void (async () => {
+      try {
+        await window.api.account.syncOrgSecrets()
+        if (cancelled) return
+        const fresh = await window.api.settings.getAll()
+        if (!cancelled) setBootstrapSettings(fresh)
+      } catch {
+        // Offline / unsigned — leave whatever is already on disk.
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [signedIn, setBootstrapSettings])
+
   const testDeepgram = async () => {
     setDeepgramStatus('testing')
     setDeepgramMsg('')

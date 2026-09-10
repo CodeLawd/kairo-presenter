@@ -26,7 +26,7 @@ const baseLyrics: AppSettings['lyrics'] = {
 }
 
 describe('org-secrets helpers', () => {
-  it('applies non-empty cloud secrets over local', () => {
+  it('lets cloud overwrite local, including empties', () => {
     const merged = applyOrgSecretsToSettings(
       { stt: baseStt, lyrics: baseLyrics },
       {
@@ -40,17 +40,25 @@ describe('org-secrets helpers', () => {
       },
     )
     assert.equal(merged.stt.apiKey, 'cloud-dg')
-    assert.equal(merged.stt.bibleApiKey, 'local-bible')
+    assert.equal(merged.stt.bibleApiKey, '')
     assert.equal(merged.lyrics.braveApiKey, 'cloud-brave')
-    assert.equal(merged.lyrics.googleTranslateApiKey, 'gt-local')
+    assert.equal(merged.lyrics.googleTranslateApiKey, '')
   })
 
-  it('builds a full patch snapshot for push', () => {
+  it('omits empty locals on push and nulls only cleared keys', () => {
     const patch = settingsToOrgSecretsPatch({ stt: baseStt, lyrics: baseLyrics })
     assert.equal(patch.deepgramApiKey, 'local-dg')
     assert.equal(patch.bibleApiKey, 'local-bible')
-    assert.equal(patch.braveApiKey, null)
     assert.equal(patch.googleTranslateApiKey, 'gt-local')
+    assert.equal(patch.braveApiKey, undefined)
+    assert.equal(patch.anthropicApiKey, undefined)
+
+    const cleared = settingsToOrgSecretsPatch(
+      { stt: { ...baseStt, apiKey: '' }, lyrics: baseLyrics },
+      ['apiKey'],
+    )
+    assert.equal(cleared.deepgramApiKey, null)
+    assert.equal(cleared.bibleApiKey, 'local-bible')
   })
 
   it('merges settings.set empty secrets as unchanged unless cleared', () => {

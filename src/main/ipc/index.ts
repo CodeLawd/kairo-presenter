@@ -861,23 +861,25 @@ function registerSettingsHandlers(): void {
           normalizeThemeLibrary(value, store.get("overlay").theme),
         );
       } else if (key === "stt") {
+        const incoming = value as AppSettings["stt"] & { clearKeys?: SettingsSecretClearKey[] };
         const merged = mergeSecretSection(
           store.get("stt"),
-          value as AppSettings["stt"] & { clearKeys?: SettingsSecretClearKey[] },
+          incoming,
           STT_SECRET_KEYS,
         );
         store.set("stt", merged);
         broadcastSettingsChanged();
-        void cloudSession.pushOrgSecrets();
+        void cloudSession.pushOrgSecrets(incoming.clearKeys ?? []);
       } else if (key === "lyrics") {
+        const incoming = value as AppSettings["lyrics"] & { clearKeys?: SettingsSecretClearKey[] };
         const merged = mergeSecretSection(
           store.get("lyrics"),
-          value as AppSettings["lyrics"] & { clearKeys?: SettingsSecretClearKey[] },
+          incoming,
           LYRICS_SECRET_KEYS,
         );
         store.set("lyrics", merged);
         broadcastSettingsChanged();
-        void cloudSession.pushOrgSecrets();
+        void cloudSession.pushOrgSecrets(incoming.clearKeys ?? []);
       } else {
         store.set(key, value);
         if (key === "church") {
@@ -1099,6 +1101,10 @@ function registerAccountHandlers(): void {
     // Build-time, same reasoning as the API URL — see cloud/session.ts.
     const base = import.meta.env.MAIN_VITE_WEB_URL || "http://localhost:3001";
     await shell.openExternal(`${base}${path ?? ""}`);
+  });
+
+  ipcMain.handle(IPC.ACCOUNT.SYNC_ORG_SECRETS, async () => {
+    await cloudSession.pullOrgSecrets();
   });
 }
 

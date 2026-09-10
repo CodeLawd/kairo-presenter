@@ -622,6 +622,9 @@ const account: ProAutomateAPI['account'] = {
   openWeb(path) {
     return ipcRenderer.invoke(IPC.ACCOUNT.OPEN_WEB, path)
   },
+  syncOrgSecrets() {
+    return ipcRenderer.invoke(IPC.ACCOUNT.SYNC_ORG_SECRETS)
+  },
   onSessionChange(callback) {
     return subscribe(IPC.ACCOUNT.SESSION_CHANGED, callback)
   },

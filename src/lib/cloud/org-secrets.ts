@@ -3,8 +3,9 @@ import type { OrgSecretsPayload, OrgSecretsPatch } from './contracts'
 
 /**
  * Maps the org vault onto local AppSettings secret fields.
- * Cloud non-empty values overwrite local; empty cloud fields leave local alone
- * (explicit clears are handled via OrgSecretsPatch nulls on push, not pull).
+ *
+ * Cloud is the source of truth for these six keys: a successful pull replaces
+ * local values, including empties, so a clear on the website sticks on the booth.
  */
 export function applyOrgSecretsToSettings(
   settings: Pick<AppSettings, 'stt' | 'lyrics'>,
@@ -13,32 +14,61 @@ export function applyOrgSecretsToSettings(
   return {
     stt: {
       ...settings.stt,
-      apiKey: secrets.deepgramApiKey || settings.stt.apiKey,
-      anthropicApiKey: secrets.anthropicApiKey || settings.stt.anthropicApiKey,
-      deepseekApiKey: secrets.deepseekApiKey || settings.stt.deepseekApiKey,
-      bibleApiKey: secrets.bibleApiKey || settings.stt.bibleApiKey,
+      apiKey: secrets.deepgramApiKey ?? '',
+      anthropicApiKey: secrets.anthropicApiKey ?? '',
+      deepseekApiKey: secrets.deepseekApiKey ?? '',
+      bibleApiKey: secrets.bibleApiKey ?? '',
     },
     lyrics: {
       ...settings.lyrics,
-      braveApiKey: secrets.braveApiKey || settings.lyrics.braveApiKey,
-      googleTranslateApiKey:
-        secrets.googleTranslateApiKey || settings.lyrics.googleTranslateApiKey,
+      braveApiKey: secrets.braveApiKey ?? '',
+      googleTranslateApiKey: secrets.googleTranslateApiKey ?? '',
     },
   }
 }
 
-/** Full snapshot for PUT — what this machine currently has stored. */
+const LOCAL_TO_CLOUD: Record<string, keyof OrgSecretsPatch> = {
+  apiKey: 'deepgramApiKey',
+  anthropicApiKey: 'anthropicApiKey',
+  deepseekApiKey: 'deepseekApiKey',
+  bibleApiKey: 'bibleApiKey',
+  braveApiKey: 'braveApiKey',
+  googleTranslateApiKey: 'googleTranslateApiKey',
+}
+
+/**
+ * Build a vault PUT patch from local settings.
+ *
+ * Non-empty locals are written. Empty locals are omitted (leave the vault alone)
+ * unless listed in `clearLocalKeys`, which maps to an explicit `null` clear.
+ * That stops a fresh booth with empty locals from wiping keys saved on the web.
+ */
 export function settingsToOrgSecretsPatch(
   settings: Pick<AppSettings, 'stt' | 'lyrics'>,
+  clearLocalKeys: readonly string[] = [],
 ): OrgSecretsPatch {
-  return {
-    deepgramApiKey: settings.stt.apiKey || null,
-    anthropicApiKey: settings.stt.anthropicApiKey || null,
-    deepseekApiKey: settings.stt.deepseekApiKey || null,
-    bibleApiKey: settings.stt.bibleApiKey || null,
-    braveApiKey: settings.lyrics.braveApiKey || null,
-    googleTranslateApiKey: settings.lyrics.googleTranslateApiKey || null,
+  const clear = new Set(clearLocalKeys)
+  const patch: OrgSecretsPatch = {}
+
+  const write = (localKey: string, value: string | undefined): void => {
+    const cloudKey = LOCAL_TO_CLOUD[localKey]
+    if (!cloudKey) return
+    if (clear.has(localKey)) {
+      patch[cloudKey] = null
+      return
+    }
+    const trimmed = value?.trim() ?? ''
+    if (trimmed) patch[cloudKey] = trimmed
   }
+
+  write('apiKey', settings.stt.apiKey)
+  write('anthropicApiKey', settings.stt.anthropicApiKey)
+  write('deepseekApiKey', settings.stt.deepseekApiKey)
+  write('bibleApiKey', settings.stt.bibleApiKey)
+  write('braveApiKey', settings.lyrics.braveApiKey)
+  write('googleTranslateApiKey', settings.lyrics.googleTranslateApiKey)
+
+  return patch
 }
 
 export type SttSecretKey = 'apiKey' | 'anthropicApiKey' | 'deepseekApiKey' | 'bibleApiKey'

@@ -84,6 +84,9 @@ class CloudSessionService {
   private pairingAbort = false
   private nextRefreshAllowedAt = 0
   private deviceId = ''
+  /** False until the first pull attempt finishes — blocks push from wiping the vault. */
+  private secretsHydrated = false
+  private secretsPullInFlight: Promise<void> | null = null
 
   constructor(store?: SecureStore) {
     this.store = store ?? createSecureStore()
@@ -146,6 +149,7 @@ class CloudSessionService {
   }
 
   async signOut(): Promise<SessionSnapshot> {
+    this.secretsHydrated = false
     try {
       await this.api.request('post', '/v1/auth/logout', undefined, { allowRefresh: false })
     } catch {
@@ -371,11 +375,29 @@ class CloudSessionService {
   /**
    * Hydrate local API keys from the org vault. Best-effort — a dead network
    * leaves whatever is already on disk and never blocks the booth.
+   *
+   * After a successful pull, cloud wins for every known secret field (including
+   * empties), so a clear on the website is what the booth uses next.
    */
   async pullOrgSecrets(): Promise<void> {
+    if (this.secretsPullInFlight) return this.secretsPullInFlight
+
+    this.secretsPullInFlight = this.runPullOrgSecrets().finally(() => {
+      this.secretsPullInFlight = null
+    })
+    return this.secretsPullInFlight
+  }
+
+  private async runPullOrgSecrets(): Promise<void> {
     const orgId = this.snapshot.org?.id
-    if (!orgId || this.snapshot.state === 'signed-out') return
-    if (!this.snapshot.user?.emailVerified) return
+    if (!orgId || this.snapshot.state === 'signed-out') {
+      this.secretsHydrated = true
+      return
+    }
+    if (!this.snapshot.user?.emailVerified) {
+      this.secretsHydrated = true
+      return
+    }
     try {
       const secrets = await this.api.request<OrgSecretsPayload>(
         'get',
@@ -391,21 +413,29 @@ class CloudSessionService {
       this.emitSecretsChanged()
     } catch (error) {
       log.warn('[Cloud] Org secrets pull failed', { reason: toApiError(error).message })
+    } finally {
+      this.secretsHydrated = true
     }
   }
 
   /**
-   * Push the current local API-key snapshot to the org vault. Called after
-   * settings saves — never awaited on a hot path that could delay slides.
+   * Push local API-key changes to the org vault. Empty locals are omitted so a
+   * machine that has not hydrated yet cannot wipe keys saved on the website.
+   * Pass `clearLocalKeys` only when the operator explicitly cleared a field.
    */
-  async pushOrgSecrets(): Promise<void> {
+  async pushOrgSecrets(clearLocalKeys: readonly string[] = []): Promise<void> {
+    if (!this.secretsHydrated) {
+      if (this.secretsPullInFlight) await this.secretsPullInFlight
+    }
     const orgId = this.snapshot.org?.id
     if (!orgId || this.snapshot.state === 'signed-out') return
+    if (!this.snapshot.user?.emailVerified) return
     try {
-      const patch = settingsToOrgSecretsPatch({
-        stt: store.get('stt'),
-        lyrics: store.get('lyrics'),
-      })
+      const patch = settingsToOrgSecretsPatch(
+        { stt: store.get('stt'), lyrics: store.get('lyrics') },
+        clearLocalKeys,
+      )
+      if (Object.keys(patch).length === 0) return
       await this.api.request('put', `/v1/orgs/${orgId}/secrets`, {
         ...patch,
         updatedAt: new Date().toISOString(),

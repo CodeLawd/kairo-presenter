@@ -1330,6 +1330,8 @@ export interface AccountAPI {
   getDevicePairing: () => Promise<import('./cloud/contracts').DevicePairingState>
   /** Opens a page of the web app in the system browser. */
   openWeb: (path?: string) => Promise<void>
+  /** Re-pull org API keys from the cloud vault into local settings. */
+  syncOrgSecrets: () => Promise<void>
   onSessionChange: (
     callback: (session: import('./cloud/contracts').SessionSnapshot) => void,
   ) => Unsubscribe
@@ -1596,6 +1598,7 @@ export const IPC = {
     CANCEL_DEVICE_PAIRING:  'account:cancelDevicePairing',   // invoke
     GET_DEVICE_PAIRING:     'account:getDevicePairing',      // invoke
     OPEN_WEB:               'account:openWeb',               // invoke
+    SYNC_ORG_SECRETS:       'account:syncOrgSecrets',        // invoke — pull vault → local
     SESSION_CHANGED:        'account:sessionChanged',        // push (SessionSnapshot)
     PAIRING_CHANGED:        'account:pairingChanged',        // push (DevicePairingState)
   },
