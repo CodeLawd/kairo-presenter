@@ -8,10 +8,13 @@ import { btnPrimary, input, label, msg, msgError } from '@/components/auth/style
 import { api, ApiError } from '@/lib/api'
 
 const BRAND = {
-  kind: 'shot',
-  src: '/shots/operator.png',
-  alt: 'The Kairo operator view: a live transcript, detected scripture rendered as themed slides, and the live output and staging queue.',
-  caption: 'The operator view — transcript, detected scripture, live output',
+  kind: 'quote',
+  quote: (
+    <>
+      One account for the booth. <span className="font-semibold">Every machine, same church.</span>
+    </>
+  ),
+  attribution: 'Kairo for ProPresenter',
 } as const
 
 function SignUpPageContent(): React.ReactElement {
