@@ -18,7 +18,7 @@ export const lede = 'm-0 text-[17px] leading-[1.65] text-dim'
 
 export const btn =
   'inline-flex items-center gap-[9px] rounded-full border border-transparent px-6 py-[13px] font-display text-sm font-semibold tracking-[-0.01em] transition duration-200 hover:-translate-y-px active:translate-y-0 motion-reduce:transform-none [&_svg]:h-[15px] [&_svg]:w-[15px] [&_svg]:flex-none'
-export const btnPrimary = 'bg-paper text-[#07100f] hover:bg-white'
+export const btnPrimary = 'bg-accent text-[#231703] hover:bg-[#FBBF24]'
 export const btnGhost =
   'border-line bg-paper/5 text-paper hover:border-paper/15 hover:bg-paper/10'
 

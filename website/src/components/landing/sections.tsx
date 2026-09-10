@@ -54,7 +54,7 @@ export function Features(): React.ReactElement {
         n="01"
         label="Listening"
         title="It hears the room."
-        lede="Point Kairo at any audio input on the machine. The transcript runs down the side of the operator view as the service happens, with the input level underneath so you can see it is still hearing something."
+        lede="Point Kairo at any audio input and the transcript scrolls live beside the operator view. An input meter sits underneath, so you always know it is still hearing the room."
         bullets={[
           { lead: 'Any input on the machine', rest: 'Take a clean send off the sound desk instead of a laptop mic.' },
           { lead: 'Deepgram or local Whisper', rest: 'Stream it out for accuracy, or run the model on the machine and keep the audio in the building.' },
@@ -89,11 +89,11 @@ export function Features(): React.ReactElement {
         n="03"
         label="The desk"
         title="You approve every slide."
-        lede="Live output at the top, the queue underneath. Stage a verse with the plus on a detection, or search for one yourself, then click the row to send it to ProPresenter."
+        lede="Live output up top, the staging queue below. Add a verse from a detection or search for one yourself, then click to send it straight to ProPresenter."
         bullets={[
           { lead: 'Stage before you send', rest: 'Line up the next few moments while the current verse is still on screen.' },
           { lead: 'Search by reference or by memory', rest: 'Type John 3:16, or type “love is patient” and let it find the rest.' },
-          { lead: 'Watch the pipeline', rest: 'ProPresenter, speech-to-text and detection each report their own state, so you know which one went quiet.' },
+          { lead: 'Watch the pipeline', rest: 'ProPresenter, transcription and detection each show their own state, so you know which one went quiet.' },
           { lead: 'Two ways to the screen', rest: 'ProPresenter over its network API, or a transparent 1080p NDI source straight into the switcher.' },
         ]}
       />

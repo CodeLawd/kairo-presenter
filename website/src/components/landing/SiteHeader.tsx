@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { Wordmark } from '@/components/brand/Wordmark'
-import { btn, btnGhost, cx, wrap } from './primitives'
+import { btn, btnPrimary, cx, wrap } from './primitives'
 
 const NAV = [
   { href: '#features', label: 'Features' },
@@ -53,7 +53,7 @@ export function SiteHeader(): React.ReactElement {
         >
           Sign in
         </Link>
-        <a className={cx(btn, btnGhost, 'px-[17px] py-2 text-[13px]')} href="#get">
+        <a className={cx(btn, btnPrimary, 'px-[17px] py-2 text-[13px]')} href="#get">
           Get early access
         </a>
       </div>
