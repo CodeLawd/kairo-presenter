@@ -79,6 +79,11 @@ export interface ScriptureLatencyTrace {
   sourceText: string
   transcriptSource: TranscriptSource
   resolver: ScriptureResolver
+  /** Configuration dimensions used to compare like-for-like latency samples. */
+  translation?: string
+  autoPresentDelayMs?: number
+  presenterConnectionMode?: 'connected' | 'degraded' | 'disconnected'
+  presenterOutputMode?: string
   status: TraceStatus
 
   /** When Kairo received the transcript — not when the microphone heard it. */
@@ -140,6 +145,9 @@ export interface TraceStartInput {
   sourceText: string
   transcriptSource: TranscriptSource
   resolver: ScriptureResolver
+  translation?: string
+  autoPresentDelayMs?: number
+  presenterConnectionMode?: ScriptureLatencyTrace['presenterConnectionMode']
   reference?: string
   /** Carried from the transcript that produced this hit. */
   sttReceivedAt: number
@@ -245,13 +253,21 @@ export function isTerminal(status: TraceStatus): boolean {
 
 export interface StageSummary {
   count: number
+  min: number
+  mean: number
   p50: number
+  p90: number
   p95: number
+  p99: number
   max: number
 }
 
 export interface ResolverSummary {
   resolver: ScriptureResolver
+  transcriptSource: TranscriptSource
+  translation?: string
+  autoPresentDelayMs?: number
+  presenterConnectionMode?: ScriptureLatencyTrace['presenterConnectionMode']
   presented: number
   cancelled: number
   superseded: number
@@ -290,17 +306,29 @@ const SUMMARISED_STAGES = [
 export function summarizeByResolver(
   traces: readonly ScriptureLatencyTrace[],
 ): ResolverSummary[] {
-  const byResolver = new Map<ScriptureResolver, ScriptureLatencyTrace[]>()
+  const byResolver = new Map<string, ScriptureLatencyTrace[]>()
   for (const trace of traces) {
-    const bucket = byResolver.get(trace.resolver)
+    const key = JSON.stringify([
+      trace.resolver,
+      trace.transcriptSource,
+      trace.translation ?? null,
+      trace.autoPresentDelayMs ?? null,
+      trace.presenterConnectionMode ?? null,
+    ])
+    const bucket = byResolver.get(key)
     if (bucket) bucket.push(trace)
-    else byResolver.set(trace.resolver, [trace])
+    else byResolver.set(key, [trace])
   }
 
   const summaries: ResolverSummary[] = []
-  for (const [resolver, bucket] of byResolver) {
+  for (const bucket of byResolver.values()) {
+    const first = bucket[0]
     const summary: ResolverSummary = {
-      resolver,
+      resolver: first.resolver,
+      transcriptSource: first.transcriptSource,
+      translation: first.translation,
+      autoPresentDelayMs: first.autoPresentDelayMs,
+      presenterConnectionMode: first.presenterConnectionMode,
       presented: bucket.filter((t) => t.status === 'presented').length,
       cancelled: bucket.filter((t) => t.status === 'cancelled').length,
       superseded: bucket.filter((t) => t.status === 'superseded').length,
@@ -322,8 +350,12 @@ export function summarizeByResolver(
       if (values.length === 0) continue
       summary.stages[stage] = {
         count: values.length,
+        min: values[0],
+        mean: values.reduce((sum, value) => sum + value, 0) / values.length,
         p50: percentile(values, 0.5),
+        p90: percentile(values, 0.9),
         p95: percentile(values, 0.95),
+        p99: percentile(values, 0.99),
         max: values[values.length - 1],
       }
     }

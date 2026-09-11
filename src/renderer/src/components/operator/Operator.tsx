@@ -69,6 +69,7 @@ import type {
   ServiceHealth,
   TranscriptResult,
   ResilienceStatus,
+  ScriptureTraceRecord,
 } from "@shared/ipc";
 import { normalizeMediaPlayback } from "@shared/media-playback";
 import { useBootstrapStore } from "@/bootstrap/useBootstrapStore";
@@ -311,6 +312,7 @@ export default function Operator(): React.ReactElement {
   const [pipelineBusy, setPipelineBusy] = useState(false);
   const [nuggetsOpen, setNuggetsOpen] = useState(false);
   const [interimText, setInterimText] = useState("");
+  const [lastLatency, setLastLatency] = useState<ScriptureTraceRecord | null>(null);
   const transcriptScrollRef = useContentAutoScroll(
     "bottom",
     JSON.stringify([segments.map(({ id, text }) => [id, text]), interimText]),
@@ -323,6 +325,19 @@ export default function Operator(): React.ReactElement {
       // Nugget capture still works for this session when storage is unavailable.
     }
   }, [legacyNuggets]);
+
+  useEffect(() => {
+    let mounted = true;
+    const refresh = async (): Promise<void> => {
+      try {
+        const [latest] = await window.api.scripture.recentTraces(1);
+        if (mounted) setLastLatency(latest ?? null);
+      } catch { /* diagnostics never interrupt a service */ }
+    };
+    void refresh();
+    const timer = window.setInterval(refresh, 2_000);
+    return () => { mounted = false; window.clearInterval(timer); };
+  }, []);
 
   const removeNugget = (id: string): void => {
     if (!activeService) {
@@ -1539,6 +1554,24 @@ export default function Operator(): React.ReactElement {
           </div>
           <span className="text-[10px] uppercase font-mono tracking-widest text-rose-500/80">
             Queue active
+          </span>
+        </div>
+      )}
+
+      {lastLatency && (
+        <div className="flex items-center gap-2 border-b border-white/[0.05] px-6 py-1.5 text-[10px] text-white/40">
+          <span className="font-semibold text-white/60">Last scripture</span>
+          <span>{lastLatency.trace.reference}</span>
+          <span className="font-mono tabular-nums text-white/55">
+            {lastLatency.metrics.operatorVisibleMs !== undefined
+              ? `${Math.round(lastLatency.metrics.operatorVisibleMs)}ms to Kairo`
+              : lastLatency.trace.status}
+          </span>
+          {lastLatency.metrics.slowestStage && (
+            <span>Slowest: {lastLatency.metrics.slowestStage.name}</span>
+          )}
+          <span className={ppStatus === "ok" ? "text-emerald-400" : "text-amber-400"}>
+            PP: {ppStatus === "ok" ? "Connected" : "Unavailable"}
           </span>
         </div>
       )}

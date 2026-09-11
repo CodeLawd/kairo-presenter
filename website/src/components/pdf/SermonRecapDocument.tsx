@@ -9,6 +9,7 @@ import { PdfcnThemeProvider } from '@/components/pdf/theme-provider'
 import { recapTheme } from '@/components/pdf/theme-recap'
 import { Document, Page, View } from '@/lib/pdf-primitives'
 import type { SermonSummary } from '@/lib/sermons'
+import { normalizeSermonSummary } from '@/lib/sermon-summary'
 
 export interface SermonRecapInput {
   title: string
@@ -82,21 +83,22 @@ export function SermonRecapDocument({
   churchName,
   summary,
 }: SermonRecapInput): React.ReactElement {
+  const recap = normalizeSermonSummary(summary)
   // The desktop "Service name" (e.g. "Sunday morning service"). The H1 shows
   // the AI headline once the recap is ready, so the service name joins the
   // byline instead of disappearing — unless it *is* the headline.
-  const serviceName = title && title !== (summary.headline || '') ? title : null
+  const serviceName = title && title !== (recap.headline || '') ? title : null
   const byline = [serviceName, speaker, formatDate(preachedAt)].filter(Boolean).join(' · ')
 
   return (
     <PdfcnThemeProvider theme={recapTheme}>
-      <Document title={summary.headline || title}>
+      <Document title={recap.headline || title}>
         <Page size="a4">
           <Section spacing="none">
             <Text variant="xs" transform="uppercase" color="mutedForeground">
               {churchName}
             </Text>
-            <Heading level={1}>{summary.headline || title}</Heading>
+            <Heading level={1}>{recap.headline || title}</Heading>
             {byline ? (
               <Text variant="sm" color="mutedForeground">
                 {byline}
@@ -106,17 +108,17 @@ export function SermonRecapDocument({
 
           <Divider spacing="sm" />
 
-          {summary.bigIdea ? (
+          {recap.bigIdea ? (
             <Section spacing="none">
               <Heading level={2}>The big idea</Heading>
-              <Text>{summary.bigIdea}</Text>
+              <Text>{recap.bigIdea}</Text>
             </Section>
           ) : null}
 
-          {summary.keyPoints.length > 0 ? (
+          {recap.keyPoints.length > 0 ? (
             <Section spacing="none">
               <Heading level={2}>Key points</Heading>
-              {summary.keyPoints.map((point, index) => (
+              {recap.keyPoints.map((point, index) => (
                 <View key={`${point.title}-${index}`} style={{ marginBottom: 10 }}>
                   <Heading level={3} keepWithNext>
                     {`${index + 1}. ${point.title}`}
@@ -127,10 +129,10 @@ export function SermonRecapDocument({
             </Section>
           ) : null}
 
-          {summary.memorableQuotes.length > 0 ? (
+          {recap.memorableQuotes.length > 0 ? (
             <Section spacing="none">
               <Heading level={2}>In their words</Heading>
-              {summary.memorableQuotes.map((quote, index) => (
+              {recap.memorableQuotes.map((quote, index) => (
                 // Quotes are verbatim transcript, so they are set apart rather
                 // than run into the body text where they would read as summary.
                 <Section
@@ -147,22 +149,22 @@ export function SermonRecapDocument({
             </Section>
           ) : null}
 
-          {summary.takeaways.length > 0 ? (
+          {recap.takeaways.length > 0 ? (
             <Section spacing="none">
               <Heading level={2}>This week</Heading>
               <PdfList
                 variant="bullet"
-                items={summary.takeaways.map((takeaway) => ({ text: takeaway }))}
+                items={recap.takeaways.map((takeaway) => ({ text: takeaway }))}
               />
             </Section>
           ) : null}
 
-          {summary.keyScriptures.length > 0 ? (
+          {recap.keyScriptures.length > 0 ? (
             <Section spacing="none">
               <Heading level={2}>Key scriptures</Heading>
               <PdfList
                 variant="descriptive"
-                items={summary.keyScriptures.map((item) => ({
+                items={recap.keyScriptures.map((item) => ({
                   text: item.reference,
                   description: item.connection,
                 }))}
@@ -170,10 +172,10 @@ export function SermonRecapDocument({
             </Section>
           ) : null}
 
-          {summary.callToAction ? (
+          {recap.callToAction ? (
             <Section variant="callout" accentColor="primary" spacing="none">
               <Heading level={2}>Call to action</Heading>
-              <Text noMargin>{summary.callToAction}</Text>
+              <Text noMargin>{recap.callToAction}</Text>
             </Section>
           ) : null}
         </Page>

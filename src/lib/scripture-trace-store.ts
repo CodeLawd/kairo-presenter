@@ -47,6 +47,9 @@ export class ScriptureTraceStore {
       sourceText: input.sourceText,
       transcriptSource: input.transcriptSource,
       resolver: input.resolver,
+      translation: input.translation,
+      autoPresentDelayMs: input.autoPresentDelayMs,
+      presenterConnectionMode: input.presenterConnectionMode,
       status: 'active',
       sttReceivedAt: input.sttReceivedAt,
       detectionStartedAt: input.detectionStartedAt,
@@ -58,6 +61,16 @@ export class ScriptureTraceStore {
     return trace
   }
 
+  annotate(
+    correlationId: string,
+    fields: Partial<Pick<ScriptureLatencyTrace,
+      'translation' | 'autoPresentDelayMs' | 'presenterConnectionMode' | 'presenterOutputMode'>>,
+  ): void {
+    const trace = this.traces.get(correlationId)
+    if (!trace) return
+    Object.assign(trace, fields)
+  }
+
   /**
    * Record that a stage happened.
    *
@@ -66,8 +79,10 @@ export class ScriptureTraceStore {
    */
   mark(correlationId: string, stage: ScriptureTraceStage, at: number = Date.now()): void {
     const trace = this.traces.get(correlationId)
-    if (!trace || isTerminal(trace.status)) return
-    trace[stage] = at
+    if (!trace) return
+    const lateRendererPaint = stage === 'suggestionRenderedAt' && trace.status === 'presented'
+    if (isTerminal(trace.status) && !lateRendererPaint) return
+    if (trace[stage] === undefined) trace[stage] = at
   }
 
   complete(correlationId: string, input: CompleteInput | TraceStatus): void {

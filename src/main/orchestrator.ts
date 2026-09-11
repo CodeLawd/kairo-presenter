@@ -33,6 +33,7 @@ import {
   OVERLAY_LAYERS,
 } from "@shared/overlay-outputs";
 import { formatOverlayReference, formatOverlayVerseText, renderOverlayTemplate } from "@shared/overlay-content";
+import { confirmPresenterOutput } from "@shared/presenter-confirmation";
 import { ScriptureDetector } from "./services/scripture/detector";
 import { subscribeExplicitScriptureDetection } from "./services/scripture/live-detection-wiring";
 import { scriptureTrace } from "./services/scripture/trace";
@@ -84,6 +85,11 @@ interface PushContent {
   text: string;
   /** Lyric gloss / paint colors, parallel to `text` lines. */
   coloredLines?: Array<{ text: string; color?: string }>;
+}
+
+interface PreparedScriptureProjection {
+  suggestion: ScriptureSuggestion;
+  content: PushContent;
 }
 
 /** Milliseconds to let the offscreen overlay window paint at least once before triggering the PP video input (D — NDI push sequence). */
@@ -416,10 +422,11 @@ class Orchestrator {
       const correlationId = scriptureTrace.start({
         reference: `${ref.book} ${ref.chapter}:${ref.verseStart}${ref.verseEnd != null ? `-${ref.verseEnd}` : ""}`,
         sourceText: ref.sourceText,
-        resolver: ref.detectionType === "quote" ? "quotation-local" : "explicit",
+        resolver: ref.resolver ?? (ref.detectionType === "quote" ? "quotation-local" : "explicit"),
         transcriptSource: ref.transcriptSource,
         sttReceivedAt: ref.sttReceivedAt,
         detectionStartedAt: ref.detectionStartedAt,
+        autoPresentDelayMs: (this.cfg.autoPresentDelaySec ?? 1) * 1_000,
       });
 
       // Live sermon playlist first: its verses are already resolved, in the
@@ -432,18 +439,29 @@ class Orchestrator {
       const translation = planEntry
         ? planEntry.translation
         : this.cfg.scriptureTranslation;
+      scriptureTrace.annotate(correlationId, { translation });
       let verses: ScriptureVerse[] = planEntries.map((entry) => entry.verse);
 
       scriptureTrace.mark(correlationId, "bibleLookupStartedAt");
       if (verses.length === 0) {
         try {
           const end = ref.verseEnd != null ? `-${ref.verseEnd}` : "";
-          const results = await scriptureService.search(
-            `${ref.book} ${ref.chapter}:${ref.verseStart}${end}`,
-            translation,
-            store.get("stt").bibleApiKey,
-          );
-          verses = results.flatMap((result) => result.verses);
+          if ((ref.resolver ?? "explicit") === "explicit") {
+            verses = await scriptureService.lookupVerses(
+              ref.book,
+              ref.chapter,
+              ref.verseStart,
+              ref.verseEnd,
+              translation,
+            );
+          } else {
+            const results = await scriptureService.search(
+              `${ref.book} ${ref.chapter}:${ref.verseStart}${end}`,
+              translation,
+              store.get("stt").bibleApiKey,
+            );
+            verses = results.flatMap((result) => result.verses);
+          }
         } catch (err) {
           log.warn("[Orchestrator] Bible lookup error", {
             book: ref.book,
@@ -458,6 +476,15 @@ class Orchestrator {
       if (!this.running || this.session !== detectionSession) {
         scriptureTrace.complete(correlationId, { status: "superseded" });
         return;
+      }
+
+      if (verses.length === 0) {
+        scriptureTrace.complete(correlationId, {
+          status: "failed",
+          failureReason: "verse-not-found",
+          error: `${translation} text is not available locally for this reference`,
+        });
+        continue;
       }
 
       // One Operator suggestion per verse — never jumble a range into a single card
@@ -537,7 +564,8 @@ class Orchestrator {
           canAutoPresentScriptureReference(ref) &&
           ref.confidence >= (this.cfg.confidenceThreshold ?? 0.7)
         ) {
-          this.scheduleAutoPresent(suggestion);
+          const prepared = this.prepareScriptureProjection(suggestion);
+          if (prepared) this.scheduleAutoPresent(prepared);
         }
       }
 
@@ -561,16 +589,30 @@ class Orchestrator {
    * suggested but never auto-presented. A `staggerIndex` multiplier used to live
    * here for a sequence that no code path could produce.
    */
-  private scheduleAutoPresent(suggestion: ScriptureSuggestion): void {
+  private scheduleAutoPresent(prepared: PreparedScriptureProjection): void {
+    const { suggestion } = prepared;
     const delayMs = (this.cfg?.autoPresentDelaySec ?? 1) * 1_000;
     const expiresAt = Date.now() + delayMs;
+
+    // The booth should never receive an older verse after the preacher has
+    // already moved to a newer citation. One countdown owns auto-present at a
+    // time; previous suggestions remain reviewable but cannot fire later.
+    for (const [pendingId, pendingTimer] of this.autoTimers) {
+      clearTimeout(pendingTimer);
+      this.autoTimers.delete(pendingId);
+      const older = this.pendingSuggestions.get(pendingId);
+      scriptureTrace.complete(older?.correlationId, {
+        status: "superseded",
+        supersededBy: suggestion.correlationId,
+      });
+    }
 
     scriptureTrace.mark(suggestion.correlationId, "countdownStartedAt");
     const timer = setTimeout(async () => {
       this.autoTimers.delete(suggestion.id);
       this.pendingSuggestions.delete(suggestion.id);
       scriptureTrace.mark(suggestion.correlationId, "countdownCompletedAt");
-      await this.presentScripture(suggestion).catch((err) =>
+      await this.presentScripture(suggestion, prepared).catch((err) =>
         log.error("[Orchestrator] Auto-present error", (err as Error).message),
       );
     }, delayMs);
@@ -608,10 +650,16 @@ class Orchestrator {
 
   // ─── ProPresenter presentation ─────────────────────────────────────────────
 
-  private async presentScripture(suggestion: ScriptureSuggestion): Promise<void> {
+  private async presentScripture(
+    suggestion: ScriptureSuggestion,
+    prepared: PreparedScriptureProjection | null = null,
+  ): Promise<void> {
     suggestion = singleVerseSuggestion(suggestion);
     const correlationId = suggestion.correlationId;
     const ppStatus = proPresenterService.getStatus();
+    scriptureTrace.annotate(correlationId, {
+      presenterConnectionMode: ppStatus.state === "connected" ? "connected" : "disconnected",
+    });
     if (ppStatus.state !== "connected") {
       log.warn("[Orchestrator] PP not connected — queueing scripture projection", {
         ref: suggestion.reference,
@@ -627,9 +675,16 @@ class Orchestrator {
     }
 
     scriptureTrace.mark(correlationId, "presenterRequestStartedAt");
-    const results = await this.dispatchScripture(suggestion);
+    const results = await this.dispatchScripture(
+      suggestion,
+      prepared?.content ?? this.prepareScriptureProjection(suggestion)?.content,
+    );
     scriptureTrace.mark(correlationId, "presenterRequestCompletedAt");
     const failed = results.filter((r) => !r.ok);
+    scriptureTrace.annotate(correlationId, {
+      presenterOutputMode: results.filter((result) => result.ok).map((result) => result.kind).join(",") || undefined,
+      presenterConnectionMode: failed.length > 0 ? "degraded" : "connected",
+    });
 
     if (!results.some((r) => r.ok)) {
       const msg = results.length === 0
@@ -658,11 +713,18 @@ class Orchestrator {
     } else {
       this.updateHealth("propresenter", "ok");
     }
-    // "Presented" means ProPresenter accepted the request. Whether pixels
-    // changed is a separate question, answered by the confirmation observer.
+    scriptureTrace.mark(correlationId, "presenterStateCheckStartedAt");
+    const confirmation = await confirmPresenterOutput({
+      reference: suggestion.reference,
+      successfulKinds: results.filter(result => result.ok).map(result => result.kind),
+      readStatus: () => proPresenterService.getStatus(),
+    });
+    if (confirmation !== "request-accepted" && confirmation !== "none") {
+      scriptureTrace.mark(correlationId, "presenterStateConfirmedAt");
+    }
     scriptureTrace.complete(correlationId, {
       status: "presented",
-      confirmation: "request-accepted",
+      confirmation,
     });
     this.emitStatus();
   }
@@ -732,33 +794,35 @@ class Orchestrator {
    */
   private async dispatchScripture(
     suggestion: ScriptureSuggestion,
+    preparedContent?: PushContent,
   ): Promise<OverlayDispatchResult[]> {
     suggestion = singleVerseSuggestion(suggestion);
-    const overlay = normalizeOverlaySettings(store.get("overlay"));
+    if (!preparedContent) return [];
+    return this.dispatchContent(preparedContent, "scripture", suggestion);
+  }
 
-    // The verse text depends only on the suggestion and the global content
-    // settings, never on the destination — format it once for every output.
+  /** Resolve and format everything that can be prepared before the safety delay. */
+  private prepareScriptureProjection(
+    suggestion: ScriptureSuggestion,
+  ): PreparedScriptureProjection | null {
+    suggestion = singleVerseSuggestion(suggestion);
+    const overlay = normalizeOverlaySettings(store.get("overlay"));
     const text = formatOverlayVerseText(suggestion.verses, {
       showVerseNumbers: overlay.showVerseNumbers,
       maxVerses: overlay.maxVerses,
     });
-    if (!text) {
-      log.warn("[Orchestrator] No verse text available — nothing to push", {
-        ref: suggestion.reference,
-        translation: suggestion.translation,
-      });
-      return [];
-    }
-    const content: PushContent = {
-      reference: formatOverlayReference(
-        suggestion.reference,
-        suggestion.translation,
-        overlay.showTranslation,
-      ),
-      text,
+    if (!text) return null;
+    return {
+      suggestion,
+      content: {
+        reference: formatOverlayReference(
+          suggestion.reference,
+          suggestion.translation,
+          overlay.showTranslation,
+        ),
+        text,
+      },
     };
-
-    return this.dispatchContent(content, "scripture", suggestion);
   }
 
   /**
