@@ -5,6 +5,7 @@ import { notFound } from 'next/navigation'
 import { RECAP_PAGE_WIDTH, SermonRecapPreview } from '@/components/pdf/SermonRecapDocument'
 import { apiTarget } from '@/lib/api-target'
 import type { PublicSermon } from '@/lib/sermons'
+import { normalizeSermonSummary } from '@/lib/sermon-summary'
 
 /** The share token is not in the build, so this page can never be static. */
 export const dynamic = 'force-dynamic'
@@ -38,13 +39,14 @@ export async function generateMetadata({
   const { token } = await params
   const sermon = await fetchSermon(token)
   if (!sermon) return { title: 'Recap unavailable', robots: { index: false, follow: false } }
+  const summary = normalizeSermonSummary(sermon.summary)
 
   return {
-    title: `${sermon.summary.headline} · ${sermon.churchName}`,
-    description: sermon.summary.bigIdea.slice(0, 160),
+    title: `${summary.headline} · ${sermon.churchName}`,
+    description: summary.bigIdea.slice(0, 160),
     openGraph: {
-      title: sermon.summary.headline,
-      description: sermon.summary.bigIdea.slice(0, 160),
+      title: summary.headline,
+      description: summary.bigIdea.slice(0, 160),
       type: 'article',
     },
     // The link is unguessable and meant to be passed to a person, not indexed.

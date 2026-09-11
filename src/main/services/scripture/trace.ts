@@ -36,6 +36,8 @@ class ScriptureTraceService {
     transcriptSource?: TranscriptSource
     sttReceivedAt?: number
     detectionStartedAt?: number
+    translation?: string
+    autoPresentDelayMs?: number
   }): string {
     const correlationId = randomUUID()
     const now = Date.now()
@@ -49,6 +51,8 @@ class ScriptureTraceService {
       // starts its clock now rather than pretending to a time it never had.
       sttReceivedAt: input.sttReceivedAt ?? now,
       detectionStartedAt: input.detectionStartedAt,
+      translation: input.translation,
+      autoPresentDelayMs: input.autoPresentDelayMs,
       citationRecognizedAt: now,
     })
     this.event('scripture.detected', correlationId, {
@@ -58,9 +62,30 @@ class ScriptureTraceService {
     return correlationId
   }
 
+  annotate(
+    correlationId: string | undefined,
+    fields: Parameters<ScriptureTraceStore['annotate']>[1],
+  ): void {
+    if (correlationId) this.store.annotate(correlationId, fields)
+  }
+
   mark(correlationId: string | undefined, stage: ScriptureTraceStage): void {
     if (!correlationId) return
     this.store.mark(correlationId, stage)
+    const eventNames: Partial<Record<ScriptureTraceStage, string>> = {
+      bibleLookupStartedAt: 'scripture.lookup.started',
+      bibleLookupCompletedAt: 'scripture.lookup.completed',
+      suggestionPublishedAt: 'scripture.suggestion.published',
+      suggestionRenderedAt: 'scripture.suggestion.rendered',
+      countdownStartedAt: 'scripture.countdown.started',
+      countdownCompletedAt: 'scripture.countdown.completed',
+      presenterRequestStartedAt: 'scripture.presenter.started',
+      presenterRequestCompletedAt: 'scripture.presenter.completed',
+      presenterStateCheckStartedAt: 'scripture.presenter.confirmation-started',
+      presenterStateConfirmedAt: 'scripture.presenter.confirmed',
+    }
+    const eventName = eventNames[stage]
+    if (eventName) this.event(eventName, correlationId, {})
   }
 
   complete(correlationId: string | undefined, input: CompleteInput): void {

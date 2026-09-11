@@ -8,10 +8,14 @@ import {
 } from '@shared/scripture-trace'
 import type { ScriptureTraceRecord } from '@shared/ipc'
 
-type Filter = 'all' | TraceStatus
+type Filter = 'all' | TraceStatus | 'explicit' | 'quotation-local' | 'sermon-plan' | 'ai'
 
 const FILTERS: { id: Filter; label: string }[] = [
   { id: 'all', label: 'All' },
+  { id: 'explicit', label: 'Explicit' },
+  { id: 'quotation-local', label: 'Quotation' },
+  { id: 'sermon-plan', label: 'Plan' },
+  { id: 'ai', label: 'AI' },
   { id: 'presented', label: 'Presented' },
   { id: 'cancelled', label: 'Cancelled' },
   { id: 'superseded', label: 'Superseded' },
@@ -135,7 +139,9 @@ export function ScriptureLatencyPanel(): React.JSX.Element {
     void load()
   }, [load])
 
-  const visible = records.filter((r) => filter === 'all' || r.trace.status === filter)
+  const visible = records.filter((r) =>
+    filter === 'all' || r.trace.status === filter || r.trace.resolver === filter,
+  )
   const summaries = summarizeByResolver(
     records.map((r) => r.trace as ScriptureLatencyTrace),
   )

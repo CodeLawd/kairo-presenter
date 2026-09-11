@@ -120,6 +120,34 @@ describe('ScriptureTraceStore', () => {
     assert.equal(store.metrics('a')?.bibleLookupMs, 14)
   })
 
+  test('attaches runtime configuration without changing stage timestamps', () => {
+    const store = new ScriptureTraceStore()
+    start(store, 'metadata')
+    store.annotate('metadata', {
+      translation: 'KJV',
+      autoPresentDelayMs: 1000,
+      presenterConnectionMode: 'connected',
+      presenterOutputMode: 'library',
+    })
+    assert.deepEqual(
+      {
+        translation: store.get('metadata')?.translation,
+        delay: store.get('metadata')?.autoPresentDelayMs,
+        connection: store.get('metadata')?.presenterConnectionMode,
+        output: store.get('metadata')?.presenterOutputMode,
+      },
+      { translation: 'KJV', delay: 1000, connection: 'connected', output: 'library' },
+    )
+  })
+
+  test('keeps the first observation when two renderer surfaces report the same paint', () => {
+    const store = new ScriptureTraceStore()
+    start(store, 'a')
+    store.mark('a', 'suggestionRenderedAt', T0 + 20)
+    store.mark('a', 'suggestionRenderedAt', T0 + 45)
+    assert.equal(store.get('a')?.suggestionRenderedAt, T0 + 20)
+  })
+
   test('a cancelled trace stops advancing', () => {
     // An in-flight ProPresenter call that returns after the operator cancelled
     // must not make the trace look like it presented.
@@ -139,6 +167,14 @@ describe('ScriptureTraceStore', () => {
     store.complete('a', 'cancelled')
     store.complete('a', { status: 'presented' })
     assert.equal(store.get('a')?.status, 'cancelled')
+  })
+
+  test('a renderer paint may close its independent stage after presentation completes', () => {
+    const store = new ScriptureTraceStore()
+    start(store, 'a')
+    store.complete('a', { status: 'presented', confirmation: 'request-accepted' })
+    store.mark('a', 'suggestionRenderedAt', T0 + 30)
+    assert.equal(store.metrics('a')?.operatorVisibleMs, 30)
   })
 
   test('records why a trace ended badly', () => {
@@ -223,7 +259,11 @@ describe('summarizeByResolver', () => {
     assert.equal(summary.resolver, 'explicit')
     assert.equal(summary.presented, 10)
     assert.equal(summary.stages.detectionMs?.p50, 5)
+    assert.equal(summary.stages.detectionMs?.min, 1)
+    assert.equal(summary.stages.detectionMs?.mean, 14.5)
+    assert.equal(summary.stages.detectionMs?.p90, 9)
     assert.equal(summary.stages.detectionMs?.p95, 100)
+    assert.equal(summary.stages.detectionMs?.p99, 100)
     assert.equal(summary.stages.detectionMs?.max, 100)
     assert.equal(summary.stages.presenterRequestMs?.p50, 10)
   })

@@ -8,6 +8,7 @@ import {
   matchPlanQuote,
   type SermonPlanIndex,
 } from "@shared/sermon-plan-match";
+import type { ScriptureResolver } from "@shared/scripture-trace";
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -29,6 +30,7 @@ export interface ScriptureReference {
   sttReceivedAt?: number;
   detectionStartedAt?: number;
   transcriptSource?: "interim" | "final";
+  resolver?: ScriptureResolver;
 }
 
 /** What the caller knows about the transcript currently being analyzed. */
@@ -360,7 +362,10 @@ export class ScriptureDetector extends EventEmitter {
 
   // Queue state
   private pendingText: string | null = null;
+  private pendingOrigin: (TranscriptOrigin & { detectionStartedAt: number }) | null = null;
+  private pendingGeneration = 0;
   private processing = false;
+  private resolutionGeneration = 0;
   private lastCallTime = 0;
   private flushTimer: NodeJS.Timeout | null = null;
   private transcriptOrigin: TranscriptOrigin | null = null;
@@ -444,6 +449,10 @@ export class ScriptureDetector extends EventEmitter {
     if (!this.cfg.apiKey.trim()) return;
 
     this.pendingText = text;
+    this.pendingOrigin = this.transcriptOrigin
+      ? { ...this.transcriptOrigin, detectionStartedAt: this.detectionStartedAt ?? Date.now() }
+      : null;
+    this.pendingGeneration = this.resolutionGeneration;
 
     if (this.processing) return; // flush() called after current call finishes
 
@@ -573,6 +582,8 @@ export class ScriptureDetector extends EventEmitter {
       this.explicitContext.awaitingVerse = true;
     }
     if (explicit.length === 0) return false;
+    this.resolutionGeneration++;
+    for (const ref of explicit) ref.resolver = "explicit";
     // A spoken citation supersedes whatever reading was in progress.
     this.resetPlanQuoteWindow();
     const deduplicated = this.filterDedup(explicit);
@@ -599,12 +610,15 @@ export class ScriptureDetector extends EventEmitter {
   }
 
   /** Every detection emit goes through here so stamping cannot be forgotten. */
-  private emitDetection(refs: ScriptureReference[]): void {
-    const origin = this.transcriptOrigin;
+  private emitDetection(
+    refs: ScriptureReference[],
+    queuedOrigin?: (TranscriptOrigin & { detectionStartedAt: number }) | null,
+  ): void {
+    const origin = queuedOrigin ?? this.transcriptOrigin;
     if (origin) {
       for (const ref of refs) {
         ref.sttReceivedAt ??= origin.sttReceivedAt;
-        ref.detectionStartedAt ??= this.detectionStartedAt;
+        ref.detectionStartedAt ??= queuedOrigin?.detectionStartedAt ?? this.detectionStartedAt;
         ref.transcriptSource ??= origin.source;
       }
     }
@@ -619,6 +633,8 @@ export class ScriptureDetector extends EventEmitter {
     if (this.lifetime.signal.aborted || !this.quoteSearchProvider) return false;
     const refs = recoverDamagedQuote(text, this.quoteSearchProvider);
     if (!refs.length) return false;
+    this.resolutionGeneration++;
+    for (const ref of refs) ref.resolver = "quotation-local";
     const fresh = this.filterDedup(refs);
     this.statsData.cacheHits += refs.length - fresh.length;
     this.statsData.totalDetections += fresh.length;
@@ -668,6 +684,7 @@ export class ScriptureDetector extends EventEmitter {
       // Must be the current segment, not the rolling window: the Operator finds
       // the transcript line to highlight by substring-matching triggerText.
       sourceText: text.slice(0, SOURCE_TEXT_MAX_CHARS),
+      resolver: "sermon-plan",
     };
 
     const deduplicated = this.filterDedup([ref]);
@@ -679,6 +696,7 @@ export class ScriptureDetector extends EventEmitter {
     }
 
     this.statsData.totalDetections += deduplicated.length;
+    this.resolutionGeneration++;
     this.emitDetection(deduplicated);
     this.emit("stats", this.getStats());
     return true;
@@ -741,6 +759,7 @@ export class ScriptureDetector extends EventEmitter {
       this.flushTimer = null;
     }
     this.pendingText = null;
+    this.pendingOrigin = null;
     this.explicitContext = null;
     this.removeAllListeners();
   }
@@ -753,17 +772,23 @@ export class ScriptureDetector extends EventEmitter {
 
     if (this.fallbackMode) {
       const text = this.pendingText;
+      const origin = this.pendingOrigin;
+      const generation = this.pendingGeneration;
       this.pendingText = null;
-      this.runRegexDetection(text);
+      this.pendingOrigin = null;
+      this.runRegexDetection(text, origin, generation);
       return;
     }
 
     const text = this.pendingText;
+    const origin = this.pendingOrigin;
+    const generation = this.pendingGeneration;
     this.pendingText = null;
+    this.pendingOrigin = null;
     this.processing = true;
     this.lastCallTime = Date.now();
 
-    this.runDetection(text).finally(() => {
+    this.runDetection(text, origin, generation).finally(() => {
       this.processing = false;
 
       if (this.pendingText) {
@@ -781,16 +806,22 @@ export class ScriptureDetector extends EventEmitter {
     });
   }
 
-  private runRegexDetection(text: string): void {
+  private runRegexDetection(
+    text: string,
+    origin: (TranscriptOrigin & { detectionStartedAt: number }) | null = null,
+    generation = this.resolutionGeneration,
+  ): void {
     this.emit("processing", text);
     try {
       const parsed = matchExplicitScriptures(text);
+      if (generation !== this.resolutionGeneration) return;
+      for (const ref of parsed) ref.resolver = "explicit";
       const deduplicated = this.filterDedup(parsed);
       this.statsData.cacheHits += parsed.length - deduplicated.length;
 
       if (deduplicated.length > 0) {
         this.statsData.totalDetections += deduplicated.length;
-        this.emitDetection(deduplicated);
+        this.emitDetection(deduplicated, origin);
       }
 
       this.emit("stats", this.getStats());
@@ -805,7 +836,13 @@ export class ScriptureDetector extends EventEmitter {
 
   // ─── API call with retry ───────────────────────────────────────────────────
 
-  private async runDetection(text: string): Promise<void> {
+  private async runDetection(
+    text: string,
+    origin: (TranscriptOrigin & { detectionStartedAt: number }) | null = this.transcriptOrigin
+      ? { ...this.transcriptOrigin, detectionStartedAt: this.detectionStartedAt ?? Date.now() }
+      : null,
+    generation = this.resolutionGeneration,
+  ): Promise<void> {
     this.emit("processing", text);
     const start = Date.now();
 
@@ -846,12 +883,19 @@ export class ScriptureDetector extends EventEmitter {
 
         this.emit("requestSuccess");
 
+        if (generation !== this.resolutionGeneration) {
+          log.info("[ScriptureDetector] AI result superseded", { generation });
+          return;
+        }
+
+        for (const ref of parsed) ref.resolver = "ai";
+
         const deduplicated = this.filterDedup(parsed);
         this.statsData.cacheHits += parsed.length - deduplicated.length;
 
         if (deduplicated.length > 0) {
           this.statsData.totalDetections += deduplicated.length;
-          this.emitDetection(deduplicated);
+          this.emitDetection(deduplicated, origin);
         }
 
         this.emit("stats", this.getStats());

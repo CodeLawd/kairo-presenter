@@ -52,6 +52,7 @@ test("emits a spoken explicit range synchronously before AI analysis", () => {
       verseEnd: 22,
       confidence: 0.9,
       detectionType: "explicit",
+      resolver: "explicit",
       sourceText: "genesis chapter 8 verse 15 to 22",
     },
   ]);
@@ -308,6 +309,38 @@ test('the default detector throttle permits a fresh final after 1.5 seconds', ()
   detector.analyze('the Lord opened her heart');
 
   assert.equal(calls, 1);
+  detector.destroy();
+});
+
+test('an AI result keeps the transcript origin that started its request', async () => {
+  const detector = new ScriptureDetector({ apiKey: 'test', minIntervalMs: 0 });
+  let resolve!: (value: string) => void;
+  Object.assign(detector, { callModel: () => new Promise<string>(done => { resolve = done; }) });
+  const refs: ScriptureReference[] = [];
+  detector.on('detection', batch => refs.push(...batch));
+  detector.beginTranscript({ sttReceivedAt: 100, source: 'final' });
+  detector.analyze('the Lord opened her heart');
+  detector.beginTranscript({ sttReceivedAt: 200, source: 'interim' });
+  resolve(JSON.stringify([{ book: 'Acts', chapter: 16, verseStart: 14, confidence: 0.95, detectionType: 'quote', sourceText: 'opened her heart' }]));
+  await new Promise(resolveTick => setImmediate(resolveTick));
+  assert.equal(refs[0]?.sttReceivedAt, 100);
+  assert.equal(refs[0]?.transcriptSource, 'final');
+  detector.destroy();
+});
+
+test('a newer explicit citation supersedes an in-flight AI result', async () => {
+  const detector = new ScriptureDetector({ apiKey: 'test', minIntervalMs: 0 });
+  let resolve!: (value: string) => void;
+  Object.assign(detector, { callModel: () => new Promise<string>(done => { resolve = done; }) });
+  const refs: ScriptureReference[] = [];
+  detector.on('detection', batch => refs.push(...batch));
+  detector.beginTranscript({ sttReceivedAt: 100, source: 'final' });
+  detector.analyze('a remembered quotation');
+  detector.beginTranscript({ sttReceivedAt: 200, source: 'interim' });
+  detector.analyzeExplicit('John 3:16', true, true);
+  resolve(JSON.stringify([{ book: 'Romans', chapter: 8, verseStart: 28, confidence: 0.8, detectionType: 'paraphrase', sourceText: 'all things work' }]));
+  await new Promise(resolveTick => setImmediate(resolveTick));
+  assert.deepEqual(refs.map(ref => `${ref.book} ${ref.chapter}:${ref.verseStart}`), ['John 3:16']);
   detector.destroy();
 });
 
