@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from 'next/server'
+import { apiTarget } from '@/lib/api-target'
 
 /**
  * Forwards `/v1/*` to the Nest API so the browser talks same-origin.
@@ -7,11 +8,7 @@ import { type NextRequest, NextResponse } from 'next/server'
  * a Vercel origin makes it a third-party cookie — browsers drop it, and every
  * `/v1/auth/refresh` then returns "No refresh token supplied".
  */
-const TARGET = (
-  process.env.API_PROXY_TARGET ||
-  process.env.NEXT_PUBLIC_API_URL ||
-  'http://localhost:3000'
-).replace(/\/$/, '')
+const TARGET = apiTarget()
 
 const HOP_BY_HOP = new Set([
   'connection',

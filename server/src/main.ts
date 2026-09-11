@@ -1,27 +1,18 @@
 import 'reflect-metadata'
-import { Logger, ValidationPipe } from '@nestjs/common'
+import { Logger } from '@nestjs/common'
 import { NestFactory } from '@nestjs/core'
-import cookieParser from 'cookie-parser'
-import helmet from 'helmet'
 import { AppModule } from './app.module'
+import { configureApp } from './configure-app'
 import { APP_CONFIG } from './config/config.module'
 import type { AppConfig } from './config/env'
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule)
+  // Body parsing is installed by hand so the sermon upload route can be wider
+  // than everything else — see `configureApp`.
+  const app = await NestFactory.create(AppModule, { bodyParser: false })
   const config = app.get<AppConfig>(APP_CONFIG)
 
-  app.use(helmet())
-  app.use(cookieParser())
-  app.useGlobalPipes(
-    new ValidationPipe({
-      // Unknown fields are dropped rather than trusted — a client cannot smuggle
-      // in a property a DTO never declared.
-      whitelist: true,
-      forbidNonWhitelisted: false,
-      transform: true,
-    }),
-  )
+  configureApp(app)
   // The desktop app sends no Origin at all, so this allowlist is a web concern.
   app.enableCors({ origin: config.webOrigins, credentials: true })
 

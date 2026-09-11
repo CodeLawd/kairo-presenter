@@ -18,6 +18,8 @@ import { scriptureService } from './services/scripture'
 import { initOfflineBibles } from './services/scripture/offline-bibles'
 import { ndiService } from './services/ndi'
 import { overlayWindow } from './services/ndi/overlay-window'
+import { cloudSession } from './services/cloud/session'
+import { sermonUploader } from './services/service-records'
 import { isPickedOverlayMediaAllowed } from './services/ndi/media-allowlist'
 import { isInsideRoot, mediaService } from './services/media'
 import { tracksService } from './services/tracks'
@@ -264,6 +266,15 @@ function createWindow(): void {
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
     log.info('Main window shown')
+  })
+
+  // Coming back to the app is the moment someone expects to see a key they just
+  // pasted on the website. Throttled, so alt-tabbing is not a request per flick.
+  mainWindow.on('focus', () => {
+    void cloudSession.pullOrgSecrets({ throttle: true })
+    // Coming back to the app often means coming back online — a good moment to
+    // retry a recap that could not be published from the booth.
+    sermonUploader.wake()
   })
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {

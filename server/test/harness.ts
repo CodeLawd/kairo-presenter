@@ -1,9 +1,10 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common'
+import { INestApplication } from '@nestjs/common'
 import { Test } from '@nestjs/testing'
 import { MongoMemoryServer } from 'mongodb-memory-server'
-import cookieParser from 'cookie-parser'
 import { AppModule } from '../src/app.module'
 import { MailService } from '../src/mail/mail.service'
+import { SermonSummaryService, SummaryError } from '../src/sermons/sermon-summary.service'
+import { configureApp } from '../src/configure-app'
 
 export interface SentMail {
   to: string
@@ -65,6 +66,7 @@ export class FakeMailer {
 export interface TestContext {
   app: INestApplication
   mailer: FakeMailer
+  summaries: FakeSummaries
   close: () => Promise<void>
 }
 
@@ -88,22 +90,61 @@ export async function createTestApp(): Promise<TestContext> {
   delete process.env.GOOGLE_CLIENT_SECRET
 
   const mailer = new FakeMailer()
+  const summaries = new FakeSummaries()
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(MailService)
     .useValue(mailer)
+    .overrideProvider(SermonSummaryService)
+    .useValue(summaries)
     .compile()
-  const app = moduleRef.createNestApplication()
-  app.use(cookieParser())
-  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }))
+  // The same middleware stack production runs. Sharing it is what keeps a
+  // route working in tests for the same reasons it works in production.
+  const app = moduleRef.createNestApplication({ bodyParser: false })
+  configureApp(app)
   await app.init()
 
   return {
     app,
     mailer,
+    summaries,
     close: async () => {
       await app.close()
       await mongo.stop()
     },
+  }
+}
+
+/**
+ * Stands in for the model.
+ *
+ * Always installed, never optional: a suite that reached the real provider
+ * would spend a church's money on every run and fail with no key configured.
+ * Tests drive it by setting `nextError` or `summary`.
+ */
+export class FakeSummaries {
+  calls: { orgId: string; transcriptText: string }[] = []
+  nextError: SummaryError | null = null
+  /** Stand in for the seconds a real model takes, when a test needs to observe `pending`. */
+  delayMs = 0
+  summary = {
+    headline: 'No Condemnation',
+    bigIdea: 'A compact but self-contained explanation of what was taught.',
+    keyPoints: [{ title: 'The verdict is in', explanation: 'It is not a feeling.' }],
+    memorableQuotes: [],
+    takeaways: ['Name one thing you are still condemning yourself for.'],
+    keyScriptures: [{ reference: 'Romans 8:1', connection: 'The anchor text.' }],
+    callToAction: 'Live like the verdict is in.',
+  }
+
+  async generate(input: { orgId: string; transcriptText: string }): Promise<unknown> {
+    this.calls.push({ orgId: input.orgId, transcriptText: input.transcriptText })
+    if (this.delayMs) await new Promise((resolve) => setTimeout(resolve, this.delayMs))
+    if (this.nextError) {
+      const error = this.nextError
+      this.nextError = null
+      throw error
+    }
+    return { summary: this.summary, model: 'fake-model' }
   }
 }
 

@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto'
 import fs from 'fs'
+import os from 'os'
 import path from 'path'
 import { app, shell } from 'electron'
 import log from 'electron-log/main'
@@ -11,6 +12,8 @@ import type {
   DevicePollPayload,
   OrgSecretsPayload,
   RefreshPayload,
+  SermonUploadInput,
+  SermonUploadResult,
   SessionSnapshot,
   SignInInput,
   SignUpInput,
@@ -43,6 +46,12 @@ const REFRESH_INTERVAL_MS = 10 * 60 * 1000
  * laptop, and the answer is not going to change until the network does.
  */
 const REFRESH_BACKOFF_MS = 30 * 60 * 1000
+/**
+ * Floor between vault reads. The pull is event-driven — launch, sign-in, and
+ * window focus — so this only exists to swallow bursts (alt-tabbing, a window
+ * that fires focus twice), not to poll on a timer.
+ */
+const SECRETS_MIN_INTERVAL_MS = 10 * 1000
 
 const EMPTY_SESSION: SessionSnapshot = {
   state: 'signed-out',
@@ -87,6 +96,11 @@ class CloudSessionService {
   /** False until the first pull attempt finishes — blocks push from wiping the vault. */
   private secretsHydrated = false
   private secretsPullInFlight: Promise<void> | null = null
+  /** `updatedAt` of the vault revision already on disk — skips no-op writes. */
+  private lastSecretsUpdatedAt: string | null = null
+  /** Set while a local save is being pushed, so a pull cannot overwrite it mid-flight. */
+  private secretsPushInFlight = 0
+  private lastSecretsPullAt = 0
 
   constructor(store?: SecureStore) {
     this.store = store ?? createSecureStore()
@@ -132,7 +146,7 @@ class CloudSessionService {
     const result = await this.api.request<AuthResultPayload>(
       'post',
       '/v1/auth/signup',
-      { ...input, deviceId: this.getDeviceId(), deviceName: this.deviceName() },
+      { ...input, deviceId: this.getDeviceId(), ...this.devicePayload() },
       { authenticated: false },
     )
     return this.adopt(result)
@@ -142,7 +156,7 @@ class CloudSessionService {
     const result = await this.api.request<AuthResultPayload>(
       'post',
       '/v1/auth/login',
-      { ...input, deviceId: this.getDeviceId() },
+      { ...input, deviceId: this.getDeviceId(), ...this.devicePayload() },
       { authenticated: false },
     )
     return this.adopt(result)
@@ -150,6 +164,7 @@ class CloudSessionService {
 
   async signOut(): Promise<SessionSnapshot> {
     this.secretsHydrated = false
+    this.lastSecretsUpdatedAt = null
     try {
       await this.api.request('post', '/v1/auth/logout', undefined, { allowRefresh: false })
     } catch {
@@ -219,7 +234,7 @@ class CloudSessionService {
       const started = await this.api.request<DeviceStartPayload>(
         'post',
         '/v1/auth/device/start',
-        { deviceId: this.getDeviceId(), deviceName: this.deviceName() },
+        { deviceId: this.getDeviceId(), ...this.devicePayload() },
         { authenticated: false },
       )
       this.emitPairing({
@@ -308,7 +323,7 @@ class CloudSessionService {
       const result = await this.api.request<RefreshPayload>(
         'post',
         '/v1/auth/refresh',
-        { refreshToken },
+        { refreshToken, ...this.devicePayload() },
         { authenticated: false },
       )
       this.store.write(REFRESH_TOKEN_NAME, result.refreshToken)
@@ -376,11 +391,19 @@ class CloudSessionService {
    * Hydrate local API keys from the org vault. Best-effort — a dead network
    * leaves whatever is already on disk and never blocks the booth.
    *
+   * Called on launch, on sign-in, and when the window regains focus — never on
+   * a timer, so an idle booth makes no requests at all.
+   *
    * After a successful pull, cloud wins for every known secret field (including
    * empties), so a clear on the website is what the booth uses next.
    */
-  async pullOrgSecrets(): Promise<void> {
+  async pullOrgSecrets(options: { throttle?: boolean } = {}): Promise<void> {
     if (this.secretsPullInFlight) return this.secretsPullInFlight
+    // Focus-driven pulls arrive in bursts; a hard gate keeps that to one read.
+    if (options.throttle && Date.now() - this.lastSecretsPullAt < SECRETS_MIN_INTERVAL_MS) {
+      return
+    }
+    this.lastSecretsPullAt = Date.now()
 
     this.secretsPullInFlight = this.runPullOrgSecrets().finally(() => {
       this.secretsPullInFlight = null
@@ -398,17 +421,27 @@ class CloudSessionService {
       this.secretsHydrated = true
       return
     }
+    // A save started locally is still travelling to the vault; a pull that lands
+    // now would hand back the pre-save revision and undo it on screen.
+    if (this.secretsPushInFlight > 0) return
     try {
       const secrets = await this.api.request<OrgSecretsPayload>(
         'get',
         `/v1/orgs/${orgId}/secrets`,
       )
+      const revision = secrets.updatedAt ?? null
+      // Same revision as what is already on disk: nothing to write, and no
+      // settings:changed broadcast to blank a field the operator is typing into.
+      if (this.secretsHydrated && revision !== null && revision === this.lastSecretsUpdatedAt) {
+        return
+      }
       const merged = applyOrgSecretsToSettings(
         { stt: store.get('stt'), lyrics: store.get('lyrics') },
         secrets,
       )
       store.set('stt', merged.stt)
       store.set('lyrics', merged.lyrics)
+      this.lastSecretsUpdatedAt = revision
       log.info('[Cloud] Org secrets pulled')
       this.emitSecretsChanged()
     } catch (error) {
@@ -430,20 +463,59 @@ class CloudSessionService {
     const orgId = this.snapshot.org?.id
     if (!orgId || this.snapshot.state === 'signed-out') return
     if (!this.snapshot.user?.emailVerified) return
+    let pushing = false
     try {
       const patch = settingsToOrgSecretsPatch(
         { stt: store.get('stt'), lyrics: store.get('lyrics') },
         clearLocalKeys,
       )
       if (Object.keys(patch).length === 0) return
-      await this.api.request('put', `/v1/orgs/${orgId}/secrets`, {
-        ...patch,
-        updatedAt: new Date().toISOString(),
-      })
+      pushing = true
+      this.secretsPushInFlight += 1
+      const saved = await this.api.request<OrgSecretsPayload>(
+        'put',
+        `/v1/orgs/${orgId}/secrets`,
+        { ...patch, updatedAt: new Date().toISOString() },
+      )
+      // Record the revision we just wrote so the next poll sees no change.
+      this.lastSecretsUpdatedAt = saved?.updatedAt ?? null
       log.info('[Cloud] Org secrets pushed')
     } catch (error) {
       log.warn('[Cloud] Org secrets push failed', { reason: toApiError(error).message })
+    } finally {
+      if (pushing) this.secretsPushInFlight -= 1
     }
+  }
+
+  /**
+   * Publish an ended service to the church's account.
+   *
+   * Throws rather than swallowing: the uploader needs the status code to decide
+   * between retrying and giving up, which is the whole point of the queue.
+   */
+  async uploadSermon(payload: SermonUploadInput): Promise<SermonUploadResult> {
+    const orgId = this.snapshot.org?.id
+    if (!this.canUpload() || !orgId) {
+      throw new Error('Sign in and confirm your email address to publish recaps.')
+    }
+    // A transcript is orders of magnitude larger than any other call this app
+    // makes, and nobody is waiting on it — the 8s default would time out on
+    // church wifi long before the upload finished.
+    return this.api.request<SermonUploadResult>(
+      'post',
+      `/v1/orgs/${orgId}/sermons`,
+      payload,
+      { timeoutMs: 120_000 },
+    )
+  }
+
+  /** True when an upload could actually go out right now. */
+  canUpload(): boolean {
+    return (
+      this.snapshot.state !== 'signed-out' &&
+      Boolean(this.snapshot.org?.id) &&
+      Boolean(this.snapshot.user?.emailVerified)
+    )
   }
 
   /**
@@ -568,6 +640,34 @@ class CloudSessionService {
       // Unwritable userData: the id lives for this session only.
     }
     return this.deviceId
+  }
+
+  private devicePayload(): { deviceName: string; device: ReturnType<CloudSessionService['deviceSnapshot']> } {
+    const device = this.deviceSnapshot()
+    return { deviceName: device.name, device }
+  }
+
+  private deviceSnapshot(): {
+    name: string
+    hostname: string
+    os: string
+    osVersion: string
+    arch: string
+    appVersion: string
+    electronVersion: string
+  } {
+    const hostname = os.hostname()
+    const osVersion =
+      typeof process.getSystemVersion === 'function' ? process.getSystemVersion() : os.release()
+    return {
+      name: hostname.replace(/\.local$/i, '') || this.deviceName(),
+      hostname,
+      os: process.platform,
+      osVersion,
+      arch: os.arch(),
+      appVersion: app.getVersion(),
+      electronVersion: process.versions.electron ?? '',
+    }
   }
 
   private deviceName(): string {

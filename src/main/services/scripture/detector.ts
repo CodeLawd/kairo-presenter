@@ -1,8 +1,13 @@
+import { recoverDamagedQuote, type QuoteCandidate } from "./quote-recovery";
+import { isValidScriptureReference } from "./verse-bounds";
 import { EventEmitter } from "events";
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import log from "electron-log/main";
-import { matchPlanQuote, type SermonPlanIndex } from "@shared/sermon-plan-match";
+import {
+  matchPlanQuote,
+  type SermonPlanIndex,
+} from "@shared/sermon-plan-match";
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -16,13 +21,28 @@ export interface ScriptureReference {
   confidence: number;
   detectionType: DetectionType;
   sourceText: string;
+  /**
+   * Latency-tracing origin, stamped from the transcript this reference came out
+   * of. Optional because references are also built by tests and recovery paths
+   * that have no transcript behind them.
+   */
+  sttReceivedAt?: number;
+  detectionStartedAt?: number;
+  transcriptSource?: "interim" | "final";
+}
+
+/** What the caller knows about the transcript currently being analyzed. */
+export interface TranscriptOrigin {
+  /** When Kairo received it — not when the microphone heard it. */
+  sttReceivedAt: number;
+  source: "interim" | "final";
 }
 
 /** Chapter-only model guesses may be reviewed, but verse 1 is only a schema placeholder. */
 export function canAutoPresentScriptureReference(
   ref: ScriptureReference,
 ): boolean {
-  return ref.detectionType !== "partial";
+  return ref.detectionType !== "partial" && isValidScriptureReference(ref);
 }
 
 export interface DetectorConfig {
@@ -30,7 +50,7 @@ export interface DetectorConfig {
   provider?: "anthropic" | "deepseek";
   /** API key for the selected provider */
   apiKey: string;
-  /** Model string — defaults to claude-haiku-4-5-20251001 (anthropic) or deepseek-chat (deepseek) */
+  /** Model string — defaults to claude-haiku-4-5 (anthropic) or deepseek-flash (deepseek) */
   model?: string;
   maxTokens?: number;
   /** Minimum ms between API calls (default 5000) */
@@ -93,11 +113,11 @@ export declare interface ScriptureDetector {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const DEFAULT_MODEL_ANTHROPIC = "claude-haiku-4-5-20251001";
-const DEFAULT_MODEL_DEEPSEEK = "deepseek-v4-flash";
+const DEFAULT_MODEL_ANTHROPIC = "claude-haiku-4-5";
+const DEFAULT_MODEL_DEEPSEEK = "deepseek-flash";
 const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
 const DEFAULT_MAX_TOKENS = 1536;
-const DEFAULT_INTERVAL = 5_000;
+const DEFAULT_INTERVAL = 1_500;
 const DEFAULT_CACHE_WINDOW = 5 * 60_000;
 const DEFAULT_TIMEOUT = 15_000;
 const MAX_RETRIES = 3;
@@ -343,10 +363,16 @@ export class ScriptureDetector extends EventEmitter {
   private processing = false;
   private lastCallTime = 0;
   private flushTimer: NodeJS.Timeout | null = null;
+  private transcriptOrigin: TranscriptOrigin | null = null;
+  private detectionStartedAt: number | undefined;
+  private quoteSearchProvider: ((phrase: string) => QuoteCandidate[]) | null = null;
+  private pendingBook: { book: string; updatedAt: number } | null = null;
   private explicitContext: {
     book: string;
     chapter: number;
     awaitingVerse: boolean;
+    verseStart?: number;
+    awaitingRangeEnd?: boolean;
     updatedAt: number;
   } | null = null;
 
@@ -446,24 +472,47 @@ export class ScriptureDetector extends EventEmitter {
       this.explicitContext = null;
     }
 
+    if (this.pendingBook && now - this.pendingBook.updatedAt > 12_000) this.pendingBook = null;
+    const normalizedInput = normalizeWordNumbers(text).trim();
+    const bookOnly = Object.keys(CANONICAL_BOOKS).find(book => normalizedInput === book);
+    if (bookOnly) {
+      this.pendingBook = { book: CANONICAL_BOOKS[bookOnly], updatedAt: now };
+      this.explicitContext = null;
+      return false;
+    }
+    if (/^(?:(?:now|and)\s+)?chapter\s+\d+/.test(normalizedInput)) {
+      const book = this.pendingBook?.book ?? this.explicitContext?.book;
+      if (book) text = `${book} ${normalizedInput.replace(/^(?:now|and)\s+/, "")}`;
+    }
+
     // Never carry a previous chapter into an unreadable new citation.
-    if (hasCorruptedScriptureCitation(text)) this.explicitContext = null;
+    if (hasCorruptedScriptureCitation(text)) {
+      this.explicitContext = null;
+      this.pendingBook = null;
+    }
     const direct = matchExplicitScriptures(text);
+    // A new named citation must never borrow the previous book, even when its
+    // numbers are invalid or its chapter has not arrived yet.
+    if (direct.length === 0 && new RegExp(
+      `\\b(?:${Object.keys(CANONICAL_BOOKS).join("|")})\\b`, "i",
+    ).test(normalizeWordNumbers(text))) {
+      this.explicitContext = null;
+      this.pendingBook = null;
+    }
     const directWithVerse = direct.filter(
       (ref) =>
         (!requireVerse || hasExplicitVerseSignal(ref.sourceText)) &&
-        (!deferAmbiguousRepeatedPair ||
-          !isAmbiguousRepeatedChapterPair(ref)),
+        (!deferAmbiguousRepeatedPair || !isAmbiguousRepeatedChapterPair(ref)),
     );
     const remembered = direct[direct.length - 1];
     if (remembered) {
+      this.pendingBook = null;
       this.explicitContext = {
         book: remembered.book,
         chapter: remembered.chapter,
         awaitingVerse:
           /\bverses?\b/i.test(text) ||
-          !hasExplicitVerseSignal(remembered.sourceText) ||
-          this.explicitContext?.awaitingVerse === true,
+          !hasExplicitVerseSignal(remembered.sourceText),
         updatedAt: now,
       };
     } else if (this.explicitContext && /\bverses?\b/i.test(text)) {
@@ -477,27 +526,51 @@ export class ScriptureDetector extends EventEmitter {
       direct.length === 0 &&
       this.explicitContext?.awaitingVerse
     ) {
-      const normalized = normalizeWordNumbers(text);
-      const range = normalized.match(
-        /\b(\d+)(?:(?:\s*(?:-|to|thru|through)\s*|\s+)(\d+))?\b/,
-      );
+      const normalized = normalizeWordNumbers(text).trim();
+      const continuation = this.explicitContext.verseStart !== undefined &&
+        (/^(?:to|through|thru|and|-)\s*\d+\b/.test(normalized) ||
+          (this.explicitContext.awaitingRangeEnd && /^\d+\b/.test(normalized)));
+      const rangeText = continuation
+        ? `${this.explicitContext.verseStart} to ${normalized.replace(/^(?:to|through|thru|and|-)\s*/, "")}`
+        : normalized;
+      // Bare numbers are accepted only as a citation fragment, not "16 people".
+      const bareFragment = /^(?:\d+)(?:\s*(?:-|to|thru|through|and|,)\s*\d+|\s+\d+)*[.,;!?]?(?:\s+(?:it reads|it says|says|and i quote)\b.*)?$/i.test(rangeText);
+      const range = (bareFragment || /\bverses?\b/i.test(rangeText)) ? rangeText.match(
+        /^(?:.*?\bverses?\s+)?(\d+)(?:(?:\s*(?:-|to|thru|through|and)\s*|\s+)(\d+))?\b/i,
+      ) : null;
       if (range) {
         const verseStart = Number(range[1]);
         const verseEnd = range[2] ? Number(range[2]) : undefined;
-        if (deferAmbiguousRepeatedPair && verseEnd === undefined) {
+        if (deferAmbiguousRepeatedPair && verseEnd === undefined && !/\bverses?\b/i.test(normalized)) {
           return false;
         }
-        explicit = [{
-          book: this.explicitContext.book,
-          chapter: this.explicitContext.chapter,
-          verseStart,
-          ...(verseEnd !== undefined && verseEnd > verseStart ? { verseEnd } : {}),
-          confidence: 0.9,
-          detectionType: "explicit",
-          sourceText: `${this.explicitContext.book} ${this.explicitContext.chapter}:${verseStart}${verseEnd !== undefined ? `-${verseEnd}` : ""}`,
-        }];
+        explicit = [
+          {
+            book: this.explicitContext.book,
+            chapter: this.explicitContext.chapter,
+            verseStart,
+            ...(verseEnd !== undefined ? { verseEnd } : {}),
+            confidence: 0.9,
+            detectionType: "explicit",
+            sourceText: `${this.explicitContext.book} ${this.explicitContext.chapter}:${verseStart}${verseEnd !== undefined ? `-${verseEnd}` : ""}`,
+          },
+        ];
+        const list = normalized.match(/^(?:.*?\bverses?\s+)?(\d+(?:(?:,\s*(?:and\s+)?|\s+and\s+)\d+)+)/);
+        if (list) {
+          const numbers = list[1].match(/\d+/g)!.map(Number);
+          if (numbers.length > 2 || numbers[1] !== numbers[0] + 1) {
+            explicit = numbers.map(number => ({ ...explicit[0], verseStart: number, verseEnd: undefined }));
+          }
+        }
         this.explicitContext.updatedAt = now;
       }
+    }
+    explicit = explicit.filter(isValidScriptureReference);
+    const latest = explicit[explicit.length - 1];
+    if (latest && this.explicitContext) {
+      this.explicitContext.verseStart = latest.verseStart;
+      this.explicitContext.awaitingRangeEnd = /\b(?:and|to|through|thru)\s*[,.;]?\s*$/i.test(text);
+      this.explicitContext.awaitingVerse = true;
     }
     if (explicit.length === 0) return false;
     // A spoken citation supersedes whatever reading was in progress.
@@ -506,8 +579,50 @@ export class ScriptureDetector extends EventEmitter {
     this.statsData.cacheHits += explicit.length - deduplicated.length;
     if (deduplicated.length > 0) {
       this.statsData.totalDetections += deduplicated.length;
-      this.emit("detection", deduplicated);
+      this.emitDetection(deduplicated);
     }
+    this.emit("stats", this.getStats());
+    return true;
+  }
+
+  /**
+   * Tell the detector which transcript it is about to analyze.
+   *
+   * Set immediately before an `analyze*` call and read when references are
+   * emitted, so every detection carries the moment its transcript arrived.
+   * Without this the latency trace would start at parse time and silently hide
+   * everything that happened before it.
+   */
+  beginTranscript(origin: TranscriptOrigin | null): void {
+    this.transcriptOrigin = origin;
+    this.detectionStartedAt = origin ? Date.now() : undefined;
+  }
+
+  /** Every detection emit goes through here so stamping cannot be forgotten. */
+  private emitDetection(refs: ScriptureReference[]): void {
+    const origin = this.transcriptOrigin;
+    if (origin) {
+      for (const ref of refs) {
+        ref.sttReceivedAt ??= origin.sttReceivedAt;
+        ref.detectionStartedAt ??= this.detectionStartedAt;
+        ref.transcriptSource ??= origin.source;
+      }
+    }
+    this.emit("detection", refs);
+  }
+
+  setQuoteSearchProvider(provider: (phrase: string) => QuoteCandidate[]): void {
+    this.quoteSearchProvider = provider;
+  }
+
+  analyzeQuoteRecovery(text: string): boolean {
+    if (this.lifetime.signal.aborted || !this.quoteSearchProvider) return false;
+    const refs = recoverDamagedQuote(text, this.quoteSearchProvider);
+    if (!refs.length) return false;
+    const fresh = this.filterDedup(refs);
+    this.statsData.cacheHits += refs.length - fresh.length;
+    this.statsData.totalDetections += fresh.length;
+    if (fresh.length) this.emitDetection(fresh);
     this.emit("stats", this.getStats());
     return true;
   }
@@ -564,7 +679,7 @@ export class ScriptureDetector extends EventEmitter {
     }
 
     this.statsData.totalDetections += deduplicated.length;
-    this.emit("detection", deduplicated);
+    this.emitDetection(deduplicated);
     this.emit("stats", this.getStats());
     return true;
   }
@@ -633,7 +748,8 @@ export class ScriptureDetector extends EventEmitter {
   // ─── Queue / flush ─────────────────────────────────────────────────────────
 
   private flush(): void {
-    if (this.lifetime.signal.aborted || !this.pendingText || this.processing) return;
+    if (this.lifetime.signal.aborted || !this.pendingText || this.processing)
+      return;
 
     if (this.fallbackMode) {
       const text = this.pendingText;
@@ -674,7 +790,7 @@ export class ScriptureDetector extends EventEmitter {
 
       if (deduplicated.length > 0) {
         this.statsData.totalDetections += deduplicated.length;
-        this.emit("detection", deduplicated);
+        this.emitDetection(deduplicated);
       }
 
       this.emit("stats", this.getStats());
@@ -694,13 +810,15 @@ export class ScriptureDetector extends EventEmitter {
     const start = Date.now();
 
     let lastErr: Error | null = null;
+    let retryWithoutBackoff = false;
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-      if (attempt > 0) {
+      if (attempt > 0 && !retryWithoutBackoff) {
         const backoff = RETRY_BASE_MS * Math.pow(2, attempt - 1);
         log.warn("[ScriptureDetector] Retry", { attempt, backoffMs: backoff });
         await sleep(backoff);
       }
+      retryWithoutBackoff = false;
 
       if (this.lifetime.signal.aborted) return;
       try {
@@ -715,7 +833,14 @@ export class ScriptureDetector extends EventEmitter {
         if (!parsed) {
           log.warn("[ScriptureDetector] Failed to parse response", {
             raw: raw.slice(0, 200),
+            attempt,
           });
+          if (attempt < MAX_RETRIES) {
+            retryWithoutBackoff = true;
+            continue;
+          }
+          this.statsData.errors++;
+          this.emit("stats", this.getStats());
           return;
         }
 
@@ -726,7 +851,7 @@ export class ScriptureDetector extends EventEmitter {
 
         if (deduplicated.length > 0) {
           this.statsData.totalDetections += deduplicated.length;
-          this.emit("detection", deduplicated);
+          this.emitDetection(deduplicated);
         }
 
         this.emit("stats", this.getStats());
@@ -768,7 +893,10 @@ export class ScriptureDetector extends EventEmitter {
   // ─── Model call ────────────────────────────────────────────────────────────
 
   private async callModel(text: string): Promise<string> {
-    const signal = AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(this.cfg.timeoutMs)]);
+    const signal = AbortSignal.any([
+      this.lifetime.signal,
+      AbortSignal.timeout(this.cfg.timeoutMs),
+    ]);
     const userContent = `Detect Bible scripture references in this sermon transcript excerpt:\n\n${text}`;
 
     if (this.cfg.provider === "deepseek" && this.openaiCompat) {
@@ -812,6 +940,7 @@ export class ScriptureDetector extends EventEmitter {
     }
 
     return refs.filter((ref) => {
+      if (!isValidScriptureReference(ref)) return false;
       const key = dedupKey(ref);
       for (const [cachedKey, entry] of this.dedupCache) {
         if (referenceContains(entry.ref, ref)) return false;
@@ -832,12 +961,13 @@ function hasExplicitVerseSignal(sourceText: string): boolean {
   return (
     /\bverses?\b/i.test(sourceText) ||
     /:\s*\d+/.test(sourceText) ||
-    /\b\d+\s+\d+(?:\s*(?:-|to|thru|through)\s*\d+)?\b/i.test(sourceText)
+    /\b\d+[\s,]+\d+(?:\s*(?:-|to|thru|through|and)\s*\d+)?\b/i.test(sourceText)
   );
 }
 
 function isAmbiguousRepeatedChapterPair(ref: ScriptureReference): boolean {
-  if (ref.chapter !== ref.verseStart || ref.verseEnd !== undefined) return false;
+  if (ref.chapter !== ref.verseStart || ref.verseEnd !== undefined)
+    return false;
   if (/\bverses?\b|:|(?:-|\bto\b|\bthru\b|\bthrough\b)/i.test(ref.sourceText)) {
     return false;
   }
@@ -866,8 +996,7 @@ function referenceContains(
   const containerEnd = container.verseEnd ?? container.verseStart;
   const candidateEnd = candidate.verseEnd ?? candidate.verseStart;
   return (
-    container.verseStart <= candidate.verseStart &&
-    containerEnd >= candidateEnd
+    container.verseStart <= candidate.verseStart && containerEnd >= candidateEnd
   );
 }
 
@@ -888,6 +1017,7 @@ function parseResponse(raw: string): ScriptureReference[] | null {
 
     const valid: ScriptureReference[] = [];
     for (const item of arr) {
+      if (!item || typeof item !== "object") continue;
       const r = item as RawRef;
       if (
         typeof r.book !== "string" ||
@@ -901,16 +1031,17 @@ function parseResponse(raw: string): ScriptureReference[] | null {
 
       const ref: ScriptureReference = {
         book: r.book,
-        chapter: Math.floor(r.chapter),
-        verseStart: Math.floor(r.verseStart),
+        chapter: r.chapter,
+        verseStart: r.verseStart,
         confidence: Math.max(0, Math.min(1, r.confidence)),
         detectionType: normalizeDetectionType(r.detectionType as string),
         sourceText: (r.sourceText as string).slice(0, SOURCE_TEXT_MAX_CHARS),
       };
-      if (typeof r.verseEnd === "number" && r.verseEnd > ref.verseStart) {
-        ref.verseEnd = Math.floor(r.verseEnd);
+      if (r.verseEnd != null) {
+        if (typeof r.verseEnd !== "number") continue;
+        ref.verseEnd = r.verseEnd;
       }
-      valid.push(ref);
+      if (isValidScriptureReference(ref)) valid.push(ref);
     }
     return valid;
   } catch {
@@ -1160,8 +1291,17 @@ function normalizeWordNumbers(text: string): string {
     ninety: "90",
   };
 
-  let normalized = text.toLowerCase().replace(/\bpslams?\b/g, "psalms").replace(/[–—]/g, "-");
-  normalized = normalized.replace(/\bchapter\s+number\s+/g, "chapter ");
+  let normalized = text
+    .toLowerCase()
+    .replace(/\bpslams?\b/g, "psalms")
+    .replace(/[–—]/g, "-");
+  normalized = normalized.replace(/\b(chapter|verses?)\s+number\s+/g, "$1 ");
+  normalized = normalized.replace(/\bacts\s+of\s+the\s+apostles?\b/g, "acts");
+  // Normalize only bounded citation connectors, never arbitrary intervening speech.
+  normalized = normalized.replace(
+    /(?:,\s*|\s+)(?:(?:and\s+)?(?:we\s+)?(?:(?:will|shall)\s+)?(?:begin\s+to\s+)?read\s+from\s+|look\s+at\s+|and\s+)(?=verses?\b)/g,
+    " ",
+  );
 
   // Deepgram occasionally joins one half of a spoken compound number while
   // rendering the other half differently: "2four" / "twenty4" for 24.
@@ -1211,6 +1351,14 @@ function normalizeWordNumbers(text: string): string {
     },
   );
 
+  normalized = normalized.replace(
+    /\b(jude|obadiah|philemon|2 john|3 john)\s+(?=verses?\s+\d+)/g,
+    "$1 1 ",
+  );
+  normalized = normalized.replace(
+    /(\bverse\s+|:\s*)\d+\s*[,.;-]?\s*(?:sorry|i mean|rather|make that)\s*[,.;-]?\s*(?:verse\s+)?(\d+)/g,
+    "$1$2",
+  );
   return normalized;
 }
 
@@ -1218,8 +1366,13 @@ function normalizeWordNumbers(text: string): string {
 // Known recoverable forms (e.g. twenty4) have already been normalized.
 export function hasCorruptedScriptureCitation(text: string): boolean {
   const normalized = normalizeWordNumbers(text);
-  const books = Object.keys(CANONICAL_BOOKS).sort((a, b) => b.length - a.length).join("|");
-  return new RegExp(`\\b(?:${books})\\b\\s+(?:chapter\\s+)?(?=[a-z0-9]*[a-z])(?=[a-z0-9]*\\d)[a-z0-9]+\\b`, "i").test(normalized);
+  const books = Object.keys(CANONICAL_BOOKS)
+    .sort((a, b) => b.length - a.length)
+    .join("|");
+  return new RegExp(
+    `\\b(?:${books})\\b\\s+(?:chapter\\s+)?(?=[a-z0-9]*[a-z])(?=[a-z0-9]*\\d)[a-z0-9]+\\b`,
+    "i",
+  ).test(normalized);
 }
 
 export function matchExplicitScriptures(text: string): ScriptureReference[] {
@@ -1238,7 +1391,7 @@ export function matchExplicitScriptures(text: string): ScriptureReference[] {
 
   // Match book name, followed by chapter, optionally verse, optionally verse range
   const regex = new RegExp(
-    `\\b(${bookRegexStr})\\b\\s*(?:chapter\\s+)?(\\d+)\\b(?:\\s+\\2(?=\\s+(?:verses?\\s+)?\\d+\\s*(?:-|thru|through|to)))?(?:\\s*[:\\s]\\s*(?:verses?\\s+)?(\\d+)(?:(?:\\s*(?:-|thru|through|to)\\s*|\\s+)(\\d+))?)?`,
+    `\\b(${bookRegexStr})\\b\\s*(?:chapter\\s+)?(\\d+)\\b(?:\\s+\\2(?=\\s+(?:verses?\\s+)?\\d+\\s*(?:-|thru|through|to|and)))?(?:\\s*[:,\\s]\\s*(?:verses?\\s+)?(\\d+)(?:(?:\\s*(?:-|thru|through|to|and)\\s*|\\s+)(\\d+))?)?`,
     "gi",
   );
 
@@ -1264,7 +1417,7 @@ export function matchExplicitScriptures(text: string): ScriptureReference[] {
     const verseStart = verseStartStr ? parseInt(verseStartStr, 10) : 1;
     const verseEnd = verseEndStr ? parseInt(verseEndStr, 10) : undefined;
 
-    results.push({
+    const ref: ScriptureReference = {
       book: canonicalBook,
       chapter,
       verseStart,
@@ -1272,8 +1425,22 @@ export function matchExplicitScriptures(text: string): ScriptureReference[] {
       confidence: 0.9,
       detectionType: "explicit",
       sourceText: match[0],
-    });
+    };
+    const verseOffset = match[0].search(/\bverses?\s+/);
+    const list = verseOffset < 0 ? null : normalized.slice(match.index + verseOffset).match(
+      /^verses?\s+(\d+(?:(?:,\s*(?:and\s+)?|\s+and\s+)\d+)+)/,
+    );
+    if (list) {
+      const sourceText = normalized.slice(match.index, match.index + verseOffset + list[0].length);
+      const numbers = list[1].match(/\d+/g)!.map(Number);
+      if (numbers.length === 2 && numbers[1] === numbers[0] + 1) {
+        results.push({ ...ref, verseStart: numbers[0], verseEnd: numbers[1], sourceText });
+      } else {
+        results.push(...numbers.map(verseStart => ({ ...ref, verseStart, verseEnd: undefined, sourceText })));
+      }
+      regex.lastIndex = match.index + verseOffset + list[0].length;
+    } else results.push(ref);
   }
 
-  return results;
+  return results.filter(isValidScriptureReference);
 }

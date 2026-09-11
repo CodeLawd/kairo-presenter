@@ -35,6 +35,7 @@ import {
 import { formatOverlayReference, formatOverlayVerseText, renderOverlayTemplate } from "@shared/overlay-content";
 import { ScriptureDetector } from "./services/scripture/detector";
 import { subscribeExplicitScriptureDetection } from "./services/scripture/live-detection-wiring";
+import { scriptureTrace } from "./services/scripture/trace";
 import { livePlanService } from "./services/scripture/live-plan";
 import { matchPlanReference } from "@shared/sermon-plan-match";
 import {
@@ -137,7 +138,6 @@ class Orchestrator {
 
   private session: Session | null = null;
 
-  private bufferAnalyzeListener: ((ctx: string, _ts: number) => void) | null = null;
   private explicitDetectionCleanup: (() => void) | null = null;
 
   private statusCallbacks: StatusCallback[] = [];
@@ -221,6 +221,7 @@ class Orchestrator {
       model: config.scriptureModel,
     });
     this.detector.setPlanIndexProvider(() => livePlanService.getIndex());
+    this.detector.setQuoteSearchProvider(phrase => scriptureService.searchLocalQuoteCandidates(phrase));
     this.detector.on("planProgress", (reference, itemId) => livePlanService.observe(reference, itemId));
 
     this.detector.on("detection", (refs) => {
@@ -252,14 +253,9 @@ class Orchestrator {
     // Configure STT
     sttService.configure(config.sttProvider, config.sttApiKey, config.sttLanguage);
 
-    // Wire buffer → detector. Only the LLM analysis needs an API key; the local
-    // explicit + playlist paths run either way.
-    if (config.llmApiKey) {
-      this.bufferAnalyzeListener = (ctx: string, _ts: number) => {
-        this.detector!.analyze(ctx);
-      };
-      sttService.buffer.on("analyzeReady", this.bufferAnalyzeListener);
-    }
+    // Final transcript events drive analysis directly through the live wiring
+    // below. Keeping the older buffer timer attached here would duplicate model
+    // calls and reintroduce an avoidable delay.
     this.explicitDetectionCleanup = subscribeExplicitScriptureDetection(
       sttService,
       this.detector,
@@ -330,11 +326,6 @@ class Orchestrator {
     // Stop STT
     sttService.stop();
 
-    // Detach buffer → detector wiring
-    if (this.bufferAnalyzeListener) {
-      sttService.buffer.off("analyzeReady", this.bufferAnalyzeListener);
-      this.bufferAnalyzeListener = null;
-    }
     this.explicitDetectionCleanup?.();
     this.explicitDetectionCleanup = null;
 
@@ -422,6 +413,15 @@ class Orchestrator {
     const detectionSession = this.session;
 
     for (const ref of refs) {
+      const correlationId = scriptureTrace.start({
+        reference: `${ref.book} ${ref.chapter}:${ref.verseStart}${ref.verseEnd != null ? `-${ref.verseEnd}` : ""}`,
+        sourceText: ref.sourceText,
+        resolver: ref.detectionType === "quote" ? "quotation-local" : "explicit",
+        transcriptSource: ref.transcriptSource,
+        sttReceivedAt: ref.sttReceivedAt,
+        detectionStartedAt: ref.detectionStartedAt,
+      });
+
       // Live sermon playlist first: its verses are already resolved, in the
       // translation the preacher chose, so a hit skips the Bible lookup
       // entirely. A miss — or a range the playlist only partly covers — falls
@@ -434,6 +434,7 @@ class Orchestrator {
         : this.cfg.scriptureTranslation;
       let verses: ScriptureVerse[] = planEntries.map((entry) => entry.verse);
 
+      scriptureTrace.mark(correlationId, "bibleLookupStartedAt");
       if (verses.length === 0) {
         try {
           const end = ref.verseEnd != null ? `-${ref.verseEnd}` : "";
@@ -451,8 +452,13 @@ class Orchestrator {
         }
       }
 
+      scriptureTrace.mark(correlationId, "bibleLookupCompletedAt");
+
       // A lookup can finish after stop or after another service has started.
-      if (!this.running || this.session !== detectionSession) return;
+      if (!this.running || this.session !== detectionSession) {
+        scriptureTrace.complete(correlationId, { status: "superseded" });
+        return;
+      }
 
       // One Operator suggestion per verse — never jumble a range into a single card
       const requestedVerseItems: ScriptureVerse[] =
@@ -488,6 +494,10 @@ class Orchestrator {
 
       for (const [verseIndex, verse] of verseItems.entries()) {
         const suggestion: ScriptureSuggestion = {
+          // Only the first verse of a passage owns the trace: the rest are
+          // separate cards produced by the same detection, and counting them
+          // all would multiply one citation into several latency samples.
+          correlationId: verseIndex === 0 ? correlationId : undefined,
           id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
           reference: `${verse.book} ${verse.chapter}:${verse.verse}`,
           verses: verse.text ? [verse] : [],
@@ -516,6 +526,9 @@ class Orchestrator {
 
         // Publish through scriptureService so existing IPC/renderer pipeline works
         scriptureService.receiveSuggestion(suggestion);
+        if (verseIndex === 0) {
+          scriptureTrace.mark(correlationId, "suggestionPublishedAt");
+        }
 
         if (
           this.cfg.autoMode &&
@@ -536,18 +549,27 @@ class Orchestrator {
 
   // ─── Auto-present countdown ────────────────────────────────────────────────
 
-  private scheduleAutoPresent(
-    suggestion: ScriptureSuggestion,
-    staggerIndex = 0,
-  ): void {
-    const baseDelayMs = (this.cfg?.autoPresentDelaySec ?? 3) * 1_000;
-    // Stagger multi-verse detections so each verse presents in sequence
-    const delayMs = baseDelayMs + staggerIndex * baseDelayMs;
+  /**
+   * The operator's window to cancel before a verse reaches the congregation.
+   *
+   * This delay is the largest single component of user-visible latency, and it
+   * is deliberate — see `scripture.autoPresentDelaySec`. It is not something to
+   * optimize away.
+   *
+   * There is no per-verse stagger: the caller only schedules single-verse
+   * detections (`verseItems.length === 1`), so a multi-verse passage is
+   * suggested but never auto-presented. A `staggerIndex` multiplier used to live
+   * here for a sequence that no code path could produce.
+   */
+  private scheduleAutoPresent(suggestion: ScriptureSuggestion): void {
+    const delayMs = (this.cfg?.autoPresentDelaySec ?? 1) * 1_000;
     const expiresAt = Date.now() + delayMs;
 
+    scriptureTrace.mark(suggestion.correlationId, "countdownStartedAt");
     const timer = setTimeout(async () => {
       this.autoTimers.delete(suggestion.id);
       this.pendingSuggestions.delete(suggestion.id);
+      scriptureTrace.mark(suggestion.correlationId, "countdownCompletedAt");
       await this.presentScripture(suggestion).catch((err) =>
         log.error("[Orchestrator] Auto-present error", (err as Error).message),
       );
@@ -564,7 +586,7 @@ class Orchestrator {
 
     log.info("[Orchestrator] Auto-present scheduled", {
       ref: suggestion.reference,
-      delaySec: this.cfg?.autoPresentDelaySec ?? 3,
+      delaySec: this.cfg?.autoPresentDelaySec ?? 1,
     });
   }
 
@@ -574,6 +596,10 @@ class Orchestrator {
       clearTimeout(timer);
       this.autoTimers.delete(suggestionId);
     }
+    // Cancelled, not failed: the operator caught something and the design
+    // worked. Keeping these out of the failure count is the whole point.
+    const pending = this.pendingSuggestions.get(suggestionId);
+    scriptureTrace.complete(pending?.correlationId, { status: "cancelled" });
   }
 
   async presentScriptureDirectly(suggestion: ScriptureSuggestion): Promise<void> {
@@ -584,6 +610,7 @@ class Orchestrator {
 
   private async presentScripture(suggestion: ScriptureSuggestion): Promise<void> {
     suggestion = singleVerseSuggestion(suggestion);
+    const correlationId = suggestion.correlationId;
     const ppStatus = proPresenterService.getStatus();
     if (ppStatus.state !== "connected") {
       log.warn("[Orchestrator] PP not connected — queueing scripture projection", {
@@ -591,11 +618,17 @@ class Orchestrator {
       });
       resilienceManager.queueProjection(suggestion);
       this.updateHealth("propresenter", "error", "ProPresenter disconnected");
+      scriptureTrace.complete(correlationId, {
+        status: "failed",
+        failureReason: "presenter-disconnected",
+      });
       this.emitStatus();
       return;
     }
 
+    scriptureTrace.mark(correlationId, "presenterRequestStartedAt");
     const results = await this.dispatchScripture(suggestion);
+    scriptureTrace.mark(correlationId, "presenterRequestCompletedAt");
     const failed = results.filter((r) => !r.ok);
 
     if (!results.some((r) => r.ok)) {
@@ -603,6 +636,11 @@ class Orchestrator {
         ? `No overlay outputs are enabled — cannot present "${suggestion.reference}"`
         : `Failed to present "${suggestion.reference}" on any output`;
       this.updateHealth("propresenter", "error", msg);
+      scriptureTrace.complete(correlationId, {
+        status: "failed",
+        failureReason: "presenter-rejected",
+        error: msg,
+      });
       this.emitStatus();
       throw new Error(msg);
     }
@@ -620,6 +658,12 @@ class Orchestrator {
     } else {
       this.updateHealth("propresenter", "ok");
     }
+    // "Presented" means ProPresenter accepted the request. Whether pixels
+    // changed is a separate question, answered by the confirmation observer.
+    scriptureTrace.complete(correlationId, {
+      status: "presented",
+      confirmation: "request-accepted",
+    });
     this.emitStatus();
   }
 
@@ -1392,6 +1436,7 @@ class Orchestrator {
           model: this.cfg.scriptureModel,
         });
         this.detector.setPlanIndexProvider(() => livePlanService.getIndex());
+        this.detector.setQuoteSearchProvider(phrase => scriptureService.searchLocalQuoteCandidates(phrase));
         this.detector.on("planProgress", (reference, itemId) => livePlanService.observe(reference, itemId));
 
         this.detector.on("detection", (refs) => {
@@ -1417,13 +1462,6 @@ class Orchestrator {
           resilienceManager.handleClaudeError(err);
         });
 
-        if (this.bufferAnalyzeListener) {
-          sttService.buffer.off("analyzeReady", this.bufferAnalyzeListener);
-        }
-        this.bufferAnalyzeListener = (ctx: string) => {
-          this.detector!.analyze(ctx);
-        };
-        sttService.buffer.on("analyzeReady", this.bufferAnalyzeListener);
         this.explicitDetectionCleanup?.();
         this.explicitDetectionCleanup = subscribeExplicitScriptureDetection(
           sttService,

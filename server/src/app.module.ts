@@ -7,6 +7,7 @@ import type { AppConfig } from './config/env'
 import { AuthModule } from './auth/auth.module'
 import { UsersModule } from './users/users.module'
 import { OrgsModule } from './orgs/orgs.module'
+import { SermonsModule } from './sermons/sermons.module'
 import { MailModule } from './mail/mail.module'
 import { HealthController } from './health/health.controller'
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard'
@@ -24,6 +25,7 @@ import { AppThrottlerGuard } from './common/guards/app-throttler.guard'
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 120 }]),
     UsersModule,
     OrgsModule,
+    SermonsModule,
     AuthModule,
   ],
   controllers: [HealthController],

@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Param, Patch, Put, UseGuards } from '@nestjs/common'
+import type { OrgMember } from '@contracts/contracts'
 import { OrgsService } from './orgs.service'
 import { OrgSecretsService } from './org-secrets.service'
 import { UpdateOrgDto } from './dto/org.dto'
@@ -60,14 +61,8 @@ export class OrgsController {
 
   @Get(':orgId/members')
   @Roles('viewer')
-  async members(@Param('orgId') orgId: string): Promise<unknown[]> {
-    const members = await this.orgs.listMembers(orgId)
-    return members.map((member) => ({
-      userId: member.userId.toString(),
-      role: member.role,
-      status: member.status,
-      joinedAt: member.joinedAt,
-    }))
+  async members(@Param('orgId') orgId: string): Promise<OrgMember[]> {
+    return this.orgs.listMembersWithUsers(orgId)
   }
 
   /**

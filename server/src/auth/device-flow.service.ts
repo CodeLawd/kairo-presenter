@@ -12,6 +12,7 @@ import {
   DeviceAuthRequestDocument,
 } from './schemas/device-auth-request.schema'
 import { hashToken } from './token.service'
+import { mergeDeviceInfo, type DeviceSnapshot } from './device-info'
 import { APP_CONFIG } from '../config/config.module'
 import type { AppConfig } from '../config/env'
 
@@ -33,7 +34,14 @@ export type DevicePollResult =
   | { state: 'slow_down' }
   | { state: 'denied' }
   | { state: 'expired' }
-  | { state: 'approved'; userId: Types.ObjectId; orgId: Types.ObjectId; deviceId: string }
+  | {
+      state: 'approved'
+      userId: Types.ObjectId
+      orgId: Types.ObjectId
+      deviceId: string
+      deviceName: string
+      device: DeviceSnapshot
+    }
 
 @Injectable()
 export class DeviceFlowService {
@@ -43,7 +51,11 @@ export class DeviceFlowService {
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
-  async start(input: { deviceId: string; deviceName?: string }): Promise<DeviceStartResult> {
+  async start(input: {
+    deviceId: string
+    deviceName?: string
+    device?: DeviceSnapshot
+  }): Promise<DeviceStartResult> {
     const deviceCode = randomBytes(32).toString('base64url')
     const userCode = await this.uniqueUserCode()
 
@@ -51,7 +63,8 @@ export class DeviceFlowService {
       deviceCodeHash: hashToken(deviceCode),
       userCode,
       deviceId: input.deviceId,
-      deviceName: input.deviceName ?? '',
+      deviceName: input.deviceName?.trim() || input.device?.name?.trim() || '',
+      device: mergeDeviceInfo(undefined, input.device),
       expiresAt: new Date(Date.now() + REQUEST_TTL_MS),
     })
 
@@ -94,6 +107,8 @@ export class DeviceFlowService {
       userId: request.userId!,
       orgId: request.orgId!,
       deviceId: request.deviceId,
+      deviceName: request.deviceName,
+      device: request.device ?? mergeDeviceInfo(undefined, undefined),
     }
   }
 

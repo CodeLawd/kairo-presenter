@@ -50,6 +50,16 @@ describe('Org scoping (e2e)', () => {
     await as(bob, 'get', `/v1/orgs/${alice.orgId}/members`).expect(403)
   })
 
+  it('refuses to list another org booth machines', async () => {
+    await as(bob, 'get', `/v1/orgs/${alice.orgId}/devices`).expect(403)
+  })
+
+  it('lists the caller’s own booth machine after a desktop signup', async () => {
+    const response = await as(alice, 'get', `/v1/orgs/${alice.orgId}/devices`).expect(200)
+    expect(response.body).toHaveLength(1)
+    expect(response.body[0]).toMatchObject({ signedInAs: 'alice' })
+  })
+
   it('refuses to rename another org', async () => {
     await as(bob, 'patch', `/v1/orgs/${alice.orgId}`).send({ name: 'Hijacked' }).expect(403)
 

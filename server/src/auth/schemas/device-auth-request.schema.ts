@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose'
 import { HydratedDocument, Schema as MongooseSchema, Types } from 'mongoose'
+import { SessionDeviceInfo, SessionDeviceInfoSchema } from './session.schema'
 
 export type DeviceAuthRequestDocument = HydratedDocument<DeviceAuthRequest>
 
@@ -26,6 +27,9 @@ export class DeviceAuthRequest {
 
   @Prop({ default: '' })
   deviceName!: string
+
+  @Prop({ type: SessionDeviceInfoSchema, default: () => ({}) })
+  device!: SessionDeviceInfo
 
   @Prop({ type: String, enum: ['pending', 'approved', 'denied'], default: 'pending', index: true })
   status!: 'pending' | 'approved' | 'denied'

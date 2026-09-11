@@ -216,6 +216,14 @@ const scripture: ProAutomateAPI['scripture'] = {
     return ipcRenderer.invoke(IPC.SCRIPTURE.DELETE_SERMON_PLAN, planId)
   },
 
+  recentTraces(limit?: number) {
+    return ipcRenderer.invoke(IPC.SCRIPTURE.RECENT_TRACES, limit)
+  },
+
+  markRendered(correlationId: string) {
+    ipcRenderer.send(IPC.SCRIPTURE.MARK_RENDERED, correlationId)
+  },
+
   getLivePlan() {
     return ipcRenderer.invoke(IPC.SCRIPTURE.GET_LIVE_PLAN)
   },

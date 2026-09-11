@@ -38,10 +38,17 @@
   --animate-pulse-dot: pulse-dot 1.9s ease-in-out infinite;
   --animate-bounce-bar: bounce-bar 1.4s ease-in-out infinite;
   --animate-caret: caret 1.2s steps(1) infinite;
+  --animate-recap-scan: recap-scan 5.5s linear infinite;
+  --animate-recap-bar: recap-bar 1.7s ease-in-out infinite;
+  --animate-mark-breathe: mark-breathe 2.4s ease-in-out infinite;
 
   @keyframes pulse-dot {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.28; }
+  }
+  @keyframes mark-breathe {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.04); opacity: 0.88; }
   }
   @keyframes bounce-bar {
     0%, 100% { transform: scaleY(0.55); }
@@ -50,6 +57,15 @@
   @keyframes caret {
     0%, 100% { opacity: 1; }
     50% { opacity: 0; }
+  }
+  /* A wash that travels the full page, so a long recap and a short one scan alike. */
+  @keyframes recap-scan {
+    0% { transform: translate3d(0, 0, 0); }
+    100% { transform: translate3d(0, -50%, 0); }
+  }
+  @keyframes recap-bar {
+    0% { transform: translateX(-120%); }
+    100% { transform: translateX(420%); }
   }
 }
 

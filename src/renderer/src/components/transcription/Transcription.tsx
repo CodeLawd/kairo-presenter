@@ -18,6 +18,7 @@ import {
 import { useAppStore } from '@/stores/useAppStore'
 import { listAudioInputDevices, resolveCaptureDeviceId } from '@/audio/devices'
 import { cn, downloadFile } from '@/lib/utils'
+import { markSuggestionRendered } from '@/lib/markSuggestionRendered'
 import type {
   AudioDevice,
   AudioLevel,
@@ -702,6 +703,7 @@ export default function Transcription(): React.ReactElement {
     })
 
     const unsubSuggestion = window.api.scripture.onSuggestion((suggestion: ScriptureSuggestion) => {
+      markSuggestionRendered(suggestion.correlationId)
       applyScriptureHighlight(suggestion)
       setSuggestions((prev) => {
         if (prev.some((s) => s.id === suggestion.id)) return prev
@@ -869,11 +871,12 @@ export default function Transcription(): React.ReactElement {
           sttApiKey:           '',
           sttLanguage:         selectedLanguage,
           llmProvider,
+          scriptureModel: all.stt.llmModel?.trim() || undefined,
           llmApiKey:           '',
           scriptureTranslation: all.scripture.defaultTranslation,
           autoMode:            all.scripture.autoMode,
           confidenceThreshold: all.scripture.confidenceThreshold,
-          autoPresentDelaySec: 3,
+          autoPresentDelaySec: all.scripture.autoPresentDelaySec ?? 1,
         }
         // Optimistic UI update
         setIsTranscribing(true)

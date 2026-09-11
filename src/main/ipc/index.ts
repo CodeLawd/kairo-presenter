@@ -41,7 +41,8 @@ import { sttService } from "../services/stt";
 import { scriptureService } from "../services/scripture";
 import { analyzeScriptureReferences, readSermonDocument, sermonPlanStore } from "../services/scripture/sermon-plans";
 import { livePlanService } from "../services/scripture/live-plan";
-import { serviceRecords } from '../services/service-records';
+import { scriptureTrace } from "../services/scripture/trace";
+import { serviceRecords, sermonUploader } from '../services/service-records';
 import { SERVICE_CHANNEL, SERVICE_CHANGED, type ServiceCommand } from '@shared/service-records';
 import { getDownloadManager, hasDownloadManager } from "../services/scripture/offline-bibles";
 import path from "path";
@@ -259,6 +260,16 @@ function registerScriptureHandlers(): void {
     livePlanService.handleDeleted(planId);
   });
 
+  ipcMain.handle(IPC.SCRIPTURE.RECENT_TRACES, (_event, limit?: number) =>
+    scriptureTrace.recentWithMetrics(limit),
+  );
+
+  // `on`, not `handle`: the renderer reports a paint and carries on. Making it
+  // await a reply would add latency to the very thing being measured.
+  ipcMain.on(IPC.SCRIPTURE.MARK_RENDERED, (_event, correlationId: string) => {
+    scriptureTrace.mark(correlationId, "suggestionRenderedAt");
+  });
+
   ipcMain.handle(IPC.SCRIPTURE.GET_LIVE_PLAN, () => livePlanService.getState());
 
   ipcMain.handle(
@@ -343,6 +354,8 @@ function registerScriptureHandlers(): void {
 function registerTranscriptionHandlers(): void {
   serviceRecords.init();
   serviceRecords.onChanged(snapshot => broadcast(SERVICE_CHANGED, snapshot));
+  // Anything still waiting when the app last closed goes out now.
+  sermonUploader.start();
   let changingService = false;
   handle(SERVICE_CHANNEL, async (_event, command: ServiceCommand) => {
     if (command.action === 'list') return serviceRecords.snapshot();
@@ -365,6 +378,10 @@ function registerTranscriptionHandlers(): void {
         serviceRecords.retryAnalysis(command.serviceId);
       } else if (command.action === 'removeNugget') {
         serviceRecords.removeNugget(command.serviceId, command.nuggetId);
+      } else if (command.action === 'upload') {
+        // Only re-queues — the upload itself runs outside this mutex so a slow
+        // network can never block another service command.
+        serviceRecords.requeueUpload(command.serviceId);
       } else throw new Error('Unknown service command.');
       return serviceRecords.snapshot();
     } finally { changingService = false; }

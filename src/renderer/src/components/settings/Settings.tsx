@@ -43,10 +43,12 @@ import type {
   AppSettings,
   AudioDevice,
   AudioLevel,
+  AutoPresentDelaySec,
   ScriptureTranslation,
   SettingsSecretClearKey,
 } from '@shared/ipc'
 import { OfflineBibleManager } from './OfflineBibleManager'
+import { ScriptureLatencyPanel } from './ScriptureLatencyPanel'
 import { DEFAULT_SETTINGS } from '@/lib/defaultSettings'
 import { useBootstrapStore } from '@/bootstrap/useBootstrapStore'
 import { useUpdates } from '@/hooks/useUpdates'
@@ -316,6 +318,83 @@ function ConnectionDot({ status }: { status: TestStatus }) {
 function openProviderDocs(url: string): void {
   window.open(url, '_blank', 'noopener,noreferrer')
 }
+
+/** The model names each provider actually serves, as suggestions not limits. */
+const MODEL_SUGGESTIONS: Record<'anthropic' | 'deepseek', string[]> = {
+  anthropic: ['claude-haiku-4-5', 'claude-sonnet-5', 'claude-opus-5'],
+  deepseek: ['deepseek-flash', 'deepseek-v4-pro'],
+}
+
+/**
+ * Which model does the scripture detection.
+ *
+ * A free text field on purpose: providers ship new models faster than this app
+ * ships releases, and being unable to type a name that already works is worse
+ * than the risk of a typo. The suggestions are a convenience; the provider is
+ * the authority, and its error comes back verbatim in the status bar.
+ */
+function DetectionModelRow({
+  provider,
+  value,
+  onSave,
+}: {
+  provider: 'anthropic' | 'deepseek'
+  value: string
+  onSave: (model: string) => void
+}): React.ReactElement {
+  const [draft, setDraft] = useState(value)
+  useEffect(() => { setDraft(value) }, [value])
+  const fallback = provider === 'deepseek' ? 'deepseek-flash' : 'claude-haiku-4-5'
+  const dirty = draft.trim() !== value.trim()
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-baseline justify-between gap-3">
+        <label htmlFor="detection-model" className="text-xs font-medium text-white/80">
+          Detection model
+        </label>
+        <span className="font-mono text-[10px] text-white/35">{provider}</span>
+      </div>
+      <div className="flex gap-2">
+        <input
+          id="detection-model"
+          list="detection-model-options"
+          className="input flex-1 font-mono text-xs"
+          placeholder={fallback}
+          value={draft}
+          onChange={event => setDraft(event.target.value)}
+          onKeyDown={event => { if (event.key === 'Enter' && dirty) onSave(draft.trim()) }}
+        />
+        <datalist id="detection-model-options">
+          {MODEL_SUGGESTIONS[provider].map(model => <option key={model} value={model} />)}
+        </datalist>
+        <button
+          type="button"
+          disabled={!dirty}
+          className="btn-secondary shrink-0 text-xs disabled:opacity-40"
+          onClick={() => onSave(draft.trim())}
+        >
+          Save
+        </button>
+      </div>
+      <p className="text-[10px] leading-relaxed text-white/35">
+        Leave empty to use {fallback}. Any model your provider serves will work — if it rejects the
+        name, the reason appears in the status bar.
+      </p>
+    </div>
+  )
+}
+
+/**
+ * Fixed choices rather than a free-text field: four options are easy to reason
+ * about and to test, and nobody needs 1,750ms.
+ */
+const AUTO_PRESENT_DELAYS = [
+  { value: 0, label: 'Instant' },
+  { value: 1, label: '1s' },
+  { value: 2, label: '2s' },
+  { value: 3, label: '3s' },
+] as const satisfies readonly { value: AutoPresentDelaySec; label: string }[]
 
 function KeyCategory({
   title,
@@ -1056,6 +1135,11 @@ function ApiKeysSection({
               : { label: 'Use for detection', onSelect: () => update('stt', { llmProvider: 'deepseek' }) }
           }
         />
+        <DetectionModelRow
+          provider={settings.stt.llmProvider}
+          value={settings.stt.llmModel ?? ''}
+          onSave={model => update('stt', { llmModel: model })}
+        />
       </KeyCategory>
 
       <KeyCategory title="Lookups">
@@ -1208,6 +1292,33 @@ function ScriptureSection({
               </span>
             </div>
           </PrefRow>
+          <PrefRow
+            label="Safety delay"
+            hint="Time to cancel before a verse goes live. The largest part of the wait."
+          >
+            <div className="flex items-center gap-1" role="radiogroup" aria-label="Safety delay">
+              {AUTO_PRESENT_DELAYS.map((option) => {
+                const active = (sc.autoPresentDelaySec ?? 1) === option.value
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={active}
+                    onClick={() => update('scripture', { autoPresentDelaySec: option.value })}
+                    className={cn(
+                      'rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors',
+                      active
+                        ? 'bg-white/[0.12] text-white'
+                        : 'text-white/45 hover:bg-white/[0.05] hover:text-white/70',
+                    )}
+                  >
+                    {option.label}
+                  </button>
+                )
+              })}
+            </div>
+          </PrefRow>
           <PrefRow label="Debounce" hint="Minimum gap between suggestions">
             <div className="flex items-center gap-1.5">
               <input
@@ -1244,6 +1355,16 @@ function ScriptureSection({
               <span className="text-[12px] text-white/40">sec</span>
             </div>
           </PrefRow>
+        </div>
+      </PrefGroup>
+
+      <PrefGroup title="Projection latency">
+        <div className="px-1 pb-1">
+          <p className="mb-3 text-[11px] leading-relaxed text-white/40">
+            Where the time went for each verse this session. The safety delay is
+            deliberate and is excluded from “slowest stage”.
+          </p>
+          <ScriptureLatencyPanel />
         </div>
       </PrefGroup>
 

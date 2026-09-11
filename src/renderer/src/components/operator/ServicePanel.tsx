@@ -24,6 +24,54 @@ function serviceDurationMs(record: Pick<ServiceRecord, 'createdAt' | 'endedAt'>,
 
 type ReviewTab = 'nuggets' | 'transcript' | 'notes' | 'scriptures'
 
+/**
+ * Where an ended service is on its way to the church's website.
+ *
+ * `failed` reads as "not yet" rather than "gone" on purpose — the booth is
+ * often offline, the local record is never at risk, and the upload retries by
+ * itself. The operator only has to act if they want it to happen sooner.
+ */
+function RecapStatus({ record, onRetry }: {
+  record: ServiceRecord
+  onRetry: () => void
+}): React.JSX.Element | null {
+  const upload = record.upload
+  if (record.status !== 'ended' || upload.status === 'idle') return null
+
+  if (upload.status === 'uploaded') {
+    return (
+      <button
+        type="button"
+        className="rounded-md px-2 py-1.5 text-[11px] text-teal-400 hover:bg-white/5 hover:text-teal-300"
+        onClick={() => void window.api.account.openWeb(
+          upload.sermonId ? `/dashboard/sermons/${upload.sermonId}` : '/dashboard/sermons',
+        )}
+      >
+        Recap published
+      </button>
+    )
+  }
+
+  if (upload.status === 'failed') {
+    return (
+      <button
+        type="button"
+        title={upload.error ?? undefined}
+        className="rounded-md px-2 py-1.5 text-[11px] text-amber-400 hover:bg-white/5 hover:text-amber-300"
+        onClick={onRetry}
+      >
+        Recap not sent — Retry
+      </button>
+    )
+  }
+
+  return (
+    <span className="px-2 py-1.5 text-[11px] text-zinc-500">
+      {upload.status === 'uploading' ? 'Publishing recap…' : 'Recap queued'}
+    </span>
+  )
+}
+
 export function ServicePanel({ onStartTranscription, creationIntent, onCreationIntentChange }: {
   /** Called after create when the user started from the live transcript panel. */
   onStartTranscription: () => Promise<void>
@@ -164,7 +212,7 @@ export function ServicePanel({ onStartTranscription, creationIntent, onCreationI
     </Dialog.Root>
     {historyOpen && <div className="mt-2 max-h-36 space-y-0.5 overflow-y-auto">
       {snapshot.services.filter(s => s.status === 'ended').length === 0 && <p className="px-1 py-2 text-[10px] text-zinc-500">Completed services will appear here.</p>}
-      {snapshot.services.filter(s => s.status === 'ended').map(s => <button key={s.id} className="flex w-full justify-between gap-2 rounded px-1.5 py-1.5 text-left text-[10px] text-zinc-300 hover:bg-white/5" onClick={() => { setViewId(s.id); setTab('nuggets') }}><span className="min-w-0 truncate">{s.title}</span><span className="shrink-0 text-zinc-500">{formatServiceDuration(serviceDurationMs(s))}</span></button>)}
+      {snapshot.services.filter(s => s.status === 'ended').map(s => <button key={s.id} className="flex w-full justify-between gap-2 rounded px-1.5 py-1.5 text-left text-[10px] text-zinc-300 hover:bg-white/5" onClick={() => { setViewId(s.id); setTab('nuggets') }}><span className="min-w-0 truncate">{s.title}</span><span className="flex shrink-0 items-center gap-1.5 text-zinc-500">{s.upload.status !== 'idle' && s.upload.status !== 'uploaded' && <span className={cn('h-1.5 w-1.5 rounded-full', s.upload.status === 'failed' ? 'bg-amber-400' : 'bg-zinc-600')} title={s.upload.status === 'failed' ? 'Recap not sent yet' : 'Recap waiting to publish'} />}{formatServiceDuration(serviceDurationMs(s))}</span></button>)}
     </div>}
     <Dialog.Root open={Boolean(record)} onOpenChange={open => { if (!open) setViewId(null) }}>
       <Dialog.Portal>
@@ -218,6 +266,10 @@ export function ServicePanel({ onStartTranscription, creationIntent, onCreationI
                   ))}
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
+                  <RecapStatus
+                    record={record}
+                    onRetry={() => void run(() => window.api.services.command({ action: 'upload', serviceId: record.id }))}
+                  />
                   <button
                     type="button"
                     className="rounded-md px-2 py-1.5 text-[11px] text-zinc-500 hover:bg-white/5 hover:text-zinc-200"

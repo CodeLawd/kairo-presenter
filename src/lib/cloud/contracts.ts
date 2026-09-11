@@ -76,6 +76,24 @@ export interface DevicePairingState {
   message: string | null
 }
 
+/** A booth computer currently signed into the church. */
+export interface OrgDevice {
+  id: string
+  name: string
+  hostname: string | null
+  os: string | null
+  osVersion: string | null
+  arch: string | null
+  appVersion: string | null
+  electronVersion: string | null
+  signedInAs: string
+  signedInEmail: string | null
+  lastSeenAt: string
+  lastLoginAt: string
+  ip: string | null
+  online: boolean
+}
+
 export interface SignUpInput {
   email: string
   password: string
@@ -114,4 +132,201 @@ export interface OrgSecretsPayload {
 /** Partial upsert: omit = leave, null = clear. */
 export type OrgSecretsPatch = {
   [K in Exclude<keyof OrgSecretsPayload, 'updatedAt'>]?: string | null
+}
+
+/**
+ * One row of the org members table.
+ *
+ * Name and email are joined from the user account — the membership alone only
+ * carries the user id, which no human can read.
+ */
+export interface OrgMember {
+  userId: string
+  name: string
+  email: string
+  role: OrgRole
+  status: 'active' | 'invited' | 'removed'
+  joinedAt: string
+}
+
+// ─── Sermons ──────────────────────────────────────────────────────────────────
+
+/**
+ * The recap a person reads when they missed the service.
+ *
+ * Written for someone who was not there: the big idea stands alone, and every
+ * quote is verbatim from the transcript (the server drops any the model made up).
+ */
+export interface SermonSummary {
+  headline: string
+  /** A self-contained explanation of the message for someone who missed it. */
+  bigIdea: string
+  keyPoints: { title: string; explanation: string }[]
+  memorableQuotes: string[]
+  takeaways: string[]
+  /** Only passages central to the message, not every reference detected live. */
+  keyScriptures: { reference: string; connection: string }[]
+  callToAction?: string
+}
+
+/** `pending` means the summary is being generated right now. */
+export type SermonStatus = 'pending' | 'ready' | 'failed'
+
+/**
+ * Why generation failed, in a form a client can act on.
+ *
+ * Shared rather than stringly-typed so a new code fails the build in every UI
+ * that branches on it, instead of silently inheriting a generic "try again".
+ */
+export type SummaryErrorCode =
+  | 'no-api-key'
+  | 'provider'
+  | 'timeout'
+  | 'format'
+  | 'refusal'
+  | 'stalled'
+
+export interface SermonListItem {
+  id: string
+  title: string
+  speaker: string
+  preachedAt: string
+  durationMs: number
+  wordCount: number
+  status: SermonStatus
+  headline: string | null
+  shareEnabled: boolean
+}
+
+export interface SermonTranscriptSegment {
+  id: string
+  text: string
+  timestamp: number
+  duration: number
+}
+
+/**
+ * Everything about a sermon except the transcript, which has its own route —
+ * it is an order of magnitude larger, it is read far less often, and it carries
+ * a stricter role.
+ */
+export interface SermonDetail extends SermonListItem {
+  summary: SermonSummary | null
+  failureReason: string | null
+  /** Machine-readable, so the dashboard can offer the right next step. */
+  failureCode: SummaryErrorCode | null
+  shareToken: string | null
+}
+
+export interface SermonTranscriptPayload {
+  segments: SermonTranscriptSegment[]
+}
+
+/** One page of sermons, newest first. `nextCursor` is null on the last page. */
+export interface SermonListPage {
+  items: SermonListItem[]
+  nextCursor: string | null
+}
+
+/** One calendar month of preaching, used to compare this month against last. */
+export interface SermonPeriodStats {
+  services: number
+  durationMs: number
+}
+
+/**
+ * One chart bucket of preaching. `weekStart` is `YYYY-MM-DD` — Monday for
+ * weekly series, the calendar day for daily series (`granularity`).
+ */
+export interface SermonWeekBucket {
+  weekStart: string
+  services: number
+  durationMs: number
+}
+
+export interface SermonSpeakerStat {
+  name: string
+  services: number
+  durationMs: number
+}
+
+export interface SermonBookStat {
+  book: string
+  count: number
+}
+
+export type SermonStatsRange = 'today' | '7d' | '4w' | '12w' | '6m' | 'ytd' | 'all' | 'custom'
+export type SermonStatsGranularity = 'day' | 'week'
+
+/**
+ * Org-wide totals and series for the dashboard.
+ *
+ * Raw counts only — formatting (compact numbers, hours) lives client-side so
+ * the dashboard and any future surface can each present them their own way.
+ *
+ * Only things we actually store: services, recaps, duration, words, speakers,
+ * and scripture references. Attendance and share-page views are not tracked.
+ *
+ * Totals, speakers and books respect the requested range (or `from`/`to`) and
+ * speaker filter. `previous` is the equal-length window immediately before that
+ * range, so the dashboard can say "+2 vs previous" without inventing a trend.
+ * `speakerNames` is everyone who preached in the range, unfiltered, for the
+ * speaker dropdown. `granularity` says whether `weekly` is days or ISO weeks.
+ */
+export interface SermonStats {
+  services: number
+  recapsReady: number
+  recapsFailed: number
+  recapsPending: number
+  totalDurationMs: number
+  totalWords: number
+  scripturePassages: number
+  sharedLinks: number
+  averageDurationMs: number
+  previous: SermonPeriodStats
+  granularity: SermonStatsGranularity
+  weekly: SermonWeekBucket[]
+  speakers: SermonSpeakerStat[]
+  scriptureBooks: SermonBookStat[]
+  speakerNames: string[]
+}
+
+/**
+ * What the desktop app uploads when the operator ends a service.
+ *
+ * `localId` is the desktop `ServiceRecord.id`. The server keys on it so a
+ * retried upload — the booth was offline the first time — updates the same
+ * sermon instead of creating a duplicate.
+ */
+export interface SermonUploadInput {
+  localId: string
+  title: string
+  speaker: string
+  startedAt: number
+  endedAt: number
+  transcript: SermonUploadSegment[]
+  scriptures: { reference: string; translation: string }[]
+}
+
+/** A transcript segment on the wire, word timings included. */
+export interface SermonUploadSegment {
+  id: string
+  text: string
+  timestamp: number
+  duration: number
+  words: { word: string; start: number; end: number; confidence: number }[]
+}
+
+export interface SermonUploadResult {
+  id: string
+  status: SermonStatus
+}
+
+/** The public share page — no transcript, no ids, no org internals. */
+export interface PublicSermonPayload {
+  title: string
+  speaker: string
+  churchName: string
+  preachedAt: string
+  summary: SermonSummary
 }

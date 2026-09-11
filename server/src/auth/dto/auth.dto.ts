@@ -1,5 +1,51 @@
-import { IsEmail, IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator'
+import { Type } from 'class-transformer'
+import {
+  IsEmail,
+  IsIn,
+  IsOptional,
+  IsString,
+  MaxLength,
+  MinLength,
+  ValidateNested,
+} from 'class-validator'
 import { MIN_PASSWORD_LENGTH } from '../password.service'
+
+export class DeviceInfoDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  name?: string
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  hostname?: string
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  os?: string
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  osVersion?: string
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  arch?: string
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  appVersion?: string
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  electronVersion?: string
+}
 
 export class SignUpDto {
   @IsEmail({}, { message: 'Enter a valid email address' })
@@ -31,6 +77,11 @@ export class SignUpDto {
   @IsString()
   @MaxLength(120)
   deviceName?: string
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => DeviceInfoDto)
+  device?: DeviceInfoDto
 }
 
 export class SignInDto {
@@ -45,6 +96,16 @@ export class SignInDto {
   @IsString()
   @MaxLength(100)
   deviceId?: string
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  deviceName?: string
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => DeviceInfoDto)
+  device?: DeviceInfoDto
 }
 
 export class RefreshDto {
@@ -52,6 +113,17 @@ export class RefreshDto {
   @IsOptional()
   @IsString()
   refreshToken?: string
+
+  /** Lets an already-signed-in booth name itself on the next rotation. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  deviceName?: string
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => DeviceInfoDto)
+  device?: DeviceInfoDto
 }
 
 export class VerifyEmailDto {

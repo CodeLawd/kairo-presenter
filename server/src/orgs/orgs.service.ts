@@ -1,14 +1,17 @@
 import { Injectable, NotFoundException } from '@nestjs/common'
 import { InjectModel } from '@nestjs/mongoose'
 import { Model, Types } from 'mongoose'
+import type { OrgMember } from '@contracts/contracts'
 import { Organization, OrganizationDocument } from './schemas/organization.schema'
 import { Membership, MembershipDocument, OrgRole } from './schemas/membership.schema'
+import { User, UserDocument } from '../users/schemas/user.schema'
 
 @Injectable()
 export class OrgsService {
   constructor(
     @InjectModel(Organization.name) private readonly orgs: Model<OrganizationDocument>,
     @InjectModel(Membership.name) private readonly memberships: Model<MembershipDocument>,
+    @InjectModel(User.name) private readonly users: Model<UserDocument>,
   ) {}
 
   /** Creates the org and its owner membership together — one is useless alone. */
@@ -57,6 +60,34 @@ export class OrgsService {
 
   async listMembers(orgId: Types.ObjectId | string): Promise<MembershipDocument[]> {
     return this.memberships.find({ orgId, status: { $ne: 'removed' } }).exec()
+  }
+
+  /**
+   * Members with the human-readable parts joined in.
+   *
+   * A membership only carries a user id; the table needs names and emails, so
+   * one extra query resolves every member at once rather than per row. A user
+   * deleted after joining leaves a row with a placeholder name instead of
+   * vanishing — the membership is the source of truth for who is in the org.
+   */
+  async listMembersWithUsers(orgId: Types.ObjectId | string): Promise<OrgMember[]> {
+    const memberships = await this.listMembers(orgId)
+    const users = await this.users
+      .find({ _id: { $in: memberships.map((member) => member.userId) } })
+      .select('name email')
+      .exec()
+    const byId = new Map(users.map((user) => [user._id.toString(), user]))
+    return memberships.map((member) => {
+      const user = byId.get(member.userId.toString())
+      return {
+        userId: member.userId.toString(),
+        name: user?.name ?? 'Unknown member',
+        email: user?.email ?? '',
+        role: member.role,
+        status: member.status,
+        joinedAt: member.joinedAt.toISOString(),
+      }
+    })
   }
 
   async updateProfile(

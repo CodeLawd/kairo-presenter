@@ -31,6 +31,8 @@ export interface AppSettings {
     anthropicApiKey: string
     deepseekApiKey: string
     llmProvider: 'anthropic' | 'deepseek'
+    /** Model name for scripture detection. Empty = the provider's default. */
+    llmModel: string
     bibleApiKey: string
     language: string
   }
@@ -39,6 +41,15 @@ export interface AppSettings {
     showVerseNumbers: boolean
     autoMode: boolean
     confidenceThreshold: number
+    /**
+     * Seconds between a detection and the verse going live, so an operator can
+     * catch a wrong call before the congregation sees it.
+     *
+     * This is the single largest component of user-visible latency — far larger
+     * than everything Kairo does to produce the verse — so it is a deliberate
+     * choice, not an accident to optimize away.
+     */
+    autoPresentDelaySec: AutoPresentDelaySec
     debounceInterval: number
     contextWindowSize: number
     /**
@@ -628,6 +639,11 @@ export interface ScriptureSuggestion {
   passageReference?: string
   passageIndex?: number
   passageLength?: number
+  /**
+   * Ties this suggestion to its latency trace, from transcript to screen.
+   * Minted once at detection and never regenerated downstream.
+   */
+  correlationId?: string
   /** Adjacent verse loaded proactively beyond the preacher's stated range. */
   preloadedNext?: boolean
   /** Playlist item this verse resolved against, when a live sermon playlist is set. */
@@ -1053,7 +1069,21 @@ export interface AudioAPI {
   onError: (callback: (error: AudioError) => void) => Unsubscribe
 }
 
+/** One traced projection plus its derived timings, for the diagnostics view. */
+export interface ScriptureTraceRecord {
+  trace: import('./scripture-trace').ScriptureLatencyTrace
+  metrics: import('./scripture-trace').ScriptureLatencyMetrics
+}
+
 export interface ScriptureAPI {
+  /** Recent scripture projections with their per-stage latency. Newest first. */
+  recentTraces: (limit?: number) => Promise<ScriptureTraceRecord[]>
+  /**
+   * Report that a suggestion has been painted on Kairo's own screen.
+   *
+   * Fire-and-forget: this is telemetry, and an operator must never wait on it.
+   */
+  markRendered: (correlationId: string) => void
   /** Returns cleanup fn. Fires when auto-detection finds a scripture reference. */
   onSuggestion: (callback: (suggestion: ScriptureSuggestion) => void) => Unsubscribe
   approve: (suggestionId: string) => Promise<void>
@@ -1203,6 +1233,9 @@ export interface SettingsAPI {
 
 // ─── Orchestrator ─────────────────────────────────────────────────────────────
 
+/** Fixed choices: easier to reason about and to test than free-text milliseconds. */
+export type AutoPresentDelaySec = 0 | 1 | 2 | 3
+
 export interface OrchestratorConfig {
   audioDeviceId: string
   sttProvider: STTProvider
@@ -1211,13 +1244,13 @@ export interface OrchestratorConfig {
   /** LLM provider for scripture detection */
   llmProvider: 'anthropic' | 'deepseek'
   llmApiKey: string
-  /** Model override (default: claude-haiku-4-5-20251001 for anthropic, deepseek-chat for deepseek) */
+  /** Model override (default: claude-haiku-4-5 for anthropic, deepseek-flash for deepseek) */
   scriptureModel?: string
   scriptureTranslation: ScriptureTranslation
   autoMode: boolean
   /** Minimum confidence (0–1) to trigger auto-present; default 0.7 */
   confidenceThreshold: number
-  /** Seconds between detection and auto-present; default 3 */
+  /** Seconds between detection and auto-present; default 1 */
   autoPresentDelaySec: number
 }
 
@@ -1239,6 +1272,14 @@ export interface ResilienceStatus {
   ppReconnectCountdown: number | null
   ppQueueSize: number
   claudeFallbackActive: boolean
+  /**
+   * Why detection fell back, for the operator.
+   *
+   * `offline` is the network. `provider` means the AI service answered and
+   * refused — a bad key or a bad model name — which looks nothing like being
+   * offline and is fixed somewhere completely different.
+   */
+  detectorFallbackReason: { kind: 'offline' | 'provider'; message: string } | null
   recoverySessionAvailable: boolean
   health: ServiceHealth[]
 }
@@ -1480,6 +1521,8 @@ export const IPC = {
     LIST_SERMON_PLANS:      'scripture:listSermonPlans',         // invoke
     SAVE_SERMON_PLAN:       'scripture:saveSermonPlan',          // invoke
     DELETE_SERMON_PLAN:     'scripture:deleteSermonPlan',        // invoke
+    RECENT_TRACES:          'scripture:recentTraces',            // invoke
+    MARK_RENDERED:          'scripture:markRendered',            // send
     GET_LIVE_PLAN:          'scripture:getLivePlan',             // invoke
     SET_LIVE_PLAN:          'scripture:setLivePlan',             // invoke
     LIVE_PLAN_CHANGED:      'scripture:livePlanChanged',         // push

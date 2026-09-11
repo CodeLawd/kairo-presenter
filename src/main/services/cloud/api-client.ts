@@ -37,18 +37,23 @@ export class CloudApiClient {
     method: "get" | "post" | "patch" | "put" | "delete",
     path: string,
     body?: unknown,
-    options: { authenticated?: boolean; allowRefresh?: boolean } = {},
+    options: {
+      authenticated?: boolean;
+      allowRefresh?: boolean;
+      /** Override the 8s default. Only for calls nobody is waiting on. */
+      timeoutMs?: number;
+    } = {},
   ): Promise<T> {
     const authenticated = options.authenticated ?? true;
     try {
-      return await this.send<T>(method, path, body, authenticated);
+      return await this.send<T>(method, path, body, authenticated, options.timeoutMs);
     } catch (error) {
       const status = (error as AxiosError).response?.status ?? null;
       const refreshable =
         authenticated && status === 401 && options.allowRefresh !== false;
 
       if (refreshable && (await this.refreshOnce())) {
-        return this.send<T>(method, path, body, authenticated);
+        return this.send<T>(method, path, body, authenticated, options.timeoutMs);
       }
       throw toApiError(error);
     }
@@ -59,6 +64,7 @@ export class CloudApiClient {
     path: string,
     body: unknown,
     authenticated: boolean,
+    timeoutMs?: number,
   ): Promise<T> {
     const headers =
       authenticated && this.accessToken
@@ -69,6 +75,7 @@ export class CloudApiClient {
       url: path,
       data: body,
       headers,
+      timeout: timeoutMs,
     });
     return response.data;
   }

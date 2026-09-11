@@ -1,18 +1,12 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { ServiceRecords, type ServiceArchiveStorage } from '../src/lib/service-archive'
-import { extractNuggetQuotes, serviceTextExport, type ServiceSnapshot } from '../src/lib/service-records'
+import { ServiceRecords } from '../src/lib/service-archive'
+import { extractNuggetQuotes, serviceTextExport } from '../src/lib/service-records'
 import type { SermonPlan, TranscriptResult } from '../src/lib/ipc'
+import { MemoryStorage, transcriptSegment } from './fixtures'
 
-class MemoryStorage implements ServiceArchiveStorage {
-  private value: ServiceSnapshot = { activeId: null, services: [] }
-  get store() { return structuredClone(this.value) }
-  set store(value: ServiceSnapshot) { this.value = structuredClone(value) }
-  get<K extends keyof ServiceSnapshot>(key: K): ServiceSnapshot[K] { return structuredClone(this.value[key]) }
-  set<K extends keyof ServiceSnapshot>(key: K, value: ServiceSnapshot[K]): void { this.value[key] = structuredClone(value) }
-}
 const quote = 'Faith is choosing to trust God even when the next step is not visible.'
-const segment = (id: string): TranscriptResult => ({ id, text: quote, words: [], isFinal: true, timestamp: Date.now(), duration: 3 })
+const segment = (id: string): TranscriptResult => transcriptSegment(id, quote, { words: [] })
 const tick = () => new Promise(resolve => setImmediate(resolve))
 
 test('service stays open across transcription pauses; end isolates the next service', () => {
@@ -101,4 +95,86 @@ test('automatic selection accepts only exact quotes and can select nothing', () 
   assert.deepEqual(extractNuggetQuotes(`Here you go:\n${JSON.stringify([quote])}\n`, [segment('one')]), [quote])
   assert.throws(() => extractNuggetQuotes('not json', []), /incomplete JSON/)
   assert.throws(() => extractNuggetQuotes('["unterminated', []), /incomplete JSON/)
+})
+
+test('ending a service queues it for the web and survives a restart', () => {
+  const db = new MemoryStorage()
+  const queued: string[] = []
+  const records = new ServiceRecords(db, async () => '[]')
+  records.onServiceEnded(id => queued.push(id))
+  records.create('Morning service', 'Pastor Ada', null)
+  const id = records.active()!.id
+  records.transcript(segment('one'))
+
+  assert.equal(records.active()!.upload.status, 'idle')
+  records.end()
+
+  assert.deepEqual(queued, [id], 'the uploader is told exactly once')
+  const ended = records.snapshot().services.find(record => record.id === id)!
+  assert.equal(ended.upload.status, 'queued')
+  assert.deepEqual(records.queuedForUpload().map(record => record.id), [id])
+
+  // A fresh process reading the same store still sees the work waiting.
+  const reopened = new ServiceRecords(db, async () => '[]')
+  reopened.onServiceEnded(id => queued.push(id))
+  reopened.init()
+  assert.deepEqual(reopened.queuedForUpload().map(record => record.id), [id])
+})
+
+test('upload state moves through the machine and leaves the queue when published', () => {
+  const db = new MemoryStorage()
+  const records = new ServiceRecords(db, async () => '[]')
+  records.create('Morning service', 'Pastor Ada', null)
+  const id = records.active()!.id
+  records.end()
+
+  records.markUpload(id, { status: 'uploading', lastAttemptAt: 1 })
+  assert.equal(records.snapshot().services[0].upload.status, 'uploading')
+
+  records.markUpload(id, { status: 'failed', error: 'Offline.', attempts: 1 })
+  assert.equal(records.queuedForUpload().length, 1, 'a failure stays in the queue')
+
+  records.markUpload(id, { status: 'uploaded', sermonId: 'abc123', error: null })
+  assert.equal(records.queuedForUpload().length, 0)
+  assert.equal(records.snapshot().services[0].upload.sermonId, 'abc123')
+})
+
+test('a manual retry clears the error and asks the uploader again', () => {
+  const db = new MemoryStorage()
+  const queued: string[] = []
+  const records = new ServiceRecords(db, async () => '[]')
+  records.onServiceEnded(id => queued.push(id))
+  records.create('Morning service', 'Pastor Ada', null)
+  const id = records.active()!.id
+  records.end()
+  records.markUpload(id, { status: 'failed', error: 'Offline.', attempts: 3 })
+
+  records.requeueUpload(id)
+  const state = records.snapshot().services[0].upload
+  assert.equal(state.status, 'queued')
+  assert.equal(state.error, null)
+  assert.equal(state.attempts, 0, 'backoff starts over on a deliberate retry')
+  assert.deepEqual(queued, [id, id])
+
+  assert.throws(() => records.requeueUpload('nope'), /Service not found/)
+})
+
+test('records written before recaps existed get an upload state on load', () => {
+  const db = new MemoryStorage()
+  db.store = {
+    activeId: null,
+    services: [{
+      id: 'legacy', title: 'Old service', speaker: '', createdAt: 1, endedAt: 2,
+      status: 'ended', transcript: [], scriptures: [], notes: [], nuggets: [],
+      analysisError: null,
+    }],
+  }
+  const records = new ServiceRecords(db, async () => '[]')
+  records.init()
+
+  const migrated = records.snapshot().services[0]
+  assert.equal(migrated.upload.status, 'idle')
+  // Idle, not queued: a service that ended months ago should not suddenly
+  // publish itself the first time someone opens the new build.
+  assert.equal(records.queuedForUpload().length, 0)
 })

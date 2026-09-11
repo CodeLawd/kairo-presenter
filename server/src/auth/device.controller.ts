@@ -41,6 +41,8 @@ export class DeviceController {
       userId: result.userId,
       orgId: result.orgId,
       deviceId: result.deviceId,
+      deviceName: result.deviceName,
+      device: result.device,
     })
     return { state: 'approved', ...session }
   }

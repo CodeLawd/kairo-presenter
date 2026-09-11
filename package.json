@@ -17,6 +17,7 @@
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
     "test": "tsx --test tests/*.test.ts",
+    "test:scripture-replay": "ELECTRON_RUN_AS_NODE=1 electron --import tsx --test src/main/services/scripture/__tests__/transcript-replay.test.ts src/main/services/scripture/__tests__/quote-recovery.test.ts src/main/services/scripture/__tests__/live-detection-wiring.test.ts",
     "test:documents": "npm run build && electron tests/documents.integration.cjs",
     "test:main": "ELECTRON_RUN_AS_NODE=1 electron ./node_modules/tsx/dist/cli.mjs --test src/main/__tests__/*.test.ts src/main/services/scripture/__tests__/*.test.ts src/main/services/propresenter/__tests__/*.test.ts src/main/services/cloud/__tests__/*.test.ts",
     "seed:bible": "npx tsx scripts/seed-bible.ts",

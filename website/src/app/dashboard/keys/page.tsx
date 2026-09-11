@@ -1,8 +1,24 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { EyeIcon, EyeOffIcon } from 'lucide-react'
+import { useRevalidateOnFocus } from '@/hooks/use-refresh'
 import { useDashboard } from '@/components/dashboard/dashboard-provider'
-import { api, ApiError } from '@/lib/api'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Separator } from '@/components/ui/separator'
+import { Skeleton } from '@/components/ui/skeleton'
+import { ApiError } from '@/lib/api'
 
 type Secrets = {
   deepgramApiKey: string
@@ -14,13 +30,27 @@ type Secrets = {
   updatedAt: string | null
 }
 
-const FIELDS: { key: keyof Omit<Secrets, 'updatedAt'>; label: string; hint: string }[] = [
-  { key: 'deepgramApiKey', label: 'Deepgram', hint: 'Speech-to-text for the live transcript' },
-  { key: 'anthropicApiKey', label: 'Anthropic', hint: 'Optional model provider' },
-  { key: 'deepseekApiKey', label: 'DeepSeek', hint: 'Optional model provider' },
-  { key: 'bibleApiKey', label: 'Bible API', hint: 'Scripture lookup' },
-  { key: 'braveApiKey', label: 'Brave Search', hint: 'Optional web lookup' },
-  { key: 'googleTranslateApiKey', label: 'Google Translate', hint: 'Optional translation' },
+type SecretKey = keyof Omit<Secrets, 'updatedAt'>
+
+const GROUPS: { title: string; hint: string; fields: { key: SecretKey; label: string; hint: string }[] }[] = [
+  {
+    title: 'Live service',
+    hint: 'Needed for transcription and scripture lookup on the booth.',
+    fields: [
+      { key: 'deepgramApiKey', label: 'Deepgram', hint: 'Speech-to-text for the live transcript' },
+      { key: 'bibleApiKey', label: 'Bible API', hint: 'Verse lookup during the sermon' },
+    ],
+  },
+  {
+    title: 'Optional',
+    hint: 'Only if you use these providers.',
+    fields: [
+      { key: 'anthropicApiKey', label: 'Anthropic', hint: 'Optional recap model' },
+      { key: 'deepseekApiKey', label: 'DeepSeek', hint: 'Optional recap model' },
+      { key: 'braveApiKey', label: 'Brave Search', hint: 'Optional web lookup' },
+      { key: 'googleTranslateApiKey', label: 'Google Translate', hint: 'Optional translation' },
+    ],
+  },
 ]
 
 const EMPTY: Secrets = {
@@ -33,48 +63,119 @@ const EMPTY: Secrets = {
   updatedAt: null,
 }
 
+/**
+ * Floor between vault reads. The refetch is event-driven — mount and tab focus —
+ * so this only swallows bursts (focus firing alongside visibilitychange).
+ */
+const MIN_REFRESH_INTERVAL_MS = 10_000
+
+function SecretField({
+  field,
+  value,
+  onChange,
+}: {
+  field: { key: SecretKey; label: string; hint: string }
+  value: string
+  onChange: (value: string) => void
+}): React.ReactElement {
+  const [visible, setVisible] = useState(false)
+  const saved = value.trim().length > 0
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <Label htmlFor={field.key}>{field.label}</Label>
+          <p className="text-xs text-muted-foreground">{field.hint}</p>
+        </div>
+        {saved ? <Badge variant="secondary">Saved</Badge> : null}
+      </div>
+      <div className="relative">
+        <Input
+          id={field.key}
+          type={visible ? 'text' : 'password'}
+          autoComplete="off"
+          spellCheck={false}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder="••••••••••••"
+          className="pr-9 font-mono"
+        />
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          className="absolute top-1/2 right-1.5 -translate-y-1/2 text-muted-foreground"
+          aria-label={visible ? `Hide ${field.label}` : `Show ${field.label}`}
+          onClick={() => setVisible((current) => !current)}
+        >
+          {visible ? <EyeOffIcon /> : <EyeIcon />}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
 export default function KeysPage(): React.ReactElement {
-  const { session, accessToken } = useDashboard()
+  const { session, request } = useDashboard()
   const orgId = session.orgId
   const [secrets, setSecrets] = useState<Secrets>(EMPTY)
   const [busy, setBusy] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
+  /** True once a field is edited — stops a refresh from overwriting what is being typed. */
+  const dirty = useRef(false)
+  const busyRef = useRef(false)
+  const cancelled = useRef(false)
+  const [hasEdits, setHasEdits] = useState(false)
 
-  useEffect(() => {
-    if (!orgId) {
-      setLoading(false)
-      return
-    }
-    let cancelled = false
-    void (async () => {
+  const load = useCallback(
+    async (initial: boolean): Promise<void> => {
+      if (!orgId) {
+        setLoading(false)
+        return
+      }
+      // Never clobber unsaved edits, and never race an in-flight save.
+      if (!initial && (dirty.current || busyRef.current)) return
       try {
-        const result = await api<Secrets>(`/v1/orgs/${orgId}/secrets`, { accessToken })
-        if (!cancelled) setSecrets(result)
+        const result = await request<Secrets>(`/v1/orgs/${orgId}/secrets`)
+        if (cancelled.current || (!initial && (dirty.current || busyRef.current))) return
+        setSecrets(result)
+        setError(null)
       } catch (failure) {
-        if (!cancelled) {
+        if (!cancelled.current && initial) {
           setError(failure instanceof ApiError ? failure.message : 'Could not load keys.')
         }
       } finally {
-        if (!cancelled) setLoading(false)
+        if (!cancelled.current && initial) setLoading(false)
       }
-    })()
+    },
+    [orgId, request],
+  )
+
+  useEffect(() => {
+    cancelled.current = false
+    void load(true)
     return () => {
-      cancelled = true
+      cancelled.current = true
     }
-  }, [orgId, accessToken])
+  }, [load])
+
+  // Returning to the tab is when a key saved on the desktop app should appear.
+  // No timer: an open tab left alone makes no requests.
+  useRevalidateOnFocus(() => void load(false), MIN_REFRESH_INTERVAL_MS)
 
   const save = async (event: React.FormEvent): Promise<void> => {
     event.preventDefault()
     if (!orgId) return
     setBusy(true)
+    busyRef.current = true
     setError(null)
     setSaved(false)
     try {
-      const result = await api<Secrets>(`/v1/orgs/${orgId}/secrets`, {
+      const result = await request<Secrets>(`/v1/orgs/${orgId}/secrets`, {
         method: 'PUT',
-        accessToken,
         body: {
           deepgramApiKey: secrets.deepgramApiKey,
           anthropicApiKey: secrets.anthropicApiKey,
@@ -85,67 +186,86 @@ export default function KeysPage(): React.ReactElement {
         },
       })
       setSecrets(result)
+      dirty.current = false
+      setHasEdits(false)
       setSaved(true)
     } catch (failure) {
       setError(failure instanceof ApiError ? failure.message : 'Could not save keys.')
     } finally {
       setBusy(false)
+      busyRef.current = false
     }
   }
 
-  return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
-      <section className="overflow-hidden rounded-xl border border-white/[0.07] bg-panel">
-        <div className="border-b border-white/[0.06] px-5 py-3.5">
-          <h2 className="font-mono text-[10.5px] font-medium uppercase tracking-[0.16em] text-faint">
-            Vault
-          </h2>
-        </div>
-        <div className="px-5 py-5">
-          <p className="mb-5 text-[13.5px] leading-relaxed text-mute">
-            Saved encrypted for your church. Booth machines sync these instead of typing keys
-            locally.
-            {secrets.updatedAt
-              ? ` Last updated ${new Date(secrets.updatedAt).toLocaleString()}.`
-              : ''}
-          </p>
+  const updated = secrets.updatedAt
+    ? `Last saved ${new Date(secrets.updatedAt).toLocaleString()}`
+    : 'Not saved yet'
 
-          {loading ? (
-            <p className="text-[13px] text-mute">Loading…</p>
-          ) : !orgId ? (
-            <p className="text-[13px] text-mute">Link a church first.</p>
-          ) : (
-            <form className="flex flex-col gap-4" onSubmit={(e) => void save(e)}>
-              {FIELDS.map((field) => (
-                <label key={field.key} className="flex flex-col gap-1.5">
-                  <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
-                    {field.label}
-                  </span>
-                  <input
-                    type="password"
-                    autoComplete="off"
-                    className="rounded-lg border border-white/[0.08] bg-ink px-3 py-2.5 text-[14px] text-paper outline-none transition-colors placeholder:text-faint focus:border-accent/50"
-                    value={secrets[field.key]}
-                    onChange={(e) =>
-                      setSecrets((current) => ({ ...current, [field.key]: e.target.value }))
-                    }
-                    placeholder={field.hint}
-                  />
-                </label>
-              ))}
-              {error ? <p className="text-[13px] text-[#fb7185]">{error}</p> : null}
-              {saved ? <p className="text-[13px] text-accent">Keys saved.</p> : null}
-              <button
-                type="submit"
-                disabled={busy}
-                className="mt-1 inline-flex w-fit rounded-full bg-accent px-4 py-2 text-[13px] font-semibold text-[#231703] transition-colors hover:bg-[#FBBF24] disabled:opacity-50"
-              >
-                {busy ? 'Saving…' : 'Save keys'}
-              </button>
-            </form>
-          )}
-        </div>
-      </section>
+  return (
+    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
+      <div>
+        <h2 className="font-display text-[28px] font-semibold tracking-tight">API keys</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Encrypted for your church. Booth machines sync these instead of typing keys locally.
+        </p>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Vault</CardTitle>
+          <CardDescription>{updated}.</CardDescription>
+        </CardHeader>
+        <form onSubmit={(event) => void save(event)}>
+          <CardContent>
+            {loading ? (
+              <div className="flex flex-col gap-5">
+                {[0, 1, 2, 3].map((row) => (
+                  <div key={row} className="flex flex-col gap-2">
+                    <Skeleton className="h-4 w-24" />
+                    <Skeleton className="h-8 w-full" />
+                  </div>
+                ))}
+              </div>
+            ) : !orgId ? (
+              <p className="text-sm text-muted-foreground">Link a church first.</p>
+            ) : (
+              <div className="flex flex-col gap-6">
+                {GROUPS.map((group, index) => (
+                  <div key={group.title} className="flex flex-col gap-4">
+                    {index > 0 ? <Separator /> : null}
+                    <div>
+                      <p className="text-sm font-medium">{group.title}</p>
+                      <p className="text-xs text-muted-foreground">{group.hint}</p>
+                    </div>
+                    {group.fields.map((field) => (
+                      <SecretField
+                        key={field.key}
+                        field={field}
+                        value={secrets[field.key]}
+                        onChange={(value) => {
+                          dirty.current = true
+                          setHasEdits(true)
+                          setSaved(false)
+                          setSecrets((current) => ({ ...current, [field.key]: value }))
+                        }}
+                      />
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
+            {error ? <p className="mt-4 text-sm text-destructive">{error}</p> : null}
+          </CardContent>
+          <CardFooter className="justify-between gap-3">
+            <p className="text-sm text-muted-foreground">
+              {saved ? 'Keys saved.' : hasEdits ? 'Unsaved changes' : 'Keys stay on the church, not this browser.'}
+            </p>
+            <Button type="submit" disabled={busy || !orgId || loading || !hasEdits}>
+              {busy ? 'Saving…' : 'Save keys'}
+            </Button>
+          </CardFooter>
+        </form>
+      </Card>
     </div>
   )
 }

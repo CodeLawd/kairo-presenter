@@ -6,12 +6,13 @@ import { EMPTY_PP_RESOURCE_BINDINGS } from '@shared/propresenter-resources'
 export const DEFAULT_SETTINGS: SettingsWithSecretsStatus = {
   propresenter: { host: 'localhost', port: 50000, password: '' },
   audio: { deviceId: '' },
-  stt: { provider: 'none', apiKey: '', anthropicApiKey: '', deepseekApiKey: '', llmProvider: 'anthropic', bibleApiKey: '', language: 'en-US' },
+  stt: { provider: 'none', apiKey: '', anthropicApiKey: '', deepseekApiKey: '', llmProvider: 'anthropic', llmModel: '', bibleApiKey: '', language: 'en-US' },
   scripture: {
     defaultTranslation: 'NKJV',
     showVerseNumbers: true,
     autoMode: false,
     confidenceThreshold: 0.7,
+    autoPresentDelaySec: 1,
     debounceInterval: 8,
     contextWindowSize: 90,
     offlineDownloadBibleIds: [],

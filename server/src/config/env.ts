@@ -23,6 +23,34 @@ export interface AppConfig {
   mail: { apiKey: string; fromEmail: string; fromName: string } | null;
   /** 32-byte material (base64 or passphrase) for org API-key vault AES-GCM. */
   vaultEncryptionKey: string;
+  sermons: SermonConfig;
+}
+
+/**
+ * How hard the model thinks before writing the recap.
+ *
+ * Provider-neutral, because the two providers spell it differently: Anthropic's
+ * `output_config.effort` has no "none", and DeepSeek's `reasoning_effort` has no
+ * "medium". `SermonSummaryService` maps this onto each.
+ */
+export type SermonReasoningEffort = "none" | "low" | "medium" | "high" | "max";
+
+const REASONING_EFFORTS: readonly SermonReasoningEffort[] = [
+  "none",
+  "low",
+  "medium",
+  "high",
+  "max",
+];
+
+/** Recap generation. The model is configurable so a church can trade cost for depth. */
+export interface SermonConfig {
+  /** Anthropic model used when the org has an Anthropic key. */
+  model: string;
+  /** DeepSeek model used when the org only has a DeepSeek key. */
+  deepseekModel: string;
+  /** Thinking depth before the recap is written. */
+  reasoningEffort: SermonReasoningEffort;
 }
 
 export class ConfigError extends Error {}
@@ -102,7 +130,39 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     google,
     mail,
     vaultEncryptionKey,
+    sermons: {
+      // The recap is the whole point of the feature and it is read by people
+      // who were not there, so quality wins over a few cents a service. The
+      // church supplies the key, so make the trade changeable without a deploy.
+      model: env.SERMON_MODEL?.trim() || "claude-opus-5",
+      // Flash, not pro: DeepSeek's reasoning models spend output budget
+      // thinking, and on a real sermon v4-pro consumed an 8k budget entirely on
+      // reasoning and emitted nothing. Flash returns a complete recap in a third
+      // of the time, and from 2026-09-14 v4-pro routes to this same model anyway.
+      deepseekModel: env.SERMON_DEEPSEEK_MODEL?.trim() || "deepseek-flash",
+      // Both providers default to "high" thinking, which nobody here chose. A
+      // recap is extraction, not a problem to reason through — the thinking is
+      // pure latency on the parts that matter least. "low" keeps enough for the
+      // two parts that do need judgment (segmenting an hour of unpunctuated ASR
+      // into points, and deciding which scriptures were actually cited) without
+      // spending thousands of invisible tokens before the first word.
+      reasoningEffort: toReasoningEffort(env.SERMON_REASONING_EFFORT),
+    },
   };
+}
+
+function toReasoningEffort(value: string | undefined): SermonReasoningEffort {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) return "low";
+  const match = REASONING_EFFORTS.find((effort) => effort === normalized);
+  // A typo here would silently restore a provider default nobody chose, and the
+  // symptom — recaps got slow again — points nowhere near this line.
+  if (!match) {
+    throw new ConfigError(
+      `SERMON_REASONING_EFFORT must be one of ${REASONING_EFFORTS.join(", ")}`,
+    );
+  }
+  return match;
 }
 
 function toInt(value: string | undefined, fallback: number): number {

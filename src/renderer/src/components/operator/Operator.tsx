@@ -27,6 +27,7 @@ import {
 import { useAppStore } from "@/stores/useAppStore";
 import { listAudioInputDevices, resolveCaptureDeviceId } from "@/audio/devices";
 import { cn, downloadFile } from "@/lib/utils";
+import { markSuggestionRendered } from "@/lib/markSuggestionRendered";
 import {
   normalizeOperatorPanelWidth,
   normalizeOperatorReferenceHeight,
@@ -867,6 +868,8 @@ export default function Operator(): React.ReactElement {
     });
 
     const unsubSuggestion = window.api.scripture.onSuggestion((suggestion) => {
+      // Closes the latency trace's last local hop: transcript → visible here.
+      markSuggestionRendered(suggestion.correlationId);
       // 1. Apply visual highlight to the transcript segment containing the trigger
       const highlight: ScriptureHighlight = {
         id: suggestion.id,
@@ -1309,7 +1312,7 @@ export default function Operator(): React.ReactElement {
           scriptureTranslation: all.scripture.defaultTranslation,
           autoMode: autoModeEnabled,
           confidenceThreshold: all.scripture.confidenceThreshold,
-          autoPresentDelaySec: 3,
+          autoPresentDelaySec: all.scripture.autoPresentDelaySec ?? 1,
         };
         await window.api.orchestrator.start(config);
         setIsTranscribing(true);
@@ -1474,7 +1477,8 @@ export default function Operator(): React.ReactElement {
 
   const claudeErrorMapped = resilienceStatus
     ? resilienceStatus.claudeFallbackActive
-      ? "Claude offline. Local Regex fallback active."
+      ? (resilienceStatus.detectorFallbackReason?.message
+          ?? "AI detection unavailable. Local matching active.")
       : getServiceError("detector")
     : getServiceError("detector");
 
@@ -1964,10 +1968,16 @@ export default function Operator(): React.ReactElement {
               </p>
             )}
             {resilienceStatus && resilienceStatus.claudeFallbackActive && (
-              <div className="bg-amber-950/10 border-b border-amber-500/20 px-5 py-2 text-[10px] font-bold text-amber-400/90 flex items-center justify-between shrink-0 animate-pulse">
-                <span>CLAUDE OFFLINE — LOCAL REGEX DETECTION ACTIVE</span>
-                <span className="text-[9px] uppercase tracking-wider text-slate-500 font-mono">
-                  FALLBACK ACTIVE
+              <div className="bg-amber-950/10 border-b border-amber-500/20 px-5 py-2 text-[10px] font-bold text-amber-400/90 flex items-center justify-between gap-4 shrink-0">
+                {/* The provider's own words, not a guess: "offline" sent an
+                    operator to check the wifi when the real cause was a model
+                    name the API would not accept. */}
+                <span className="min-w-0 truncate normal-case">
+                  {resilienceStatus.detectorFallbackReason?.message
+                    ?? 'AI detection unavailable — local matching active.'}
+                </span>
+                <span className="shrink-0 text-[9px] uppercase tracking-wider text-slate-500 font-mono">
+                  LOCAL MATCHING
                 </span>
               </div>
             )}

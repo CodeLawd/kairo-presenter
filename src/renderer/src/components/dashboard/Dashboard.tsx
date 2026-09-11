@@ -636,11 +636,12 @@ export default function Dashboard(): React.ReactElement {
           sttApiKey: '',
           sttLanguage: all.stt.language || 'en',
           llmProvider: all.stt.llmProvider ?? 'anthropic',
+          scriptureModel: all.stt.llmModel?.trim() || undefined,
           llmApiKey: '',
           scriptureTranslation: all.scripture.defaultTranslation,
           autoMode: autoModeEnabled,
           confidenceThreshold: all.scripture.confidenceThreshold,
-          autoPresentDelaySec: 3,
+          autoPresentDelaySec: all.scripture.autoPresentDelaySec ?? 1,
         })
       } catch (err) {
         setAudioError(err instanceof Error ? err.message : 'Capture failed')
@@ -665,11 +666,12 @@ export default function Dashboard(): React.ReactElement {
           sttApiKey: '',
           sttLanguage: all.stt.language || 'en',
           llmProvider: all.stt.llmProvider ?? 'anthropic',
+          scriptureModel: all.stt.llmModel?.trim() || undefined,
           llmApiKey: '',
           scriptureTranslation: all.scripture.defaultTranslation,
           autoMode: autoModeEnabled,
           confidenceThreshold: all.scripture.confidenceThreshold,
-          autoPresentDelaySec: 3,
+          autoPresentDelaySec: all.scripture.autoPresentDelaySec ?? 1,
         })
       } catch (err) {
         console.error(err)

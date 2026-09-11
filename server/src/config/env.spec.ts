@@ -69,4 +69,19 @@ describe('loadConfig', () => {
     const config = loadConfig({ ...BASE, WEB_ORIGIN: 'https://app.test, https://admin.test ' })
     expect(config.webOrigins).toEqual(['https://app.test', 'https://admin.test'])
   })
+
+  it('defaults recap thinking to low rather than the providers own high', () => {
+    expect(loadConfig(BASE).sermons.reasoningEffort).toBe('low')
+  })
+
+  it('accepts a recap effort level in any casing', () => {
+    const config = loadConfig({ ...BASE, SERMON_REASONING_EFFORT: ' HIGH ' })
+    expect(config.sermons.reasoningEffort).toBe('high')
+  })
+
+  it('refuses an unknown recap effort instead of silently restoring the default', () => {
+    expect(() => loadConfig({ ...BASE, SERMON_REASONING_EFFORT: 'medium-ish' })).toThrow(
+      /SERMON_REASONING_EFFORT/,
+    )
+  })
 })

@@ -1,4 +1,6 @@
-import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator'
+import { Type } from 'class-transformer'
+import { IsOptional, IsString, MaxLength, MinLength, ValidateNested } from 'class-validator'
+import { DeviceInfoDto } from './auth.dto'
 
 export class DeviceStartDto {
   @IsString()
@@ -10,6 +12,11 @@ export class DeviceStartDto {
   @IsString()
   @MaxLength(120)
   deviceName?: string
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => DeviceInfoDto)
+  device?: DeviceInfoDto
 }
 
 export class DeviceTokenDto {

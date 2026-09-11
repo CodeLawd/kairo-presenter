@@ -47,3 +47,38 @@ export async function api<T>(
 
   return (await response.json().catch(() => null)) as T
 }
+
+/**
+ * A renewable access token. `useAccessToken` in `lib/session.ts` is the one
+ * implementation; the indirection exists so `authedApi` can re-mint without
+ * knowing where the token is held.
+ */
+export interface TokenSource {
+  get: () => Promise<string>
+  refresh: () => Promise<string>
+}
+
+/**
+ * An authenticated request that survives its own token expiring.
+ *
+ * Access tokens last ~15 minutes. `get()` renews before that, which covers a
+ * page left open; this also replays once on a 401, which covers the token
+ * expiring between `get()` and the server reading it. Without the replay, a
+ * long-lived dashboard shows "Unauthorized" and its retry button reuses the
+ * same dead token.
+ *
+ * The replay is deliberately single-shot: a second 401 means the refresh cookie
+ * itself is gone, and retrying that is a loop, not a recovery.
+ */
+export async function authedApi<T>(
+  path: string,
+  tokens: TokenSource,
+  options: { method?: string; body?: unknown } = {},
+): Promise<T> {
+  try {
+    return await api<T>(path, { ...options, accessToken: await tokens.get() })
+  } catch (failure) {
+    if (!(failure instanceof ApiError) || failure.status !== 401) throw failure
+    return api<T>(path, { ...options, accessToken: await tokens.refresh() })
+  }
+}

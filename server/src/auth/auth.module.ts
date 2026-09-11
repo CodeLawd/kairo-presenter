@@ -11,6 +11,7 @@ import { TokenService } from './token.service'
 import { JwtStrategy } from './strategies/jwt.strategy'
 import { GoogleStrategy } from './strategies/google.strategy'
 import { GoogleController } from './google.controller'
+import { OrgDevicesController } from './org-devices.controller'
 import { Session, SessionSchema } from './schemas/session.schema'
 import { EmailToken, EmailTokenSchema } from './schemas/email-token.schema'
 import {
@@ -37,7 +38,7 @@ import type { AppConfig } from '../config/env'
       useFactory: (config: AppConfig) => ({ secret: config.jwtSecret }),
     }),
   ],
-  controllers: [AuthController, DeviceController, GoogleController],
+  controllers: [AuthController, DeviceController, GoogleController, OrgDevicesController],
   providers: [
     AuthService,
     PasswordService,

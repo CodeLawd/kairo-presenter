@@ -1,19 +1,7 @@
 import { MailService } from './mail.service'
-import type { AppConfig } from '../config/env'
+import { testConfig } from '../config/test-config'
 
-const BASE: AppConfig = {
-  nodeEnv: 'test',
-  port: 3000,
-  mongoUrl: 'mongodb://localhost/test',
-  jwtSecret: 'x'.repeat(48),
-  accessTokenTtl: '15m',
-  refreshTokenTtlDays: 60,
-  webOrigins: ['http://localhost:3001'],
-  publicWebUrl: 'https://app.test',
-  google: null,
-  mail: null,
-  vaultEncryptionKey: 'y'.repeat(48),
-}
+const BASE = testConfig({ publicWebUrl: 'https://app.test' })
 
 describe('MailService', () => {
   const fetchMock = jest.fn()

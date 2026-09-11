@@ -13,6 +13,11 @@ export class UsersService {
     return withPassword ? query.select('+passwordHash').exec() : query.exec()
   }
 
+  async findByIds(ids: Types.ObjectId[]): Promise<UserDocument[]> {
+    if (ids.length === 0) return []
+    return this.users.find({ _id: { $in: ids } }).exec()
+  }
+
   async findById(id: Types.ObjectId | string): Promise<UserDocument | null> {
     return this.users.findById(id).exec()
   }

@@ -49,7 +49,7 @@ export class AuthController {
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ): Promise<AuthResult | Omit<AuthResult, 'refreshToken'>> {
-    const result = await this.auth.signUp(dto, contextOf(request, dto.deviceId))
+    const result = await this.auth.signUp(dto, contextOf(request, dto.deviceId, dto.deviceName, dto.device))
     return this.deliver(result, request, response)
   }
 
@@ -62,7 +62,7 @@ export class AuthController {
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ): Promise<AuthResult | Omit<AuthResult, 'refreshToken'>> {
-    const result = await this.auth.signIn(dto, contextOf(request, dto.deviceId))
+    const result = await this.auth.signIn(dto, contextOf(request, dto.deviceId, dto.deviceName, dto.device))
     return this.deliver(result, request, response)
   }
 
@@ -82,6 +82,8 @@ export class AuthController {
     const pair = await this.auth.refresh(token, {
       userAgent: request.headers['user-agent'],
       ip: request.ip,
+      deviceName: dto.deviceName ?? dto.device?.name,
+      device: dto.device,
     })
     if (isWeb(request)) {
       setRefreshCookie(response, pair.refreshToken, this.config)
@@ -205,11 +207,18 @@ function isWeb(request: Request): boolean {
   return request.headers['x-pa-client'] !== 'desktop'
 }
 
-function contextOf(request: Request, deviceId?: string): AuthContext {
+function contextOf(
+  request: Request,
+  deviceId?: string,
+  deviceName?: string,
+  device?: AuthContext['device'],
+): AuthContext {
   return {
     clientKind: isWeb(request) ? 'web' : 'desktop',
     // A browser has no stable install id, so one is minted per session.
     deviceId: deviceId?.trim() || randomUUID(),
+    deviceName: deviceName?.trim() || device?.name?.trim(),
+    device,
     userAgent: request.headers['user-agent'],
     ip: request.ip,
   }

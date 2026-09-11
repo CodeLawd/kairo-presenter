@@ -1,3 +1,4 @@
+import type { QuoteCandidate } from './quote-recovery'
 import path from 'path'
 import { app } from 'electron'
 import log from 'electron-log/main'
@@ -104,6 +105,15 @@ export class ScriptureService {
   dismissSuggestion(suggestionId: string): void {
     this.pendingSuggestions.delete(suggestionId)
     log.info('Scripture suggestion dismissed', { suggestionId })
+  }
+
+  /** Local-only candidate lookup for a damaged spoken citation. */
+  searchLocalQuoteCandidates(phrase: string): QuoteCandidate[] {
+    if (!this.db) return []
+    const query = phrase.replace(/\b(?:the|has|hath|been|of|you|me|us|and|is|he|it)\b/gi, ' ')
+    return this.db.searchText(query).map(verse => ({
+      book: verse.bookName, chapter: verse.chapter, verse: verse.verse, text: verse.text,
+    }))
   }
 
   // ─── Scripture lookup / search ────────────────────────────────────────────

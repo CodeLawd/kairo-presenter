@@ -164,6 +164,27 @@ test("with no live playlist the quote path is inert", () => {
   detector.destroy();
 });
 
+test('ordinary final speech reaches AI analysis immediately instead of waiting for the buffer timer', () => {
+  let finalListener!: (result: TranscriptResult) => void;
+  const source = {
+    onTranscript(listener: typeof finalListener) { finalListener = listener; },
+    offTranscript() {}, onInterim() {}, offInterim() {},
+  };
+  const detector = new ScriptureDetector({ apiKey: 'test-key' });
+  const analyzed: string[] = [];
+  detector.analyze = (text) => { analyzed.push(text); };
+  const cleanup = subscribeExplicitScriptureDetection(source, detector);
+
+  finalListener({
+    id: 'quote',
+    text: 'the Lord opened her heart to heed the things spoken by Paul',
+    words: [], timestamp: Date.now(), duration: 0, isFinal: true,
+  });
+
+  assert.deepEqual(analyzed, ['the Lord opened her heart to heed the things spoken by Paul']);
+  cleanup(); detector.destroy();
+});
+
 test("corrupted final citations reach contextual analysis without waiting for the buffer", () => {
   let finalListener!: (result: TranscriptResult) => void;
   let interimListener!: (result: InterimResult) => void;
@@ -196,3 +217,66 @@ test('a quote updates sermon progress even when its detection is deduplicated', 
   assert.deepEqual(progress, ['Romans 8:28']);
   detector.destroy();
 });
+
+test('corrupted citation recovery includes the quotation from following final segments', () => {
+  let finalListener!: (result: TranscriptResult) => void;
+  const source = {
+    onTranscript(listener: (result: TranscriptResult) => void) { finalListener = listener; },
+    offTranscript() {}, onInterim() {}, offInterim() {},
+  };
+  const detector = new ScriptureDetector({ apiKey: '' });
+  const requests: string[] = [];
+  Object.assign(detector, { analyze: (text: string) => requests.push(text) });
+  const unsubscribe = subscribeExplicitScriptureDetection(source, detector);
+  for (const text of ['Psalm 1one512-thirteen says, The Lord', 'has been mindful of you. Put your name there.']) {
+    finalListener({ id: text, text, words: [], timestamp: Date.now(), duration: 0, isFinal: true });
+  }
+  assert.match(requests.at(-1)!, /Psalm 1one512-thirteen says, The Lord has been mindful of you/);
+  unsubscribe();
+  detector.destroy();
+});
+
+test('local quote recovery emits the damaged Psalm range before AI analysis', () => {
+  let finalListener!: (result: TranscriptResult) => void;
+  const source = {
+    onTranscript(listener: (result: TranscriptResult) => void) { finalListener = listener; },
+    offTranscript() {}, onInterim() {}, offInterim() {},
+  };
+  const detector = new ScriptureDetector({ apiKey: '' });
+  detector.setQuoteSearchProvider(() => [{ book: 'Psalms', chapter: 115, verse: 12, text: 'The LORD hath been mindful of us: he will bless us.' }]);
+  const found: ScriptureReference[] = [];
+  detector.on('detection', refs => found.push(...refs));
+  const cleanup = subscribeExplicitScriptureDetection(source, detector);
+  for (const text of ['Psalm 1one512-thirteen says, The Lord', 'has been mindful of you. Put your name there.']) {
+    finalListener({ id: text, text, words: [], timestamp: Date.now(), duration: 0, isFinal: true });
+  }
+  assert.deepEqual(found.map(r => [r.book, r.chapter, r.verseStart, r.verseEnd]), [['Psalms', 115, 12, 13]]);
+  cleanup(); detector.destroy();
+});
+
+for (const citation of [
+  'Psalm 66, we will read from verse eight to nine, that will be our first prayer point.',
+  'Psalm 66, eight to nine.',
+]) {
+  for (const interim of [false, true]) {
+    test(`Psalm 66 screenshot reaches detection synchronously (${interim ? 'interim' : 'final'}): ${citation}`, () => {
+      let finalListener!: (result: TranscriptResult) => void;
+      let interimListener!: (result: InterimResult) => void;
+      const source = {
+        onTranscript(listener: typeof finalListener) { finalListener = listener; }, offTranscript() {},
+        onInterim(listener: typeof interimListener) { interimListener = listener; }, offInterim() {},
+      };
+      const detector = new ScriptureDetector({ apiKey: '' });
+      const found: ScriptureReference[] = [];
+      detector.on('detection', refs => found.push(...refs));
+      const cleanup = subscribeExplicitScriptureDetection(source, detector);
+      try {
+        finalListener({ text: 'From the passage read by Mrs B in Psalm 66,', id: 'chapter', words: [], timestamp: Date.now(), duration: 0, isFinal: true });
+        finalListener({ text: 'I want us to pray three powerful prayers.', id: 'filler', words: [], timestamp: Date.now(), duration: 0, isFinal: true });
+        if (interim) interimListener({ text: citation, timestamp: Date.now(), stability: 0.9 });
+        else finalListener({ text: citation, id: 'citation', words: [], timestamp: Date.now(), duration: 0, isFinal: true });
+        assert.deepEqual(found.map(r => [r.book, r.chapter, r.verseStart, r.verseEnd]), [['Psalms', 66, 8, 9]]);
+      } finally { cleanup(); detector.destroy(); }
+    });
+  }
+}

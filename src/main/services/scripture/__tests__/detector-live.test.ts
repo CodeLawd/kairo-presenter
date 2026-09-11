@@ -275,3 +275,141 @@ test("destroying a detector suppresses a late model error", async () => {
   reject(new Error("late network failure"));
   await assert.doesNotReject(request);
 });
+
+test('retries an empty model response in the same detection cycle', async () => {
+  const detector = new ScriptureDetector({ apiKey: 'test', minIntervalMs: 0 });
+  const emitted: ScriptureReference[] = [];
+  detector.on('detection', refs => emitted.push(...refs));
+  let calls = 0;
+  Object.assign(detector, {
+    callModel: async () => {
+      calls++;
+      return calls === 1
+        ? ''
+        : JSON.stringify([{ book: 'Acts', chapter: 16, verseStart: 14, confidence: 0.96, detectionType: 'quote', sourceText: 'the Lord opened her heart' }]);
+    },
+  });
+
+  await (detector as unknown as { runDetection(text: string): Promise<void> }).runDetection('the Lord opened her heart');
+
+  assert.equal(calls, 2);
+  assert.deepEqual(emitted.map(ref => [ref.book, ref.chapter, ref.verseStart]), [['Acts', 16, 14]]);
+  detector.destroy();
+});
+
+test('the default detector throttle permits a fresh final after 1.5 seconds', () => {
+  const detector = new ScriptureDetector({ apiKey: 'test' });
+  let calls = 0;
+  Object.assign(detector, {
+    lastCallTime: Date.now() - 1_500,
+    runDetection: async () => { calls++; },
+  });
+
+  detector.analyze('the Lord opened her heart');
+
+  assert.equal(calls, 1);
+  detector.destroy();
+});
+
+for (const [speech, book, chapter, verse] of [
+  ['Hebrews 13, look at verse number five there', 'Hebrews', 13, 5],
+  ['the book of Joshua chapter number 1 and we begin to read from verse 9', 'Joshua', 1, 9],
+  ['Hebrews chapter number thirteen and verse five', 'Hebrews', 13, 5],
+] as const) {
+  test(`detects natural citation: ${speech}`, () => {
+    const detector = new ScriptureDetector({ apiKey: '' });
+    const refs: ScriptureReference[] = [];
+    detector.on('detection', batch => refs.push(...batch));
+    detector.analyzeExplicit(speech, true, true);
+    assert.deepEqual(refs.map(r => [r.book, r.chapter, r.verseStart]), [[book, chapter, verse]]);
+    detector.destroy();
+  });
+}
+
+test('Acts of the Apostle replaces Exodus context without inventing a verse', () => {
+  const detector = new ScriptureDetector({ apiKey: '' });
+  const refs: ScriptureReference[] = [];
+  detector.on('detection', batch => refs.push(...batch));
+  detector.analyzeExplicit('Exodus 6:9', true);
+  detector.analyzeExplicit('Acts of the Apostle chapter 16,', true);
+  detector.analyzeExplicit('Lydia the seller of purple', true);
+  detector.analyzeExplicit('verse number fourteen', true, true);
+  assert.deepEqual(refs.map(r => [r.book, r.chapter, r.verseStart]), [['Exodus', 6, 9], ['Acts', 16, 14]]);
+  detector.destroy();
+});
+
+test('ordinary numbers cannot become verses of the preceding citation', () => {
+  const detector = new ScriptureDetector({ apiKey: '' });
+  const refs: ScriptureReference[] = [];
+  detector.on('detection', batch => refs.push(...batch));
+  detector.analyzeExplicit('Exodus 6:9', true);
+  detector.analyzeExplicit('we have 16 people here', true);
+  assert.equal(refs.length, 1);
+  detector.destroy();
+});
+
+test('rejects nonexistent explicit references and malformed ranges', () => {
+  for (const text of ['2 cor 7:100', 'Hebrews 14:5', 'John 3:0', 'John 3:16-100', 'John 3:18-16']) {
+    assert.deepEqual(matchExplicitScriptures(text), [], text);
+  }
+  assert.equal(matchExplicitScriptures('Psalm 119:176').length, 1);
+});
+
+test('rejects nonexistent model references before emitting detections', async () => {
+  const detector = new ScriptureDetector({ apiKey: 'test' });
+  const refs: ScriptureReference[] = [];
+  detector.on('detection', batch => refs.push(...batch));
+  Object.assign(detector, { callModel: async () => JSON.stringify([
+    { book: '2 Corinthians', chapter: 7, verseStart: 100, confidence: 0.99, detectionType: 'explicit', sourceText: '2 cor 7:100' },
+  ]) });
+  await (detector as unknown as { runDetection(text: string): Promise<void> }).runDetection('2 cor 7:100');
+  assert.deepEqual(refs, []);
+  detector.destroy();
+});
+
+test('joins the Hebrews screenshot fragments immediately on the verse cue', () => {
+  const detector = new ScriptureDetector({ apiKey: '' });
+  const refs: ScriptureReference[] = [];
+  detector.on('detection', batch => refs.push(...batch));
+  for (const text of ['Give me Hebrews chapter number thirteen', "and let’s read the Word of God", 'Hebrews 13, look at verse number five there']) {
+    detector.analyzeExplicit(text, true, true);
+  }
+  assert.deepEqual(refs.map(r => [r.book, r.chapter, r.verseStart]), [['Hebrews', 13, 5]]);
+  detector.destroy();
+});
+
+test('an invalid new chapter cannot reuse the previous book context', () => {
+  const detector = new ScriptureDetector({ apiKey: '' });
+  const refs: ScriptureReference[] = [];
+  detector.on('detection', batch => refs.push(...batch));
+  detector.analyzeExplicit('Exodus chapter six', true);
+  detector.analyzeExplicit('Hebrews chapter fourteen verse five', true);
+  assert.deepEqual(refs, []);
+  detector.destroy();
+});
+
+test('rejects reversed contextual ranges instead of silently selecting their start', () => {
+  const detector = new ScriptureDetector({ apiKey: '' });
+  const refs: ScriptureReference[] = [];
+  detector.on('detection', batch => refs.push(...batch));
+  detector.analyzeExplicit('John chapter three', true);
+  detector.analyzeExplicit('verse eighteen to sixteen', true);
+  assert.deepEqual(refs, []);
+  detector.destroy();
+});
+
+for (const [segments, book, chapter, start, end] of [
+  [['Isaiah 62 verses eleven and', 'twelve.'], 'Isaiah', 62, 11, 12],
+  [['Isaiah sixty two', 'eleven and twelve. It reads, and I quote,'], 'Isaiah', 62, 11, 12],
+  [['Mark chapter one', 'verse 32 to 39.'], 'Mark', 1, 32, 39],
+  [['Mark one', 'thirty two', 'to 39.'], 'Mark', 1, 32, 39],
+] as const) {
+  test(`completes screenshot range: ${segments.join(' / ')}`, () => {
+    const detector = new ScriptureDetector({ apiKey: '' });
+    const refs: ScriptureReference[] = [];
+    detector.on('detection', batch => refs.push(...batch));
+    for (const segment of segments) detector.analyzeExplicit(segment, true);
+    assert.deepEqual(refs.slice(-1).map(r => [r.book, r.chapter, r.verseStart, r.verseEnd]), [[book, chapter, start, end]]);
+    detector.destroy();
+  });
+}

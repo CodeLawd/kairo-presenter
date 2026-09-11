@@ -26,10 +26,13 @@ import { APP_CONFIG } from '../config/config.module'
 import type { AppConfig } from '../config/env'
 import type { UserDocument } from '../users/schemas/user.schema'
 import type { OrgRole } from '../orgs/schemas/membership.schema'
+import type { DeviceSnapshot } from './device-info'
 
 export interface AuthContext {
   clientKind: 'web' | 'desktop'
   deviceId: string
+  deviceName?: string
+  device?: DeviceSnapshot
   userAgent?: string
   ip?: string
 }
@@ -88,6 +91,8 @@ export class AuthService {
       orgId: org._id,
       role: 'owner',
       deviceId: context.deviceId,
+      deviceName: context.deviceName ?? context.device?.name,
+      device: context.device,
       clientKind: context.clientKind,
       emailVerified: false,
       userAgent: context.userAgent,
@@ -151,6 +156,8 @@ export class AuthService {
       orgId: org._id,
       role: 'owner',
       deviceId: context.deviceId,
+      deviceName: context.deviceName ?? context.device?.name,
+      device: context.device,
       clientKind: context.clientKind,
       // Google has already proven the address — there is nothing left to confirm.
       emailVerified: true,
@@ -163,7 +170,7 @@ export class AuthService {
   /** The role is re-read on every rotation, so a demotion takes effect in 15 minutes. */
   async refresh(
     refreshToken: string,
-    context: { userAgent?: string; ip?: string },
+    context: { userAgent?: string; ip?: string; deviceName?: string; device?: DeviceSnapshot },
   ): Promise<TokenPair> {
     const preview = await this.tokens.peek(refreshToken)
     if (!preview) throw new UnauthorizedException('Refresh token is not valid')
@@ -205,6 +212,8 @@ export class AuthService {
     userId: Types.ObjectId
     orgId: Types.ObjectId
     deviceId: string
+    deviceName?: string
+    device?: DeviceSnapshot
   }): Promise<AuthResult> {
     const membership = await this.orgs.membershipOf(grant.userId, grant.orgId)
     if (!membership) throw new UnauthorizedException('No longer a member of that organization')
@@ -218,6 +227,8 @@ export class AuthService {
       orgId: org._id,
       role: membership.role,
       deviceId: grant.deviceId,
+      deviceName: grant.deviceName ?? grant.device?.name,
+      device: grant.device,
       clientKind: 'desktop',
       emailVerified: user.emailVerifiedAt !== null,
     })
@@ -339,6 +350,8 @@ export class AuthService {
       orgId: org._id,
       role: membership.role,
       deviceId: context.deviceId,
+      deviceName: context.deviceName ?? context.device?.name,
+      device: context.device,
       clientKind: context.clientKind,
       emailVerified: user.emailVerifiedAt !== null,
       userAgent: context.userAgent,

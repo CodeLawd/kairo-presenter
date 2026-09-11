@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { Barlow, JetBrains_Mono, Manrope, Geist } from 'next/font/google'
+import { Barlow, Inter, JetBrains_Mono, Manrope, Geist } from 'next/font/google'
 import './globals.css'
 import { cn } from "@/lib/utils";
 
@@ -26,6 +26,15 @@ const jetbrainsMono = JetBrains_Mono({
   display: 'swap',
 })
 
+// The sermon recap document (preview + PDF) is set in Inter. Loaded here so
+// the pdfcn web preview resolves the same face the PDF renderer embeds.
+const inter = Inter({
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700'],
+  variable: '--font-inter',
+  display: 'swap',
+})
+
 const title = 'Kairo — Your pastor says the verse. It’s already on screen.'
 const description =
   'Kairo listens to your service, finds the passage, and hands it to you ready to send — including verses that are quoted without a reference. Approve the match, send it to ProPresenter or NDI. A desktop app for church tech teams.'
@@ -47,7 +56,7 @@ export default function RootLayout({
     <html
       lang="en"
       data-scroll-behavior="smooth"
-      className={cn(barlow.variable, manrope.variable, jetbrainsMono.variable, "font-sans", geist.variable)}
+      className={cn(barlow.variable, manrope.variable, jetbrainsMono.variable, inter.variable, "font-sans", geist.variable)}
     >
       <head>
         <meta name="theme-color" content="#000000" />

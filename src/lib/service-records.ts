@@ -7,6 +7,28 @@ export interface ServiceNugget {
   sourceIds: string[]
   origin: 'automatic' | 'manual'
 }
+/**
+ * Where an ended service is on its way to the web.
+ *
+ * `failed` is a display state, not a terminal one: the booth may be offline
+ * from Sunday to Tuesday, and the local record stays the source of truth the
+ * whole time. Only a refusal from the server (a 4xx) actually stops the retry.
+ */
+export interface ServiceUploadState {
+  status: 'idle' | 'queued' | 'uploading' | 'uploaded' | 'failed'
+  sermonId: string | null
+  attempts: number
+  lastAttemptAt: number | null
+  error: string | null
+  /** False once the server has refused in a way that retrying cannot fix. */
+  retryable: boolean
+}
+
+/** A fresh factory, not a shared constant — callers must not alias one object. */
+export function idleUpload(): ServiceUploadState {
+  return { status: 'idle', sermonId: null, attempts: 0, lastAttemptAt: null, error: null, retryable: true }
+}
+
 export interface ServiceRecord {
   id: string
   title: string
@@ -21,6 +43,12 @@ export interface ServiceRecord {
   nuggets: ServiceNugget[]
   analysisError: string | null
   analyzedSourceIds?: string[]
+  /**
+   * Always present in memory. Records written before recaps existed have no
+   * `upload` on disk; `ServiceRecords` fills it in as they are read, so no
+   * consumer has to test for it.
+   */
+  upload: ServiceUploadState
 }
 export interface ServiceSnapshot { activeId: string | null; services: ServiceRecord[] }
 export const SERVICE_CHANNEL = 'services:command'
@@ -32,6 +60,7 @@ export type ServiceCommand =
   | { action: 'analyze'; serviceId: string }
   | { action: 'nugget'; text: string; sourceIds: string[] }
   | { action: 'removeNugget'; serviceId: string; nuggetId: string }
+  | { action: 'upload'; serviceId: string }
 export interface ServicesAPI {
   command: (command: ServiceCommand) => Promise<ServiceSnapshot>
   onChanged: (callback: (snapshot: ServiceSnapshot) => void) => () => void

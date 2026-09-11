@@ -4,6 +4,8 @@ import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { XIcon } from 'lucide-react'
 import { KairoMark } from '@/components/brand/KairoMark'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
 
 const DISMISS_KEY = 'kairo_desktop_prompt_dismissed'
 
@@ -31,30 +33,25 @@ export function DesktopAppPrompt(): React.ReactElement | null {
   }
 
   return (
-    <div className="fixed bottom-5 right-5 z-40 w-[min(100vw-2rem,20rem)] rounded-xl border border-white/[0.08] bg-panel p-3.5 shadow-[0_20px_50px_-24px_rgba(0,0,0,0.9)]">
-      <div className="flex items-start gap-3">
+    <Card className="fixed bottom-5 right-5 z-40 w-[min(100vw-2rem,20rem)] shadow-lg" size="sm">
+      <CardContent className="flex items-start gap-3">
         <KairoMark size={28} />
         <div className="min-w-0 flex-1">
-          <p className="text-[13px] font-medium text-paper">Download the Desktop App</p>
-          <p className="mt-0.5 text-[12px] leading-relaxed text-mute">
+          <p className="text-sm font-medium">Download the Desktop App</p>
+          <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
             Detect and display verses live in ProPresenter.
           </p>
           <Link
             href="/dashboard/download"
-            className="mt-2 inline-block text-[12px] font-medium text-accent hover:underline"
+            className="mt-2 inline-block text-xs font-medium text-primary underline-offset-4 hover:underline"
           >
             Get Kairo →
           </Link>
         </div>
-        <button
-          type="button"
-          onClick={dismiss}
-          className="rounded-md p-1 text-faint transition-colors hover:bg-white/[0.05] hover:text-paper"
-          aria-label="Dismiss"
-        >
-          <XIcon className="size-3.5" />
-        </button>
-      </div>
-    </div>
+        <Button type="button" variant="ghost" size="icon-xs" onClick={dismiss} aria-label="Dismiss">
+          <XIcon />
+        </Button>
+      </CardContent>
+    </Card>
   )
 }

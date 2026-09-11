@@ -62,6 +62,64 @@ describe('Device pairing (e2e)', () => {
     expect(paired.body.refreshToken).toEqual(expect.any(String))
     // Paired into the approver's own org, at their role — never wider.
     expect(paired.body.org).toMatchObject({ id: owner.orgId, role: 'owner' })
+
+    const listed = await request(app.getHttpServer())
+      .get(`/v1/orgs/${owner.orgId}/devices`)
+      .set('Authorization', `Bearer ${owner.token}`)
+      .expect(200)
+    expect(listed.body).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'living-room-mac',
+          name: 'Booth PC',
+          signedInAs: 'Pastor',
+        }),
+      ]),
+    )
+  })
+
+  it('keeps the booth machine snapshot on the devices list', async () => {
+    const { body: started } = await request(app.getHttpServer())
+      .post('/v1/auth/device/start')
+      .send({
+        deviceId: 'foh-mac',
+        deviceName: 'FOH Mac',
+        device: {
+          name: 'FOH Mac',
+          hostname: 'foh.local',
+          os: 'darwin',
+          osVersion: '15.6.1',
+          arch: 'arm64',
+          appVersion: '0.1.0',
+          electronVersion: '35.1.2',
+        },
+      })
+      .expect(201)
+    await approve(started.userCode).expect(200)
+    await poll(started.deviceCode).expect(200)
+
+    const listed = await request(app.getHttpServer())
+      .get(`/v1/orgs/${owner.orgId}/devices`)
+      .set('Authorization', `Bearer ${owner.token}`)
+      .expect(200)
+    expect(listed.body).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'foh-mac',
+          name: 'foh',
+          hostname: 'foh.local',
+          os: 'macOS',
+          osVersion: '15.6.1',
+          arch: 'arm64',
+          appVersion: '0.1.0',
+          electronVersion: '35.1.2',
+          signedInAs: 'Pastor',
+          lastLoginAt: expect.any(String),
+          lastSeenAt: expect.any(String),
+          online: expect.any(Boolean),
+        }),
+      ]),
+    )
   })
 
   it('a device code is good for exactly one exchange', async () => {

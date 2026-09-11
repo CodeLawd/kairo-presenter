@@ -17,6 +17,7 @@ class ResilienceManager extends EventEmitter {
   private ppReconnectCountdown: number | null = null
   private ppCountdownTimer: NodeJS.Timeout | null = null
   private claudeFallbackActive = false
+  private detectorFallbackReason: ResilienceStatus['detectorFallbackReason'] = null
   private claudeErrorCount = 0
   private claudeProbeActive = false
   private recoverySessionAvailable = false
@@ -158,7 +159,10 @@ class ResilienceManager extends EventEmitter {
       // Auto-toggle Claude fallback state depending on overall connectivity
       if (!this.internetConnected) {
         log.warn('[Resilience] Went offline. Switching Claude detector to local regex fallback.')
-        this.setClaudeFallback(true)
+        this.setClaudeFallback(true, {
+          kind: 'offline',
+          message: 'No internet — scripture detection is using local matching.',
+        })
       } else {
         log.info('[Resilience] Internet restored. Normalizing detector API check.')
         this.setClaudeFallback(false)
@@ -264,7 +268,12 @@ class ResilienceManager extends EventEmitter {
     
     if (!previousFallback && this.claudeFallbackActive) {
       log.warn('[Resilience] Claude API failed twice consecutively. Activating local regex fallback.')
-      this.setClaudeFallback(true)
+      this.setClaudeFallback(true, {
+        // The operator needs the provider's own words here: "offline" would send
+        // them to check the wifi when the real answer is a key or a model name.
+        kind: 'provider',
+        message: `AI detection refused the request: ${err.message}`,
+      })
       
       // Schedule Claude API test retry in 30 seconds
       setTimeout(() => {
@@ -298,8 +307,9 @@ class ResilienceManager extends EventEmitter {
     this.emitStatus()
   }
 
-  private setClaudeFallback(active: boolean): void {
+  private setClaudeFallback(active: boolean, reason?: ResilienceStatus['detectorFallbackReason']): void {
     this.claudeFallbackActive = active
+    this.detectorFallbackReason = active ? (reason ?? this.detectorFallbackReason) : null
     if (this.orch?.detector) {
       this.orch.detector.fallbackMode = active
     }
@@ -307,7 +317,7 @@ class ResilienceManager extends EventEmitter {
     this.updateServiceHealth(
       'detector',
       active ? 'degraded' : 'ok',
-      active ? 'Claude API offline — Local regex fallback active' : undefined
+      active ? (this.detectorFallbackReason?.message ?? 'AI detection unavailable') : undefined,
     )
     this.emitStatus()
   }
@@ -437,6 +447,7 @@ class ResilienceManager extends EventEmitter {
       ppReconnectCountdown: this.ppReconnectCountdown,
       ppQueueSize: this.ppQueuedProjections.length,
       claudeFallbackActive: this.claudeFallbackActive,
+      detectorFallbackReason: this.claudeFallbackActive ? this.detectorFallbackReason : null,
       recoverySessionAvailable: this.recoverySessionAvailable,
       health: Array.from(this.healthMap.values()),
     }
