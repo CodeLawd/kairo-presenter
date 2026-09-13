@@ -3,12 +3,17 @@
   "productName": "Kairo",
   "version": "1.0.0",
   "description": "Kairo — scripture, lyrics, and presentation for ProPresenter",
+  "author": {
+    "name": "Alexander Joshua",
+    "email": "alexander.joshua2018@gmail.com"
+  },
+  "desktopName": "Kairo.desktop",
   "main": "./out/main/index.js",
   "private": true,
   "scripts": {
     "predev": "node scripts/brand-dev-electron.mjs",
     "dev": "electron-vite dev --watch",
-    "dev:update-sim": "KAIRO_UPDATE_SIM=1 electron-vite dev --watch",
+    "dev:update-sim": "cross-env KAIRO_UPDATE_SIM=1 electron-vite dev --watch",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "brand:electron": "node scripts/brand-dev-electron.mjs",
@@ -17,11 +22,13 @@
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
     "test": "tsx --test tests/*.test.ts",
-    "test:scripture-replay": "ELECTRON_RUN_AS_NODE=1 electron --import tsx --test src/main/services/scripture/__tests__/transcript-replay.test.ts src/main/services/scripture/__tests__/quote-recovery.test.ts src/main/services/scripture/__tests__/live-detection-wiring.test.ts",
+    "test:scripture-replay": "cross-env ELECTRON_RUN_AS_NODE=1 electron --import tsx --test src/main/services/scripture/__tests__/transcript-replay.test.ts src/main/services/scripture/__tests__/quote-recovery.test.ts src/main/services/scripture/__tests__/live-detection-wiring.test.ts",
     "test:documents": "npm run build && electron tests/documents.integration.cjs",
-    "test:main": "ELECTRON_RUN_AS_NODE=1 electron ./node_modules/tsx/dist/cli.mjs --test src/main/__tests__/*.test.ts src/main/services/scripture/__tests__/*.test.ts src/main/services/propresenter/__tests__/*.test.ts src/main/services/cloud/__tests__/*.test.ts src/main/services/ndi/__tests__/*.test.ts src/main/services/documents/__tests__/*.test.ts",
+    "test:main": "node scripts/test-main.mjs",
+    "rebuild:native": "electron-rebuild -f -w better-sqlite3",
     "seed:bible": "npx tsx scripts/seed-bible.ts",
     "seed:bible:all": "npx tsx scripts/seed-bible.ts --translations KJV,BBE",
+    "build:bible-pack": "cross-env ELECTRON_RUN_AS_NODE=1 electron ./node_modules/tsx/dist/cli.mjs scripts/build-bible-pack.ts",
     "build:mac": "npm run typecheck && electron-vite build && electron-builder --mac --arm64",
     "build:mac:arm64": "npm run typecheck && electron-vite build && electron-builder --mac --arm64",
     "build:mac:x64": "npm run typecheck && electron-vite build && electron-builder --mac --x64",
@@ -53,7 +60,6 @@
     "electron-store": "^8.2.0",
     "electron-updater": "^6.8.9",
     "grandi": "2.0.2",
-    "grandiose-mac": "^0.0.6",
     "input-otp": "^1.5.0",
     "mammoth": "^1.12.1",
     "openai": "^6.38.0",
@@ -61,6 +67,9 @@
     "radix-ui": "^1.6.7",
     "react-resizable-panels": "^4.12.3",
     "zustand": "^4.5.5"
+  },
+  "optionalDependencies": {
+    "grandiose-mac": "^0.0.6"
   },
   "devDependencies": {
     "@electron/asar": "3.4.1",
@@ -76,6 +85,7 @@
     "@typescript-eslint/parser": "^7.18.0",
     "@vitejs/plugin-react": "^4.3.3",
     "autoprefixer": "^10.4.20",
+    "cross-env": "^10.1.0",
     "electron": "^33.2.0",
     "electron-builder": "^26.15.3",
     "electron-vite": "^2.3.0",
@@ -159,18 +169,10 @@
       "icon": "build/icon.icns",
       "target": [
         {
-          "target": "dmg",
-          "arch": [
-            "arm64",
-            "x64"
-          ]
+          "target": "dmg"
         },
         {
-          "target": "zip",
-          "arch": [
-            "arm64",
-            "x64"
-          ]
+          "target": "zip"
         }
       ],
       "darkModeSupport": true,
@@ -214,8 +216,10 @@
         "!.env.example",
         "!.claude/**/*",
         "!.vite/**/*",
-        "!**/node_modules/grandiose-mac/lib/win_*(**/*)",
-        "!**/node_modules/grandiose-mac/lib/linux_*(**/*)",
+        "!**/node_modules/grandiose-mac/lib/win_x64/**/*",
+        "!**/node_modules/grandiose-mac/lib/win_x86/**/*",
+        "!**/node_modules/grandiose-mac/lib/linux_x64/**/*",
+        "!**/node_modules/grandiose-mac/lib/linux_arm64/**/*",
         "!**/*.dll",
         "!**/*.so*"
       ],
@@ -296,9 +300,10 @@
         "!.env.example",
         "!.claude/**/*",
         "!.vite/**/*",
-        "!**/node_modules/grandiose-mac/lib/mac_universal(**/*)",
-        "!**/node_modules/grandiose-mac/lib/linux_*(**/*)",
-        "!**/node_modules/grandiose-mac/lib/win_x86(**/*)",
+        "!**/node_modules/grandiose-mac/lib/mac_universal/**/*",
+        "!**/node_modules/grandiose-mac/lib/linux_x64/**/*",
+        "!**/node_modules/grandiose-mac/lib/linux_arm64/**/*",
+        "!**/node_modules/grandiose-mac/lib/win_x86/**/*",
         "!**/*.dylib",
         "!**/*.so*"
       ]
@@ -313,6 +318,7 @@
       "icon": "build/icons",
       "category": "AudioVideo",
       "description": "Kairo — scripture, lyrics, and presentation for ProPresenter",
+      "syncDesktopName": true,
       "target": [
         {
           "target": "AppImage",
@@ -362,9 +368,10 @@
         "!.env.example",
         "!.claude/**/*",
         "!.vite/**/*",
-        "!**/node_modules/grandiose-mac/lib/mac_universal(**/*)",
-        "!**/node_modules/grandiose-mac/lib/win_*(**/*)",
-        "!**/node_modules/grandiose-mac/lib/linux_arm64(**/*)",
+        "!**/node_modules/grandiose-mac/lib/mac_universal/**/*",
+        "!**/node_modules/grandiose-mac/lib/win_x64/**/*",
+        "!**/node_modules/grandiose-mac/lib/win_x86/**/*",
+        "!**/node_modules/grandiose-mac/lib/linux_arm64/**/*",
         "!**/*.dylib",
         "!**/*.dll"
       ]

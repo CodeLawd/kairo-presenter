@@ -102,3 +102,10 @@ docs/decisions/*
 
 # electron-builder output
 release/
+
+# Local Bible packs (optional user-installed translations, e.g. NKJV).
+# The source JSON and generated packs are never committed: licensing for
+# redistribution is unresolved, and packs must not ship in the installer.
+bible-packs/
+*-pack.db
+*.pack.db

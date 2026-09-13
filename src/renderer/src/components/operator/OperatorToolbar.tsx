@@ -94,7 +94,7 @@ export default function OperatorToolbar(): React.ReactElement {
   const hasPlans = plans.length > 0
 
   return (
-    <div className="operator-toolbar no-drag flex h-7 min-w-0 items-center gap-2">
+    <div className="operator-toolbar flex h-7 min-w-0 items-center gap-2">
       <span
         className={[
           'shrink-0 font-mono text-[11px] tabular-nums',

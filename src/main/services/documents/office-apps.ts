@@ -1,6 +1,6 @@
 import { promises as fs } from 'fs'
 import { homedir } from 'os'
-import { join, isAbsolute } from 'path'
+import { posix } from 'path'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 
@@ -56,7 +56,7 @@ export function isLibreOfficeAppName(name: string): boolean {
 }
 
 function darwinApplicationRoots(home: string): string[] {
-  return ['/Applications', join(home, 'Applications'), '/System/Applications']
+  return ['/Applications', posix.join(home, 'Applications'), '/System/Applications']
 }
 
 /**
@@ -78,7 +78,7 @@ export async function findAppByName(
       continue // inaccessible root — try the next one
     }
     const found = names.find(match)
-    if (found) return join(root, found)
+    if (found) return posix.join(root, found)
   }
   return null
 }
@@ -103,11 +103,11 @@ export async function findAppByBundleId(
 
 function linuxDesktopDirs(home: string, env: NodeJS.ProcessEnv): string[] {
   const dirs: string[] = []
-  const dataHome = env.XDG_DATA_HOME ?? join(home, '.local', 'share')
-  dirs.push(join(dataHome, 'applications'))
+  const dataHome = env.XDG_DATA_HOME ?? posix.join(home, '.local', 'share')
+  dirs.push(posix.join(dataHome, 'applications'))
   const dataDirs = (env.XDG_DATA_DIRS ?? '/usr/local/share:/usr/share').split(':')
   for (const dir of dataDirs) {
-    if (dir) dirs.push(join(dir, 'applications'))
+    if (dir) dirs.push(posix.join(dir, 'applications'))
   }
   // Non-PATH installs (manual /opt unpacks) that still register a launcher.
   dirs.push('/opt/libreoffice/program')
@@ -149,7 +149,7 @@ export async function findLibreOfficeDesktopBinary(overrides?: OfficeProbes): Pr
       continue // missing/inaccessible dir — try the next one
     }
     for (const name of names.filter((n) => n.endsWith('.desktop'))) {
-      const full = join(dir, name)
+      const full = posix.join(dir, name)
       let content: string
       try {
         content = await probes.readFile(full)
@@ -161,7 +161,7 @@ export async function findLibreOfficeDesktopBinary(overrides?: OfficeProbes): Pr
       if (!execLine) continue // malformed entry: matches but has no Exec=
       const binary = parseDesktopExec(execLine)
       if (!binary) continue
-      if (isAbsolute(binary)) {
+      if (posix.isAbsolute(binary)) {
         try {
           await probes.access(binary)
           return binary

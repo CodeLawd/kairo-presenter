@@ -14,14 +14,24 @@ jobs:
   build:
     name: ${{ matrix.label }}
     runs-on: ${{ matrix.runner }}
+    # Production endpoints, inlined at build time (electron-vite reads
+    # process.env when no .env file exists — and .env* files are gitignored,
+    # so CI would otherwise bake in localhost fallbacks). Values live in the
+    # repo's Actions variables (Settings → Variables): PROD_API_URL/WEB_URL.
+    env:
+      MAIN_VITE_API_URL: ${{ vars.PROD_API_URL }}
+      MAIN_VITE_WEB_URL: ${{ vars.PROD_WEB_URL }}
     strategy:
-      fail-fast: true
+      # Let every native target finish so one failure does not hide results
+      # or prevent successful installers from being uploaded.
+      fail-fast: false
       matrix:
         include:
           - id: mac-arm64
             label: macOS arm64
             runner: macos-14
             package: package:ci:mac-arm64
+            verify_target: release/mac-arm64/Kairo.app
             verify_platform: darwin
             verify_arch: arm64
             artifacts: |
@@ -31,6 +41,7 @@ jobs:
             label: macOS x64
             runner: macos-15-intel # last Intel image; retires ~Aug 2027
             package: package:ci:mac-x64
+            verify_target: release/mac/Kairo.app
             verify_platform: darwin
             verify_arch: x64
             artifacts: |
@@ -58,10 +69,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Node.js 22
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22"
           cache: npm
@@ -69,8 +80,20 @@ jobs:
       - name: Clean install (never reuse node_modules across OSes)
         run: npm ci
 
+      - name: Rebuild native modules for Electron
+        run: npm run rebuild:native
+
       - name: Quality gates
         run: npm run typecheck && npm test && npm run test:main
+
+      - name: Check production endpoint configuration
+        # Empty vars would inline to "" and the app would fall back to
+        # localhost at runtime. Stop here instead of shipping that.
+        shell: bash
+        run: |
+          test -n "$MAIN_VITE_API_URL" || (echo "::error::MAIN_VITE_API_URL is empty — set the PROD_API_URL repo variable (Settings → Variables)" && exit 1)
+          test -n "$MAIN_VITE_WEB_URL" || (echo "::error::MAIN_VITE_WEB_URL is empty — set the PROD_WEB_URL repo variable (Settings → Variables)" && exit 1)
+          echo "endpoints: $MAIN_VITE_API_URL / $MAIN_VITE_WEB_URL"
 
       - name: Compile
         run: npm run build
@@ -83,6 +106,7 @@ jobs:
       - name: Package unpacked dir for verification
         # The verifier inspects an unpacked app; installer outputs (dmg/exe/
         # AppImage) are not unpacked. Same tree, same asar content.
+        shell: bash
         run: npx --no-install electron-builder --dir -c.mac.identity=null -c.mac.notarize=false --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
@@ -99,7 +123,7 @@ jobs:
           node scripts/verify-package.mjs "$TARGET" ${{ matrix.verify_platform }} ${{ matrix.verify_arch }}
 
       - name: Upload unsigned artifacts for inspection
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: kairo-${{ matrix.id }}-unsigned
           path: ${{ matrix.artifacts }}

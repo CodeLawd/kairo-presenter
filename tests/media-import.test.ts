@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import path from 'node:path'
 import test from 'node:test'
 
 import { planMediaImport, planMediaPaste, uniqueFileName } from '../src/main/services/media'
@@ -17,45 +18,48 @@ test('collision check is case-insensitive', () => {
 })
 
 test('files already in the media folder are reused, not copied', () => {
-  const plan = planMediaImport(
-    '/media/backgrounds/Motion/loop.mp4',
-    '/media/backgrounds',
-    new Set(),
-  )
+  // Fixtures are built with path.join/resolve so they are native on every OS:
+  // planMediaImport resolves its inputs, which turns a POSIX literal into a
+  // drive-relative path on Windows and breaks the comparison.
+  const root = path.resolve('media', 'backgrounds')
+  const inside = path.join(root, 'Motion', 'loop.mp4')
+  const plan = planMediaImport(inside, root, new Set())
   assert.equal(plan.action, 'reuse')
   if (plan.action === 'reuse') {
-    assert.equal(plan.absPath, '/media/backgrounds/Motion/loop.mp4')
+    assert.equal(plan.absPath, path.resolve(inside))
   }
 })
 
 test('files outside the media folder are copied in', () => {
-  const plan = planMediaImport('/Downloads/sunset.mp4', '/media/backgrounds', new Set(['sunset.mp4']))
+  const root = path.resolve('media', 'backgrounds')
+  const outside = path.resolve('Downloads', 'sunset.mp4')
+  const plan = planMediaImport(outside, root, new Set(['sunset.mp4']))
   assert.equal(plan.action, 'copy')
   if (plan.action === 'copy') {
-    assert.equal(plan.from, '/Downloads/sunset.mp4')
+    assert.equal(plan.from, outside)
     assert.equal(plan.destName, 'sunset 1.mp4')
   }
 })
 
 test('unsupported types are skipped', () => {
-  assert.equal(planMediaImport('/Downloads/notes.pdf', '/media/backgrounds', new Set()).action, 'skip')
+  const root = path.resolve('media', 'backgrounds')
+  assert.equal(planMediaImport(path.resolve('Downloads', 'notes.pdf'), root, new Set()).action, 'skip')
 })
 
 test('paste duplicates a file already in the library', () => {
-  const plan = planMediaPaste(
-    '/media/backgrounds/loop.mp4',
-    '/media/backgrounds',
-    new Set(['loop.mp4']),
-  )
+  const root = path.resolve('media', 'backgrounds')
+  const source = path.join(root, 'loop.mp4')
+  const plan = planMediaPaste(source, root, new Set(['loop.mp4']))
   assert.equal(plan.action, 'copy')
   if (plan.action === 'copy') {
-    assert.equal(plan.from, '/media/backgrounds/loop.mp4')
+    assert.equal(plan.from, path.resolve(source))
     assert.equal(plan.destName, 'loop 1.mp4')
   }
 })
 
 test('paste copies an external file under a free name', () => {
-  const plan = planMediaPaste('/Downloads/sunset.mp4', '/media/backgrounds', new Set())
+  const root = path.resolve('media', 'backgrounds')
+  const plan = planMediaPaste(path.resolve('Downloads', 'sunset.mp4'), root, new Set())
   assert.equal(plan.action, 'copy')
   if (plan.action === 'copy') {
     assert.equal(plan.destName, 'sunset.mp4')

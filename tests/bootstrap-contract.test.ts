@@ -125,5 +125,6 @@ test('integration hydration runs after the interface opens, never before', () =>
   // Gated on ready AND the account gate: hydration will not pull secrets for
   // a ticketed service when the signed-in operator has not been admitted yet.
   assert.match(app, /hydrateIntegrations/)
-  assert.match(app, /if \(!ready.*\) return\n\s*void hydrateIntegrations\(\)/)
+  // \r? tolerates CRLF checkouts on Windows, where every line ends with \r\n.
+  assert.match(app, /if \(!ready.*\) return\r?\n\s*void hydrateIntegrations\(\)/)
 })
