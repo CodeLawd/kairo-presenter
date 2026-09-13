@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-unsafe-declaration-merging -- typed EventEmitter idiom: `declare interface` refines the inherited emitter surface. */
+/* eslint-disable @typescript-eslint/no-explicit-any -- ProPresenter's HTTP API is untyped; every response is normalized defensively at its call site. */
 import { EventEmitter } from 'events'
 import http from 'http'
 import axios, { type AxiosInstance, type AxiosError } from 'axios'

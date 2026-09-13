@@ -1,7 +1,15 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import React from 'react'
+import * as React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
+// App pulls in LoadingScreen, which statically imports a PNG that plain-node
+// tsx cannot parse. Stub binary-asset imports to their paths before the lazy
+// load() below pulls the component chain in.
+for (const ext of ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.woff2']) {
+  require.extensions[ext] = ((module: { exports: unknown }, filename: string): void => {
+    module.exports = filename
+  }) as never
+}
 // Some modules build JSX at module scope, so the classic runtime's global must
 // exist before they are imported.
 Object.assign(globalThis, { React })
@@ -56,4 +64,3 @@ test('Scripture shows no API-key warning before authorization is known', async (
   const markup = renderToStaticMarkup(React.createElement(m.Scripture))
   assert.doesNotMatch(markup, /NKJV is the default/)
 })
-

@@ -60,6 +60,8 @@ typings/
 # dotenv environment variables file
 .env
 .env.test
+.env.*
+!.env.example
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache
@@ -91,7 +93,12 @@ typings/
 # Electron-Forge
 out/
 
-docs/
+docs/*
+!docs/decisions/
+docs/decisions/*
+!docs/decisions/001-cross-platform-ndi.md
+!docs/release-checklist.md
+!docs/signing-setup.md
 
 # electron-builder output
 release/

@@ -46,6 +46,18 @@ test('resource catalogue UI exposes accessible controls and fallback states', ()
   assert.match(catalogue, /Unavailable in ProPresenter/)
 })
 
+test('settings use four compact resource selectors instead of the catalogue browser', () => {
+  const catalogue = read('src/renderer/src/components/propresenter/ResourceCatalogue.tsx')
+
+  assert.match(catalogue, /CompactSettingsBindings/)
+  assert.match(catalogue, /mode === ['"]settings['"]/)
+  assert.match(catalogue, /Scripture theme/)
+  assert.match(catalogue, /Lyrics theme/)
+  assert.match(catalogue, /Lower-third message/)
+  assert.match(catalogue, /Kairo video input/)
+  assert.match(catalogue, /<select/)
+})
+
 test('resource thumbnails use safe named alternatives and clickable rows are buttons', () => {
   const thumbnail = read('src/renderer/src/components/propresenter/ResourceThumbnail.tsx')
   const catalogue = read('src/renderer/src/components/propresenter/ResourceCatalogue.tsx')

@@ -124,7 +124,7 @@ export default function Scripture(): React.ReactElement {
   const [overlay, setOverlay] = useState<AppSettings["overlay"]>(
     bootstrapSettings.overlay ?? DEFAULT_OVERLAY_SETTINGS,
   );
-  const [plansReady, setPlansReady] = useState(true);
+  const [plansReady] = useState(true);
 
   const scriptureActivePlanId = useAppStore((s) => s.scriptureActivePlanId);
   const setScriptureViewState = useAppStore((s) => s.setScriptureViewState);
@@ -234,7 +234,7 @@ export default function Scripture(): React.ReactElement {
         ),
       })),
     );
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only react to clear token
+    // Only react to the clear token (no exhaustive-deps plugin configured).
   }, [scriptureOutputClearToken]);
 
   // Pick up Theme / Settings overlay changes when returning to the window
@@ -980,7 +980,7 @@ export default function Scripture(): React.ReactElement {
           return;
         }
 
-        let planItemId = activeRow.planItemId;
+        const planItemId = activeRow.planItemId;
         if (cardsSource === "plan" && selectedPlanId && planItemId) {
           const target = plans.find((plan) => plan.id === selectedPlanId);
           if (target) {

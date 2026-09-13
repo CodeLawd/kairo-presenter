@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import path from 'node:path'
 import test from 'node:test'
 
 import type { AppSettings, OnboardingState } from '../src/lib/ipc'
@@ -22,6 +24,8 @@ import {
   shouldOfferOnboarding,
   skipStep,
 } from '../src/lib/cloud/onboarding'
+
+const ROOT = path.resolve(import.meta.dirname, '..')
 
 function settings(overrides: Partial<AppSettings> = {}): AppSettings {
   return {
@@ -73,6 +77,15 @@ test('a blank install has nothing done', () => {
 
 test('account is never derived from settings — only answered', () => {
   assert.equal(isStepComplete('account', configuredSettings()), false)
+})
+
+test('the account step uses the same entry gate as the app for restored offline sessions', () => {
+  const wizard = fs.readFileSync(
+    path.join(ROOT, 'src/renderer/src/components/onboarding/OnboardingWizard.tsx'),
+    'utf8',
+  )
+
+  assert.match(wizard, /canEnterApp\(s\.session\)/)
 })
 
 test('an output step needs an ENABLED output, not merely a configured one', () => {

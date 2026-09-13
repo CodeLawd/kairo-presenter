@@ -2,7 +2,7 @@
   "name": "proautomate",
   "productName": "Kairo",
   "version": "1.0.0",
-  "description": "Kairo \u2014 scripture, lyrics, and presentation for ProPresenter",
+  "description": "Kairo — scripture, lyrics, and presentation for ProPresenter",
   "main": "./out/main/index.js",
   "private": true,
   "scripts": {
@@ -19,10 +19,19 @@
     "test": "tsx --test tests/*.test.ts",
     "test:scripture-replay": "ELECTRON_RUN_AS_NODE=1 electron --import tsx --test src/main/services/scripture/__tests__/transcript-replay.test.ts src/main/services/scripture/__tests__/quote-recovery.test.ts src/main/services/scripture/__tests__/live-detection-wiring.test.ts",
     "test:documents": "npm run build && electron tests/documents.integration.cjs",
-    "test:main": "ELECTRON_RUN_AS_NODE=1 electron ./node_modules/tsx/dist/cli.mjs --test src/main/__tests__/*.test.ts src/main/services/scripture/__tests__/*.test.ts src/main/services/propresenter/__tests__/*.test.ts src/main/services/cloud/__tests__/*.test.ts",
+    "test:main": "ELECTRON_RUN_AS_NODE=1 electron ./node_modules/tsx/dist/cli.mjs --test src/main/__tests__/*.test.ts src/main/services/scripture/__tests__/*.test.ts src/main/services/propresenter/__tests__/*.test.ts src/main/services/cloud/__tests__/*.test.ts src/main/services/ndi/__tests__/*.test.ts src/main/services/documents/__tests__/*.test.ts",
     "seed:bible": "npx tsx scripts/seed-bible.ts",
     "seed:bible:all": "npx tsx scripts/seed-bible.ts --translations KJV,BBE",
     "build:mac": "npm run typecheck && electron-vite build && electron-builder --mac --arm64",
+    "build:mac:arm64": "npm run typecheck && electron-vite build && electron-builder --mac --arm64",
+    "build:mac:x64": "npm run typecheck && electron-vite build && electron-builder --mac --x64",
+    "build:win:x64": "npm run typecheck && electron-vite build && electron-builder --win --x64",
+    "build:linux:x64": "npm run typecheck && electron-vite build && electron-builder --linux --x64",
+    "package:ci:mac-arm64": "electron-builder --mac --arm64 -c.mac.identity=null -c.mac.notarize=false --publish never",
+    "package:ci:mac-x64": "electron-builder --mac --x64 -c.mac.identity=null -c.mac.notarize=false --publish never",
+    "package:ci:win-x64": "electron-builder --win --x64 --publish never",
+    "package:ci:linux-x64": "electron-builder --linux --x64 --publish never",
+    "verify:package": "node scripts/verify-package.mjs",
     "release:mac": "npm run typecheck && electron-vite build && electron-builder --mac --arm64 --publish always",
     "build:mac:unsigned": "npm run typecheck && electron-vite build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --arm64 -c.mac.identity=null -c.mac.notarize=false",
     "build:dir": "electron-vite build && electron-builder --dir -c.mac.identity=null -c.mac.notarize=false"
@@ -43,6 +52,7 @@
     "electron-log": "^5.2.4",
     "electron-store": "^8.2.0",
     "electron-updater": "^6.8.9",
+    "grandi": "2.0.2",
     "grandiose-mac": "^0.0.6",
     "input-otp": "^1.5.0",
     "mammoth": "^1.12.1",
@@ -53,6 +63,7 @@
     "zustand": "^4.5.5"
   },
   "devDependencies": {
+    "@electron/asar": "3.4.1",
     "@electron/notarize": "^3.1.1",
     "@electron/rebuild": "^3.7.2",
     "@fontsource-variable/source-sans-3": "^5.3.0",
@@ -69,6 +80,8 @@
     "electron-builder": "^26.15.3",
     "electron-vite": "^2.3.0",
     "eslint": "^8.57.1",
+    "eslint-import-resolver-typescript": "^3.10.1",
+    "eslint-plugin-import": "^2.32.0",
     "pdfjs-dist": "^4.10.38",
     "postcss": "^8.4.49",
     "react": "^18.3.1",
@@ -78,20 +91,51 @@
     "typescript": "^5.6.3",
     "vite": "^5.4.11"
   },
-  "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e",
+  "packageManager": "npm@11.19.0",
   "build": {
     "appId": "com.kairo.app",
     "productName": "Kairo",
-    "copyright": "Copyright \u00a9 2026 Kairo",
+    "copyright": "Copyright © 2026 Kairo",
     "directories": {
       "output": "release",
       "buildResources": "build"
     },
+    "afterPack": "scripts/after-pack.cjs",
     "files": [
       "out/**/*",
       "package.json",
       "!**/*.map",
-      "!**/{__tests__,test,tests}/**"
+      "!**/*.tsbuildinfo",
+      "!**/{__tests__,test,tests}/**",
+      "!website/**/*",
+      "!server/**/*",
+      "!src/**/*",
+      "!tests/**/*",
+      "!docs/**/*",
+      "!plans/**/*",
+      "!design/**/*",
+      "!scripts/**/*",
+      "!release/**/*",
+      "!resources/*.db-shm",
+      "!resources/*.db-wal",
+      "!**/*.md",
+      "!*.pdf",
+      "!index.html",
+      "!components.json",
+      "!AGENTS.md",
+      "!CLAUDE.md",
+      "!electron.vite.config.*",
+      "!vite.*.config.*",
+      "!tsconfig.*.json",
+      "!forge.config.*",
+      "!forge.env.d.ts",
+      "!src/main.ts",
+      "!src/preload.ts",
+      "!src/renderer.ts",
+      "!.env",
+      "!.env.example",
+      "!.claude/**/*",
+      "!.vite/**/*"
     ],
     "extraResources": [
       {
@@ -105,6 +149,7 @@
     ],
     "asarUnpack": [
       "**/*.node",
+      "**/node_modules/@grandi/**",
       "**/node_modules/better-sqlite3/**",
       "**/node_modules/grandiose-mac/**"
     ],
@@ -116,13 +161,15 @@
         {
           "target": "dmg",
           "arch": [
-            "arm64"
+            "arm64",
+            "x64"
           ]
         },
         {
           "target": "zip",
           "arch": [
-            "arm64"
+            "arm64",
+            "x64"
           ]
         }
       ],
@@ -132,6 +179,46 @@
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
       "notarize": true,
+      "files": [
+        "out/**/*",
+        "package.json",
+        "!**/*.map",
+        "!**/*.tsbuildinfo",
+        "!**/{__tests__,test,tests}/**",
+        "!website/**/*",
+        "!server/**/*",
+        "!src/**/*",
+        "!tests/**/*",
+        "!docs/**/*",
+        "!plans/**/*",
+        "!design/**/*",
+        "!scripts/**/*",
+        "!release/**/*",
+        "!resources/*.db-shm",
+        "!resources/*.db-wal",
+        "!**/*.md",
+        "!*.pdf",
+        "!index.html",
+        "!components.json",
+        "!AGENTS.md",
+        "!CLAUDE.md",
+        "!electron.vite.config.*",
+        "!vite.*.config.*",
+        "!tsconfig.*.json",
+        "!forge.config.*",
+        "!forge.env.d.ts",
+        "!src/main.ts",
+        "!src/preload.ts",
+        "!src/renderer.ts",
+        "!.env",
+        "!.env.example",
+        "!.claude/**/*",
+        "!.vite/**/*",
+        "!**/node_modules/grandiose-mac/lib/win_*(**/*)",
+        "!**/node_modules/grandiose-mac/lib/linux_*(**/*)",
+        "!**/*.dll",
+        "!**/*.so*"
+      ],
       "extendInfo": {
         "NSMicrophoneUsageDescription": "Kairo listens to the service audio so it can transcribe the sermon in real time.",
         "NSLocalNetworkUsageDescription": "Kairo connects to ProPresenter and NDI receivers on your local network.",
@@ -161,6 +248,131 @@
           "type": "link",
           "path": "/Applications"
         }
+      ]
+    },
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "requestedExecutionLevel": "asInvoker",
+      "files": [
+        "out/**/*",
+        "package.json",
+        "!**/*.map",
+        "!**/*.tsbuildinfo",
+        "!**/{__tests__,test,tests}/**",
+        "!website/**/*",
+        "!server/**/*",
+        "!src/**/*",
+        "!tests/**/*",
+        "!docs/**/*",
+        "!plans/**/*",
+        "!design/**/*",
+        "!scripts/**/*",
+        "!release/**/*",
+        "!resources/*.db-shm",
+        "!resources/*.db-wal",
+        "!**/*.md",
+        "!*.pdf",
+        "!index.html",
+        "!components.json",
+        "!AGENTS.md",
+        "!CLAUDE.md",
+        "!electron.vite.config.*",
+        "!vite.*.config.*",
+        "!tsconfig.*.json",
+        "!forge.config.*",
+        "!forge.env.d.ts",
+        "!src/main.ts",
+        "!src/preload.ts",
+        "!src/renderer.ts",
+        "!.env",
+        "!.env.example",
+        "!.claude/**/*",
+        "!.vite/**/*",
+        "!**/node_modules/grandiose-mac/lib/mac_universal(**/*)",
+        "!**/node_modules/grandiose-mac/lib/linux_*(**/*)",
+        "!**/node_modules/grandiose-mac/lib/win_x86(**/*)",
+        "!**/*.dylib",
+        "!**/*.so*"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "Kairo"
+    },
+    "linux": {
+      "icon": "build/icons",
+      "category": "AudioVideo",
+      "description": "Kairo — scripture, lyrics, and presentation for ProPresenter",
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "files": [
+        "out/**/*",
+        "package.json",
+        "!**/*.map",
+        "!**/*.tsbuildinfo",
+        "!**/{__tests__,test,tests}/**",
+        "!website/**/*",
+        "!server/**/*",
+        "!src/**/*",
+        "!tests/**/*",
+        "!docs/**/*",
+        "!plans/**/*",
+        "!design/**/*",
+        "!scripts/**/*",
+        "!release/**/*",
+        "!resources/*.db-shm",
+        "!resources/*.db-wal",
+        "!**/*.md",
+        "!*.pdf",
+        "!index.html",
+        "!components.json",
+        "!AGENTS.md",
+        "!CLAUDE.md",
+        "!electron.vite.config.*",
+        "!vite.*.config.*",
+        "!tsconfig.*.json",
+        "!forge.config.*",
+        "!forge.env.d.ts",
+        "!src/main.ts",
+        "!src/preload.ts",
+        "!src/renderer.ts",
+        "!.env",
+        "!.env.example",
+        "!.claude/**/*",
+        "!.vite/**/*",
+        "!**/node_modules/grandiose-mac/lib/mac_universal(**/*)",
+        "!**/node_modules/grandiose-mac/lib/win_*(**/*)",
+        "!**/node_modules/grandiose-mac/lib/linux_arm64(**/*)",
+        "!**/*.dylib",
+        "!**/*.dll"
+      ]
+    },
+    "deb": {
+      "depends": [
+        "libasound2",
+        "libnss3"
       ]
     },
     "publish": [

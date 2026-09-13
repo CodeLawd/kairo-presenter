@@ -50,6 +50,7 @@ import {
   Globe as PhGlobe,
   DotsSixVertical as PhDotsSixVertical,
   Image as PhImage,
+  ImagesSquare as PhImagesSquare,
   Key as PhKey,
   Keyboard as PhKeyboard,
   Translate as PhTranslate,
@@ -135,6 +136,7 @@ export const ArrowDown = wrap(PhArrowDown)
 export const ExternalLink = wrap(PhArrowSquareOut)
 export const ArrowUp = wrap(PhArrowUp)
 export const BookOpen = wrap(PhBookOpen)
+export const BookOpenText = wrap(PhBookOpenText)
 export const BookOpenCheck = wrap(PhBookOpenText)
 export const BookmarkSimple = wrap(PhBookmarkSimple)
 export const Brain = wrap(PhBrain)
@@ -168,6 +170,7 @@ export const FolderOpen = wrap(PhFolderOpen)
 export const Globe = wrap(PhGlobe)
 export const GripVertical = wrap(PhDotsSixVertical)
 export const Image = wrap(PhImage)
+export const MediaLibrary = wrap(PhImagesSquare)
 export const Key = wrap(PhKey)
 export const Keyboard = wrap(PhKeyboard)
 export const Languages = wrap(PhTranslate)

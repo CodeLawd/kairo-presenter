@@ -1,6 +1,6 @@
 import { DOCUMENTS } from "@shared/documents";
 import { documentsService } from "../services/documents";
-import { ipcMain, BrowserWindow, systemPreferences, dialog, shell } from "electron";
+import { ipcMain, BrowserWindow, dialog, shell } from "electron";
 import type { OpenDialogOptions } from "electron";
 import log from "electron-log/main";
 import type {

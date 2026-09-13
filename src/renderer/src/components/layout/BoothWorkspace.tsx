@@ -13,7 +13,7 @@ export function BoothWorkspace({
   children: ReactNode
 }): React.ReactElement {
   return (
-    <div className="relative flex h-full min-h-0 w-full overflow-hidden bg-transparent">
+    <div className="relative flex h-full min-h-0 w-full overflow-hidden bg-surface">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
         <MediaDock />

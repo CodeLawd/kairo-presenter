@@ -28,7 +28,7 @@ export function BoothToolbox({
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-surface-secondary">
       <div
-        className="flex shrink-0 items-stretch border-b border-surface-border bg-surface-tertiary"
+        className="flex shrink-0 items-stretch bg-surface-tertiary/40"
         role="tablist"
         aria-label="Booth tools"
       >
@@ -43,14 +43,20 @@ export function BoothToolbox({
               title={label}
               onClick={() => setTab(id)}
               className={cn(
-                'flex h-8 flex-1 items-center justify-center gap-1.5 border-r border-white/10 px-1 text-[10px] font-semibold uppercase tracking-[0.12em] last:border-r-0',
+                'relative flex h-9 flex-1 flex-col items-center justify-center gap-0.5 text-[10px] font-medium last:border-r-0',
                 selected
-                  ? 'bg-white/10 text-zinc-50'
-                  : 'text-zinc-500 hover:bg-white/5 hover:text-zinc-200',
+                  ? 'text-teal-400'
+                  : 'text-zinc-500 hover:bg-white/[0.03] hover:text-zinc-300',
               )}
             >
-              <Icon size={12} aria-hidden="true" />
+              <Icon size={14} aria-hidden="true" />
               <span>{label}</span>
+              {selected && (
+                <span
+                  className="pointer-events-none absolute inset-x-0 bottom-0 h-0.5 bg-teal-500"
+                  aria-hidden="true"
+                />
+              )}
             </button>
           )
         })}
@@ -87,10 +93,8 @@ function DefaultBoothSearch(): React.ReactElement {
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-transparent">
-      <div className="flex shrink-0 items-center border-b border-surface-border bg-surface-tertiary px-3 py-1.5">
-        <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-400">
-          Search
-        </p>
+      <div className="flex shrink-0 items-center px-3 py-1.5">
+        <p className="text-[11px] font-medium text-zinc-400">Search</p>
       </div>
       <div className="px-3 py-2.5">
         <OperatorQueueSearch
@@ -120,8 +124,8 @@ function DefaultBoothSearch(): React.ReactElement {
 function ComingSoon({ title, body }: { title: string; body: string }): React.ReactElement {
   return (
     <div className="flex h-full flex-col items-center justify-center px-5 text-center">
-      <p className="text-[11px] font-semibold text-slate-400">{title}</p>
-      <p className="mt-1 max-w-[16rem] text-[10px] leading-relaxed text-slate-600">{body}</p>
+      <p className="text-[11px] font-medium text-zinc-400">{title}</p>
+      <p className="mt-1 max-w-[16rem] text-[10px] leading-relaxed text-zinc-600">{body}</p>
     </div>
   )
 }

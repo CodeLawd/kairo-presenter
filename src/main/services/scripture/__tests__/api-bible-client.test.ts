@@ -4,13 +4,17 @@ import { ApiBibleClient, ApiBibleRequestError, type ApiBibleTransport } from '..
 
 const BIBLE_ID = 'de4e12af7f28f599-01'
 
-interface Call { url: string; config: Record<string, any> }
+interface Call {
+  url: string
+  // Mirrors what ApiBibleClient.get sends: headers always, params per call.
+  config: { headers: Record<string, string>; params?: Record<string, string> }
+}
 
 function transportOf(handler: (url: string) => unknown): { transport: ApiBibleTransport; calls: Call[] } {
   const calls: Call[] = []
   const transport: ApiBibleTransport = {
     async get(url, config) {
-      calls.push({ url, config: (config ?? {}) as Record<string, any> })
+      calls.push({ url, config: (config ?? {}) as Call['config'] })
       return { data: handler(url) }
     },
   }

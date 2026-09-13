@@ -22,17 +22,17 @@ export default function UpdatePill(): React.ReactElement | null {
   if (status.state === 'idle' || status.state === 'checking' || status.state === 'error') return null
 
   const base =
-    'flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded border px-2.5 text-[11px] font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-1'
+    'flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded px-2 text-[11px] font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-1'
 
   if (status.state === 'downloading') {
     return (
       <div
-        className={`${base} border-white/10 text-zinc-400`}
+        className={`${base} text-zinc-500`}
         role="status"
         aria-label={`Downloading update${typeof status.percent === 'number' ? `, ${status.percent} percent` : ''}`}
       >
         <Download size={13} aria-hidden="true" />
-        {typeof status.percent === 'number' ? `${status.percent}%` : 'UPDATING'}
+        {typeof status.percent === 'number' ? `${status.percent}%` : 'Updating'}
       </div>
     )
   }
@@ -42,11 +42,11 @@ export default function UpdatePill(): React.ReactElement | null {
       <button
         type="button"
         onClick={() => void download()}
-        className={`${base} border-teal-800/60 text-teal-300 hover:border-teal-600 hover:bg-teal-950/40 focus-visible:ring-teal-400`}
+        className={`${base} text-teal-400 hover:bg-teal-500/10 focus-visible:ring-teal-400`}
         title={`Kairo ${status.version} is available — download it now, install whenever you like`}
       >
         <Download size={13} aria-hidden="true" />
-        UPDATE
+        Update
       </button>
     )
   }
@@ -59,8 +59,8 @@ export default function UpdatePill(): React.ReactElement | null {
       onBlur={() => setConfirming(false)}
       className={`${base} ${
         confirming
-          ? 'border-amber-600 bg-amber-950/40 text-amber-200 focus-visible:ring-amber-400'
-          : 'border-teal-800/60 text-teal-300 hover:border-teal-600 hover:bg-teal-950/40 focus-visible:ring-teal-400'
+          ? 'bg-amber-950/40 text-amber-200 focus-visible:ring-amber-400'
+          : 'text-teal-400 hover:bg-teal-500/10 focus-visible:ring-teal-400'
       }`}
       title={
         confirming
@@ -69,7 +69,7 @@ export default function UpdatePill(): React.ReactElement | null {
       }
     >
       <Download size={13} aria-hidden="true" />
-      {confirming ? (isLive ? 'RESTART? SERVICE IS LIVE' : 'RESTART NOW?') : `UPDATE ${status.version}`}
+      {confirming ? (isLive ? 'Restart? Service is live' : 'Restart now?') : `Update ${status.version}`}
     </button>
   )
 }

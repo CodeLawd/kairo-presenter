@@ -29,6 +29,11 @@ export function subscribeExplicitScriptureDetection(
       recentFinalText = "";
       return;
     }
+    // Deepgram can finalize "Isaiah forty nine" just before "fourteen to
+    // twenty six". Keep the detector's local book/chapter context, but do not
+    // let the AI turn that incomplete citation into the schema placeholder
+    // Isaiah 49:1 while the range is still arriving.
+    if (detector.isIncompleteExplicitCitation(result.text)) return;
     if (detector.analyzePlanQuote(result.text)) return;
     // Ask for contextual recovery on finals; never guess a split for damaged numbers.
     const now = Date.now();

@@ -1,9 +1,6 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
-  Wifi,
-  WifiOff,
   Mic,
-  MicOff,
   BookOpen,
   Brain,
   Clock,
@@ -19,7 +16,6 @@ import {
   Loader,
   Radio,
   Volume2,
-  VolumeX,
   Activity,
   type Icon,
 } from '@/icons'
@@ -533,7 +529,6 @@ export default function Dashboard(): React.ReactElement {
     sessionStartTime,
     scriptureDetectionCount,
     scriptureProjectedCount,
-    audioCapturing,
     isTranscribing,
     transcriptWordCount,
     audioLevel,

@@ -12,5 +12,22 @@
     "plugin:import/electron",
     "plugin:import/typescript"
   ],
-  "parser": "@typescript-eslint/parser"
+  "parser": "@typescript-eslint/parser",
+  "rules": {
+    "@typescript-eslint/no-unused-vars": [
+      "error",
+      { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_", "caughtErrorsIgnorePattern": "^_" }
+    ]
+  },
+  "settings": {
+    "import/resolver": {
+      "typescript": {
+        "project": [
+          "./tsconfig.node.json",
+          "./tsconfig.web.json",
+          "./server/tsconfig.json"
+        ]
+      }
+    }
+  }
 }

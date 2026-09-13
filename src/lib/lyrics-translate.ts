@@ -125,6 +125,7 @@ export function isLikelyEnglishLyric(line: string): boolean {
   const key = glossMatchKey(line)
   if (!key) return false
   // Non-Latin scripts → not English.
+  // eslint-disable-next-line no-control-regex -- the C0 range is the intended floor of the Latin test.
   if (/[^\u0000-\u024f]/.test(line)) return false
   const words = key.split(' ').filter(Boolean)
   if (words.length === 0) return false
@@ -220,7 +221,7 @@ export function cleanGlossSource(source: string): string {
     if (next === s) break
     s = next
   }
-  s = s.replace(/^(chorus|verse|bridge|refrain|spoken)\s*[:.\-]?\s*/i, '')
+  s = s.replace(/^(chorus|verse|bridge|refrain|spoken)\s*[:.-]?\s*/i, '')
   s = s.replace(/\s*x\d+\s*$/i, '').replace(/\s*\(\s*repeat\s*\)\s*$/i, '').trim()
   return s
 }

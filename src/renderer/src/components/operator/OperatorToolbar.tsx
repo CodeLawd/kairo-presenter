@@ -94,11 +94,11 @@ export default function OperatorToolbar(): React.ReactElement {
   const hasPlans = plans.length > 0
 
   return (
-    <div className="operator-toolbar no-drag flex h-8 min-w-0 items-center gap-2">
+    <div className="operator-toolbar no-drag flex h-7 min-w-0 items-center gap-2">
       <span
         className={[
           'shrink-0 font-mono text-[11px] tabular-nums',
-          isTranscribing ? 'text-teal-300' : 'text-zinc-600',
+          isTranscribing ? 'text-teal-400' : 'text-zinc-600',
         ].join(' ')}
         title="Session elapsed time"
       >
@@ -113,7 +113,7 @@ export default function OperatorToolbar(): React.ReactElement {
 
         <SelectTrigger
           style={{ width: 'var(--header-playlist-width, 208px)' }}
-          className="h-8 overflow-hidden text-[11px] *:data-[slot=select-value]:min-w-0"
+          className="h-7 overflow-hidden border-0 bg-white/[0.05] text-[11px] shadow-none *:data-[slot=select-value]:min-w-0 hover:bg-white/[0.08] focus:ring-0"
           aria-label="Live reference playlist"
           title={
             hasPlans
@@ -144,7 +144,7 @@ export default function OperatorToolbar(): React.ReactElement {
       )}
 
       <div
-        className="flex h-8 shrink-0 items-center gap-2 border-l border-white/10 pl-3 text-[11px] text-zinc-400"
+        className="flex h-7 shrink-0 items-center gap-2 pl-3 text-[11px] text-zinc-500"
         title="Press Ctrl+A to toggle"
       >
         <span className="whitespace-nowrap">Automation</span>

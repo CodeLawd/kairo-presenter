@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { BookOpen, Check, Loader, Play, Search, X } from '@/icons';
+import { BookOpen, Check, ChevronDown, Loader, Play, Search, X } from '@/icons';
 import { cn } from '@/lib/utils';
 
 export interface ReferenceLibraryRow {
@@ -19,9 +19,10 @@ interface ReferenceLibraryProps {
   passages: ReferenceLibraryRow[];
   planTitle?: string;
   listening: boolean;
+  onCollapse?: () => void;
 }
 
-export function ReferenceLibrary({ detected, passages, planTitle, listening }: ReferenceLibraryProps) {
+export function ReferenceLibrary({ detected, passages, planTitle, listening, onCollapse }: ReferenceLibraryProps) {
   const [selected, setSelected] = useState<'detected' | 'sermon' | null>(null);
   const [query, setQuery] = useState('');
   // Until the operator chooses, show the list that has useful content.
@@ -55,11 +56,19 @@ export function ReferenceLibrary({ detected, passages, planTitle, listening }: R
             </button>
           ))}
         </div>
-        <div className="relative w-40 min-w-0 flex-1 max-w-56">
-          <Search size={13} aria-hidden="true" className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-zinc-500" />
-          <input aria-label="Find a passage" placeholder="Find a passage…" value={query} onChange={(event) => setQuery(event.target.value)}
-            className="h-7 w-full rounded-md border border-white/[0.07] bg-black/15 pl-7 pr-7 text-xs text-zinc-200 placeholder:text-zinc-600 focus:border-teal-500/50 focus:outline-none focus:ring-1 focus:ring-teal-500/30" />
-          {query && <button type="button" aria-label="Clear passage search" onClick={() => setQuery('')} className="absolute right-1 top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded text-zinc-400 hover:text-white focus-visible:outline focus-visible:outline-teal-400"><X size={12} /></button>}
+        <div className="flex min-w-0 flex-1 items-center justify-end gap-1.5">
+          <div className="relative w-40 min-w-0 flex-1 max-w-56">
+            <Search size={13} aria-hidden="true" className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-zinc-500" />
+            <input aria-label="Find a passage" placeholder="Find a passage…" value={query} onChange={(event) => setQuery(event.target.value)}
+              className="h-7 w-full rounded-md border border-white/[0.07] bg-black/15 pl-7 pr-7 text-xs text-zinc-200 placeholder:text-zinc-600 focus:border-teal-500/50 focus:outline-none focus:ring-1 focus:ring-teal-500/30" />
+            {query && <button type="button" aria-label="Clear passage search" onClick={() => setQuery('')} className="absolute right-1 top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded text-zinc-400 hover:text-white focus-visible:outline focus-visible:outline-teal-400"><X size={12} /></button>}
+          </div>
+          {onCollapse && (
+            <button type="button" onClick={onCollapse} aria-label="Collapse passage library" title="Collapse passage library"
+              className="grid size-7 shrink-0 place-items-center rounded-md text-zinc-500 transition-colors hover:bg-white/[0.05] hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/70">
+              <ChevronDown size={14} aria-hidden="true" />
+            </button>
+          )}
         </div>
       </div>
       <div className="flex h-8 shrink-0 items-center justify-between gap-3 px-4 text-[11px] text-zinc-500">

@@ -1,0 +1,224 @@
+name: Release
+
+# Signed, coordinated release publication (Plan 005 Steps 2-4).
+#
+# Matrix jobs build + sign on their native OS and upload to workflow storage.
+# ONLY the `publish` job creates/updates the GitHub release, and only after
+# every matrix job succeeds — a partial matrix can never publish. Deliberately
+# fail one matrix job on a test tag to prove no release is created.
+#
+# Tags are expected to be protected (maintainers only). Releases are created
+# as DRAFTS: a maintainer publishes after Plan 006 physical-machine
+# acceptance. Drafts never trigger auto-update.
+#
+# Signing secrets (names only — values live in the `release` environment):
+#   APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID — notarization
+#   CSC_LINK, CSC_KEY_PASSWORD — macOS Developer ID certificate (base64 .p12)
+#   WIN_CSC_LINK, WIN_CSC_KEY_PASSWORD — Windows code-signing certificate
+# Setup procedure: docs/signing-setup.md. Fork/PR runs never receive these
+# secrets (environment-gated + tag-gated).
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.runner }}
+    environment: release
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - id: mac-arm64
+            label: macOS arm64 (signed)
+            runner: macos-14
+            build_script: build:mac:arm64
+            artifacts: |
+              release/*.dmg
+              release/*.zip
+              release/*.blockmap
+              release/latest-mac.yml
+          - id: mac-x64
+            label: macOS x64 (signed)
+            runner: macos-15-intel # last Intel image; retires ~Aug 2027 — then mac-x64 needs a new runner story
+            build_script: build:mac:x64
+            artifacts: |
+              release/*.dmg
+              release/*.zip
+              release/*.blockmap
+              release/latest-mac.yml
+          - id: win-x64
+            label: Windows x64 (signed)
+            runner: windows-2022
+            build_script: build:win:x64
+            artifacts: |
+              release/*.exe
+              release/*.blockmap
+              release/latest.yml
+          - id: linux-x64
+            label: Ubuntu x64 (checksummed)
+            runner: ubuntu-22.04
+            build_script: build:linux:x64
+            artifacts: |
+              release/*.AppImage
+              release/*.deb
+              release/latest-linux.yml
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Clean install (never reuse node_modules across OSes)
+        run: npm ci
+
+      - name: Quality gates
+        run: npm run typecheck && npm test && npm run test:main
+
+      - name: Package (signed, never publish from here)
+        # Signing inputs come from the `release` environment only. Unsigned
+        # forks/PRs cannot reach this workflow (tag-gated + environment-gated).
+        run: npm run ${{ matrix.build_script }} -- --publish never
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+
+      - name: Signing preconditions (fail fast, never silently unsigned)
+        # Encodes the STOP condition: a release that cannot be signed must
+        # stop here, not publish an unsigned artifact that Gatekeeper/SmartScreen
+        # would block. Linux needs no identity (SHA-256 manifest instead).
+        shell: bash
+        run: |
+          case "${{ matrix.id }}" in
+            mac-*)
+              test -n "${CSC_LINK:-}" || (echo "::error::CSC_LINK empty — mac releases must be signed (docs/signing-setup.md)" && exit 1)
+              test -n "${APPLE_ID:-}" || (echo "::error::APPLE_ID empty — notarization required for mac releases" && exit 1)
+              test -n "${APPLE_TEAM_ID:-}" || (echo "::error::APPLE_TEAM_ID empty — notarization required for mac releases" && exit 1)
+              ;;
+            win-*)
+              test -n "${WIN_CSC_LINK:-}" || (echo "::error::WIN_CSC_LINK empty — Windows releases must be signed (docs/signing-setup.md)" && exit 1)
+              ;;
+          esac
+          echo "signing preconditions ok for ${{ matrix.id }}"
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+
+      - name: Verify signature (macOS)
+        if: startsWith(matrix.id, 'mac-')
+        run: |
+          STAGED=$(ls release/*.dmg | head -1)
+          hdiutil attach -readonly -mountpoint /tmp/kairo-sig "$STAGED"
+          codesign --verify --deep --strict "/tmp/kairo-sig/Kairo.app"
+          hdiutil detach /tmp/kairo-sig
+
+      - name: Verify signature (Windows)
+        if: matrix.id == 'win-x64'
+        shell: pwsh
+        run: |
+          $exe = (Get-ChildItem release/*.exe | Select-Object -First 1).FullName
+          $sig = Get-AuthenticodeSignature $exe
+          if ($sig.Status -ne 'Valid') { Write-Error "Windows signature not valid: $($sig.Status) ($exe)"; exit 1 }
+          "Windows signature valid: $exe"
+
+      - name: Upload signed artifacts (workflow storage only)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: kairo-${{ matrix.id }}-signed
+          path: ${{ matrix.artifacts }}
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: Publish coordinated release
+    needs: [build]
+    runs-on: ubuntu-22.04
+    environment: release
+    permissions:
+      contents: write # least privilege: write only here, read everywhere else
+    steps:
+      # NOTE: no `merge-multiple` here. Both mac jobs upload a file named
+      # `latest-mac.yml` (one per arch); merging would silently drop one arch
+      # and strand half the Mac fleet without updates. Each job's files land
+      # in dist/<artifact-name>/ and are merged explicitly below.
+      - name: Download all matrix artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          path: dist
+
+      - name: Merge macOS update metadata (arm64 + x64)
+        # Reproduces what a single dual-arch electron-builder run emits: one
+        # latest-mac.yml whose `files[]` lists both arch payloads, so the
+        # updater on each Mac downloads its own architecture. Scalar fields
+        # are kept from the arm64 file (same version either way).
+        run: |
+          python3 - <<'EOF'
+          import yaml, sys
+          arm = yaml.safe_load(open('dist/kairo-mac-arm64-signed/latest-mac.yml'))
+          x64 = yaml.safe_load(open('dist/kairo-mac-x64-signed/latest-mac.yml'))
+          assert arm['version'] == x64['version'], f"version mismatch: {arm['version']} vs {x64['version']}"
+          seen, files = set(), []
+          for entry in (arm.get('files', []) + x64.get('files', [])):
+              if entry.get('url') not in seen:
+                  seen.add(entry.get('url'))
+                  files.append(entry)
+          assert len(files) >= 2, f"expected both arch payloads, got: {[f.get('url') for f in files]}"
+          arm['files'] = files
+          open('dist/kairo-mac-arm64-signed/latest-mac.yml', 'w').write(yaml.safe_dump(arm))
+          print('merged latest-mac.yml files:', [f.get('url') for f in files])
+          EOF
+
+      - name: Drop superseded single-arch metadata
+        # The merged latest-mac.yml (above) is authoritative. Without this,
+        # staging would copy both same-named files in glob order and the
+        # merge could be silently overwritten by the x64 original.
+        run: rm dist/kairo-mac-x64-signed/latest-mac.yml
+
+      - name: Stage flat release dir
+        run: |
+          mkdir -p stage
+          cp dist/*/* stage/
+          ls -la stage
+
+      - name: Verify complete matrix (no partial releases)
+        run: |
+          test "$(ls stage/*.dmg 2>/dev/null | wc -l)" -ge 2 || (echo "missing macOS DMGs" && exit 1)
+          test "$(ls stage/*.zip 2>/dev/null | wc -l)" -ge 2 || (echo "missing macOS ZIPs (auto-update needs these)" && exit 1)
+          ls stage/*.exe >/dev/null || (echo "missing Windows installer" && exit 1)
+          ls stage/*.AppImage >/dev/null || (echo "missing AppImage" && exit 1)
+          ls stage/*.deb >/dev/null || (echo "missing deb" && exit 1)
+          ls stage/latest-mac.yml stage/latest.yml stage/latest-linux.yml >/dev/null || (echo "missing update metadata" && exit 1)
+          python3 -c "import yaml; d=yaml.safe_load(open('stage/latest-mac.yml')); assert len(d.get('files',[]))>=2, d; print('latest-mac.yml covers', len(d['files']), 'payloads')"
+          echo "matrix complete"
+
+      - name: Generate SHA-256 manifest
+        run: |
+          cd stage
+          sha256sum * > sha256sums.txt
+          cat sha256sums.txt
+
+      - name: Create single draft GitHub release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          files: stage/*
+          draft: true
+          generate_release_notes: true

@@ -3,7 +3,6 @@ import { Eraser, Trash2 } from '@/icons';
 import { BoothToolbox } from "./BoothToolbox";
 import { useBootstrapStore } from "@/bootstrap/useBootstrapStore";
 import { useAppStore } from "@/stores/useAppStore";
-import { cn } from "@/lib/utils";
 import { clearLiveAll, clearLiveText } from "@/lib/clear-live-output";
 import { normalizeMediaPlayback } from "@shared/media-playback";
 import type {
@@ -14,7 +13,6 @@ import type {
 } from "@shared/ipc";
 import type { LiveOutputPayload } from "@shared/live-output";
 import { LiveOutputPreview } from "./LiveOutputPreview";
-import { useServiceStatuses } from "./useServiceStatuses";
 
 interface LiveOutputRailProps {
   /** Width of the entire right rail, including its inner padding. */
@@ -29,15 +27,6 @@ interface LiveOutputRailProps {
   /** Operator-only resize affordance. Other screens use the same rail at a fixed width. */
   onResizeStart?: (event: React.PointerEvent<HTMLButtonElement>) => void;
   onResizeKeyDown?: (event: React.KeyboardEvent<HTMLButtonElement>) => void;
-  /**
-   * Status cards rendered below the preview. Omit it and the rail subscribes
-   * for them itself, so every screen shows the same three cards.
-   */
-  serviceStatuses?: Array<{
-    label: string;
-    status: "ok" | "degraded" | "error" | "unknown";
-    error?: string;
-  }>;
   /** Operator scripture search + queue — becomes the first toolbox tab. */
   search?: ReactNode;
   className?: string;
@@ -45,7 +34,8 @@ interface LiveOutputRailProps {
 
 /**
  * The shared right-hand rail used by Operator, Scripture, and Lyrics.
- * Preview, clear actions, and the toolbox stay the same on every screen.
+ * Preview on top, inspector toolbox below — same bones as ProPresenter's
+ * live/monitor + detail pane.
  */
 export function LiveOutputRail({
   width,
@@ -56,7 +46,6 @@ export function LiveOutputRail({
   content: contentProp,
   onResizeStart,
   onResizeKeyDown,
-  serviceStatuses: serviceStatusesProp,
   className = "",
 }: LiveOutputRailProps): React.ReactElement {
   const bootstrapOverlay = useBootstrapStore((state) => state.settings.overlay);
@@ -66,8 +55,6 @@ export function LiveOutputRail({
   const selectedOutputId = useAppStore((state) => state.operatorPreviewOutputId);
   const onSelectOutput = useAppStore((state) => state.setOperatorPreviewOutputId);
   const [mediaLibrary, setMediaLibrary] = useState<MediaLibrary | null>(null);
-  const ownServiceStatuses = useServiceStatuses();
-  const serviceStatuses = serviceStatusesProp ?? ownServiceStatuses;
 
   useEffect(() => {
     if (liveMediaProp !== undefined) return;
@@ -122,14 +109,12 @@ export function LiveOutputRail({
       )}
 
       <aside
-        className={`flex min-h-0 w-full flex-col overflow-hidden border-l border-surface-border bg-surface-secondary ${className}`}
+        className={`flex min-h-0 w-full flex-col overflow-hidden bg-surface-secondary ${className}`}
         style={{ width }}
       >
-        <div className="min-h-0 shrink-0 border-b border-white/10 bg-black">
-          <div className="flex items-baseline justify-between gap-2 px-3 py-2">
-            <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">
-              Live output
-            </p>
+        <div className="min-h-0 shrink-0 bg-[#0e0e0e]">
+          <div className="flex items-baseline justify-between gap-2 px-3 py-1.5">
+            <p className="text-[11px] font-medium text-zinc-400">Live</p>
             <p className="text-[10px] text-zinc-600">ProPresenter</p>
           </div>
           <LiveOutputPreview
@@ -150,33 +135,6 @@ export function LiveOutputRail({
               />
             }
           />
-          {serviceStatuses && serviceStatuses.length > 0 && (
-            <div className="grid grid-cols-3 gap-px border-t border-white/10 bg-black/40">
-              {serviceStatuses.map((service) => (
-                <div
-                  key={service.label}
-                  title={service.error}
-                  className="flex items-center justify-center gap-1.5 bg-black/30 px-2 py-1.5"
-                >
-                  <span
-                    className={cn(
-                      "size-1.5 rounded-full",
-                      service.status === "ok"
-                        ? "bg-emerald-500"
-                        : service.status === "degraded"
-                          ? "bg-amber-500"
-                          : service.status === "error"
-                            ? "bg-rose-500"
-                            : "bg-zinc-600",
-                    )}
-                  />
-                  <span className="text-[9px] font-semibold text-zinc-500">
-                    {service.label}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
 
         <BoothToolbox search={search} />
@@ -199,7 +157,7 @@ function LiveClearActions({
         disabled={!hasText}
         onClick={() => void clearLiveText()}
         title="Leave the background. Remove verse or lyric text."
-        className="flex items-center gap-1 text-[11px] text-zinc-400 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-30"
+        className="flex items-center gap-1 text-[11px] text-zinc-500 hover:text-zinc-200 disabled:cursor-not-allowed disabled:opacity-30"
       >
         <Eraser size={11} aria-hidden="true" />
         Clear text
@@ -209,7 +167,7 @@ function LiveClearActions({
         disabled={!hasText && !hasBackground}
         onClick={() => void clearLiveAll()}
         title="Remove text and the dock background"
-        className="flex items-center gap-1 text-[11px] text-zinc-400 hover:text-rose-300 disabled:cursor-not-allowed disabled:opacity-30"
+        className="flex items-center gap-1 text-[11px] text-zinc-500 hover:text-rose-300 disabled:cursor-not-allowed disabled:opacity-30"
       >
         <Trash2 size={11} aria-hidden="true" />
         Clear all

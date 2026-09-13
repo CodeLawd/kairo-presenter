@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import test from 'node:test'
-import { DOCUMENTS } from '../src/lib/documents'
+import { DOCUMENTS, documentsErrorMessage, normalizeDocumentName, POWERPOINT_NEEDS_CONVERTER } from '../src/lib/documents'
 import { IMPORT_OPTIONS, isImportKind } from '../src/lib/import-menu'
 
 const ROOT = path.resolve(__dirname, '..')
@@ -14,6 +14,7 @@ test('import kinds are the document, media, sermon and lyrics pickers', () => {
     'powerpoint',
     'image',
     'video',
+    'audio',
     'sermon',
     'lyrics',
   ])
@@ -51,7 +52,6 @@ test('documents list is registered on the same channel the page invokes', () => 
 })
 
 test('document errors drop Electron\'s invoke wrapper', () => {
-  const { documentsErrorMessage, POWERPOINT_NEEDS_CONVERTER } = require('../src/lib/documents') as typeof import('../src/lib/documents')
   assert.equal(
     documentsErrorMessage(new Error("Error invoking remote method 'documents:prepare': Error: " + POWERPOINT_NEEDS_CONVERTER)),
     POWERPOINT_NEEDS_CONVERTER,
@@ -59,7 +59,7 @@ test('document errors drop Electron\'s invoke wrapper', () => {
 })
 
 test('document rename is validated and wired through IPC', () => {
-  const { normalizeDocumentName, DOCUMENTS: channels } = require('../src/lib/documents') as typeof import('../src/lib/documents')
+  const channels = DOCUMENTS
   assert.equal(normalizeDocumentName('  Sunday slides  '), 'Sunday slides')
   assert.throws(() => normalizeDocumentName('   '), /Enter a name/)
   assert.throws(() => normalizeDocumentName('a/b'), /slashes/)

@@ -345,6 +345,9 @@ app.on('before-quit', () => {
 process.on('uncaughtException', (error) => {
   log.error('Uncaught exception:', error)
   try {
+    // Lazy require: the crashing process must not depend on the module graph
+    // being fully loaded, and resilience must stay out of the startup path.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { resilienceManager } = require('./services/resilience')
     resilienceManager.serializeState()
   } catch (err) {
@@ -355,6 +358,8 @@ process.on('uncaughtException', (error) => {
 process.on('unhandledRejection', (reason, promise) => {
   log.error('Unhandled rejection at:', promise, 'reason:', reason)
   try {
+    // Same lazy require as above — see comment on uncaughtException.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { resilienceManager } = require('./services/resilience')
     resilienceManager.serializeState()
   } catch (err) {

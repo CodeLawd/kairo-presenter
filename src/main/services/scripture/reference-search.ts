@@ -1,8 +1,4 @@
-/**
- * Reference lookup order: the translation the operator picked, then API.Bible
- * for licensed Bibles, then other local copies. Local fallbacks used to run
- * before the API, so NIV/NKJV searches always returned KJV and never hit the network.
- */
+/** Resolve only the translation selected by the operator; never substitute wording. */
 export async function resolveReferenceLookup<TVerse, TResult>(options: {
   requested: string
   localIds: readonly string[]
@@ -11,25 +7,13 @@ export async function resolveReferenceLookup<TVerse, TResult>(options: {
   toLocalResult: (verses: TVerse[], translation: string) => TResult
 }): Promise<TResult[]> {
   const requested = options.requested
-  const local = await options.lookupLocal(requested)
-  if (local.length > 0) return [options.toLocalResult(local, requested)]
-
-  let apiError: unknown
-  if (options.lookupApi) {
-    try {
-      const api = await options.lookupApi()
-      if (api.length > 0) return api
-    } catch (error) {
-      apiError = error
-    }
+  const requestedIsLocal = options.localIds.some(
+    (translation) => translation.toUpperCase() === requested.toUpperCase(),
+  )
+  if (requestedIsLocal) {
+    const local = await options.lookupLocal(requested)
+    return local.length > 0 ? [options.toLocalResult(local, requested)] : []
   }
 
-  for (const translation of options.localIds) {
-    if (translation.toUpperCase() === requested.toUpperCase()) continue
-    const verses = await options.lookupLocal(translation)
-    if (verses.length > 0) return [options.toLocalResult(verses, translation)]
-  }
-
-  if (apiError) throw apiError
-  return []
+  return options.lookupApi ? options.lookupApi() : []
 }

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- Recovery snapshots are unvalidated disk JSON; each consumer validates piecemeal before use. */
 import { EventEmitter } from 'events'
 import dns from 'dns'
 import fs from 'fs'

@@ -239,9 +239,24 @@ export function onboardingReadiness(settings: AppSettings): OnboardingReadiness 
  */
 export function onboardingSummary(settings: AppSettings): OnboardingSummaryLine[] {
   const enabledOutputs = settings.overlay.outputs.filter((output) => output.enabled)
+  // Keys are write-only in the renderer: once saved, `stt.bibleApiKey` /
+  // `stt.apiKey` are redacted to '' and only `secretsConfigured` proves they
+  // exist. The API-keys step already reads the vault flags — the summary must
+  // too, or it reports "None" right after a successful save.
+  const configured = (
+    settings as AppSettings & {
+      secretsConfigured?: { bible?: boolean; deepgram?: boolean }
+    }
+  ).secretsConfigured
+  const hasBible = configured
+    ? Boolean(configured.bible)
+    : settings.stt.bibleApiKey.trim() !== ''
+  const hasDeepgram = configured
+    ? Boolean(configured.deepgram)
+    : settings.stt.apiKey.trim() !== ''
   const keys = [
-    settings.stt.bibleApiKey.trim() ? 'API.Bible' : null,
-    settings.stt.apiKey.trim() ? 'Deepgram' : null,
+    hasBible ? 'API.Bible' : null,
+    hasDeepgram ? 'Deepgram' : null,
   ].filter((key): key is string => key !== null)
 
   return [

@@ -78,7 +78,7 @@ export function ScaledOverlayPreview({
     }
     // `paused` is applied by the effect below so a play/pause toggle does not
     // rebind autoplay listeners and restart the clip.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- html/scale only
+    // Effect deps are intentionally html/scale only (no exhaustive-deps plugin configured).
   }, [html, autoFit, scale.x, scale.y])
 
   useLayoutEffect(() => {
@@ -142,7 +142,7 @@ export function ScaledOverlayPreview({
           transform: `scale(${scale.x}, ${scale.y})`,
           visibility: ready ? 'visible' : 'hidden',
         }}
-        // eslint-disable-next-line react/no-danger -- shared WYSIWYG overlay template (escaped)
+        // Shared WYSIWYG overlay template (escaped upstream; no react/no-danger plugin configured).
         dangerouslySetInnerHTML={{ __html: html }}
       />
     </div>

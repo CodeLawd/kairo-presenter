@@ -51,7 +51,6 @@ export default function StepChurchProfile(): React.ReactElement {
   useEffect(() => {
     if (church.timezone) return
     void save({ timezone: LOCAL_ZONE })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [church.timezone])
 
   // Signup already named the org; write that into the local profile if this
@@ -61,7 +60,6 @@ export default function StepChurchProfile(): React.ReactElement {
     const seeded = name.trim()
     if (!seeded) return
     void save({ name: seeded })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const addServiceTime = (): void => {

@@ -1,0 +1,107 @@
+name: CI
+
+# Non-publishing native matrix (Plan 005 Step 1). Pull-request builds are
+# UNSIGNED and can never publish a release: no signing secrets are referenced
+# here, and no step runs with `--publish`.
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - id: mac-arm64
+            label: macOS arm64
+            runner: macos-14
+            package: package:ci:mac-arm64
+            verify_platform: darwin
+            verify_arch: arm64
+            artifacts: |
+              release/*.dmg
+              release/*.zip
+          - id: mac-x64
+            label: macOS x64
+            runner: macos-15-intel # last Intel image; retires ~Aug 2027
+            package: package:ci:mac-x64
+            verify_platform: darwin
+            verify_arch: x64
+            artifacts: |
+              release/*.dmg
+              release/*.zip
+          - id: win-x64
+            label: Windows x64
+            runner: windows-2022
+            package: package:ci:win-x64
+            verify_target: release/win-unpacked
+            verify_platform: win32
+            verify_arch: x64
+            artifacts: |
+              release/*.exe
+          - id: linux-x64
+            label: Ubuntu x64
+            runner: ubuntu-22.04
+            package: package:ci:linux-x64
+            verify_target: release/linux-unpacked
+            verify_platform: linux
+            verify_arch: x64
+            artifacts: |
+              release/*.AppImage
+              release/*.deb
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Clean install (never reuse node_modules across OSes)
+        run: npm ci
+
+      - name: Quality gates
+        run: npm run typecheck && npm test && npm run test:main
+
+      - name: Compile
+        run: npm run build
+
+      - name: Package (unsigned installer targets, never publish)
+        run: npm run ${{ matrix.package }}
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      - name: Package unpacked dir for verification
+        # The verifier inspects an unpacked app; installer outputs (dmg/exe/
+        # AppImage) are not unpacked. Same tree, same asar content.
+        run: npx --no-install electron-builder --dir -c.mac.identity=null -c.mac.notarize=false --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      - name: Verify package integrity
+        shell: bash
+        run: |
+          if [ -n "${{ matrix.verify_target }}" ]; then
+            TARGET="${{ matrix.verify_target }}"
+          else
+            TARGET="$(find release -maxdepth 3 -name 'Kairo.app' | head -1)"
+            test -n "$TARGET" || (echo "no Kairo.app found under release/" && exit 1)
+          fi
+          node scripts/verify-package.mjs "$TARGET" ${{ matrix.verify_platform }} ${{ matrix.verify_arch }}
+
+      - name: Upload unsigned artifacts for inspection
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: kairo-${{ matrix.id }}-unsigned
+          path: ${{ matrix.artifacts }}
+          if-no-files-found: error
+          retention-days: 7

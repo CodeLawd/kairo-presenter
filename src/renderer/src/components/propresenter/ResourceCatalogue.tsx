@@ -104,6 +104,141 @@ function SavedBindings({ bindings }: { bindings: PPResourceBindings }): React.Re
   )
 }
 
+const SETTINGS_BINDING_ROLES: ReadonlyArray<{
+  key: ResourceBindingKey
+  label: string
+  description: string
+  kind: PPResourceKind
+}> = [
+  {
+    key: 'scriptureThemeId',
+    label: 'Scripture theme',
+    description: 'Used when Kairo creates scripture slides.',
+    kind: 'theme',
+  },
+  {
+    key: 'lyricsThemeId',
+    label: 'Lyrics theme',
+    description: 'Used when Kairo creates song presentations.',
+    kind: 'theme',
+  },
+  {
+    key: 'lowerThirdMessageId',
+    label: 'Lower-third message',
+    description: 'Receives live lower-third text from Kairo.',
+    kind: 'message',
+  },
+  {
+    key: 'ndiVideoInputId',
+    label: 'Kairo video input',
+    description: 'The video input Kairo sends to ProPresenter.',
+    kind: 'videoInput',
+  },
+]
+
+function CompactSettingsBindings({
+  bindings,
+  catalogue,
+  connected,
+  loading,
+  loadError,
+  saveError,
+  savingKey,
+  mode,
+  onRefresh,
+  onBindingChange,
+}: {
+  bindings: PPResourceBindings
+  catalogue: PPResourceCatalogueData
+  connected: boolean
+  loading: boolean
+  loadError: string | null
+  saveError: string | null
+  savingKey: ResourceBindingKey | null
+  mode: ResourceCatalogueMode
+  onRefresh: () => void
+  onBindingChange: (key: ResourceBindingKey, id: string) => Promise<void>
+}): React.ReactElement {
+  return (
+    <section aria-labelledby="settings-resource-catalogue-title">
+      <div className="flex items-start justify-between gap-4 pb-3">
+        <div>
+          <h2 id="settings-resource-catalogue-title" className="text-[11px] font-semibold tracking-tight text-white/45">
+            Resources
+          </h2>
+          <p className="mt-1 text-[11px] leading-snug text-white/40">
+            Choose the ProPresenter resources Kairo should use.
+          </p>
+        </div>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-white/45 transition-colors hover:bg-white/5 hover:text-white/75 disabled:cursor-not-allowed disabled:opacity-40"
+          onClick={onRefresh}
+          disabled={loading || !connected}
+          aria-label="Refresh ProPresenter resources"
+        >
+          <RefreshCw size={12} className={loading ? 'animate-spin' : ''} aria-hidden="true" />
+          Refresh
+        </button>
+      </div>
+
+      <div className="divide-y divide-white/[0.06]">
+        {SETTINGS_BINDING_ROLES.map((role) => {
+          const resources = catalogue.resources
+            .filter((resource) => resource.kind === role.kind)
+            .sort((left, right) => left.name.localeCompare(right.name))
+          const selectedId = bindings[role.key]
+          const selectionMissing = Boolean(selectedId) && !resources.some((resource) => resource.id === selectedId)
+          const saving = savingKey === role.key
+
+          return (
+            <label key={role.key} className="flex min-h-[68px] items-center justify-between gap-6 py-3">
+              <span className="min-w-0">
+                <span className="block text-[13px] font-medium text-white/80">{role.label}</span>
+                <span className="mt-0.5 block text-[11px] leading-snug text-white/35">{role.description}</span>
+              </span>
+              <span className="relative w-[min(44%,22rem)] min-w-[13rem] shrink-0">
+                <select
+                  className="w-full appearance-none bg-transparent py-2 pl-3 pr-8 text-right text-[13px] text-white/70 outline-none transition-colors focus:text-white disabled:cursor-not-allowed disabled:opacity-45"
+                  value={selectedId}
+                  onChange={(event) => void onBindingChange(role.key, event.target.value)}
+                  disabled={!connected || loading || saving}
+                  aria-label={role.label}
+                >
+                  <option value="">Not selected</option>
+                  {selectionMissing && <option value={selectedId}>Unavailable resource</option>}
+                  {resources.map((resource) => (
+                    <option key={resource.id} value={resource.id}>{resource.name}</option>
+                  ))}
+                </select>
+                {saving && (
+                  <Loader size={12} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 animate-spin text-white/40" aria-label="Saving resource binding" />
+                )}
+              </span>
+            </label>
+          )
+        })}
+      </div>
+
+      {!connected && (
+        <p className="flex items-center gap-2 pt-3 text-[11px] text-white/35">
+          <WifiOff size={12} aria-hidden="true" /> Connect ProPresenter to change these selections. Saved choices are preserved.
+        </p>
+      )}
+      {loadError && <p className="pt-3 text-[11px] text-rose-400" role="alert">Could not load resources: {loadError}</p>}
+      {catalogue.warnings.length > 0 && !loadError && (
+        <p className="pt-3 text-[11px] text-yellow-400/80">
+          Some ProPresenter resources could not be read. Available choices are shown above.
+        </p>
+      )}
+      {saveError && <p className="pt-3 text-[11px] text-rose-400" role="alert">{saveError}</p>}
+      {mode === 'onboarding' && (
+        <p className="pt-3 text-[11px] leading-relaxed text-white/35">This step is optional. Continue without a binding if discovery is unavailable.</p>
+      )}
+    </section>
+  )
+}
+
 export default function ResourceCatalogue({ mode }: { mode: ResourceCatalogueMode }): React.ReactElement {
   const connected = useAppStore((state) => state.ppState === 'connected')
   const storedBindings = useBootstrapStore((state) => state.settings.propresenterResources)
@@ -170,29 +305,39 @@ export default function ResourceCatalogue({ mode }: { mode: ResourceCatalogueMod
     }
   }, [bindings, patchSettings])
 
+  // Settings and onboarding share the compact selectors. The full catalogue
+  // browser below is legacy: it overflows the 520px setup dialog, so onboarding
+  // must never render it.
+  if (mode === 'settings' || mode === 'onboarding') {
+    return (
+      <CompactSettingsBindings
+        bindings={bindings}
+        catalogue={catalogue}
+        connected={connected}
+        loading={loading}
+        loadError={loadError}
+        saveError={saveError}
+        savingKey={savingKey}
+        mode={mode}
+        onRefresh={() => void loadCatalogue(true)}
+        onBindingChange={setBinding}
+      />
+    )
+  }
+
   return (
     <section className="space-y-4" aria-labelledby={`${mode}-resource-catalogue-title`}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2
             id={`${mode}-resource-catalogue-title`}
-            className={
-              mode === 'settings'
-                ? 'text-[11px] font-semibold tracking-tight text-white/45'
-                : 'text-sm font-semibold text-white'
-            }
+            className="text-sm font-semibold text-white"
           >
-            {mode === 'settings' ? 'Resources' : 'Choose existing ProPresenter resources'}
+            Choose existing ProPresenter resources
           </h2>
-          {mode === 'onboarding' ? (
-            <p className="mt-1 max-w-[58ch] text-xs leading-relaxed text-slate-500">
-              Browse what ProPresenter already owns and optionally connect it to a Kairo role. Nothing in ProPresenter was changed.
-            </p>
-          ) : (
-            <p className="mt-1 text-[11px] leading-snug text-white/40">
-              Bind existing ProPresenter items to Kairo roles. Nothing in ProPresenter is changed.
-            </p>
-          )}
+          <p className="mt-1 max-w-[58ch] text-xs leading-relaxed text-slate-500">
+            Browse what ProPresenter already owns and optionally connect it to a Kairo role. Nothing in ProPresenter was changed.
+          </p>
         </div>
         <button
           type="button"
@@ -274,7 +419,7 @@ export default function ResourceCatalogue({ mode }: { mode: ResourceCatalogueMod
             </div>
           </div>
 
-          <div className={mode === 'settings' ? 'flex flex-col gap-3' : 'grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]'}>
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
             <div className="min-w-0 space-y-2" aria-label="ProPresenter resource results">
               {filteredResources.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-surface-border/70 px-4 py-6 text-center">
@@ -288,11 +433,7 @@ export default function ResourceCatalogue({ mode }: { mode: ResourceCatalogueMod
                   <button
                     type="button"
                     key={resourceKey}
-                    className={
-                      mode === 'settings'
-                        ? `flex w-full items-center gap-3 rounded-[10px] p-2 text-left transition-colors ${isSelected ? 'bg-[#454545] text-white' : 'bg-[#2c2c2c] hover:bg-[#353535]'}`
-                        : `flex w-full items-center gap-3 rounded-xl border p-2.5 text-left transition-colors ${isSelected ? 'border-teal-500/40 bg-teal-500/5' : 'border-surface-border/50 bg-surface-secondary/15 hover:border-surface-border hover:bg-surface-secondary/35'}`
-                    }
+                    className={`flex w-full items-center gap-3 rounded-xl border p-2.5 text-left transition-colors ${isSelected ? 'border-teal-500/40 bg-teal-500/5' : 'border-surface-border/50 bg-surface-secondary/15 hover:border-surface-border hover:bg-surface-secondary/35'}`}
                     onClick={() => setSelectedKey(resourceKey)}
                     aria-pressed={isSelected}
                     data-resource-id={resource.id}

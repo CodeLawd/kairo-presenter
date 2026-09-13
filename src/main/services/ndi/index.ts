@@ -1,5 +1,7 @@
 import log from 'electron-log/main'
 import { NDI_SENDER_NAME, PRODUCT_NAME } from '@shared/brand'
+import { loadNdiProvider, type ProviderLoadResult } from './provider-loader'
+import type { NdiProvider, NdiSender, NdiVideoFrame } from './provider'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -10,12 +12,11 @@ const SENDER_NAME = NDI_SENDER_NAME
 const FRAME_INTERVAL_MS = 100
 const FRAME_RATE_N = 30000
 const FRAME_RATE_D = 1001
-/** grandiose-mac's `frameFormatType` — FORMAT_TYPE_PROGRESSIVE. */
+/** Native `frameFormatType` — FORMAT_TYPE_PROGRESSIVE. */
 const FRAME_FORMAT_PROGRESSIVE = 1
 /**
- * 'BGRA' fourCC per the NDI SDK (`NDIlib_FourCC_video_type_BGRA`) and
- * grandiose-mac's own `index.d.ts` FourCC enum (BGRA = 1095911234). Verified
- * directly against the installed grandiose-mac@0.0.6 native binding, which
+ * 'BGRA' fourCC per the NDI SDK (`NDIlib_FourCC_video_type_BGRA`). Verified
+ * directly against the installed native binding, which
  * passes this number straight through to `NDIlib_FourCC_video_type_e` — it is
  * NOT read from a runtime export (the module's TS `FourCC` enum is a
  * `const enum` and does not exist in the compiled JS, so callers must hardcode
@@ -27,34 +28,16 @@ const FOURCC_BGRA = 1095911234
 /** Backoff between sender-creation attempts, so repeated pushes cannot hammer NDI. */
 const RETRY_COOLDOWN_MS = 5000
 
-// ─── Minimal grandiose-mac surface used here (no upstream @types package) ──────
+// ─── Minimal native surface is now behind NdiProvider (see provider.ts) ───────
+// Frame shape re-exported for the provider boundary; values below are unchanged.
 
-interface GrandioseVideoFrame {
-  xres: number
-  yres: number
-  frameRateN: number
-  frameRateD: number
-  pictureAspectRatio: number
-  frameFormatType: number
-  lineStrideBytes: number
-  data: Buffer
-  fourCC: number
-}
-
-interface GrandioseSender {
-  video: (frame: GrandioseVideoFrame) => Promise<void>
-}
-
-interface GrandioseModule {
-  version: () => string
-  send: (opts: { name: string; clockVideo?: boolean; clockAudio?: boolean }) => Promise<GrandioseSender>
-}
+export type { NdiVideoFrame }
 
 // ─── Service ──────────────────────────────────────────────────────────────────
 
 class NdiService {
-  private grandiose: GrandioseModule | null = null
-  private sender: GrandioseSender | null = null
+  private provider: NdiProvider | null = null
+  private sender: NdiSender | null = null
   private available = false
   private sending = false
   private frameTimer: ReturnType<typeof setInterval> | null = null
@@ -65,21 +48,31 @@ class NdiService {
   /** Earliest time another attempt may run — see RETRY_COOLDOWN_MS. */
   private retryAfter = 0
 
-  constructor() {
+  constructor(loadResult?: ProviderLoadResult) {
     this.currentFrame = Buffer.alloc(WIDTH * HEIGHT * 4, 0) // fully transparent (alpha 0)
 
+    // Dependency loading stays lazy and inside error handling per plan — a
+    // missing/broken native module must never crash main; everything else
+    // here just no-ops. Injectable for tests via loadResult. The loader
+    // itself is also guarded: under a future ESM bundle `require` may not
+    // exist, and that must degrade to NDI-unavailable, not a startup crash.
+    let result: ProviderLoadResult
     try {
-      // Loaded lazily inside try/catch per plan — a missing/broken native
-      // module must never crash main; everything else here just no-ops.
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      this.grandiose = require('grandiose-mac') as GrandioseModule
-      this.available = true
-      log.info('[NDI] grandiose-mac loaded', { sdkVersion: this.grandiose.version() })
+      result = loadResult ?? loadNdiProvider()
     } catch (err) {
+      result = { ok: false, reason: `provider loader threw: ${(err as Error).message}` }
+    }
+    if (result.ok) {
+      this.provider = result.provider
+      this.available = true
+      try {
+        log.info('[NDI] provider loaded', { sdkVersion: this.provider.version() })
+      } catch {
+        log.info('[NDI] provider loaded')
+      }
+    } else {
       this.available = false
-      log.warn('[NDI] grandiose-mac failed to load — NDI features disabled', {
-        error: (err as Error).message,
-      })
+      log.warn('[NDI] NDI unavailable — NDI features disabled', { error: result.reason })
     }
   }
 
@@ -106,7 +99,7 @@ class NdiService {
 
   private async _start(): Promise<void> {
     try {
-      this.sender = await this.grandiose!.send({ name: SENDER_NAME, clockVideo: true })
+      this.sender = await this.provider!.createSender({ name: SENDER_NAME, clockVideo: true })
       this.sending = true
       this.senderError = null
       log.info('[NDI] Sender created', { name: SENDER_NAME, width: WIDTH, height: HEIGHT })
@@ -135,7 +128,7 @@ class NdiService {
 
   private async pushFrame(): Promise<void> {
     if (!this.sender) return
-    const frame: GrandioseVideoFrame = {
+    const frame: NdiVideoFrame = {
       xres: WIDTH,
       yres: HEIGHT,
       frameRateN: FRAME_RATE_N,
@@ -146,7 +139,7 @@ class NdiService {
       data: this.currentFrame,
       fourCC: FOURCC_BGRA,
     }
-    await this.sender.video(frame)
+    await this.sender.sendVideo(frame)
   }
 
   /** Called by the offscreen overlay window's 'paint' handler with the latest BGRA bitmap. */
@@ -169,14 +162,24 @@ class NdiService {
       this.frameTimer = null
     }
     this.sending = false
-    // grandiose-mac@0.0.6 exposes no explicit destroy()/close() on the Sender —
-    // the native NDI sender is released via a GC finalizer tied to the
-    // `embedded` external value (confirmed by reading grandiose_send.cc).
-    // Dropping the last reference here makes it eligible for collection; the
-    // NDI runtime also tears down at process exit regardless. This does not
-    // hang app quit — there is nothing to await.
+    // The legacy native binding exposes no explicit destroy()/close() on the
+    // Sender — the native NDI sender is released via a GC finalizer tied to
+    // the `embedded` external value (confirmed by reading the native send
+    // source). Dropping the last reference here makes it eligible for
+    // collection; the NDI runtime also tears down at process exit regardless.
+    // Providers with an explicit destroy() get it called best-effort. This
+    // does not hang app quit — there is nothing to await.
+    const sender = this.sender
     this.sender = null
+    try {
+      await sender?.destroy?.()
+    } catch {
+      /* teardown must never throw */
+    }
   }
 }
+
+/** Test seam — same class, injectable provider result. */
+export { NdiService }
 
 export const ndiService = new NdiService()
