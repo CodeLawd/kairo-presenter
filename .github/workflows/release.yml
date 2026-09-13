@@ -98,6 +98,7 @@ jobs:
 
       - name: Check production endpoint configuration
         # A signed release pointing at localhost is worse than no release.
+        shell: bash
         run: |
           test -n "$MAIN_VITE_API_URL" || (echo "::error::MAIN_VITE_API_URL is empty — set PROD_API_URL (release environment or repo variables)" && exit 1)
           test -n "$MAIN_VITE_WEB_URL" || (echo "::error::MAIN_VITE_WEB_URL is empty — set PROD_WEB_URL (release environment or repo variables)" && exit 1)
