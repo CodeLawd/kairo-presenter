@@ -127,17 +127,17 @@ ok('app.asar + app.asar.unpacked exist')
 // native payload (fail-open, but loud about it).
 let asarListing = null
 try {
-  const asarBin = path.join(
-    process.cwd(),
-    'node_modules',
-    '.bin',
-    process.platform === 'win32' ? 'asar.cmd' : 'asar',
-  )
-  const result = await run(asarBin, ['list', path.join(resourcesRoot, 'app.asar')], {
+  // Run the asar CLI's JS entry with this Node binary instead of the
+  // node_modules/.bin shim: Node refuses to spawn .cmd files without a shell
+  // on Windows (spawn EINVAL, CVE-2024-27980).
+  const asarCli = path.join(process.cwd(), 'node_modules', '@electron', 'asar', 'bin', 'asar.js')
+  const result = await run(process.execPath, [asarCli, 'list', path.join(resourcesRoot, 'app.asar')], {
     timeout: 120_000,
     maxBuffer: 256 * 1024 * 1024,
   })
-  asarListing = result.stdout
+  // asar lists with the platform separator (and CRLF on Windows); the checks
+  // below expect POSIX-style `/out/main/...` lines.
+  asarListing = result.stdout.replace(/\r\n/g, '\n').replace(/\\/g, '/')
 } catch (err) {
   fail(`asar listing unavailable; package contents could not be verified (${err.message})`)
 }
@@ -224,7 +224,8 @@ const allNative = await findFiles(
   (full, name) =>
     name.endsWith('.node') || name.endsWith('.dylib') || name.endsWith('.dll') || /\.so(\.|$)/.test(name),
 )
-const foreign = allNative.filter((f) => foreignPatterns.some((re) => re.test(f)))
+// Patterns use `/`; normalize Windows paths so they can actually match.
+const foreign = allNative.filter((f) => foreignPatterns.some((re) => re.test(f.replace(/\\/g, '/'))))
 if (foreign.length > 0) {
   fail(`foreign native payload present:\n  ${foreign.map((f) => path.relative(unpackedRoot, f)).join('\n  ')}`)
 }
