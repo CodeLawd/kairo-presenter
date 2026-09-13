@@ -267,6 +267,22 @@ const scripture: ProAutomateAPI['scripture'] = {
   onOfflineDownloadProgress(callback: (value: ApiBibleDownloadProgress) => void): Unsubscribe {
     return subscribe<ApiBibleDownloadProgress>(IPC.SCRIPTURE.OFFLINE_DOWNLOAD_PROGRESS, callback)
   },
+
+  installLocalBiblePack() {
+    return ipcRenderer.invoke(IPC.SCRIPTURE.INSTALL_LOCAL_BIBLE_PACK)
+  },
+
+  downloadLocalBibleTranslation(translation: string) {
+    return ipcRenderer.invoke(IPC.SCRIPTURE.DOWNLOAD_LOCAL_BIBLE_TRANSLATION, translation)
+  },
+
+  getLocalBiblePackStatus(translation: string) {
+    return ipcRenderer.invoke(IPC.SCRIPTURE.GET_LOCAL_BIBLE_PACK_STATUS, translation)
+  },
+
+  removeLocalBibleTranslation(translation: string) {
+    return ipcRenderer.invoke(IPC.SCRIPTURE.REMOVE_LOCAL_BIBLE_TRANSLATION, translation)
+  },
 }
 
 // ─── transcription ────────────────────────────────────────────────────────────

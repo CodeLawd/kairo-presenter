@@ -1,13 +1,14 @@
 import type { QuoteCandidate } from './quote-recovery'
-import path from 'path'
-import { app } from 'electron'
 import log from 'electron-log/main'
+import fs from 'fs'
 import type {
   ScriptureSuggestion,
   ScriptureResult,
   ScriptureVerse,
   ScriptureTranslation,
   ScriptureTranslationOption,
+  LocalBiblePackInstallResult,
+  LocalBiblePackStatus,
 } from '@shared/ipc'
 import { BibleDatabase } from './bible-db'
 import { parseScriptureReference } from './reference'
@@ -16,6 +17,14 @@ import { ApiBibleClient } from './api-bible-client'
 import { ApiBibleLookup, type ApiBibleLookupCache } from './api-bible-lookup'
 import type { ApiBibleCache } from './api-bible-cache'
 import { resolveReferenceLookup } from './reference-search'
+import {
+  NKJV_PACK_TRANSLATION_ID,
+  packStatusFor,
+  downloadNkjvPack,
+  temporaryPackPath,
+  resolveWritableBibleDbPath,
+  validatePackFile,
+} from './local-bible-pack'
 
 type SuggestionCallback = (suggestion: ScriptureSuggestion) => void
 
@@ -40,15 +49,11 @@ export class ScriptureService {
   // ─── Lifecycle ────────────────────────────────────────────────────────────
 
   open(dbPath?: string): void {
-    // Required lazily: `is` reads `app.isPackaged` on import, which does not
-    // exist when this module is loaded outside a running Electron app (tests).
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { is } = require('@electron-toolkit/utils') as typeof import('@electron-toolkit/utils')
-    const p = dbPath ?? (
-      is.dev
-        ? path.join(app.getAppPath(), 'resources', 'bible.db')
-        : path.join(process.resourcesPath, 'bible.db')
-    )
+    // The writable userData copy — never resources/bible.db, which is
+    // read-only once packaged and must never gain user-installed packs in
+    // development checkouts. Copied on first run only; an existing userData
+    // database (including a previously installed local NKJV) is never replaced.
+    const p = dbPath ?? resolveWritableBibleDbPath()
     this.db = new BibleDatabase(p)
   }
 
@@ -61,6 +66,102 @@ export class ScriptureService {
 
   getApiCache(): ApiBibleCache | null {
     return this.apiCache
+  }
+
+  // ─── Optional local Bible packs (e.g. NKJV from a user-supplied file) ──────
+  // Filesystem and database access stay in the main process; the renderer only
+  // ever sees typed results. Validation failures throw plain Errors whose
+  // messages are safe to display in Settings.
+
+  private requireDb(): BibleDatabase {
+    if (!this.db) throw new Error('Scripture database is not open.')
+    return this.db
+  }
+
+  /** Whether `translation` is served from the local bible.db right now. */
+  isLocalTranslation(translation: string): boolean {
+    if (!this.db) return false
+    return this.db
+      .getAllTranslations()
+      .some((item) => item.id.toUpperCase() === translation.toUpperCase())
+  }
+
+  getLocalBiblePackStatus(translation: string): LocalBiblePackStatus {
+    const db = this.requireDb()
+    const normalized = translation.toUpperCase()
+    const has = db.hasTranslation(normalized)
+    const verseCount = has ? db.getVerseCount(normalized) : 0
+    const chapterCount = has ? db.getChapterCount(normalized) : 0
+    const status = packStatusFor(normalized, verseCount, chapterCount, has)
+    return {
+      translation: status.translation,
+      verseCount: status.verseCount,
+      chapterCount: status.chapterCount,
+      installed: status.installed,
+    }
+  }
+
+  /**
+   * Validate an NKJV SQLite pack and import it into the writable userData
+   * bible.db, replacing only NKJV rows. Validation runs before anything is
+   * written; the import itself is one transaction, so a failure preserves
+   * whatever NKJV copy was installed before.
+   */
+  installLocalBiblePack(packPath: string): LocalBiblePackInstallResult {
+    const db = this.requireDb()
+    // Throws on any structural problem — the database is untouched.
+    const pack = validatePackFile(packPath)
+    // Single-transaction replace of NKJV verses + FTS rows. A throw here
+    // rolls back to the previously installed NKJV.
+    db.importTranslationPack(
+      pack.translationId,
+      pack.translationName,
+      pack.language,
+      pack.verses,
+    )
+    log.info('[Scripture] Local Bible pack installed', {
+      translation: pack.translationId,
+      verses: pack.verseCount,
+    })
+    return {
+      translation: pack.translationId,
+      verseCount: pack.verseCount,
+      chapterCount: pack.chapterCount,
+      installed: true,
+    }
+  }
+
+  async downloadLocalBibleTranslation(translation: string): Promise<LocalBiblePackInstallResult> {
+    const normalized = translation.toUpperCase()
+    if (normalized !== NKJV_PACK_TRANSLATION_ID) {
+      throw new Error(`No downloadable local pack is available for ${normalized}.`)
+    }
+    const sqlite = await downloadNkjvPack()
+    const temporaryPath = temporaryPackPath()
+    try {
+      fs.writeFileSync(temporaryPath, sqlite, { flag: 'wx', mode: 0o600 })
+      return this.installLocalBiblePack(temporaryPath)
+    } finally {
+      try { fs.unlinkSync(temporaryPath) } catch { /* best-effort temporary cleanup */ }
+    }
+  }
+
+  /**
+   * Remove only the locally installed NKJV rows and their FTS entries.
+   * Restricted to NKJV so bundled translations (KJV, BSB, …) can never be
+   * removed through this path, no matter what id the renderer passes.
+   */
+  removeLocalBibleTranslation(translation: string): LocalBiblePackStatus {
+    const db = this.requireDb()
+    const normalized = translation.toUpperCase()
+    if (normalized !== NKJV_PACK_TRANSLATION_ID) {
+      throw new Error(`Only the local ${NKJV_PACK_TRANSLATION_ID} copy can be removed.`)
+    }
+    if (db.hasTranslation(normalized)) {
+      db.removeTranslation(normalized)
+      log.info('[Scripture] Local Bible translation removed', { translation: normalized })
+    }
+    return this.getLocalBiblePackStatus(normalized)
   }
 
   // ─── Event subscriptions ──────────────────────────────────────────────────
@@ -170,9 +271,14 @@ export class ScriptureService {
       })
     }
 
-    // Phrase / keyword search: prefer the configured API.Bible translation
-    // (NKJV, NIV, …), then fall back to the local bible.db seed.
-    if (apiKey) {
+    // Phrase / keyword search: a locally installed NKJV is always served
+    // from SQLite first and never touches API.Bible — the operator installed
+    // it precisely so no key or network is needed. Every other translation
+    // keeps the existing behavior: prefer the configured API.Bible
+    // translation (NKJV, NIV, …), then fall back to the local bible.db seed.
+    const localNkjvPreferred =
+      translation.toUpperCase() === NKJV_PACK_TRANSLATION_ID && preferredIsLocal
+    if (apiKey && !localNkjvPreferred) {
       try {
         const apiHits = await this.searchPhraseFromApiBible(query, translation, apiKey)
         if (apiHits.length > 0) {
@@ -303,7 +409,7 @@ export class ScriptureService {
     return catalog.map(([id, name, access]) => ({
       id, name, access,
       available: local.has(id) || this.apiBibleIds.has(id),
-      requiresApiKey: access === 'api',
+      requiresApiKey: access === 'api' && !local.has(id),
     }))
   }
 

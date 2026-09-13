@@ -3,6 +3,11 @@
   "productName": "Kairo",
   "version": "1.0.0",
   "description": "Kairo — scripture, lyrics, and presentation for ProPresenter",
+  "author": {
+    "name": "Alexander Joshua",
+    "email": "alexander.joshua2018@gmail.com"
+  },
+  "desktopName": "Kairo.desktop",
   "main": "./out/main/index.js",
   "private": true,
   "scripts": {
@@ -23,6 +28,7 @@
     "rebuild:native": "electron-rebuild -f -w better-sqlite3",
     "seed:bible": "npx tsx scripts/seed-bible.ts",
     "seed:bible:all": "npx tsx scripts/seed-bible.ts --translations KJV,BBE",
+    "build:bible-pack": "ELECTRON_RUN_AS_NODE=1 electron ./node_modules/tsx/dist/cli.mjs scripts/build-bible-pack.ts",
     "build:mac": "npm run typecheck && electron-vite build && electron-builder --mac --arm64",
     "build:mac:arm64": "npm run typecheck && electron-vite build && electron-builder --mac --arm64",
     "build:mac:x64": "npm run typecheck && electron-vite build && electron-builder --mac --x64",
@@ -54,7 +60,6 @@
     "electron-store": "^8.2.0",
     "electron-updater": "^6.8.9",
     "grandi": "2.0.2",
-    "grandiose-mac": "^0.0.6",
     "input-otp": "^1.5.0",
     "mammoth": "^1.12.1",
     "openai": "^6.38.0",
@@ -62,6 +67,9 @@
     "radix-ui": "^1.6.7",
     "react-resizable-panels": "^4.12.3",
     "zustand": "^4.5.5"
+  },
+  "optionalDependencies": {
+    "grandiose-mac": "^0.0.6"
   },
   "devDependencies": {
     "@electron/asar": "3.4.1",
@@ -314,6 +322,7 @@
       "icon": "build/icons",
       "category": "AudioVideo",
       "description": "Kairo — scripture, lyrics, and presentation for ProPresenter",
+      "syncDesktopName": true,
       "target": [
         {
           "target": "AppImage",

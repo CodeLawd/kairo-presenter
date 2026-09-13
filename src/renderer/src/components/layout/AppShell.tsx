@@ -115,11 +115,11 @@ export default function AppShell({
   return (
     <header className="app-header drag-region shrink-0 bg-surface pane-edge-b">
       <div
-        className="header-navigation no-drag flex min-w-0 items-center"
+        className="header-navigation flex min-w-0 items-center"
         role="tablist"
         aria-label="Workspaces"
       >
-        <div className="flex items-center rounded-md bg-white/[0.05] p-0.5">
+        <div className="no-drag flex items-center rounded-md bg-white/[0.05] p-0.5">
           {workspaces.map(({ id, label, icon: Icon }) => {
             const active = currentRoute === id
             return (
@@ -174,7 +174,7 @@ export default function AppShell({
         />
       </div>
 
-      <div className="header-live no-drag flex shrink-0 items-center gap-1 pl-2">
+      <div className="header-live flex shrink-0 items-center gap-1 pl-2">
         <button
           type="button"
           onClick={() => toggleMedia()}

@@ -15,7 +15,9 @@ jobs:
     name: ${{ matrix.label }}
     runs-on: ${{ matrix.runner }}
     strategy:
-      fail-fast: true
+      # Let every native target finish so one failure does not hide results
+      # or prevent successful installers from being uploaded.
+      fail-fast: false
       matrix:
         include:
           - id: mac-arm64

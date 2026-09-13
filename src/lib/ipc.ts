@@ -701,6 +701,26 @@ export interface ApiBibleDownloadProgress {
   error?: string
 }
 
+// ─── Optional local Bible packs ─────────────────────────────────────────────
+// A user-supplied SQLite pack (today: NKJV) installed into the writable
+// userData bible.db. The renderer never sees file paths — only typed status.
+
+export interface LocalBiblePackStatus {
+  /** Normalized translation id, e.g. 'NKJV'. */
+  translation: string
+  verseCount: number
+  chapterCount: number
+  /** True once the full expected verse set for this translation is installed. */
+  installed: boolean
+}
+
+export interface LocalBiblePackInstallResult {
+  translation: string
+  verseCount: number
+  chapterCount: number
+  installed: true
+}
+
 export interface SermonScriptureItem {
   id: string
   reference: string
@@ -1117,6 +1137,18 @@ export interface ScriptureAPI {
   removeOfflineTranslation: (bibleId: string) => Promise<void>
   /** Returns cleanup fn. Fires as chapters are downloaded or refreshed. */
   onOfflineDownloadProgress: (callback: (value: ApiBibleDownloadProgress) => void) => Unsubscribe
+  /**
+   * Installs a user-supplied local Bible pack (NKJV) into the userData
+   * bible.db. With no argument the main process shows a native file picker;
+   * the chosen path is never exposed to the renderer.
+   */
+  installLocalBiblePack: () => Promise<LocalBiblePackInstallResult | null>
+  /** Downloads, verifies, and installs the official optional pack. */
+  downloadLocalBibleTranslation: (translation: string) => Promise<LocalBiblePackInstallResult>
+  /** Whether a local copy of `translation` (e.g. 'NKJV') is installed. */
+  getLocalBiblePackStatus: (translation: string) => Promise<LocalBiblePackStatus>
+  /** Removes only the local `translation` rows and their FTS entries. */
+  removeLocalBibleTranslation: (translation: string) => Promise<LocalBiblePackStatus>
 }
 
 export interface TranscriptionAPI {
@@ -1532,6 +1564,10 @@ export const IPC = {
     REFRESH_OFFLINE_TRANSLATION: 'scripture:refreshOfflineTranslation',  // invoke
     REMOVE_OFFLINE_TRANSLATION:  'scripture:removeOfflineTranslation',   // invoke
     OFFLINE_DOWNLOAD_PROGRESS:   'scripture:offlineDownloadProgress',    // push
+    INSTALL_LOCAL_BIBLE_PACK:    'scripture:installLocalBiblePack',      // invoke
+    DOWNLOAD_LOCAL_BIBLE_TRANSLATION: 'scripture:downloadLocalBibleTranslation', // invoke
+    GET_LOCAL_BIBLE_PACK_STATUS: 'scripture:getLocalBiblePackStatus',    // invoke
+    REMOVE_LOCAL_BIBLE_TRANSLATION: 'scripture:removeLocalBibleTranslation', // invoke
     SET_AUTO_MODE:          'scripture:setAutoMode',             // invoke
     SET_CONFIDENCE:         'scripture:setConfidenceThreshold',  // invoke
     SUGGESTION:             'scripture:suggestion',              // push

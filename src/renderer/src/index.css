@@ -145,6 +145,24 @@
     -webkit-app-region: no-drag;
   }
 
+  /* Header background drags the window; interactive children opt out so
+     clicks still work. Layout containers stay draggable so empty gaps,
+     labels, and padding remain grab targets on every tab. */
+  .app-header button,
+  .app-header a,
+  .app-header input,
+  .app-header textarea,
+  .app-header select,
+  .app-header label,
+  .app-header [role='tab'],
+  .app-header [role='switch'],
+  .app-header [role='slider'],
+  .app-header [data-slot='select-trigger'],
+  .app-header [data-slot='switch'],
+  .app-header [data-slot='slider'] {
+    -webkit-app-region: no-drag;
+  }
+
   /* Scrollbar styling */
   ::-webkit-scrollbar {
     width: 5px;

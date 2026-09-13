@@ -18,6 +18,7 @@
     "electron.vite.config.*",
     "src/lib/**/*",
     "src/main/**/*",
-    "src/preload/**/*"
+    "src/preload/**/*",
+    "scripts/build-bible-pack.ts"
   ]
 }

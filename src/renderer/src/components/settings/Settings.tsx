@@ -47,6 +47,7 @@ import type {
   SettingsSecretClearKey,
 } from '@shared/ipc'
 import { OfflineBibleManager } from './OfflineBibleManager'
+import { LocalBiblePackManager } from './LocalBiblePackManager'
 import { ScriptureLatencyPanel } from './ScriptureLatencyPanel'
 import { DEFAULT_SETTINGS } from '@/lib/defaultSettings'
 import { useBootstrapStore } from '@/bootstrap/useBootstrapStore'
@@ -1244,6 +1245,30 @@ function ScriptureSection({
   // once the saved API.Bible key has been validated.
   const translations = useBootstrapStore((state) => state.translations)
   const translationsLoading = useBootstrapStore((state) => state.apiBibleAuth === 'checking')
+  const [downloadingTranslation, setDownloadingTranslation] = useState(false)
+
+  const selectTranslation = async (translation: ScriptureTranslation): Promise<void> => {
+    const option = translations.find((item) => item.id === translation)
+    if (translation === 'NKJV' && !option?.available) {
+      const confirmed = window.confirm(
+        'Download and use NKJV?\n\n' +
+          'Kairo will download about 5 MB once. NKJV will then work completely offline.',
+      )
+      if (!confirmed) return
+      setDownloadingTranslation(true)
+      try {
+        await window.api.scripture.downloadLocalBibleTranslation('NKJV')
+        const refreshed = await window.api.scripture.getTranslations()
+        useBootstrapStore.getState().setTranslations(refreshed)
+      } catch (error) {
+        window.alert((error as Error).message)
+        return
+      } finally {
+        setDownloadingTranslation(false)
+      }
+    }
+    update('scripture', { defaultTranslation: translation })
+  }
 
   return (
     <div className="space-y-5">
@@ -1252,15 +1277,18 @@ function ScriptureSection({
           <select
             className={PREF_SELECT}
             value={sc.defaultTranslation}
-            onChange={(e) =>
-              update('scripture', { defaultTranslation: e.target.value as ScriptureTranslation })
-            }
+            disabled={downloadingTranslation}
+            onChange={(e) => { void selectTranslation(e.target.value as ScriptureTranslation) }}
             aria-label="Default bible translation"
           >
             {translations.map((translation) => (
-              <option key={translation.id} value={translation.id} disabled={!translation.available}>
+              <option
+                key={translation.id}
+                value={translation.id}
+                disabled={!translation.available && translation.id !== 'NKJV'}
+              >
                 {translation.id}
-                {translation.available ? '' : ' (offline)'}
+                {translation.available ? '' : translation.id === 'NKJV' ? ' (download)' : ' (offline)'}
               </option>
             ))}
           </select>
@@ -1276,6 +1304,12 @@ function ScriptureSection({
       <PrefGroup title="Offline">
         <PrefPad>
           <OfflineBibleManager />
+        </PrefPad>
+      </PrefGroup>
+
+      <PrefGroup title="Local Bible packs">
+        <PrefPad>
+          <LocalBiblePackManager />
         </PrefPad>
       </PrefGroup>
 

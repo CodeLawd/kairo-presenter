@@ -515,6 +515,13 @@ export class BibleDatabase {
     return row.n
   }
 
+  getChapterCount(translationId: string): number {
+    const row = this.db
+      .prepare('SELECT COUNT(*) as n FROM (SELECT DISTINCT book_id, chapter FROM verses WHERE translation_id = ?)')
+      .get(translationId) as { n: number }
+    return row.n
+  }
+
   setDefaultTranslation(id: string): void {
     this.stmts.setDefault.run(id)
   }
@@ -548,6 +555,57 @@ export class BibleDatabase {
     }
 
     log.info('[BibleDB] Translation imported', { id, verses: total })
+  }
+
+  // ─── Local Bible packs (optional user-installed translations, e.g. NKJV) ───
+
+  /**
+   * Replace every row of one translation — verses, FTS entries and the
+   * translation record — inside a SINGLE transaction.
+   *
+   * Atomicity is the point: when the insert throws partway through (a bad
+   * row, a full disk), the transaction rolls back and the previously
+   * installed copy of this translation is preserved untouched. Callers must
+   * validate the pack (see local-bible-pack.ts) before calling.
+   *
+   * Only the given translation id is touched; every other translation keeps
+   * its rows, its FTS entries and its default flag.
+   */
+  importTranslationPack(
+    id: string,
+    name: string,
+    language: string,
+    verses: Array<{ bookId: number; chapter: number; verse: number; text: string }>,
+  ): void {
+    const replace = this.db.transaction(() => {
+      this.db.prepare('DELETE FROM verses_fts WHERE translation_id = ?').run(id)
+      this.db.prepare('DELETE FROM verses WHERE translation_id = ?').run(id)
+      // A pack must never steal the default flag from the bundled Bible.
+      this.stmts.insertTranslation.run(id, name, language, 0)
+      for (const v of verses) {
+        this.stmts.insertVerse.run(id, v.bookId, v.chapter, v.verse, v.text)
+        this.stmts.insertFts.run(v.text, id, v.bookId, v.chapter, v.verse)
+      }
+    })
+    replace()
+    log.info('[BibleDB] Local Bible pack imported', { id, verses: verses.length })
+  }
+
+  /**
+   * Delete one locally installed translation — its verses, its FTS entries
+   * and its translation record — in a single transaction. Other translations
+   * are never matched by the WHERE clause and cannot be affected.
+   */
+  removeTranslation(id: string): { verses: number } {
+    const before = this.getVerseCount(id)
+    const remove = this.db.transaction(() => {
+      this.db.prepare('DELETE FROM verses_fts WHERE translation_id = ?').run(id)
+      this.db.prepare('DELETE FROM verses WHERE translation_id = ?').run(id)
+      this.db.prepare('DELETE FROM translations WHERE id = ?').run(id)
+    })
+    remove()
+    log.info('[BibleDB] Local Bible translation removed', { id, verses: before })
+    return { verses: before }
   }
 
   // ─── Internal ──────────────────────────────────────────────────────────────
