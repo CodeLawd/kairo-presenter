@@ -24,6 +24,7 @@ jobs:
             label: macOS arm64
             runner: macos-14
             package: package:ci:mac-arm64
+            verify_target: release/mac-arm64/Kairo.app
             verify_platform: darwin
             verify_arch: arm64
             artifacts: |
@@ -33,6 +34,7 @@ jobs:
             label: macOS x64
             runner: macos-15-intel # last Intel image; retires ~Aug 2027
             package: package:ci:mac-x64
+            verify_target: release/mac/Kairo.app
             verify_platform: darwin
             verify_arch: x64
             artifacts: |

@@ -168,18 +168,10 @@
       "icon": "build/icon.icns",
       "target": [
         {
-          "target": "dmg",
-          "arch": [
-            "arm64",
-            "x64"
-          ]
+          "target": "dmg"
         },
         {
-          "target": "zip",
-          "arch": [
-            "arm64",
-            "x64"
-          ]
+          "target": "zip"
         }
       ],
       "darkModeSupport": true,
@@ -223,8 +215,10 @@
         "!.env.example",
         "!.claude/**/*",
         "!.vite/**/*",
-        "!**/node_modules/grandiose-mac/lib/win_*(**/*)",
-        "!**/node_modules/grandiose-mac/lib/linux_*(**/*)",
+        "!**/node_modules/grandiose-mac/lib/win_x64/**/*",
+        "!**/node_modules/grandiose-mac/lib/win_x86/**/*",
+        "!**/node_modules/grandiose-mac/lib/linux_x64/**/*",
+        "!**/node_modules/grandiose-mac/lib/linux_arm64/**/*",
         "!**/*.dll",
         "!**/*.so*"
       ],
@@ -305,9 +299,10 @@
         "!.env.example",
         "!.claude/**/*",
         "!.vite/**/*",
-        "!**/node_modules/grandiose-mac/lib/mac_universal(**/*)",
-        "!**/node_modules/grandiose-mac/lib/linux_*(**/*)",
-        "!**/node_modules/grandiose-mac/lib/win_x86(**/*)",
+        "!**/node_modules/grandiose-mac/lib/mac_universal/**/*",
+        "!**/node_modules/grandiose-mac/lib/linux_x64/**/*",
+        "!**/node_modules/grandiose-mac/lib/linux_arm64/**/*",
+        "!**/node_modules/grandiose-mac/lib/win_x86/**/*",
         "!**/*.dylib",
         "!**/*.so*"
       ]
@@ -372,9 +367,10 @@
         "!.env.example",
         "!.claude/**/*",
         "!.vite/**/*",
-        "!**/node_modules/grandiose-mac/lib/mac_universal(**/*)",
-        "!**/node_modules/grandiose-mac/lib/win_*(**/*)",
-        "!**/node_modules/grandiose-mac/lib/linux_arm64(**/*)",
+        "!**/node_modules/grandiose-mac/lib/mac_universal/**/*",
+        "!**/node_modules/grandiose-mac/lib/win_x64/**/*",
+        "!**/node_modules/grandiose-mac/lib/win_x86/**/*",
+        "!**/node_modules/grandiose-mac/lib/linux_arm64/**/*",
         "!**/*.dylib",
         "!**/*.dll"
       ]
