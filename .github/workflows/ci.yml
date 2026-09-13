@@ -106,6 +106,7 @@ jobs:
       - name: Package unpacked dir for verification
         # The verifier inspects an unpacked app; installer outputs (dmg/exe/
         # AppImage) are not unpacked. Same tree, same asar content.
+        shell: bash
         run: npx --no-install electron-builder --dir -c.mac.identity=null -c.mac.notarize=false --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
