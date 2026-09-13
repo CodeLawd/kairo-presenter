@@ -89,14 +89,14 @@ export function mergeSecretSection<T extends Record<string, unknown>>(
 
   for (const key of secretKeys) {
     if (clear.has(key)) {
-      ;(next as Record<string, unknown>)[key] = ''
+      (next as Record<string, unknown>)[key] = ''
       continue
     }
     const value = incoming[key]
     if (typeof value !== 'string' || value.trim() === '') {
-      ;(next as Record<string, unknown>)[key] = current[key]
+      (next as Record<string, unknown>)[key] = current[key]
     } else {
-      ;(next as Record<string, unknown>)[key] = value.trim()
+      (next as Record<string, unknown>)[key] = value.trim()
     }
   }
   return next as T

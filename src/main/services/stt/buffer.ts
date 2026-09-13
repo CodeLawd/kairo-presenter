@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-declaration-merging -- typed EventEmitter idiom: `declare interface` refines the inherited emitter surface. */
 import { EventEmitter } from 'events'
 import type { TranscriptResult } from '@shared/ipc'
 

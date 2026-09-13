@@ -675,8 +675,8 @@ if (process.contextIsolated) {
     console.error('[preload] contextBridge error:', error)
   }
 } else {
-  // @ts-ignore (non-context-isolated fallback for dev)
+  // @ts-expect-error (non-context-isolated fallback for dev)
   window.electron = electronAPI
-  // @ts-ignore
+  // @ts-expect-error (window.api has no DOM type; assigned by the bridge contract)
   window.api = api
 }

@@ -4,6 +4,7 @@ import type { UpdateStatus } from '@shared/ipc'
 
 // electron-updater is CJS-only and ships a default export object; the named
 // `autoUpdater` binding is not reachable through electron-vite's ESM interop.
+// eslint-disable-next-line import/default -- interop require documented above; verified in the packaged app
 import electronUpdater from 'electron-updater'
 const { autoUpdater } = electronUpdater
 

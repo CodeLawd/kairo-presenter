@@ -49,6 +49,40 @@ test("a final-only transcript still reaches fast explicit scripture detection", 
   detector.destroy();
 });
 
+test("waits for a split verse range instead of sending a chapter-only citation to AI", () => {
+  let finalListener!: (result: TranscriptResult) => void;
+  const source = {
+    onTranscript(listener: typeof finalListener) { finalListener = listener; },
+    offTranscript() {}, onInterim() {}, offInterim() {},
+  };
+  const detector = new ScriptureDetector({ apiKey: "test-key" });
+  const analyzed: string[] = [];
+  const emitted: ScriptureReference[] = [];
+  detector.analyze = (text) => { analyzed.push(text); };
+  detector.on("detection", (refs) => emitted.push(...refs));
+  const cleanup = subscribeExplicitScriptureDetection(source, detector);
+  const sendFinal = (text: string): void => finalListener({
+    id: text,
+    text,
+    words: [],
+    timestamp: Date.now(),
+    duration: 0,
+    isFinal: true,
+  });
+
+  sendFinal("Please turn your bible with me to Isaiah forty nine");
+  assert.deepEqual(analyzed, [], "an incomplete citation must wait for its verse fragment");
+
+  sendFinal("fourteen to 26");
+  assert.deepEqual(
+    emitted.map((ref) => [ref.book, ref.chapter, ref.verseStart, ref.verseEnd]),
+    [["Isaiah", 49, 14, 26]],
+  );
+
+  cleanup();
+  detector.destroy();
+});
+
 test("plan-quote matching runs on finals only, and never alongside a citation", () => {
   let finalListener: ((result: TranscriptResult) => void) | null = null;
   let interimListener: ((result: InterimResult) => void) | null = null;

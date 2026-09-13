@@ -13,7 +13,7 @@
  */
 
 import Database from 'better-sqlite3'
-import { createWriteStream, mkdirSync } from 'fs'
+import { mkdirSync } from 'fs'
 import { dirname, resolve } from 'path'
 import { get as httpsGet } from 'https'
 import { IncomingMessage } from 'http'

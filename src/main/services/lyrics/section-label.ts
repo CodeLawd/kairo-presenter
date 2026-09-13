@@ -19,7 +19,7 @@ export interface SectionLabelResult {
  */
 export function parseSectionLabel(rawLine: string): SectionLabelResult | null {
   // Strip surrounding brackets / braces / parens and whitespace
-  const stripped = rawLine.replace(/^[\[\({]\s*|\s*[\]\)}]$/g, '').trim()
+  const stripped = rawLine.replace(/^[[({]\s*|\s*[\])}]$/g, '').trim()
   // Strip trailing colon
   const line = stripped.replace(/:+\s*$/, '').trim()
   if (!line) return null

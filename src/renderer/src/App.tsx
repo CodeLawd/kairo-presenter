@@ -11,6 +11,7 @@ import { TracksPlayer } from '@/components/tracks/TracksPlayer'
 import OperatorToolbar from '@/components/operator/OperatorToolbar'
 import Scripture from '@/components/scripture/Scripture'
 import Lyrics from '@/components/lyrics/Lyrics'
+import { SongQuickOpen } from '@/components/lyrics/SongQuickOpen'
 import Operator from '@/components/operator/Operator'
 import ThemeEditor from '@/components/theme/ThemeEditor'
 import Settings from '@/components/settings/Settings'
@@ -261,6 +262,7 @@ function DraggableSettingsFrame({ onClose }: { onClose: () => void }): React.Rea
 export default function App(): React.ReactElement {
   const [route, setRoute] = useState<NavRoute>('operator')
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [songSearchOpen, setSongSearchOpen] = useState(false)
   useEffect(() => window.api.app.onImportRequested((kind) => {
     if (!isImportKind(kind)) return
     const option = IMPORT_OPTIONS.find(option => option.kind === kind)!
@@ -278,6 +280,7 @@ export default function App(): React.ReactElement {
   const warningDismissed = useBootstrapStore((s) => s.warningDismissed)
   const ppSettings = useBootstrapStore((s) => s.settings.propresenter)
   const onboarding = useBootstrapStore((s) => s.onboarding)
+  const lyricsLibrary = useBootstrapStore((s) => s.lyrics)
   const accountSession = useAccountStore((s) => s.session)
   const ppState = useAppStore((s) => s.ppState)
   const ppVersion = useAppStore((s) => s.ppVersion)
@@ -359,6 +362,19 @@ export default function App(): React.ReactElement {
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [settingsOpen])
+
+  // Global song quick-open. Capture prevents Chromium's built-in Find bar and
+  // makes the shortcut reliable even when an editor or search field has focus.
+  useEffect(() => {
+    const handleSongSearch = (event: KeyboardEvent): void => {
+      if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey || event.key.toLowerCase() !== 'f') return
+      event.preventDefault()
+      event.stopPropagation()
+      setSongSearchOpen(true)
+    }
+    window.addEventListener('keydown', handleSongSearch, true)
+    return () => window.removeEventListener('keydown', handleSongSearch, true)
+  }, [])
 
   if (!ready) {
     return (
@@ -449,6 +465,19 @@ export default function App(): React.ReactElement {
       {route === 'documents' && <MediaDock />}
 
       <CloudSubscriptions />
+
+      {songSearchOpen && (
+        <SongQuickOpen
+          songs={lyricsLibrary}
+          onClose={() => setSongSearchOpen(false)}
+          onOpen={(song) => {
+            useAppStore.getState().setLyricsViewState({ selectedSongId: song.id })
+            setSettingsOpen(false)
+            setRoute('lyrics')
+            setSongSearchOpen(false)
+          }}
+        />
+      )}
 
       {onboardingOpen && (
         <OnboardingWizard

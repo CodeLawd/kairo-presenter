@@ -6,7 +6,6 @@ import {
   Search,
   Music2,
   Star,
-  Send,
   ChevronDown,
   X,
   Plus,
@@ -15,7 +14,6 @@ import {
   Eye,
   Upload,
   Loader2,
-  CheckCircle2,
   AlertCircle,
   MoreVertical,
   GripVertical,
@@ -23,15 +21,11 @@ import {
   ArrowDown,
   Edit2,
   Save,
-  FileText,
-  ListMusic,
   FilePlus,
   ChevronLeft,
   ChevronRight,
   Globe,
   Library,
-  Languages,
-  Palette,
 } from '@/icons'
 import { cn, downloadFile } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -129,13 +123,6 @@ const SECTION_TYPE_OPTS: { value: LyricsSectionType; label: string }[] = [
   { value: 'outro', label: 'Outro' },
   { value: 'ending', label: 'Ending' },
 ]
-
-const SEND_LABEL: Record<SendStatus, string> = {
-  idle: 'Push to PP',
-  sending: 'Sending…',
-  sent: 'Sent!',
-  error: 'Failed',
-}
 
 // ─── Pure helpers ─────────────────────────────────────────────────────────────
 
@@ -586,14 +573,14 @@ function SectionEditBlock({
       onDragOver={(e) => onDragOver(e, index)}
       onDrop={() => onDrop(index)}
       className={cn(
-        'rounded-lg border transition-colors duration-150 focus-within:border-surface-border',
+        'overflow-hidden rounded-lg border transition-colors duration-150 focus-within:border-white/15',
         isDragTarget
           ? 'border-teal-500/50 bg-teal-500/5 shadow-[0_0_0_1px_rgba(20,184,166,0.25)]'
-          : 'border-surface-border/30 bg-transparent'
+          : 'border-white/[0.07] bg-white/[0.012]'
       )}
     >
       {/* Section header row */}
-      <div className="flex flex-wrap items-center gap-2 px-3 py-3">
+      <div className="flex flex-wrap items-center gap-2 border-b border-white/[0.055] px-3 py-2.5">
         <div
           draggable
           onDragStart={(e) => {
@@ -645,9 +632,9 @@ function SectionEditBlock({
         </span>
 
         {/* Reorder + delete */}
-        <details className="w-full text-xs text-slate-500">
-          <summary className="w-fit cursor-pointer rounded py-1 text-[11px] hover:text-slate-200 focus-visible:outline-teal-500">Section options</summary>
-          <div className="flex flex-wrap items-center gap-1 pt-2">
+        <details className="group/tools relative text-xs text-slate-500">
+          <summary className="cursor-pointer list-none rounded-md px-2 py-1 text-[10px] font-medium hover:bg-white/5 hover:text-slate-200 focus-visible:outline-teal-500">Reflow tools</summary>
+          <div className="absolute right-0 top-full z-30 mt-1 flex w-56 flex-wrap items-center gap-1 rounded-lg border border-white/10 bg-zinc-950 p-2 shadow-2xl">
           <button
             type="button"
             title="Put each line on its own slide"
@@ -728,8 +715,8 @@ function SectionEditBlock({
             onSplit(index, e.currentTarget.selectionStart)
           }
         }}
-        rows={Math.min(18, Math.max(4, section.linesText.split('\n').length + 1))}
-        className="w-full bg-transparent px-4 py-2.5 text-sm text-slate-200 leading-loose font-sans resize-y focus-visible:outline-none placeholder:text-slate-700"
+        rows={Math.min(16, Math.max(4, section.linesText.split('\n').length + 1))}
+        className="w-full resize-y bg-transparent px-4 py-3 font-sans text-sm leading-7 text-slate-200 placeholder:text-slate-700 focus-visible:outline-none"
         aria-label={`${section.label || 'Section'} lyrics`}
         placeholder="One line per row. Blank line = new slide."
         spellCheck
@@ -1763,11 +1750,11 @@ export default function Lyrics(): React.ReactElement {
   const [pushingSlideIndex, setPushingSlideIndex] = useState<number | null>(null)
 
   // ── Action bar ───────────────────────────────────────────────────────────────
-  const [sendStatus, setSendStatus] = useState<SendStatus>('idle')
+  const [, setSendStatus] = useState<SendStatus>('idle')
   const [sendError, setSendError] = useState<string | null>(null)
   const [playlists, setPlaylists] = useState<ProPresenterPlaylist[]>([])
   const [playlistOpen, setPlaylistOpen] = useState(false)
-  const [playlistStatus, setPlaylistStatus] = useState<'idle' | 'adding' | 'added'>('idle')
+  const [, setPlaylistStatus] = useState<'idle' | 'adding' | 'added'>('idle')
   const [exportOpen, setExportOpen] = useState(false)
   const playlistRef = useRef<HTMLDivElement>(null)
   const exportRef = useRef<HTMLDivElement>(null)
@@ -1928,8 +1915,8 @@ export default function Lyrics(): React.ReactElement {
         if (onlineSeqRef.current === seq) setOnlineSearching(false)
       })
     // query is read when the operator opts in; changing the query clears
-    // onlineRequested via the effect above, so we intentionally omit it here.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- opt-in gate
+    // onlineRequested via the effect above, so we intentionally omit it here
+    // (no exhaustive-deps plugin configured).
   }, [onlineRequested])
 
   // ── Close dropdowns on outside click ────────────────────────────────────────
@@ -2324,7 +2311,8 @@ export default function Lyrics(): React.ReactElement {
   }, [])
 
   // ── Send to PP ───────────────────────────────────────────────────────────────
-  const handleSendToPP = useCallback(async (): Promise<void> => {
+  // TODO: wire to the action bar when the send flow lands (kept for the WIP).
+  const _handleSendToPP = useCallback(async (): Promise<void> => {
     if (!selectedId) return
     setSendStatus('sending')
     setSendError(null)
@@ -2395,14 +2383,15 @@ export default function Lyrics(): React.ReactElement {
   }, [editMode, selectedSong, showSlidePreview, showImport, deleteTarget, webPreviewResult, reorderBusy, pushingSlideIndex, liveSlideIndex, songSlides.length, handlePushSlide])
 
   // ── Playlists ────────────────────────────────────────────────────────────────
-  const handlePlaylistOpen = useCallback(async (): Promise<void> => {
+  // TODO: wire to the playlist UI when it lands (kept for the WIP).
+  const _handlePlaylistOpen = useCallback(async (): Promise<void> => {
     setPlaylistOpen((o) => !o)
     if (playlists.length === 0) {
       try { setPlaylists(await window.api.propresenter.getPlaylists()) } catch { /* PP not connected */ }
     }
   }, [playlists.length])
 
-  const handleAddToPlaylist = useCallback(async (playlistId: string): Promise<void> => {
+  const _handleAddToPlaylist = useCallback(async (playlistId: string): Promise<void> => {
     if (!selectedId) return
     setPlaylistOpen(false)
     setPlaylistStatus('adding')
@@ -2444,7 +2433,7 @@ export default function Lyrics(): React.ReactElement {
     >
       <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-surface">
         {/* Page header */}
-      <div className="flex-shrink-0 px-6 pt-6 pb-4 flex items-start justify-between gap-4">
+      <div className={cn("flex-shrink-0 px-6 pt-6 pb-4 items-start justify-between gap-4", editMode ? "hidden" : "flex")}>
         <div>
           <h1 className="page-header">Lyrics</h1>
           <p className="page-subtitle">Manage and project worship songs to ProPresenter</p>
@@ -2460,10 +2449,10 @@ export default function Lyrics(): React.ReactElement {
       </div>
 
       {/* Main split layout */}
-      <div ref={libraryWidth.containerRef} className="flex-1 flex min-h-0 min-w-0 px-6 pb-6 overflow-hidden">
+      <div ref={libraryWidth.containerRef} className={cn("flex-1 flex min-h-0 min-w-0 overflow-hidden", editMode ? "px-4 pb-4" : "px-6 pb-6")}>
 
         {/* ── Left panel: Library (compact) ─────────────────────────────────── */}
-        <div style={{ width: libraryWidth.width }} className="shrink-0 flex flex-col gap-2.5 min-h-0 min-w-0">
+        <div style={{ width: libraryWidth.width }} className={cn("shrink-0 flex-col gap-2.5 min-h-0 min-w-0", editMode ? "hidden" : "flex")}>
           {/* Search */}
           <div className="relative">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
@@ -2660,7 +2649,7 @@ export default function Lyrics(): React.ReactElement {
           type="button"
           {...libraryWidth.separatorProps}
           title="Drag to resize library · double-click to reset"
-          className="group mx-2 flex w-2 shrink-0 cursor-col-resize touch-none items-center justify-center rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50"
+          className={cn("group mx-2 w-2 shrink-0 cursor-col-resize touch-none items-center justify-center rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50", editMode ? "hidden" : "flex")}
         ><span className="h-12 w-px bg-white/10 transition-colors group-hover:bg-teal-400/70 group-active:bg-teal-400" /></button>
         <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
           {webPreviewResult && !editMode ? (
@@ -2688,12 +2677,16 @@ export default function Lyrics(): React.ReactElement {
           ) : (
             <>
               {/* Editor header */}
-              <div className="flex-shrink-0 flex flex-wrap items-center justify-between gap-3 px-2 py-4">
+              <div className={cn("z-20 flex flex-shrink-0 flex-wrap items-center justify-between gap-3 border-b border-white/[0.07] bg-surface/95 px-4 py-3 backdrop-blur", editMode && "sticky top-0")}>
                 <div className="flex-1 min-w-0">
                   {editMode ? (
-                    <p className="text-xs font-bold text-teal-400 uppercase tracking-wider">
-                      {isNewSong ? 'New Song' : 'Editing'}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <span className="size-1.5 rounded-full bg-amber-400" aria-hidden="true" />
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-300">
+                        {isNewSong ? 'New song' : 'Editing song'}
+                      </p>
+                      {!isNewSong && selectedSong && <span className="truncate text-xs text-zinc-500">{selectedSong.title}</span>}
+                    </div>
                   ) : (
                     <div>
                       <p className="text-base font-semibold tracking-tight text-white truncate">{selectedSong?.title}</p>
@@ -2702,7 +2695,7 @@ export default function Lyrics(): React.ReactElement {
                   )}
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  <button
+                  {!editMode && <button
                     type="button"
                     className={cn('btn-secondary flex items-center gap-1.5 text-xs py-1.5 px-3', showSongTools && 'text-teal-300')}
                     aria-expanded={showSongTools}
@@ -2715,7 +2708,7 @@ export default function Lyrics(): React.ReactElement {
                     }}
                   >
                     Song tools <ChevronDown size={12} className={showSongTools ? 'rotate-180' : ''} />
-                  </button>
+                  </button>}
                   {editMode ? (
                     <>
                       <button
@@ -2745,7 +2738,7 @@ export default function Lyrics(): React.ReactElement {
                 </div>
               </div>
 
-              {showSongTools && (
+              {showSongTools && !editMode && (
                 <div id="lyrics-song-tools" className="shrink-0 flex flex-wrap items-center gap-3 px-2 pb-3 text-xs">
                   <details className="relative">
                     <summary className="cursor-pointer text-slate-400 hover:text-white">Translate lyrics</summary>
@@ -2772,10 +2765,10 @@ export default function Lyrics(): React.ReactElement {
               )}
 
               {/* Scrollable content */}
-              <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4 min-h-0">
+              <div className={cn("flex-1 overflow-y-auto py-4 space-y-4 min-h-0", editMode ? "px-2 sm:px-5" : "px-5")}>
                 {editMode && editState ? (
                   /* Edit mode: metadata + sections */
-                  <>
+                  <div className="mx-auto w-full max-w-5xl space-y-5">
                     <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,15rem),1fr))] gap-4">
                       <div>
                         <label className="label">Title</label>
@@ -2828,10 +2821,11 @@ export default function Lyrics(): React.ReactElement {
                       </div>
                     )}
 
-                    <div className="space-y-5">
-                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-                        Lyrics · Blank line starts a new slide
-                      </p>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between gap-4 px-1">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-zinc-500">Lyrics</p>
+                        <p className="text-[10px] text-zinc-600">Blank line creates a slide</p>
+                      </div>
                       {editState.sections.map((sec, idx) => (
                         <SectionEditBlock
                           key={sec._key}
@@ -2849,13 +2843,13 @@ export default function Lyrics(): React.ReactElement {
                         />
                       ))}
                       <button
-                        className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border-2 border-dashed border-surface-border/30 text-slate-600 hover:text-slate-400 hover:border-surface-border text-xs font-medium transition-colors focus-visible:outline-none"
+                        className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-white/10 py-2.5 text-xs font-medium text-zinc-600 transition-colors hover:border-white/20 hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-teal-400"
                         onClick={addSection}
                       >
                         <Plus size={13} /> Add Section
                       </button>
                     </div>
-                  </>
+                  </div>
                 ) : selectedSong && (
                   /* View mode: stage filmstrips in push order */
                   <>

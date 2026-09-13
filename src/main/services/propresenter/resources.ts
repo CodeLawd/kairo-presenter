@@ -344,6 +344,7 @@ export class ProPresenterResourcesService {
     let nextIndex = 0
 
     const worker = async (): Promise<void> => {
+      // eslint-disable-next-line no-constant-condition -- intentional worker loop; exits via the interior return below.
       while (true) {
         const index = nextIndex++
         if (index >= RESOURCE_DESCRIPTORS.length) return

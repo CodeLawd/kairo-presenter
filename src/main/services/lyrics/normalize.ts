@@ -232,7 +232,7 @@ export function extractLyricLines(text: string): string[] {
       const trimmed = line.trim()
       if (!trimmed) return false
       // Skip section markers the parser understands (or Genius-style brackets).
-      if (/^[\[\({].+[\]\)}]$/.test(trimmed) && trimmed.length <= 40) return false
+      if (/^[[({].+[\])}]$/.test(trimmed) && trimmed.length <= 40) return false
       if (trimmed === DROP_MARKER) return false
       if (isPerformanceCueLine(trimmed)) return false
       return true

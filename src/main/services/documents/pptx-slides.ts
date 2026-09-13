@@ -256,7 +256,7 @@ function boxStyle(box: SlideBox): string {
   return `left:${box.x.toFixed(1)}px;top:${box.y.toFixed(1)}px;width:${box.w.toFixed(1)}px;height:${box.h.toFixed(1)}px`
 }
 
-function renderElement(element: SlideElement, mediaHref: (file: string) => string, colors: Record<string, string>): string {
+function renderElement(element: SlideElement, mediaHref: (file: string) => string, _colors: Record<string, string>): string {
   if (element.kind === 'image') {
     const src = escapeHtml(mediaHref(element.file))
     const crop = element.crop

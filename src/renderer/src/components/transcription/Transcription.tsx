@@ -765,7 +765,7 @@ export default function Transcription(): React.ReactElement {
       }, delay)
     })
     return () => timers.forEach(clearTimeout)
-  }, [pendingAuto.map((p) => p.suggestionId).join(',')])  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [pendingAuto.map((p) => p.suggestionId).join(',')])
 
   // ── Auto-scroll ──────────────────────────────────────────────────────────────
 

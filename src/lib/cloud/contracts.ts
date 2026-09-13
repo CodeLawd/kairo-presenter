@@ -66,6 +66,13 @@ export interface SessionSnapshot {
   orgs: CloudOrg[]
   /** When the API was last reached successfully. */
   lastSyncedAt: number | null
+  /**
+   * False when the OS offers no keychain (bare Linux without a keyring):
+   * sign-in works for this launch but is NOT remembered between launches.
+   * Renderers should surface this next to the account state. Optional so
+   * older snapshots/tests stay valid; the session service always sets it.
+   */
+  credentialsPersisted?: boolean
 }
 
 export interface DevicePairingState {

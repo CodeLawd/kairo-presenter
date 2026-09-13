@@ -1,0 +1,4 @@
+# website/ is a separate Next.js project (own package.json, yarn.lock and
+# node_modules). It has no ESLint setup of its own; lint it from website/
+# if a config is added there — the desktop-app config here must not cover it.
+website/

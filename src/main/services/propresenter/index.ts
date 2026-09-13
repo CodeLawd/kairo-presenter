@@ -125,6 +125,8 @@ class ProPresenterService {
 
       // 3. Get active playlist name
       try {
+        // Untyped ProPresenter response; shape probed below, never assumed.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const playlistRes = await this.client.getActivePlaylist() as any
         if (playlistRes) {
           const playlist = playlistRes.presentation?.playlist || playlistRes

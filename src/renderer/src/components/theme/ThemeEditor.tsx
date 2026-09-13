@@ -103,24 +103,6 @@ function storedPaneWidth(key: string, fallback: number, min: number, max: number
 
 // ─── Small reusable atoms (local to this page, mirrors Settings.tsx style) ────
 
-function Toggle({
-  checked,
-  onChange,
-  disabled = false,
-}: {
-  checked: boolean
-  onChange: (v: boolean) => void
-  disabled?: boolean
-}): React.ReactElement {
-  return (
-    <Switch
-      checked={checked}
-      disabled={disabled}
-      onCheckedChange={onChange}
-    />
-  )
-}
-
 function Slider({
   label,
   value,

@@ -7,10 +7,8 @@ import {
   SlidersHorizontal,
   Save,
   CheckCircle,
-  XCircle,
   Loader,
   Wifi,
-  RefreshCw,
   ChevronLeft,
   ChevronRight,
   MonitorPlay,
@@ -38,7 +36,8 @@ import { Slider } from '@/components/ui/slider'
 import { useAppStore } from '@/stores/useAppStore'
 import { listAudioInputDevices, resolveCaptureDeviceId } from '@/audio/devices'
 import { applyAppTheme } from '@/lib/appTheme'
-import { DEFAULT_OVERLAY_SETTINGS, normalizeOverlaySettings } from '@shared/overlay-defaults'
+import { parseProPresenterPort } from '@/lib/propresenter-port'
+import { normalizeOverlaySettings } from '@shared/overlay-defaults'
 import type {
   AppSettings,
   AudioDevice,
@@ -101,16 +100,21 @@ function accountInitials(name: string | undefined): string {
 function PrefGroup({
   title,
   children,
+  plain = false,
 }: {
   title?: string
   children: React.ReactNode
+  plain?: boolean
 }): React.ReactElement {
   return (
     <section className="space-y-2">
       {title ? (
         <h3 className="px-0.5 text-xs font-semibold tracking-tight text-white/60">{title}</h3>
       ) : null}
-      <div className="divide-y divide-white/[0.07] overflow-hidden rounded-xl border border-white/[0.06] bg-[#292929]">
+      <div className={cn(
+        'divide-y divide-white/[0.07] overflow-hidden',
+        plain ? '' : 'rounded-xl border border-white/[0.06] bg-[#292929]',
+      )}>
         {children}
       </div>
     </section>
@@ -275,32 +279,6 @@ function inputKindLabel(device: AudioDevice): string {
   if (/(virtual|teams|zoom|blackhole|loopback|aggregate|cable)/.test(label)) return 'Virtual'
   if (/(built-in|macbook|imac|internal)/.test(label)) return 'Built-in'
   return 'External'
-}
-
-// ─── Helper: Status badge ─────────────────────────────────────────────────────
-
-function StatusBadge({
-  status,
-  msg,
-}: {
-  status: TestStatus
-  msg?: string
-}) {
-  if (status === 'idle') return null
-
-  const map: Record<Exclude<TestStatus, 'idle'>, { icon: React.ReactNode; cls: string; fallback: string }> = {
-    testing: { icon: <Loader size={11} className="animate-spin" />, cls: 'text-yellow-400', fallback: 'Testing…' },
-    ok: { icon: <CheckCircle size={11} />, cls: 'text-teal-400', fallback: 'Valid' },
-    fail: { icon: <XCircle size={11} />, cls: 'text-red-400', fallback: 'Failed' },
-  }
-  const { icon, cls, fallback } = map[status as Exclude<TestStatus, 'idle'>]
-
-  return (
-    <span className={cn('flex items-center gap-1.5 text-xs font-semibold', cls)}>
-      {icon}
-      <span className="truncate max-w-32">{msg || fallback}</span>
-    </span>
-  )
 }
 
 // ─── Helper: Connection dot ───────────────────────────────────────────────────
@@ -608,12 +586,23 @@ function ConnectionSection({
   const [testStatus, setTestStatus] = useState<TestStatus>('idle')
   const [testMsg, setTestMsg] = useState('')
   const pp = settings.propresenter
+  const [portDraft, setPortDraft] = useState(() => String(pp.port))
+  const parsedPort = parseProPresenterPort(portDraft)
+
+  useEffect(() => {
+    setPortDraft(String(pp.port))
+  }, [pp.port])
 
   const testConnection = async () => {
+    if (parsedPort === null) {
+      setTestStatus('fail')
+      setTestMsg('Enter a port between 1 and 65535')
+      return
+    }
     setTestStatus('testing')
     setTestMsg('Connecting…')
     try {
-      await window.api.propresenter.connect({ host: pp.host, port: pp.port, password: pp.password })
+      await window.api.propresenter.connect({ host: pp.host, port: parsedPort, password: pp.password })
       let s = await window.api.propresenter.getStatus()
       if (s.state === 'connecting') {
         await new Promise((r) => setTimeout(r, 2000))
@@ -643,7 +632,7 @@ function ConnectionSection({
 
   return (
     <div className="space-y-5">
-      <PrefGroup title="Stage Display">
+      <PrefGroup title="Stage Display" plain>
         <PrefRow label="Status" hint={testMsg || undefined}>
           <div className="flex items-center gap-2.5">
             <ConnectionDot status={testStatus} />
@@ -664,7 +653,7 @@ function ConnectionSection({
         </PrefRow>
         <PrefRow label="IP Address">
           <input
-            className={PREF_INPUT}
+            className={cn(PREF_INPUT, 'w-[220px] max-w-[44vw] !border-0 !bg-transparent !shadow-none focus:!bg-white/[0.025] focus:!ring-0')}
             value={pp.host}
             onChange={(e) => update('propresenter', { host: e.target.value })}
             placeholder="192.168.1.100"
@@ -675,20 +664,26 @@ function ConnectionSection({
         </PrefRow>
         <PrefRow label="Port">
           <input
-            className={cn(PREF_INPUT, 'w-[72px] text-center')}
-            type="number"
-            value={pp.port}
-            onChange={(e) => update('propresenter', { port: parseInt(e.target.value) || 50000 })}
-            min={1}
-            max={65535}
+            className={cn(PREF_INPUT, 'w-[220px] max-w-[44vw] tabular-nums !border-0 !bg-transparent !shadow-none focus:!bg-white/[0.025] focus:!ring-0')}
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            value={portDraft}
+            onChange={(e) => {
+              const draft = e.target.value.replace(/\D/g, '').slice(0, 5)
+              setPortDraft(draft)
+              const port = parseProPresenterPort(draft)
+              if (port !== null) update('propresenter', { port })
+            }}
+            aria-invalid={portDraft !== '' && parsedPort === null}
             name="pp-port"
             aria-label="ProPresenter Port"
           />
         </PrefRow>
         <PrefRow label="Password" hint="Preferences → Stage Display">
-          <div className="w-[148px]">
+          <div className="w-[220px] max-w-[44vw]">
             <PasswordInput
-              className="h-7 py-0 text-[13px]"
+              className="h-7 border-0 bg-transparent py-0 text-right font-mono text-[13px] shadow-none focus:bg-white/[0.025] focus:ring-0"
               value={pp.password}
               onChange={(e) => update('propresenter', { password: e.target.value })}
               placeholder="Optional"
@@ -700,7 +695,23 @@ function ConnectionSection({
         </PrefRow>
       </PrefGroup>
 
-      <SaveBar sectionId="propresenter" savedSection={savedSection} onSave={onSave} />
+      {parsedPort === null && (
+        <p role="alert" className="px-0.5 text-right text-[11px] text-amber-400">
+          Enter a port between 1 and 65535
+        </p>
+      )}
+      <SaveBar
+        sectionId="propresenter"
+        savedSection={savedSection}
+        onSave={() => {
+          if (parsedPort === null) {
+            setTestStatus('fail')
+            setTestMsg('Enter a port between 1 and 65535')
+            return
+          }
+          onSave()
+        }}
+      />
     </div>
   )
 }
@@ -789,7 +800,8 @@ function AudioSection({
         const ctx = new AudioContext()
         ctxRef.current = ctx
         const source = ctx.createMediaStreamSource(stream)
-        // eslint-disable-next-line deprecation/deprecation
+        // Deprecated Web Audio API with no drop-in replacement for this tap;
+        // kept until the AudioWorklet migration lands.
         const processor = ctx.createScriptProcessor(2048, 1, 1)
         processorRef.current = processor
         const mute = ctx.createGain()
@@ -1718,7 +1730,7 @@ export default function Settings({ onClose }: { onClose?: () => void } = {}): Re
   const [activeSection, setActiveSection] = useState<Section>('propresenter')
   const [savedSection, setSavedSection] = useState<string | null>(null)
   const [navQuery, setNavQuery] = useState('')
-  const [audioLevel, setAudioLevel] = useState<AudioLevel | null>(null)
+  const [, setAudioLevel] = useState<AudioLevel | null>(null)
   const [histIndex, setHistIndex] = useState(0)
   const historyRef = useRef<Section[]>(['propresenter'])
   const session = useAccountStore((s) => s.session)
@@ -1749,7 +1761,6 @@ export default function Settings({ onClose }: { onClose?: () => void } = {}): Re
     }
 
     apply(useBootstrapStore.getState().settings)
-    void window.api.settings.getAll().then(apply).catch(() => setLoading(false))
     return () => {
       cancelled = true
     }

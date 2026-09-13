@@ -245,7 +245,7 @@ export function OperatorQueueSearch({
           role="listbox"
           className="absolute left-0 right-0 top-[calc(100%+0.15rem)] z-40 max-h-56 overflow-y-auto rounded-lg border border-surface-border bg-surface-elevated shadow-2xl"
         >
-          <div className="sticky top-0 flex items-center justify-between border-b border-surface-border/70 bg-surface-elevated px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-wider text-slate-500">
+          <div className="sticky top-0 flex items-center justify-between bg-surface-elevated/80 px-2.5 py-1.5 text-[10px] font-medium text-zinc-500 backdrop-blur-sm">
             <span>Scripture matches</span>
             <span>{suggesting ? 'Searching…' : 'Enter to queue'}</span>
           </div>

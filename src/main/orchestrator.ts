@@ -49,6 +49,7 @@ import { audioService } from "./services/audio";
 import { sttService } from "./services/stt";
 import { proPresenterService } from "./services/propresenter";
 import { scriptureService } from "./services/scripture";
+import { lookupDetectedScripture } from "./services/scripture/detection-lookup";
 import { resilienceManager } from "./services/resilience";
 import { ndiService } from "./services/ndi";
 import { mediaService } from "./services/media";
@@ -445,23 +446,12 @@ class Orchestrator {
       scriptureTrace.mark(correlationId, "bibleLookupStartedAt");
       if (verses.length === 0) {
         try {
-          const end = ref.verseEnd != null ? `-${ref.verseEnd}` : "";
-          if ((ref.resolver ?? "explicit") === "explicit") {
-            verses = await scriptureService.lookupVerses(
-              ref.book,
-              ref.chapter,
-              ref.verseStart,
-              ref.verseEnd,
-              translation,
-            );
-          } else {
-            const results = await scriptureService.search(
-              `${ref.book} ${ref.chapter}:${ref.verseStart}${end}`,
-              translation,
-              store.get("stt").bibleApiKey,
-            );
-            verses = results.flatMap((result) => result.verses);
-          }
+          verses = await lookupDetectedScripture(
+            scriptureService,
+            ref,
+            translation,
+            store.get("stt").bibleApiKey,
+          );
         } catch (err) {
           log.warn("[Orchestrator] Bible lookup error", {
             book: ref.book,
@@ -1444,6 +1434,8 @@ class Orchestrator {
     return dest;
   }
 
+  // Recovery blob from disk; validated piecemeal below, never trusted wholesale.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async restoreSession(state: any): Promise<void> {
     if (!state) return;
     log.info("[Orchestrator] Restoring session from recovery data", { sessionId: state.session?.sessionId });

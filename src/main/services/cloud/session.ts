@@ -59,6 +59,7 @@ const EMPTY_SESSION: SessionSnapshot = {
   org: null,
   orgs: [],
   lastSyncedAt: null,
+  credentialsPersisted: true, // corrected in the constructor from the real store
 }
 
 const IDLE_PAIRING: DevicePairingState = {
@@ -81,7 +82,7 @@ type SecretsListener = () => void
  * in the status bar and nothing else. No method on this class is ever awaited
  * on a path that leads to a slide going on screen.
  */
-class CloudSessionService {
+export class CloudSessionService {
   private readonly store: SecureStore
   private readonly api: CloudApiClient
   private snapshot: SessionSnapshot = { ...EMPTY_SESSION }
@@ -104,6 +105,13 @@ class CloudSessionService {
 
   constructor(store?: SecureStore) {
     this.store = store ?? createSecureStore()
+    this.snapshot = { ...this.snapshot, credentialsPersisted: this.store.available }
+    if (!this.store.available) {
+      // Plan 004: a missing keyring (bare Linux) must never block launch —
+      // the session simply does not persist. The renderer reads
+      // `credentialsPersisted` from the snapshot to say so in the UI.
+      log.warn('[Session] OS keychain unavailable — sign-in will not persist between launches')
+    }
     this.api = new CloudApiClient(API_BASE_URL, () => this.refreshAccessToken())
   }
 
@@ -594,6 +602,9 @@ class CloudSessionService {
   }
 
   private emitSession(snapshot: SessionSnapshot): SessionSnapshot {
+    // Keychain availability can only change across launches, but stamp every
+    // emission so caller-built literals can never drop the field.
+    snapshot = { ...snapshot, credentialsPersisted: this.store.available }
     this.snapshot = snapshot
     for (const listener of this.sessionListeners) {
       try {

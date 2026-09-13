@@ -5,7 +5,6 @@ import {
   AlertTriangle,
   Check,
   ChevronDown,
-  ChevronUp,
   ClipboardPaste,
   Copy,
   Film,
@@ -24,16 +23,16 @@ import {
   X,
 } from '@/icons'
 import { cn } from '@/lib/utils'
+import { useMediaDockStore } from '@/stores/useMediaDockStore'
 import { overlayMediaUrl } from '@shared/overlay-template'
 import { mediaFilterCss, normalizeMediaPlayback } from '@shared/media-playback'
 import { reorderIds } from '@shared/media-order'
 import type { MediaItem, MediaLibrary, MediaPlayback } from '@shared/ipc'
 
 // ─── Sizing ───────────────────────────────────────────────────────────────────
-// The dock is dragged, so these are the stops rather than a fixed height. The
-// collapsed rail still says what is on screen — that is its whole job.
+// The dock slides up from the bottom when opened from the header. Height is
+// still drag-resizable; collapsing puts it away entirely (no persistent rail).
 
-const RAIL_HEIGHT = 50
 const MIN_HEIGHT = 180
 const HARD_MAX_HEIGHT = 520
 const DEFAULT_HEIGHT = 288
@@ -51,6 +50,9 @@ const APP_CHROME_HEIGHT = 44
 
 /** Room the window can actually give the dock, once the page keeps its floor. */
 function availableRoom(): number {
+  // Server-rendered smoke tests have no browser viewport. Use the normal dock
+  // ceiling there; the resize effect clamps against the real window on mount.
+  if (typeof window === 'undefined') return HARD_MAX_HEIGHT
   return window.innerHeight - APP_CHROME_HEIGHT - MIN_PAGE_HEIGHT
 }
 
@@ -64,6 +66,7 @@ function clampHeight(value: number): number {
 }
 
 function storedHeight(): number {
+  if (typeof window === 'undefined') return clampHeight(DEFAULT_HEIGHT)
   let raw = 0
   try { raw = Number(window.localStorage.getItem(STORAGE_KEY)) } catch { /* Use default when storage is unavailable. */ }
   if (!Number.isFinite(raw) || raw <= 0) return clampHeight(DEFAULT_HEIGHT)
@@ -86,10 +89,12 @@ type Selection = { kind: 'all' } | { kind: 'playlist'; id: string }
 
 // ─── Dock ─────────────────────────────────────────────────────────────────────
 
-export default function MediaDock(): React.ReactElement {
+export default function MediaDock(): React.ReactElement | null {
+  const open = useMediaDockStore((state) => state.open)
+  const setOpen = useMediaDockStore((state) => state.setOpen)
+  const setLive = useMediaDockStore((state) => state.setLive)
   const [library, setLibrary] = useState<MediaLibrary>(EMPTY_LIBRARY)
   const [height, setHeight] = useState(storedHeight)
-  const [collapsed, setCollapsed] = useState(true)
   const [selection, setSelection] = useState<Selection | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -143,6 +148,14 @@ export default function MediaDock(): React.ReactElement {
     [library.items, library.liveItemId]
   )
 
+  useEffect(() => {
+    setLive({
+      id: liveItem?.id ?? null,
+      name: liveItem?.name ?? null,
+      paused: library.livePaused,
+    })
+  }, [liveItem?.id, liveItem?.name, library.livePaused, setLive])
+
   // Default to the whole library once a folder has been chosen.
   useEffect(() => {
     if (selection || !library.folder) return
@@ -177,28 +190,28 @@ export default function MediaDock(): React.ReactElement {
   // squeezing the page into the state where its panels overlap.
   useEffect(() => {
     const onResize = (): void => {
-      if (availableRoom() < MIN_HEIGHT) setCollapsed(true)
+      if (availableRoom() < MIN_HEIGHT) setOpen(false)
       setHeight((current) => clampHeight(current))
     }
     onResize()
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
-  }, [])
+  }, [setOpen])
 
   const rememberHeight = (value: number): void => {
     try { window.localStorage.setItem(STORAGE_KEY, String(Math.round(value))) } catch { /* Resizing works without persistence. */ }
   }
   const resizeWithKeyboard = (event: React.KeyboardEvent<HTMLDivElement>): void => {
-    if (!['ArrowUp', 'ArrowDown', 'Home', 'End', 'Enter', ' '].includes(event.key)) return
+    if (!['ArrowUp', 'ArrowDown', 'Home', 'End', 'Enter', ' ', 'Escape'].includes(event.key)) return
     event.preventDefault(); event.stopPropagation()
-    if (event.key === 'Home') { setCollapsed(true); return }
+    if (event.key === 'Home' || event.key === 'Escape') { setOpen(false); return }
     if (event.key === 'Enter' || event.key === ' ') {
-      if (!collapsed || availableRoom() >= MIN_HEIGHT) setCollapsed(!collapsed)
+      setOpen(false)
       return
     }
     if (availableRoom() < MIN_HEIGHT) return
     const next = event.key === 'End' ? maxHeight() : clampHeight(height + (event.key === 'ArrowUp' ? 24 : -24))
-    setCollapsed(false); setHeight(next); rememberHeight(next)
+    setHeight(next); rememberHeight(next)
   }
 
   const beginDrag = useCallback((event: React.PointerEvent<HTMLDivElement>): void => {
@@ -211,8 +224,7 @@ export default function MediaDock(): React.ReactElement {
     handle.setPointerCapture(event.pointerId)
 
     const startY = event.clientY
-    const wasCollapsed = collapsed
-    const startHeight = wasCollapsed ? RAIL_HEIGHT : heightRef.current
+    const startHeight = heightRef.current
     let released = false
 
     const apply = (clientY: number): void => {
@@ -231,9 +243,6 @@ export default function MediaDock(): React.ReactElement {
 
     const move = (moveEvent: PointerEvent): void => {
       if (released) return
-      // No room to open into — stay a rail rather than break the page above.
-      if (wasCollapsed && availableRoom() < MIN_HEIGHT) return
-      if (wasCollapsed && moveEvent.clientY < startY - 8) setCollapsed(false)
       apply(moveEvent.clientY)
     }
 
@@ -253,29 +262,26 @@ export default function MediaDock(): React.ReactElement {
 
       const travel = upEvent.clientY - startY
       if (upEvent.type === 'pointercancel' || upEvent.type === 'lostpointercapture') {
-        setCollapsed(wasCollapsed)
-        setHeight(wasCollapsed ? storedHeight() : startHeight)
+        setHeight(startHeight)
         return
       }
       if (Math.abs(travel) < 4) {
-        if (wasCollapsed && availableRoom() >= MIN_HEIGHT) { setHeight(storedHeight()); setCollapsed(false) }
         return
       }
-      if (!wasCollapsed && startHeight - travel < MIN_HEIGHT - 40) {
-        setCollapsed(true)
+      // Dragged far enough down → dismiss the sheet.
+      if (startHeight - travel < MIN_HEIGHT - 40) {
+        setOpen(false)
         setHeight(startHeight)
-      } else if (availableRoom() >= MIN_HEIGHT && (!wasCollapsed || travel < -8)) {
-        setCollapsed(false)
+      } else {
         rememberHeight(heightRef.current)
       }
-
     }
 
     handle.addEventListener('pointermove', move)
     handle.addEventListener('pointerup', finish)
     handle.addEventListener('pointercancel', finish)
     handle.addEventListener('lostpointercapture', finish)
-  }, [collapsed])
+  }, [setOpen])
 
   useEffect(() => () => {
     if (frameRef.current !== null) window.cancelAnimationFrame(frameRef.current)
@@ -465,7 +471,7 @@ export default function MediaDock(): React.ReactElement {
 
   // Cmd/Ctrl+C · X · V while the dock is open (capture so Edit-menu roles don't win).
   useEffect(() => {
-    if (collapsed) return
+    if (!open) return
 
     const typing = (target: EventTarget | null): boolean => {
       const el = target as HTMLElement | null
@@ -513,7 +519,7 @@ export default function MediaDock(): React.ReactElement {
       window.removeEventListener('keydown', onKey, true)
       window.removeEventListener('paste', onPaste, true)
     }
-  }, [collapsed, selectedItemId, liveItem?.id, visibleItems, copyItem, cutItem, pasteItems])
+  }, [open, selectedItemId, liveItem?.id, visibleItems, copyItem, cutItem, pasteItems])
 
   /**
    * Persist a rearrange. Playlist order is the playlist's own `itemIds`
@@ -610,71 +616,28 @@ export default function MediaDock(): React.ReactElement {
     setUndecodable((current) => (current.has(id) ? current : new Set(current).add(id)))
   }, [])
 
-  // ── Collapsed rail ─────────────────────────────────────────────────────────
-  if (collapsed) {
-    return (
-      <div className="flex shrink-0 flex-col bg-surface">
-        <DragHandle onPointerDown={beginDrag} onKeyDown={resizeWithKeyboard} height={collapsed ? RAIL_HEIGHT : height} maximum={maxHeight()} />
-        <div className="flex items-center gap-3 px-5 py-2" style={{ height: RAIL_HEIGHT - 10 }}>
-          <div className="flex items-center gap-1.5">
-            <Film size={14} className="text-teal-400" aria-hidden="true" />
-            <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">
-              Media
-            </span>
-          </div>
-          <div className="h-4 w-px bg-surface-border/80" aria-hidden="true" />
-          {liveItem ? (
-            <>
-              <Thumb item={liveItem} className="h-[25px] w-11 rounded-[5px] border border-teal-500/55" muted />
-              <span className="min-w-0 truncate text-xs font-medium text-teal-300">{liveItem.name}</span>
-              <span className="text-[11px] text-slate-600">
-                {liveItem.kind === 'video' && library.livePaused ? 'is paused' : 'is on screen'}
-              </span>
-              {liveItem.kind === 'video' && (
-                <LiveTransportButton
-                  paused={library.livePaused}
-                  onToggle={() => void setPaused(!library.livePaused)}
-                />
-              )}
-            </>
-          ) : (
-            <span className="text-[11px] text-slate-600">Nothing on screen</span>
-          )}
-          <div className="flex-1" />
-          <span className="text-[11px] text-slate-600 hidden lg:inline">Playback continues when collapsed</span>
-          <button
-            type="button"
-            onClick={() => { if (availableRoom() >= MIN_HEIGHT) setCollapsed(false) }}
-            disabled={availableRoom() < MIN_HEIGHT}
-            title={availableRoom() < MIN_HEIGHT ? 'Not enough room — make the window taller' : 'Open background dock'}
-            className="flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs text-slate-400 hover:bg-white/5 hover:text-white disabled:opacity-40"
-            aria-label="Open background dock"
-          >
-            Open media <ChevronUp size={13} aria-hidden="true" />
-          </button>
-        </div>
-      </div>
-    )
-  }
-
-  // ── Open dock ──────────────────────────────────────────────────────────────
   return (
     <div
-      className="flex shrink-0 flex-col bg-surface"
-      style={{ height }}
+      className={cn(
+        'grid shrink-0 overflow-hidden bg-surface transition-[grid-template-rows,opacity] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none',
+        open ? 'opacity-100' : 'pointer-events-none opacity-0',
+      )}
+      style={{ gridTemplateRows: open ? `${height}px` : '0px' }}
+      aria-hidden={!open}
     >
-      <DragHandle onPointerDown={beginDrag} onKeyDown={resizeWithKeyboard} height={collapsed ? RAIL_HEIGHT : height} maximum={maxHeight()} />
+      <div className="flex min-h-0 flex-col overflow-hidden">
+        <DragHandle onPointerDown={beginDrag} onKeyDown={resizeWithKeyboard} height={height} maximum={maxHeight()} />
 
-      {!library.folder ? (
+        {!library.folder ? (
         <div className="flex min-h-0 flex-1 flex-col">
-          <button type="button" onClick={() => setCollapsed(true)} className="self-end px-4 py-1 text-xs text-slate-400 hover:text-white">Collapse media</button>
+          <button type="button" onClick={() => setOpen(false)} className="self-end px-4 py-1 text-xs text-slate-400 hover:text-white">Close media</button>
           <EmptyState onChoose={chooseFolder} />
         </div>
       ) : (
         <div className="flex flex-1 min-h-0 overflow-hidden">
 
           {/* Collections */}
-          <div className="flex w-[160px] shrink-0 flex-col gap-2.5 overflow-y-auto border-r border-surface-border/40 bg-transparent p-2.5">
+          <div className="flex w-[160px] shrink-0 flex-col gap-2.5 overflow-y-auto bg-transparent p-2.5">
             <div className="flex items-center justify-between gap-1.5 px-1">
               <div className="flex items-center gap-1.5">
                 <Film size={13} className="text-teal-400" aria-hidden="true" />
@@ -802,10 +765,10 @@ export default function MediaDock(): React.ReactElement {
               </button>
               <button
                 type="button"
-                onClick={() => setCollapsed(true)}
+                onClick={() => setOpen(false)}
                 className="grid h-[26px] w-[26px] place-items-center rounded-[7px] border border-surface-border text-slate-400 hover:text-white"
-                aria-label="Collapse media panel"
-                title="Collapse media panel — playback continues"
+                aria-label="Close media panel"
+                title="Close media panel — playback continues"
               >
                 <ChevronDown size={13} aria-hidden="true" />
               </button>
@@ -945,7 +908,8 @@ export default function MediaDock(): React.ReactElement {
             )}
           </div>
         </div>
-      )}
+        )}
+      </div>
     </div>
   )
 }
@@ -960,10 +924,10 @@ function DragHandle({ onPointerDown, onKeyDown, height, maximum }: {
 }): React.ReactElement {
   return (
     <div role="separator" tabIndex={0} aria-orientation="horizontal" aria-label="Resize media panel"
-      aria-valuemin={RAIL_HEIGHT} aria-valuemax={maximum} aria-valuenow={height}
-      title="Drag to resize · Arrow keys adjust · Enter collapses or opens"
+      aria-valuemin={MIN_HEIGHT} aria-valuemax={maximum} aria-valuenow={height}
+      title="Drag to resize · Arrow keys adjust · Enter closes"
       onPointerDown={onPointerDown} onKeyDown={onKeyDown}
-      className="group flex h-2.5 shrink-0 cursor-ns-resize touch-none items-center justify-center border-t border-white/[0.06] hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-teal-400">
+      className="group flex h-2.5 shrink-0 cursor-ns-resize touch-none items-center justify-center hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-teal-400">
       <span className="h-0.5 w-8 rounded-full bg-white/15 group-hover:bg-teal-400/70" />
     </div>
   )

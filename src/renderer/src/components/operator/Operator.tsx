@@ -23,6 +23,8 @@ import {
   Copy,
   Download,
   Mic,
+  BookOpenText,
+  ChevronUp,
 } from "@/icons";
 import { useAppStore } from "@/stores/useAppStore";
 import { listAudioInputDevices, resolveCaptureDeviceId } from "@/audio/devices";
@@ -405,11 +407,11 @@ export default function Operator(): React.ReactElement {
     string | null
   >(null);
   const [adjacentLoading, setAdjacentLoading] = useState<string | null>(null);
-  const [readingProgress, setReadingProgress] = useState<{
+  const [, setReadingProgress] = useState<{
     matchedId: string;
     nextId: string;
   } | null>(null);
-  const [sentSuggestionIds, setSentSuggestionIds] = useState<Set<string>>(
+  const [, setSentSuggestionIds] = useState<Set<string>>(
     () => new Set(),
   );
   const sentSuggestionIdsRef = useRef(new Set<string>());
@@ -450,6 +452,7 @@ export default function Operator(): React.ReactElement {
       localStorage.getItem("operator-reference-height"),
     ),
   );
+  const [referenceCollapsed, setReferenceCollapsed] = useState(false);
   // The rail width is shared app state, not local: Operator stays mounted while
   // hidden, so resizing the rail on Lyrics or Scripture must land here too.
   const liveRail = useLiveRailWidth();
@@ -752,9 +755,10 @@ export default function Operator(): React.ReactElement {
   // play beep function using Web Audio API
   const playBeep = useCallback(() => {
     try {
-      const audioCtx = new (
-        window.AudioContext || (window as any).webkitAudioContext
-      )();
+      const AudioCtor =
+        window.AudioContext ??
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+      const audioCtx = new AudioCtor()
       const oscillator = audioCtx.createOscillator();
       const gainNode = audioCtx.createGain();
 
@@ -1451,11 +1455,6 @@ export default function Operator(): React.ReactElement {
     return service ? service.status : "unknown";
   };
 
-  const getServiceError = (serviceName: string): string | undefined => {
-    const service = health.find((h) => h.service === serviceName);
-    return service ? service.lastError : undefined;
-  };
-
   const ppReconnectCountdown = resilienceStatus?.ppReconnectCountdown ?? 0;
 
   const ppStatus = resilienceStatus
@@ -1466,39 +1465,10 @@ export default function Operator(): React.ReactElement {
         : "ok"
     : getServiceStatus("propresenter");
 
-  const ppError = resilienceStatus
-    ? ppReconnectCountdown > 0
-      ? `Disconnected. Reconnecting... (Queue: ${resilienceStatus.ppQueueSize} items)`
-      : getServiceError("propresenter")
-    : getServiceError("propresenter");
-
   const sttHealth = resilienceStatus?.health.find((h) => h.service === "stt");
 
-  const sttStatus = sttHealth
-    ? sttHealth.status === "degraded"
-      ? "degraded"
-      : sttHealth.status === "error"
-        ? "error"
-        : "ok"
-    : getServiceStatus("stt");
-
-  const sttError = sttHealth?.lastError ?? getServiceError("stt");
-
-  const claudeStatusMapped = resilienceStatus
-    ? resilienceStatus.claudeFallbackActive
-      ? "degraded"
-      : "ok"
-    : getServiceStatus("detector");
-
-  const claudeErrorMapped = resilienceStatus
-    ? resilienceStatus.claudeFallbackActive
-      ? (resilienceStatus.detectorFallbackReason?.message
-          ?? "AI detection unavailable. Local matching active.")
-      : getServiceError("detector")
-    : getServiceError("detector");
-
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden bg-transparent">
+    <div className="flex h-full w-full flex-col overflow-hidden bg-surface">
       {resilienceStatus?.recoverySessionAvailable && (
         <div className="bg-teal-950/40 border-b border-teal-500/30 px-6 py-3 flex items-center justify-between text-xs text-teal-300">
           <div className="flex items-center gap-2.5">
@@ -1585,19 +1555,10 @@ export default function Operator(): React.ReactElement {
             result={livePreviewResult}
             onResizeStart={liveRail.onResizeStart}
             onResizeKeyDown={liveRail.onResizeKeyDown}
-            serviceStatuses={[
-              { label: "PP", status: ppStatus, error: ppError },
-              { label: "STT", status: sttStatus, error: sttError },
-              {
-                label: "AI",
-                status: claudeStatusMapped,
-                error: claudeErrorMapped,
-              },
-            ]}
             search={
               <div className="flex h-full min-h-0 flex-col overflow-hidden bg-transparent">
-                <div className="flex shrink-0 items-center justify-between gap-3 border-b border-surface-border bg-surface-tertiary px-3 py-1.5">
-                  <label className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">
+                <div className="flex shrink-0 items-center justify-between gap-3 px-3 py-1.5">
+                  <label className="text-[11px] font-medium text-zinc-400">
                     Queue
                   </label>
                   {queue.length > 0 && (
@@ -1691,11 +1652,11 @@ export default function Operator(): React.ReactElement {
           />
         }
       >
-        <div className="flex h-full min-h-0 w-full">
+        <div className="flex h-full min-h-0 w-full bg-surface">
           {/* LEFT COLUMN: compact live transcript */}
           <section
             className={cn(
-              "transcript-glass relative flex shrink-0 flex-col border-r border-white/10",
+              "relative flex shrink-0 flex-col bg-surface-secondary",
               nuggetsOpen && "z-40",
             )}
             style={{ width: transcriptWidth }}
@@ -1713,9 +1674,9 @@ export default function Operator(): React.ReactElement {
                   resizePanelByKeyboard("left", 16);
               }}
             />
-            <div className="relative z-20 flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-white/[0.07] px-3 py-2.5">
-              <span className="text-xs font-medium tracking-normal text-zinc-200">
-                Live transcript
+            <div className="relative z-20 flex shrink-0 flex-wrap items-center justify-between gap-2 px-3 py-2">
+              <span className="text-[11px] font-medium text-zinc-300">
+                Transcript
               </span>
               <div className="flex items-center gap-1.5">
                 <button
@@ -1857,17 +1818,18 @@ export default function Operator(): React.ReactElement {
             {resilienceStatus &&
               (sttHealth?.status === "degraded" ||
                 sttHealth?.status === "error") && (
-                <div className="border-b border-amber-500/15 bg-amber-500/[0.04] px-3 py-2 text-[11px] text-amber-300 flex flex-wrap items-center gap-1.5 shrink-0">
+                <div className="border-b border-amber-500/10 bg-amber-500/[0.04] px-3 py-2 text-[11px] text-amber-300 flex flex-wrap items-center gap-1.5 shrink-0">
                   <span>Reconnecting…</span>
                   <span className="bg-amber-500/10 px-1.5 py-0.5 rounded text-[9px]">
                     Audio is buffered
                   </span>
                 </div>
               )}
+            <div className="flex min-h-0 flex-1">
             <div
               ref={transcriptScrollRef}
               className={cn(
-                "min-h-0 flex-1 overflow-y-auto px-4 py-4 font-sans text-[14px] leading-[1.75] text-zinc-300 antialiased select-text break-words",
+                "min-w-0 min-h-0 flex-1 overflow-y-auto px-4 py-4 font-sans text-[14px] leading-[1.75] text-zinc-300 antialiased select-text break-words",
                 segments.length === 0 &&
                   !interimText &&
                   !activeService &&
@@ -1924,29 +1886,29 @@ export default function Operator(): React.ReactElement {
               {segments.length === 0 &&
                 !interimText &&
                 (!activeService && !isTranscribing ? (
-                  <div className="flex flex-1 flex-col items-center justify-center px-4 text-center">
-                    <div className="grid size-10 place-items-center rounded-full border border-white/10 bg-white/[0.03] text-zinc-400">
-                      <Mic size={16} aria-hidden />
+                  <div className="mx-auto flex w-full max-w-[19rem] flex-1 flex-col items-center justify-center px-6 text-center">
+                    <div className="grid size-11 place-items-center rounded-full border border-white/[0.08] bg-white/[0.04] text-zinc-500">
+                      <Mic size={17} aria-hidden />
                     </div>
-                    <p className="mt-4 text-[13px] font-semibold tracking-tight text-zinc-100">
-                      Create a service to start the transcript
+                    <p className="mt-4 text-[14px] font-semibold tracking-tight text-zinc-200">
+                      No service yet
                     </p>
-                    <p className="mt-1.5 max-w-[16rem] text-[11px] leading-relaxed text-zinc-500">
-                      The live feed, nuggets, and detected scriptures save into
-                      one service for this message.
+                    <p className="mt-1.5 text-[12px] leading-relaxed text-zinc-500">
+                      Transcript, nuggets and scriptures stay together in one
+                      service for this message.
                     </p>
                     <button
                       type="button"
                       disabled={pipelineBusy}
                       onClick={() => void handleTogglePipeline()}
-                      className="mt-5 inline-flex h-8 items-center gap-1.5 rounded-md bg-teal-500 px-3 text-[11px] font-semibold text-[#111827] hover:bg-teal-400 disabled:opacity-40"
+                      className="mt-6 inline-flex h-9 items-center gap-2 rounded-lg bg-teal-500 px-4 text-[12px] font-semibold text-[#111827] shadow-sm transition-colors hover:bg-teal-400 disabled:opacity-40"
                     >
-                      <Play size={11} aria-hidden />
-                      Create and start
+                      <Play size={12} aria-hidden />
+                      New service
                     </button>
                     <button
                       type="button"
-                      className="mt-2 text-[11px] text-zinc-500 hover:text-zinc-300"
+                      className="mt-3 text-[12px] text-zinc-600 transition-colors hover:text-zinc-300"
                       onClick={() => setCreationIntent("manual")}
                     >
                       Create without transcription
@@ -1959,65 +1921,84 @@ export default function Operator(): React.ReactElement {
                       : "Transcription paused."}
                   </p>
                 ))}
-            </div>
-
-            {/* Audio Signal Level Indicator */}
-            <div className="shrink-0 space-y-2 border-t border-white/10 bg-black/20 p-3">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
-                  <Volume2
-                    size={11}
-                    className={
-                      isTranscribing ? "text-teal-400" : "text-slate-500"
-                    }
-                  />
-                  Audio Input Signal
-                </span>
-                <span className="text-[9px] font-mono text-slate-600">
-                  {Math.round((audioLevel?.rms ?? 0) * 100)}% RMS
-                </span>
               </div>
-              <div className="relative h-1.5 w-full overflow-hidden rounded-full border border-white/10 bg-black/40">
-                <div
-                  className={cn(
-                    "h-full rounded-full transition-all duration-75 ease-out",
-                    (audioLevel?.clipping ?? false)
-                      ? "bg-rose-500 animate-pulse"
-                      : "bg-teal-500",
-                  )}
-                  style={{
-                    width: `${Math.min(100, (audioLevel?.rms ?? 0) * 100 * 3.5)}%`,
-                  }}
+
+              {/* Vertical audio level rail — same height as the transcript */}
+              <div className="flex w-7 shrink-0 flex-col items-center gap-2 border-l border-white/[0.06] bg-black/20 py-2.5">
+                <Volume2
+                  size={12}
+                  className={isTranscribing ? "text-teal-400" : "text-zinc-600"}
+                  aria-hidden
                 />
+                <span
+                  className={cn(
+                    "size-1.5 rounded-full",
+                    (audioLevel?.clipping ?? false) ? "bg-[#FF453A]" : "bg-white/15",
+                  )}
+                  title={(audioLevel?.clipping ?? false) ? "Clipping" : "No clipping"}
+                />
+                <div
+                  className="flex w-[8px] flex-1 flex-col-reverse gap-[2px]"
+                  role="meter"
+                  aria-label="Input level"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={Math.round((audioLevel?.rms ?? 0) * 100)}
+                >
+                  {Array.from({ length: 18 }, (_, i) => {
+                    const rms = Math.min(audioLevel?.rms ?? 0, 1)
+                    const lit = rms >= (i + 1) / 18
+                    const warn = i >= 13 && i < 16
+                    const clip = i >= 16
+                    return (
+                      <div
+                        key={i}
+                        className={cn(
+                          "min-h-0 w-full flex-1 rounded-[1px]",
+                          lit
+                            ? clip
+                              ? "bg-[#FF453A]"
+                              : warn
+                                ? "bg-[#FFD60A]"
+                                : "bg-[#30D158]"
+                            : "bg-white/[0.08]",
+                        )}
+                      />
+                    )
+                  })}
+                </div>
+                <span
+                  className="font-mono text-[9px] tabular-nums text-zinc-500"
+                  title={`Input level ${Math.round((audioLevel?.rms ?? 0) * 100)}%`}
+                >
+                  {Math.round((audioLevel?.rms ?? 0) * 100)}%
+                </span>
               </div>
             </div>
           </section>
 
           {/* CENTER COLUMN: scripture detection workspace */}
-          <section className="flex min-w-0 flex-1 flex-col bg-surface">
+          <section className="flex min-w-0 flex-1 flex-col bg-[#141414]">
             {serviceError && (
               <p role="alert" className="px-4 py-2 text-xs text-red-400">
                 {serviceError}
               </p>
             )}
             {resilienceStatus && resilienceStatus.claudeFallbackActive && (
-              <div className="bg-amber-950/10 border-b border-amber-500/20 px-5 py-2 text-[10px] font-bold text-amber-400/90 flex items-center justify-between gap-4 shrink-0">
-                {/* The provider's own words, not a guess: "offline" sent an
-                    operator to check the wifi when the real cause was a model
-                    name the API would not accept. */}
-                <span className="min-w-0 truncate normal-case">
+              <div className="flex shrink-0 items-center justify-between gap-4 bg-amber-950/10 px-5 py-2 text-[11px] text-amber-400/90">
+                <span className="min-w-0 truncate">
                   {resilienceStatus.detectorFallbackReason?.message
                     ?? 'AI detection unavailable — local matching active.'}
                 </span>
-                <span className="shrink-0 text-[9px] uppercase tracking-wider text-slate-500 font-mono">
-                  LOCAL MATCHING
+                <span className="shrink-0 font-mono text-[10px] text-zinc-500">
+                  Local matching
                 </span>
               </div>
             )}
-            <div className="flex h-9 shrink-0 items-center justify-between gap-3 border-b border-surface-border px-4">
+            <div className="flex h-9 shrink-0 items-center justify-between gap-3 px-4">
               <div className="flex min-w-0 items-center gap-2">
-                <span className="font-narrow text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">
-                  Detected content
+                <span className="text-[11px] font-medium text-zinc-400">
+                  Detected
                 </span>
                 {suggestionSections.current.length > 0 && (
                   <span className="tabular-nums text-[10px] text-zinc-600">
@@ -2234,10 +2215,10 @@ export default function Operator(): React.ReactElement {
             </div>
 
             <aside
-              className="transcript-glass relative shrink-0 border-t border-white/10"
-              style={{ height: referenceHeight }}
+              className="relative shrink-0 overflow-hidden bg-surface-secondary transition-[height] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
+              style={{ height: referenceCollapsed ? 36 : referenceHeight }}
             >
-              <button
+              {!referenceCollapsed && <button
                 type="button"
                 aria-label="Resize reference panel"
                 title="Drag to resize reference panel"
@@ -2247,9 +2228,27 @@ export default function Operator(): React.ReactElement {
                   if (event.key === "ArrowUp") resizeReferenceByKeyboard(-16);
                   if (event.key === "ArrowDown") resizeReferenceByKeyboard(16);
                 }}
-              />
-              <ReferenceLibrary
+              />}
+              {referenceCollapsed ? (
+                <button
+                  type="button"
+                  onClick={() => setReferenceCollapsed(false)}
+                  className="flex h-9 w-full items-center justify-between px-4 text-[11px] font-medium text-zinc-500 transition-colors hover:bg-white/[0.025] hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-teal-400/60"
+                  aria-label="Expand passage library"
+                  title="Expand passage library"
+                >
+                  <span className="flex items-center gap-2">
+                    <BookOpenText size={14} aria-hidden="true" />
+                    Passage library
+                    <span className="tabular-nums text-zinc-600">{allDetectedGroups.length + (livePlaylist?.items.length ?? 0)}</span>
+                  </span>
+                  <span className="flex items-center gap-1.5 text-[10px] text-zinc-600">
+                    Expand <ChevronUp size={13} aria-hidden="true" />
+                  </span>
+                </button>
+              ) : <ReferenceLibrary
                 listening={isTranscribing}
+                onCollapse={() => setReferenceCollapsed(true)}
                 planTitle={livePlaylist ? displayPlanTitle(livePlaylist.title) : undefined}
                 detected={allDetectedGroups.map((group) => ({
                   id: group.id,
@@ -2269,7 +2268,7 @@ export default function Operator(): React.ReactElement {
                   busy: queueBusyId === item.id,
                   present: () => { void handlePresentPlaylistItem(item); },
                 }))}
-              />
+              />}
             </aside>
           </section>
         </div>

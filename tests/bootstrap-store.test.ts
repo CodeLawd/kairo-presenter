@@ -1,6 +1,14 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import type { AppBootstrapSnapshot, BootstrapProgress } from '../src/lib/ipc'
+// Components reached through the lazy load() below statically import a PNG,
+// which plain-node tsx cannot parse. Stub binary-asset imports to their paths
+// before load() pulls the chain in.
+for (const ext of ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.woff2']) {
+  require.extensions[ext] = ((module: { exports: unknown }, filename: string): void => {
+    module.exports = filename
+  }) as never
+}
 
 // The store talks to the preload bridge and applies the saved theme, so both
 // browser globals are stubbed before it is imported.
@@ -56,6 +64,11 @@ Object.assign(globalThis, {
       },
       // audio.getDevices is gone; enumeration is renderer-side (see the
       // navigator.mediaDevices stub below).
+      settings: {
+        // Secret-status sync subscribes on first hydration; the unsubscribe
+        // shape is all the store touches.
+        onChanged: () => () => {},
+      },
       ndi: {
         getStatus: async () => ({ available: true, sending: false, ppInputConfigured: false }),
       },
@@ -126,9 +139,14 @@ function resetStore(m: Modules): void {
 }
 
 function withKey(m: Modules): void {
+  // Configured-ness comes from main's write-only vault status, never from a
+  // renderer-visible key — the store reads settings.secretsConfigured.bible.
   m.useBootstrapStore.setState({
     apiBibleAuth: 'unchecked',
-    settings: { ...m.defaults, stt: { ...m.defaults.stt, bibleApiKey: 'key' } },
+    settings: {
+      ...m.defaults,
+      secretsConfigured: { ...m.defaults.secretsConfigured, bible: true },
+    },
   })
 }
 

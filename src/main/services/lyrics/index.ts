@@ -166,13 +166,6 @@ interface SectionRow {
   sort_order: number
 }
 
-interface FtsRow {
-  song_id: string
-  title: string
-  artist: string
-  lyrics: string
-}
-
 // ─── Section label parsing lives in ./section-label ───────────────────────────
 
 // ─── Text utilities ───────────────────────────────────────────────────────────
@@ -337,7 +330,7 @@ class LyricsService {
    */
   parseUSR(content: string): Song {
     // Strip UTF-8 BOM and normalize line endings
-    const text = content.replace(/^﻿/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+    const text = content.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n')
     const lines = text.split('\n')
 
     const meta: Record<string, string> = {}
@@ -707,7 +700,8 @@ class LyricsService {
   }
 
   deleteSong(id: string): boolean {
-    const db     = this.requireDb()
+    // Keep the lazy open: requireDb opens the handle on first use.
+    this.requireDb()
     const result = this.stmts.deleteSong.run(id)
     this.stmts.deleteFts.run(id)
     if (result.changes > 0) {
@@ -746,7 +740,7 @@ class LyricsService {
 
     // FTS first (ranked)
     try {
-      const ftsQuery = q.replace(/["*^()\-]/g, ' ').trim()
+      const ftsQuery = q.replace(/["*^()-]/g, ' ').trim()
       const ftsRows  = this.stmts.searchFts.all(ftsQuery) as { song_id: string }[]
       for (const { song_id } of ftsRows) {
         if (ids.has(song_id)) continue
@@ -1131,7 +1125,7 @@ class LyricsService {
   // ─── Adapters ────────────────────────────────────────────────────────────────
 
   /** Convert the DB row + sections into the IPC-safe LyricsSong shape. */
-  private rowToIPC(row: SongRow, db: BetterSqlite3.Database): LyricsSong {
+  private rowToIPC(row: SongRow, _db: BetterSqlite3.Database): LyricsSong {
     const sectionRows = this.stmts.listSections.all(row.id) as SectionRow[]
     const sections: LyricsSongSection[] = sectionRows.map((s) => {
       const parsed = parseSectionLines(s.lines)

@@ -51,6 +51,7 @@ export function validDocumentPage(page: number, count: number): boolean {
 
 /** Display name for an imported document — not a filesystem path. */
 export function normalizeDocumentName(name: string): string {
+  // eslint-disable-next-line no-control-regex -- stripping C0 controls from display names is the point.
   const trimmed = name.replace(/[\u0000-\u001f]/g, '').replace(/\s+/g, ' ').trim()
   if (!trimmed) throw new Error('Enter a name for this document.')
   if (trimmed.length > 120) throw new Error('Document names can be up to 120 characters.')

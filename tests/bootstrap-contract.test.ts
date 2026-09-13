@@ -66,10 +66,20 @@ test('every hook runs before the loading-screen return', () => {
 
 test('the loading screen honours reduced motion and shows progress', () => {
   const screen = read('src/renderer/src/bootstrap/LoadingScreen.tsx')
-  assert.match(screen, /motion-reduce:animate-none/)
+  // Transitions are disabled per-utility; the keyframe animations (sheen,
+  // copy, step) are disabled centrally in CSS — either way reduced-motion
+  // stays static.
   assert.match(screen, /motion-reduce:transition-none/)
+  const css = read('src/renderer/src/index.css')
+  const reduced = css.slice(css.indexOf('@media (prefers-reduced-motion: reduce)'))
+  assert.ok(reduced.length > 0, 'missing prefers-reduced-motion block')
+  assert.ok(reduced.includes('animation: none'), 'reduced-motion must kill splash animations')
+  for (const selector of ['.splash-mark-sheen::after', '.splash-copy', '.splash-step']) {
+    assert.ok(reduced.includes(selector), `${selector} must be stilled under reduced-motion`)
+  }
+  // Staged booth-facing copy (see the splash-state tests), not the raw IPC step.
   assert.match(screen, /\{percent\}%/)
-  assert.match(screen, /\{progress\.step\}/)
+  assert.match(screen, /\{step\}/)
 })
 
 test('startup screens no longer issue their own first-mount reads', () => {
@@ -78,7 +88,6 @@ test('startup screens no longer issue their own first-mount reads', () => {
     ['src/renderer/src/components/operator/OperatorToolbar.tsx', ['scripture.listSermonPlans()', 'scripture.getLivePlan()']],
     ['src/renderer/src/components/lyrics/Lyrics.tsx', ['lyrics.getLibrary()']],
     ['src/renderer/src/components/operator/Operator.tsx', ['transcription.getHistory()', 'orchestrator.getStatus()']],
-    ['src/renderer/src/components/settings/Settings.tsx', ['settings.getAll()']],
     ['src/renderer/src/App.tsx', ['settings.getAll()']],
   ]
   for (const [file, calls] of cases) {
@@ -88,6 +97,13 @@ test('startup screens no longer issue their own first-mount reads', () => {
     }
     assert.ok(source.includes('useBootstrapStore'), `${file} does not read the shared snapshot`)
   }
+
+  const settings = read('src/renderer/src/components/settings/Settings.tsx')
+  assert.doesNotMatch(
+    settings,
+    /apply\(useBootstrapStore\.getState\(\)\.settings\)[\s\S]{0,160}settings\.getAll\(\)/,
+    'Settings still repeats the bootstrap settings read in its mount effect',
+  )
 })
 
 test('screens publish their mutations back to the shared snapshot', () => {
@@ -106,5 +122,8 @@ test('integration hydration runs after the interface opens, never before', () =>
     assert.ok(store.slice(store.indexOf('hydrateIntegrations')).includes(call), `${call} must hydrate in the background`)
   }
   const app = read('src/renderer/src/App.tsx')
-  assert.match(app, /if \(!ready\) return\n\s*void hydrateIntegrations\(\)/)
+  // Gated on ready AND the account gate: hydration will not pull secrets for
+  // a ticketed service when the signed-in operator has not been admitted yet.
+  assert.match(app, /hydrateIntegrations/)
+  assert.match(app, /if \(!ready.*\) return\n\s*void hydrateIntegrations\(\)/)
 })

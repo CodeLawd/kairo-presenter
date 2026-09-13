@@ -86,7 +86,6 @@ export function ServicePanel({ onStartTranscription, creationIntent, onCreationI
   const [planId, setPlanId] = useState('')
   const creatingRef = useRef(false)
   const [viewId, setViewId] = useState<string | null>(null)
-  const [historyOpen, setHistoryOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [confirmEnd, setConfirmEnd] = useState(false)
@@ -133,30 +132,27 @@ export function ServicePanel({ onStartTranscription, creationIntent, onCreationI
     creatingRef.current = false
   }
 
-  return <div className="shrink-0 border-b border-white/10 bg-black/10 px-3 py-2">
-    {active ? (
-      <div className="flex min-w-0 items-center gap-2">
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-[12px] font-semibold leading-tight text-zinc-100" title={active.title}>{active.title}</p>
-          {active.speaker ? <p className="mt-0.5 truncate text-[10px] leading-tight text-zinc-500">{active.speaker}</p> : null}
-        </div>
-        <span className="shrink-0 font-mono text-[11px] tabular-nums text-zinc-300" title="Service duration">{elapsedLabel}</span>
-        <div className="flex shrink-0 items-center gap-0.5 text-[10px]">
-          <button type="button" className="rounded px-1.5 py-0.5 text-zinc-500 hover:bg-white/5 hover:text-zinc-200" onClick={() => setViewId(active.id)}>Review</button>
-          <span className="text-zinc-700" aria-hidden>·</span>
-          <button type="button" disabled={busy} className="rounded px-1.5 py-0.5 text-zinc-500 hover:bg-white/5 hover:text-zinc-200 disabled:opacity-40" onClick={() => setConfirmEnd(true)}>End</button>
-          <span className="text-zinc-700" aria-hidden>·</span>
-          <button type="button" className="rounded px-1.5 py-0.5 text-zinc-500 hover:bg-white/5 hover:text-zinc-200" onClick={() => setHistoryOpen(v => !v)}>{historyOpen ? 'Hide' : 'Past'}</button>
-        </div>
+  return <>
+    {active || error ? (
+      <div className="shrink-0 px-3 py-2">
+        {active ? (
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[12px] font-semibold leading-tight text-zinc-100" title={active.title}>{active.title}</p>
+              {active.speaker ? <p className="mt-0.5 truncate text-[10px] leading-tight text-zinc-500">{active.speaker}</p> : null}
+            </div>
+            <span className="shrink-0 font-mono text-[11px] tabular-nums text-zinc-300" title="Service duration">{elapsedLabel}</span>
+            <div className="flex shrink-0 items-center gap-0.5 text-[10px]">
+              <button type="button" className="rounded px-1.5 py-0.5 text-zinc-500 hover:bg-white/5 hover:text-zinc-200" onClick={() => setViewId(active.id)}>Review</button>
+              <span className="text-zinc-700" aria-hidden>·</span>
+              <button type="button" disabled={busy} className="rounded px-1.5 py-0.5 text-zinc-500 hover:bg-white/5 hover:text-zinc-200 disabled:opacity-40" onClick={() => setConfirmEnd(true)}>End</button>
+            </div>
+          </div>
+        ) : null}
+        {active?.analysisError && <p role="status" className="mt-1.5 text-[10px] text-amber-400">Nugget selection: {active.analysisError}</p>}
+        {error && <p role="alert" className="mt-1.5 text-[10px] text-red-400">{error}</p>}
       </div>
-    ) : (
-      <div className="flex min-w-0 items-center justify-between gap-2">
-        <p className="truncate text-[11px] text-zinc-500">No service</p>
-        <button type="button" className="rounded px-1.5 py-0.5 text-[10px] text-zinc-500 hover:bg-white/5 hover:text-zinc-200" onClick={() => setHistoryOpen(v => !v)}>{historyOpen ? 'Hide' : 'Past'}</button>
-      </div>
-    )}
-    {active?.analysisError && <p role="status" className="mt-1.5 text-[10px] text-amber-400">Nugget selection: {active.analysisError}</p>}
-    {error && <p role="alert" className="mt-1.5 text-[10px] text-red-400">{error}</p>}
+    ) : null}
     <Dialog.Root open={creationIntent !== null} onOpenChange={open => { if (!open && !creatingRef.current) onCreationIntentChange(null) }}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/75" />
@@ -187,7 +183,7 @@ export function ServicePanel({ onStartTranscription, creationIntent, onCreationI
           <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-xl border border-white/10 bg-zinc-950 p-5 text-white shadow-2xl">
             <Dialog.Title className="text-base font-semibold tracking-tight text-zinc-50">End service?</Dialog.Title>
             <Dialog.Description className="mt-1.5 text-[13px] leading-relaxed text-zinc-400">
-              “{active.title}” will close and transcription will stop. Everything saved stays in Past.
+              “{active.title}” will close and transcription will stop. The recap stays available on the website.
             </Dialog.Description>
             {error && <p role="alert" className="mt-3 text-[11px] text-red-400">{error}</p>}
             <div className="mt-5 flex justify-end gap-2">
@@ -200,7 +196,6 @@ export function ServicePanel({ onStartTranscription, creationIntent, onCreationI
                   const value = await window.api.services.command({ action: 'end' })
                   useServiceRecords.getState().set(value)
                   setConfirmEnd(false)
-                  setHistoryOpen(false)
                 })}
               >
                 {busy ? 'Ending…' : 'End and save'}
@@ -210,10 +205,6 @@ export function ServicePanel({ onStartTranscription, creationIntent, onCreationI
         )}
       </Dialog.Portal>
     </Dialog.Root>
-    {historyOpen && <div className="mt-2 max-h-36 space-y-0.5 overflow-y-auto">
-      {snapshot.services.filter(s => s.status === 'ended').length === 0 && <p className="px-1 py-2 text-[10px] text-zinc-500">Completed services will appear here.</p>}
-      {snapshot.services.filter(s => s.status === 'ended').map(s => <button key={s.id} className="flex w-full justify-between gap-2 rounded px-1.5 py-1.5 text-left text-[10px] text-zinc-300 hover:bg-white/5" onClick={() => { setViewId(s.id); setTab('nuggets') }}><span className="min-w-0 truncate">{s.title}</span><span className="flex shrink-0 items-center gap-1.5 text-zinc-500">{s.upload.status !== 'idle' && s.upload.status !== 'uploaded' && <span className={cn('h-1.5 w-1.5 rounded-full', s.upload.status === 'failed' ? 'bg-amber-400' : 'bg-zinc-600')} title={s.upload.status === 'failed' ? 'Recap not sent yet' : 'Recap waiting to publish'} />}{formatServiceDuration(serviceDurationMs(s))}</span></button>)}
-    </div>}
     <Dialog.Root open={Boolean(record)} onOpenChange={open => { if (!open) setViewId(null) }}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/80" />
@@ -393,5 +384,5 @@ export function ServicePanel({ onStartTranscription, creationIntent, onCreationI
         )}
       </Dialog.Portal>
     </Dialog.Root>
-  </div>
+  </>
 }

@@ -97,3 +97,39 @@ key still grants that translation. If API.Bible refuses (401/403), the
 translation is marked *no longer licensed*, its cached text is deleted
 immediately, and it can no longer be searched. A network failure never revokes
 anything, so a fully offline service keeps working.
+
+## Platform rollout status
+
+| OS | Arch | Minimum | Artifacts | Status |
+|---|---|---|---|---|
+| macOS | arm64 | macOS 11 | DMG + ZIP (ZIP feeds auto-update) | Existing target; final NDI 6 acceptance pending |
+| macOS | x64 | macOS 11 | DMG + ZIP | Experimental; native acceptance pending |
+| Windows | x64 | Windows 10 | signed NSIS installer | Experimental; native acceptance pending |
+| Ubuntu | x64 | 22.04 | AppImage + deb | Experimental; native acceptance pending |
+
+Windows ARM64, Linux ARM64, Flatpak/Snap, and a universal macOS build are not
+supported. The planned Linux support contract means Ubuntu 22.04/24.04 x64; AppImage may work elsewhere
+but that is best-effort and untested.
+
+### Per-platform notes
+
+- **NDI®**: release candidates bundle their runtime and must pass native discovery,
+  send, and shutdown acceptance before that target is declared supported.
+  NDI® is a registered trademark of Vizrt NDI AB. See
+  <https://ndi.video> for NDI tools and news.
+- **Document import**: macOS uses installed PowerPoint / WPS / Keynote /
+  LibreOffice; Windows uses PowerPoint / WPS / LibreOffice via their
+  registered install locations; Linux uses LibreOffice via PATH or a
+  registered `.desktop` launcher. Without a supported app, PowerPoint import
+  reports “unavailable” — export the deck to PDF and import that instead.
+- **Microphone**: capture uses the browser audio stack; the OS permission
+  prompt must be accepted. Denying it disables transcription until the
+  permission is granted and the source is retried.
+- **Sign-in persistence on Linux**: credentials persist only when a
+  Secret-Service-compatible keyring (e.g. GNOME Keyring) is available. Without
+  one the app still runs fully — it just will not remember the sign-in between
+  launches, and says so in the UI.
+- **Logs**: renderer/main logs go through electron-log to the per-OS app-data
+  directory (the settings-file path logged at startup as `electron-store
+  initialized` lives in the same directory). Never paste API keys or tokens
+  from logs when reporting issues.

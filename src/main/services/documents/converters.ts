@@ -7,6 +7,7 @@ import type { PowerpointConverterId } from '@shared/documents'
 import {
   findAppByBundleId,
   findAppByName,
+  findLibreOfficeDesktopBinary,
   isKeynoteAppName,
   isLibreOfficeAppName,
   isPowerPointAppName,
@@ -52,6 +53,35 @@ async function commandOnPath(name: string): Promise<string | null> {
     return found || name
   } catch {
     return null
+  }
+}
+
+export async function firstAvailableCommand(
+  names: readonly string[],
+  resolve: (name: string) => Promise<string | null> = commandOnPath,
+): Promise<string | null> {
+  for (const name of names) {
+    const found = await resolve(name)
+    if (found) return found
+  }
+  return null
+}
+
+/** Encodes an untrusted path as inert data for a PowerShell environment variable. */
+export function encodePowerShellTransport(value: string): string {
+  return Buffer.from(value, 'utf8').toString('base64')
+}
+
+const POWERSHELL_DECODE_SOURCE =
+  '[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($env:KAIRO_PPT_SOURCE_B64))'
+const POWERSHELL_DECODE_DEST =
+  '[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($env:KAIRO_PPT_DEST_B64))'
+
+function powerpointPathEnv(source: string, destPdf: string): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    KAIRO_PPT_SOURCE_B64: encodePowerShellTransport(source),
+    KAIRO_PPT_DEST_B64: encodePowerShellTransport(destPdf),
   }
 }
 
@@ -125,7 +155,7 @@ export async function detectWps(): Promise<string | null> {
     ].filter(Boolean)
     return (await firstExisting(named)) ?? commandOnPath('wpp')
   }
-  return commandOnPath('wpp') ?? commandOnPath('wps')
+  return firstAvailableCommand(['wpp', 'wps'])
 }
 
 export async function detectKeynote(): Promise<string | null> {
@@ -150,7 +180,16 @@ export async function detectLibreOffice(): Promise<string | null> {
     const found = await firstExisting(named)
     if (found) return found
   }
-  return commandOnPath('soffice') ?? commandOnPath('libreoffice')
+  if (process.platform === 'linux') {
+    // PATH first (cheap); .desktop launchers catch non-PATH installs.
+    const fromDesktop = await findLibreOfficeDesktopBinary()
+    if (fromDesktop) {
+      if (fromDesktop.startsWith('/')) return fromDesktop
+      const viaPath = await commandOnPath(fromDesktop)
+      if (viaPath) return viaPath
+    }
+  }
+  return firstAvailableCommand(['soffice', 'libreoffice'])
 }
 
 export async function detectPowerpointConverters(): Promise<PowerpointConverterId[]> {
@@ -194,8 +233,8 @@ async function convertWithPowerPoint(source: string, destPdf: string): Promise<v
   if (process.platform === 'win32') {
     const script = [
       '$ErrorActionPreference = "Stop"',
-      `$src = ${JSON.stringify(source)}`,
-      `$dest = ${JSON.stringify(destPdf)}`,
+      `$src = ${POWERSHELL_DECODE_SOURCE}`,
+      `$dest = ${POWERSHELL_DECODE_DEST}`,
       '$ppt = New-Object -ComObject PowerPoint.Application',
       'try {',
       '  $ppt.DisplayAlerts = 2',
@@ -209,6 +248,7 @@ async function convertWithPowerPoint(source: string, destPdf: string): Promise<v
     await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
       timeout: CONVERT_MS,
       maxBuffer: 1024 * 1024,
+      env: powerpointPathEnv(source, destPdf),
     })
     await assertPdf(destPdf)
     return
@@ -225,7 +265,7 @@ async function convertWithKeynote(source: string, destPdf: string): Promise<void
   await assertPdf(destPdf)
 }
 
-async function convertWithWps(source: string, destPdf: string, app: string): Promise<void> {
+async function convertWithWps(source: string, destPdf: string, _app: string): Promise<void> {
   if (process.platform === 'darwin') {
     // The Mac app launches a GUI for any argv, including --help / --headless.
     throw new Error('skip')
@@ -233,8 +273,8 @@ async function convertWithWps(source: string, destPdf: string, app: string): Pro
   if (process.platform === 'win32') {
     const script = [
       '$ErrorActionPreference = "Stop"',
-      `$src = ${JSON.stringify(source)}`,
-      `$dest = ${JSON.stringify(destPdf)}`,
+      `$src = ${POWERSHELL_DECODE_SOURCE}`,
+      `$dest = ${POWERSHELL_DECODE_DEST}`,
       'foreach ($prog in @("Kwpp.Application","wpp.Application","WPP.Application")) {',
       '  try {',
       '    $app = New-Object -ComObject $prog',
@@ -250,6 +290,7 @@ async function convertWithWps(source: string, destPdf: string, app: string): Pro
     await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
       timeout: CONVERT_MS,
       maxBuffer: 1024 * 1024,
+      env: powerpointPathEnv(source, destPdf),
     })
     await assertPdf(destPdf)
     return

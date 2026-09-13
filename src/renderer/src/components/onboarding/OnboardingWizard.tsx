@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { OnboardingState } from '@shared/ipc'
+import { canEnterApp } from '@shared/cloud/auth-state'
 import { ONBOARDING_STEPS, isStepComplete } from '@shared/cloud/onboarding'
 import { useBootstrapStore } from '@/bootstrap/useBootstrapStore'
 import { useAccountStore } from '@/stores/useAccountStore'
@@ -41,12 +42,11 @@ export default function OnboardingWizard({
   const index = Math.max(0, ONBOARDING_STEPS.indexOf(current))
   const total = ONBOARDING_STEPS.length
   const isLast = index === total - 1
-  const signedIn = useAccountStore((s) => s.session.state !== 'signed-out')
-  const verified = useAccountStore((s) => s.session.user?.emailVerified === true)
+  const accountReady = useAccountStore((s) => canEnterApp(s.session))
   // Signing in lives in the token vault rather than in settings, so the account
   // step is the one the wizard has to answer for itself. Confirmed address is
   // required — the launch wall should have already done this.
-  const done = current === 'account' ? signedIn && verified : isStepComplete(current, settings)
+  const done = current === 'account' ? accountReady : isStepComplete(current, settings)
 
   const apply = useCallback(
     async (run: () => Promise<OnboardingState>): Promise<OnboardingState | null> => {

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-declaration-merging -- typed EventEmitter idiom: `declare interface` refines the inherited emitter surface. */
 import { recoverDamagedQuote, type QuoteCandidate } from "./quote-recovery";
 import { isValidScriptureReference } from "./verse-bounds";
 import { EventEmitter } from "events";
@@ -594,6 +595,12 @@ export class ScriptureDetector extends EventEmitter {
     }
     this.emit("stats", this.getStats());
     return true;
+  }
+
+  /** Whether this transcript names a book and chapter but has not supplied a verse yet. */
+  isIncompleteExplicitCitation(text: string): boolean {
+    const refs = matchExplicitScriptures(text);
+    return refs.length > 0 && refs.every((ref) => !hasExplicitVerseSignal(ref.sourceText));
   }
 
   /**
