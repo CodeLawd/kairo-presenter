@@ -20,6 +20,7 @@
     "test:scripture-replay": "ELECTRON_RUN_AS_NODE=1 electron --import tsx --test src/main/services/scripture/__tests__/transcript-replay.test.ts src/main/services/scripture/__tests__/quote-recovery.test.ts src/main/services/scripture/__tests__/live-detection-wiring.test.ts",
     "test:documents": "npm run build && electron tests/documents.integration.cjs",
     "test:main": "ELECTRON_RUN_AS_NODE=1 electron ./node_modules/tsx/dist/cli.mjs --test src/main/__tests__/*.test.ts src/main/services/scripture/__tests__/*.test.ts src/main/services/propresenter/__tests__/*.test.ts src/main/services/cloud/__tests__/*.test.ts src/main/services/ndi/__tests__/*.test.ts src/main/services/documents/__tests__/*.test.ts",
+    "rebuild:native": "electron-rebuild -f -w better-sqlite3",
     "seed:bible": "npx tsx scripts/seed-bible.ts",
     "seed:bible:all": "npx tsx scripts/seed-bible.ts --translations KJV,BBE",
     "build:mac": "npm run typecheck && electron-vite build && electron-builder --mac --arm64",
