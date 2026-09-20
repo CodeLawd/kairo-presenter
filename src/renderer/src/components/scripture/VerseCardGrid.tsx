@@ -10,9 +10,9 @@ export interface VerseCardGridProps {
   cueHighlight: boolean;
   /** Focused from sidebar jump — section highlight only, no Live badge. */
   focusHighlight: boolean;
-  /** Fixed card width — same for every verse card regardless of count. */
+  /** Minimum card width — cards stretch to fill the row (16:9 kept). */
   cardMinWidth: number;
-  /** Fixed card height — 16:9 frame matching live overlay proportions. */
+  /** Card height basis — pairs with width to preserve 16:9 when stretched. */
   cardHeight: number;
   theme: OverlayTheme;
   showTranslation: boolean;
@@ -61,6 +61,7 @@ export function VerseCardGrid({
               showTranslation={showTranslation}
               showVerseNumbers={showVerseNumbers}
               maxVerses={maxVerses}
+              responsive
               width={cardMinWidth}
               height={cardHeight}
               isActive={idx === activeCardIndex}
@@ -111,9 +112,9 @@ export function VerseCardGrid({
               )}
             </div>
             <div
-              className="grid gap-3 justify-start"
+              className="grid w-full gap-3"
               style={{
-                gridTemplateColumns: `repeat(auto-fill, ${cardMinWidth}px)`,
+                gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${cardMinWidth}px), 1fr))`,
               }}
             >
               {rowCards}

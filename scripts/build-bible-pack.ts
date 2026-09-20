@@ -1,22 +1,25 @@
 /**
- * NKJV Bible pack converter.
+ * Bible pack converter (generic — NKJV was the first pack, not the only one).
  *
- * Builds an installable SQLite pack containing ONLY the NKJV translation from
- * a user-supplied JSON file, so NKJV can work fully offline after an optional
- * in-app install — without bundling its text in the application installer.
+ * Builds an installable SQLite pack containing ONLY one translation from
+ * a user-supplied JSON file, so that translation can work fully offline after
+ * an optional in-app install — without bundling its text in the installer.
  *
  * The source JSON and the generated pack are never committed: output defaults
- * under bible-packs/ (gitignored). Licensing/distribution of the NKJV text is
+ * under bible-packs/ (gitignored). Licensing/distribution of the text is
  * unresolved — this script builds a pack locally from a file the operator
  * already holds; it adds no download URL and publishes nothing.
  *
  * Run (better-sqlite3 is built for Electron, so run under Electron-as-Node):
  *   npm run build:bible-pack -- --input /path/to/nkjv.json --output bible-packs/nkjv-pack.db
- *   npm run build:bible-pack -- --input /path/to/nkjv.json --output bible-packs/nkjv-pack.db --force
+ *   npm run build:bible-pack -- --input /path/to/esv.json --output bible-packs/esv-pack.db --translation ESV --name "English Standard Version" --force
  *
  * Expected source shape:
  *   { translation: { abbrev: 'NKJV', ... },
  *     books: [{ index: 1, name: 'Genesis', chapters: [{ chapter: 1, verses: [{ verse: 1, text: '…' }] }] }] }
+ *
+ * To add a new translation pack: supply its JSON with --translation <ID>.
+ * No code change needed — validation is structural (canonical 66-book canon).
  */
 
 import Database from 'better-sqlite3'
@@ -24,11 +27,8 @@ import { existsSync, mkdirSync, statSync, unlinkSync } from 'fs'
 import { gzipSync } from 'zlib'
 import { dirname, resolve } from 'path'
 import { BOOKS } from '../src/main/services/scripture/bible-db'
-import {
-  NKJV_PACK_EXPECTED,
-  validatePackRows,
-  type PackVerseRow,
-} from '../src/main/services/scripture/local-bible-pack'
+import { validatePackRowsFor, type PackVerseRow } from '../src/main/services/scripture/local-bible-pack'
+import { DEFAULT_TRANSLATION_ID } from '../src/lib/bible-translations'
 
 // ─── Source JSON shapes ───────────────────────────────────────────────────────
 
@@ -63,12 +63,21 @@ export interface ConverterOptions {
   input: string
   output: string
   force: boolean
+  /** Translation id the source must carry, e.g. 'NKJV'. Defaults to NKJV. */
+  translation: string
+  /** Override for the translation display name (defaults to the source JSON). */
+  name?: string
+  /** Override for the translation language (defaults to the source JSON). */
+  language?: string
 }
 
 export function parseConverterArgs(argv: string[]): ConverterOptions {
   let input: string | null = null
   let output: string | null = null
   let force = false
+  let translation: string = DEFAULT_TRANSLATION_ID
+  let name: string | undefined
+  let language: string | undefined
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
@@ -76,49 +85,67 @@ export function parseConverterArgs(argv: string[]): ConverterOptions {
       input = argv[++i] as string
     } else if (arg === '--output' && argv[i + 1]) {
       output = argv[++i] as string
+    } else if (arg === '--translation' && argv[i + 1]) {
+      translation = (argv[++i] as string).toUpperCase()
+    } else if (arg === '--name' && argv[i + 1]) {
+      name = argv[++i] as string
+    } else if (arg === '--language' && argv[i + 1]) {
+      language = argv[++i] as string
     } else if (arg === '--force') {
       force = true
     } else {
       throw new Error(
-        `Unknown argument "${arg}". Usage: --input <nkjv.json> --output <pack.db> [--force]`,
+        `Unknown argument "${arg}". Usage: --input <bible.json> --output <pack.db> [--translation <ID>] [--name <name>] [--language <lang>] [--force]`,
       )
     }
   }
 
   if (!input) {
-    throw new Error('Missing required --input <nkjv.json>.')
+    throw new Error('Missing required --input <bible.json>.')
   }
 
   return {
     input: resolve(input),
-    output: resolve(output ?? 'bible-packs/nkjv-pack.db'),
+    output: resolve(output ?? `bible-packs/${translation.toLowerCase()}-pack.db`),
     force,
+    translation,
+    name,
+    language,
   }
 }
 
 // ─── Validation + flatten ─────────────────────────────────────────────────────
 
 function fail(message: string): never {
-  throw new Error(`[nkjv-pack] ${message}`)
+  throw new Error(`[bible-pack] ${message}`)
 }
 
-/** Parse the nested source JSON and flatten it to canonical verse rows. */
-export function parseNkjvSource(raw: unknown): { rows: PackVerseRow[]; name: string; language: string } {
+/**
+ * Parse the nested source JSON and flatten it to canonical verse rows.
+ * `expectedId` defaults to NKJV so existing callers keep working; pass any
+ * translation id to build a pack for a new translation with no code change.
+ */
+export function parsePackSource(
+  raw: unknown,
+  expectedId: string = DEFAULT_TRANSLATION_ID,
+): { rows: PackVerseRow[]; name: string; language: string; translationId: string } {
   if (!raw || typeof raw !== 'object') fail('source is not a JSON object')
   const source = raw as Partial<SourceFile>
 
   const abbrev = source.translation?.abbrev
-  if (abbrev !== NKJV_PACK_EXPECTED.translationId) {
-    fail(`expected translation abbrev "NKJV", found ${JSON.stringify(abbrev)}`)
+  const translationId = (abbrev ?? '').toUpperCase()
+  if (translationId !== expectedId.toUpperCase()) {
+    fail(`expected translation abbrev "${expectedId.toUpperCase()}", found ${JSON.stringify(abbrev)}`)
   }
-  const name = source.translation?.name ?? NKJV_PACK_EXPECTED.translationName
+  const name = source.translation?.name ?? translationId
   const language = source.translation?.language ?? 'en'
 
   if (!Array.isArray(source.books)) fail('source has no "books" array')
   const books = source.books as SourceBook[]
 
-  if (books.length !== NKJV_PACK_EXPECTED.books) {
-    fail(`expected ${NKJV_PACK_EXPECTED.books} books, found ${books.length}`)
+  const expectedBooks = BOOKS.length
+  if (books.length !== expectedBooks) {
+    fail(`expected ${expectedBooks} books, found ${books.length}`)
   }
 
   const rows: PackVerseRow[] = []
@@ -170,7 +197,7 @@ export function parseNkjvSource(raw: unknown): { rows: PackVerseRow[]; name: str
     }
   }
 
-  return { rows, name, language }
+  return { rows, name, language, translationId }
 }
 
 // ─── Pack writing ─────────────────────────────────────────────────────────────
@@ -216,16 +243,21 @@ export interface BuiltPack {
 }
 
 /**
- * Write a validated NKJV pack to disk. Refuses to overwrite an existing file
+ * Write a validated pack to disk. Refuses to overwrite an existing file
  * unless `force` is set. Deterministic: rows are inserted in canonical order
  * and the database is VACUUMed, so the same input yields the same bytes
  * apart from SQLite file-level metadata.
+ *
+ * `translationId` defaults to NKJV for existing callers; pass any id to build
+ * a pack for a new translation.
  */
 export function writePackFile(
   validated: { rows: PackVerseRow[]; name: string; language: string },
   outputPath: string,
   force: boolean,
+  translationId: string = DEFAULT_TRANSLATION_ID,
 ): BuiltPack {
+  const normalized = translationId.toUpperCase()
   if (existsSync(outputPath) && !force) {
     fail(`output already exists: ${outputPath} (pass --force to overwrite)`)
   }
@@ -249,7 +281,7 @@ export function writePackFile(
     seedBooks()
 
     db.prepare('INSERT INTO translations (id, name, language, is_default) VALUES (?, ?, ?, 0)').run(
-      NKJV_PACK_EXPECTED.translationId,
+      normalized,
       validated.name,
       validated.language,
     )
@@ -262,8 +294,8 @@ export function writePackFile(
     )
     const insertAll = db.transaction(() => {
       for (const row of validated.rows) {
-        insertVerse.run(NKJV_PACK_EXPECTED.translationId, row.bookId, row.chapter, row.verse, row.text)
-        insertFts.run(row.text, NKJV_PACK_EXPECTED.translationId, row.bookId, row.chapter, row.verse)
+        insertVerse.run(normalized, row.bookId, row.chapter, row.verse, row.text)
+        insertFts.run(row.text, normalized, row.bookId, row.chapter, row.verse)
       }
     })
     insertAll()
@@ -294,16 +326,19 @@ export async function buildBiblePack(argv: string[]): Promise<BuiltPack> {
     fail(`could not parse ${options.input}: ${(error as Error).message}`)
   }
 
-  const { rows, name, language } = parseNkjvSource(raw)
+  const parsed = parsePackSource(raw, options.translation)
+  const name = options.name ?? parsed.name
+  const language = options.language ?? parsed.language
 
   // Structural totals / contiguity / duplicates, shared with the installer.
-  const validated = validatePackRows(
+  const validated = validatePackRowsFor(
+    options.translation,
     name,
     language,
-    rows.map((row) => ({ ...row })),
+    parsed.rows.map((row) => ({ ...row })),
   )
 
-  const built = writePackFile({ rows, name, language }, options.output, options.force)
+  const built = writePackFile({ rows: parsed.rows, name, language }, options.output, options.force, options.translation)
 
   // Compressed size for the completion report (measured, not stored).
   const gzipSize = gzipSync(readFileSync(options.output)).length
@@ -312,6 +347,7 @@ export async function buildBiblePack(argv: string[]): Promise<BuiltPack> {
   process.stdout.write(
     [
       `Bible pack written: ${result.path}`,
+      `Translation: ${options.translation}`,
       `Verses: ${result.verseCount.toLocaleString()}`,
       `Size: ${(result.byteSize / 1048576).toFixed(2)} MB (${result.byteSize.toLocaleString()} bytes)`,
       `Gzip: ${(result.gzipSize / 1048576).toFixed(2)} MB (${result.gzipSize.toLocaleString()} bytes)`,

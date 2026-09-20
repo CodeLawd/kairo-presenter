@@ -74,6 +74,32 @@ test('maps official API.Bible ids even when the abbreviation is unhelpful', () =
   assert.equal(ids.get('NIV'), '78a9f6124f344018-01')
 })
 
+test('a NASB-authorized key never produces an ASV entry from the shared name words', () => {
+  const ids = buildApiBibleIdMap([
+    { id: 'nasb-01', abbreviationLocal: 'NASB', name: 'New American Standard Bible' },
+  ])
+
+  assert.equal(ids.get('NASB'), 'nasb-01')
+  assert.equal(ids.has('ASV'), false)
+})
+
+test('a Bible that matches the registry by name gains no duplicate dynamic entry', () => {
+  const ids = buildApiBibleIdMap([
+    { id: 'engkjv-01', abbreviationLocal: 'ENGKJV', name: 'King James Version' },
+  ])
+
+  assert.equal(ids.get('KJV'), 'engkjv-01')
+  assert.equal(ids.has('ENGKJV'), false)
+})
+
+test('an unknown English Bible is discovered under its own abbreviation', () => {
+  const ids = buildApiBibleIdMap([
+    { id: 'xyz-01', abbreviationLocal: 'XYZ', name: 'Xyz Simple Translation' },
+  ])
+
+  assert.equal(ids.get('XYZ'), 'xyz-01')
+})
+
 test('splits structured API.Bible passage content into individual verses', () => {
   const verses = parseApiBiblePassageContent([
     {

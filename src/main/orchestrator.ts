@@ -964,12 +964,19 @@ class Orchestrator {
         });
       }
 
+      const overlay = normalizeOverlaySettings(store.get("overlay"));
+      const outputReference = formatOverlayReference(
+        suggestion.reference,
+        suggestion.translation,
+        overlay.showTranslation,
+      );
+
       const presentation = await client.createPresentation(
         `Scripture — ${suggestion.reference}`,
         [{
-          label: suggestion.reference,
+          label: outputReference,
           notes: "scripture",
-          lines: [suggestion.reference, ...suggestion.verses.map((verse) => verse.text)],
+          lines: [outputReference, ...suggestion.verses.map((verse) => verse.text)],
         }],
         themeId ? { themeId } : {},
       );

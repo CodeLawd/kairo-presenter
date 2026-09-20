@@ -11,9 +11,12 @@ export type Unsubscribe = () => void
 
 // ─── App Settings ─────────────────────────────────────────────────────────────
 
-export type ScriptureTranslation =
-  | 'NKJV' | 'KJV' | 'BSB' | 'WEB' | 'ASV' | 'OEB'
-  | 'NIV' | 'NLT' | 'NASB' | 'MSG' | 'AMPC' | 'TPT' | 'ESV' | 'CSB'
+// ─── Bible translations ─────────────────────────────────────────────────────
+// The canonical registry lives in './bible-translations' — add ONE entry there
+// to support a new translation. This type stays `string` on purpose so a newly
+// registered (or user-installed) id never needs a type-level change; known ids
+// are imported from the registry for autocomplete where it matters.
+export type ScriptureTranslation = string
 export type STTProvider = 'deepgram' | 'whisper' | 'none'
 
 export interface AppSettings {
@@ -665,6 +668,13 @@ export interface ScriptureTranslationOption {
   access: 'local' | 'api'
   available: boolean
   requiresApiKey: boolean
+  /**
+   * True when Settings can offer a one-click offline download for this id
+   * (see `downloadablePack` in the bible-translations registry).
+   */
+  downloadable?: boolean
+  /** Human size label for the one-click download, e.g. 'about 5 MB'. */
+  downloadApprox?: string
 }
 
 export type ApiBibleCacheStatus =
@@ -702,8 +712,9 @@ export interface ApiBibleDownloadProgress {
 }
 
 // ─── Optional local Bible packs ─────────────────────────────────────────────
-// A user-supplied SQLite pack (today: NKJV) installed into the writable
+// A user-supplied SQLite pack (e.g. NKJV) installed into the writable
 // userData bible.db. The renderer never sees file paths — only typed status.
+// Which ids are downloadable is driven by the bible-translations registry.
 
 export interface LocalBiblePackStatus {
   /** Normalized translation id, e.g. 'NKJV'. */
@@ -712,6 +723,12 @@ export interface LocalBiblePackStatus {
   chapterCount: number
   /** True once the full expected verse set for this translation is installed. */
   installed: boolean
+}
+
+/** A non-bundled translation present in the local bible.db (pack or download). */
+export interface InstalledLocalBiblePack extends LocalBiblePackStatus {
+  /** Display name stored with the pack, e.g. 'New Living Translation'. */
+  name: string
 }
 
 export interface LocalBiblePackInstallResult {
@@ -1138,17 +1155,19 @@ export interface ScriptureAPI {
   /** Returns cleanup fn. Fires as chapters are downloaded or refreshed. */
   onOfflineDownloadProgress: (callback: (value: ApiBibleDownloadProgress) => void) => Unsubscribe
   /**
-   * Installs a user-supplied local Bible pack (NKJV) into the userData
-   * bible.db. With no argument the main process shows a native file picker;
-   * the chosen path is never exposed to the renderer.
+   * Installs a user-supplied local Bible pack (any single-translation SQLite
+   * pack) into the userData bible.db. With no argument the main process shows
+   * a native file picker; the chosen path is never exposed to the renderer.
    */
   installLocalBiblePack: () => Promise<LocalBiblePackInstallResult | null>
-  /** Downloads, verifies, and installs the official optional pack. */
+  /** Downloads, verifies, and installs the registry pack for `translation`. */
   downloadLocalBibleTranslation: (translation: string) => Promise<LocalBiblePackInstallResult>
   /** Whether a local copy of `translation` (e.g. 'NKJV') is installed. */
   getLocalBiblePackStatus: (translation: string) => Promise<LocalBiblePackStatus>
   /** Removes only the local `translation` rows and their FTS entries. */
   removeLocalBibleTranslation: (translation: string) => Promise<LocalBiblePackStatus>
+  /** Every installed, removable local pack (bundled Bibles are excluded). */
+  listInstalledLocalBiblePacks: () => Promise<InstalledLocalBiblePack[]>
 }
 
 export interface TranscriptionAPI {
@@ -1568,6 +1587,7 @@ export const IPC = {
     DOWNLOAD_LOCAL_BIBLE_TRANSLATION: 'scripture:downloadLocalBibleTranslation', // invoke
     GET_LOCAL_BIBLE_PACK_STATUS: 'scripture:getLocalBiblePackStatus',    // invoke
     REMOVE_LOCAL_BIBLE_TRANSLATION: 'scripture:removeLocalBibleTranslation', // invoke
+    LIST_INSTALLED_LOCAL_BIBLE_PACKS: 'scripture:listInstalledLocalBiblePacks', // invoke
     SET_AUTO_MODE:          'scripture:setAutoMode',             // invoke
     SET_CONFIDENCE:         'scripture:setConfidenceThreshold',  // invoke
     SUGGESTION:             'scripture:suggestion',              // push

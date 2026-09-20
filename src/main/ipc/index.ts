@@ -348,7 +348,7 @@ function registerScriptureHandlers(): void {
     },
   );
 
-  // ── Optional local Bible packs (e.g. NKJV from a user-supplied file) ─────
+  // ── Optional local Bible packs (any single-translation SQLite pack) ────
   // Filesystem and database access stay here in the main process. The
   // renderer never sees the pack path: with no argument the native picker
   // runs here and only the typed install result crosses the bridge.
@@ -387,6 +387,10 @@ function registerScriptureHandlers(): void {
     }
     return scriptureService.removeLocalBibleTranslation(translation.trim());
   });
+
+  ipcMain.handle(IPC.SCRIPTURE.LIST_INSTALLED_LOCAL_BIBLE_PACKS, () =>
+    scriptureService.listInstalledLocalBiblePacks(),
+  );
 }
 
 // ─── Transcription handlers ───────────────────────────────────────────────────

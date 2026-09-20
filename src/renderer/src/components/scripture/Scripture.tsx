@@ -23,6 +23,7 @@ import {
   expandScriptureResult,
   getAdjacentVerseQueries,
   getBookCompletion,
+  getBookCompletions,
   normalizeScriptureQuery,
   reloadPassagesInTranslation,
   resolveSubmittedScriptureQuery,
@@ -149,6 +150,7 @@ export default function Scripture(): React.ReactElement {
   const rowRefs = useRef<Map<string, HTMLElement>>(new Map());
 
   const bookCompletion = getBookCompletion(query);
+  const bookCompletions = getBookCompletions(query);
   const cardMinWidth = Math.round(CARD_BASE_WIDTH * (cardZoom / 100));
   const cardHeight = Math.round(CARD_BASE_HEIGHT * (cardZoom / 100));
   const cards = flattenResultRows(rows);
@@ -1259,6 +1261,7 @@ export default function Scripture(): React.ReactElement {
             translations={translations}
             loading={loading}
             bookCompletion={bookCompletion}
+            bookCompletions={bookCompletions}
             searchSuggestions={searchSuggestions}
             suggestionsOpen={suggestionsOpen}
             activeSuggestion={activeSuggestion}
@@ -1274,6 +1277,11 @@ export default function Scripture(): React.ReactElement {
               setQuery("");
               inputRef.current?.focus();
             }}
+            onBookCompletionSelect={(value) => {
+              const submitted = resolveSubmittedScriptureQuery(value);
+              setQuery(submitted);
+              void handleSearch(submitted);
+            }}
             onKeyDown={handleKeyDown}
             onFocus={() => {
               if (suppressSuggestionsQueryRef.current === query.trim()) return;
@@ -1288,12 +1296,13 @@ export default function Scripture(): React.ReactElement {
             Boolean(bootstrapSettings.secretsConfigured.bible),
             bootstrapPhase === 'ready' || bootstrapPhase === 'ready-with-warnings',
           ) &&
-            translation === "NKJV" &&
-            !translations.find((item) => item.id === "NKJV")?.available && (
+            translation &&
+            !translations.find((item) => item.id === translation)?.available && (
               <div className="flex gap-2 rounded-lg border border-yellow-500/25 bg-yellow-500/5 px-3.5 py-3 text-xs text-yellow-400">
                 <AlertCircle size={14} className="shrink-0" />
-                NKJV is the default, but its text requires an API.Bible key authorized for
-                NKJV. Add the key in Settings → API Keys.
+                {translations.find((item) => item.id === translation)?.downloadable
+                  ? `${translation} is the default but isn't installed yet. Download it in Settings → Scripture, or add an API.Bible key authorized for ${translation} in Settings → API Keys.`
+                  : `${translation} is the default, but its text requires an API.Bible key authorized for ${translation}. Add the key in Settings → API Keys.`}
               </div>
             )}
 

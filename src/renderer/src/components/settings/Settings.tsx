@@ -1249,15 +1249,16 @@ function ScriptureSection({
 
   const selectTranslation = async (translation: ScriptureTranslation): Promise<void> => {
     const option = translations.find((item) => item.id === translation)
-    if (translation === 'NKJV' && !option?.available) {
+    if (option?.downloadable && !option?.available) {
+      const size = option.downloadApprox ?? 'a few megabytes'
       const confirmed = window.confirm(
-        'Download and use NKJV?\n\n' +
-          'Kairo will download about 5 MB once. NKJV will then work completely offline.',
+        `Download and use ${option.id} (${option.name})?\n\n` +
+          `Kairo will download ${size} once. ${option.id} will then work completely offline.`,
       )
       if (!confirmed) return
       setDownloadingTranslation(true)
       try {
-        await window.api.scripture.downloadLocalBibleTranslation('NKJV')
+        await window.api.scripture.downloadLocalBibleTranslation(option.id)
         const refreshed = await window.api.scripture.getTranslations()
         useBootstrapStore.getState().setTranslations(refreshed)
       } catch (error) {
@@ -1285,10 +1286,10 @@ function ScriptureSection({
               <option
                 key={translation.id}
                 value={translation.id}
-                disabled={!translation.available && translation.id !== 'NKJV'}
+                disabled={!translation.available && !translation.downloadable}
               >
                 {translation.id}
-                {translation.available ? '' : translation.id === 'NKJV' ? ' (download)' : ' (offline)'}
+                {translation.available ? '' : translation.downloadable ? ' (download)' : ' (offline)'}
               </option>
             ))}
           </select>

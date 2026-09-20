@@ -1,6 +1,7 @@
 import Store from 'electron-store'
 import log from 'electron-log/main'
 import type { AppSettings } from '@shared/ipc'
+import { DEFAULT_TRANSLATION_ID } from '@shared/bible-translations'
 import { DEFAULT_OVERLAY_SETTINGS, normalizeOverlaySettings } from '@shared/overlay-defaults'
 import { normalizeThemeLibrary } from '@shared/theme-library'
 import { EMPTY_PP_RESOURCE_BINDINGS, normalizeResourceBindings } from '@shared/propresenter-resources'
@@ -27,7 +28,7 @@ const defaults: AppSettings = {
     language: 'en-US',
   },
   scripture: {
-    defaultTranslation: 'NKJV',
+    defaultTranslation: DEFAULT_TRANSLATION_ID,
     showVerseNumbers: true,
     autoMode: false,
     confidenceThreshold: 0.7,
@@ -81,7 +82,7 @@ export const migrations = new Store<{
 // Product decision: NKJV is the default. Apply once for existing installs whose
 // electron-store file predates the new default, then preserve future user choices.
 if (!migrations.get('nkjvDefaultV1')) {
-  store.set('scripture', { ...store.get('scripture'), defaultTranslation: 'NKJV' })
+  store.set('scripture', { ...store.get('scripture'), defaultTranslation: DEFAULT_TRANSLATION_ID })
   migrations.set('nkjvDefaultV1', true)
 }
 

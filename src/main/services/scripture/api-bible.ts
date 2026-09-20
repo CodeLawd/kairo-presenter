@@ -1,3 +1,10 @@
+import {
+  BIBLE_TRANSLATIONS,
+  buildAbbreviationAliases,
+  buildNamePatterns,
+  buildPreferredBibleIds,
+} from '@shared/bible-translations'
+
 export const API_BIBLE_BASE_URL = 'https://rest.api.bible/v1'
 
 export interface ApiBibleSummary {
@@ -29,48 +36,23 @@ export interface ParsedApiBibleVerse {
   text: string
 }
 
-const CATALOG_IDS = new Set([
-  'NKJV', 'KJV', 'BSB', 'WEB', 'ASV', 'OEB',
-  'NIV', 'NLT', 'NASB', 'MSG', 'AMPC', 'TPT', 'ESV', 'CSB',
-])
+// Derived from the bible-translations registry — add an entry there to teach
+// every consumer below about a new translation. The static-looking constants
+// are kept as export names for existing tests, but their contents come from
+// the single source of truth.
+const CATALOG_IDS = new Set(BIBLE_TRANSLATIONS.map((entry) => entry.id.toUpperCase()))
 
 /** Forms API.Bible actually ships that are not our catalog ids. */
-const ABBREVIATION_ALIASES: Record<string, string> = {
-  NIVUK: 'NIV', NIV11: 'NIV', NIV2011: 'NIV', NIV84: 'NIV',
-  NASB95: 'NASB', NASB1995: 'NASB', NASB20: 'NASB', NASB2020: 'NASB',
-  MESSAGE: 'MSG', THEMESSAGE: 'MSG',
-  AMP: 'AMPC', AMPLIFIED: 'AMPC', AMPLIFIEDCLASSIC: 'AMPC',
-  PASSION: 'TPT', THEPASSIONTRANSLATION: 'TPT',
-}
+const ABBREVIATION_ALIASES: Record<string, string> = buildAbbreviationAliases()
 
 /**
  * Official English text ids published by API.Bible. Used when a key is
  * authorized for that edition but the abbreviation string is unhelpful.
  */
-const PREFERRED_BIBLE_IDS: Record<string, string> = {
-  '78a9f6124f344018-01': 'NIV',
-  'a761ca71e0b3ddcf-01': 'NASB',
-  'a556c5305ee15c3f-01': 'CSB',
-}
+const PREFERRED_BIBLE_IDS: Record<string, string> = buildPreferredBibleIds()
 
 /** Longer names first so “New King James” does not collapse to KJV. */
-const NAME_PATTERNS: Array<[RegExp, string]> = [
-  [/new king james/i, 'NKJV'],
-  [/king james/i, 'KJV'],
-  [/new international/i, 'NIV'],
-  [/new living/i, 'NLT'],
-  [/new american standard/i, 'NASB'],
-  [/english standard/i, 'ESV'],
-  [/christian standard/i, 'CSB'],
-  [/\bthe message\b/i, 'MSG'],
-  [/passion translation/i, 'TPT'],
-  [/amplified bible,?\s*classic/i, 'AMPC'],
-  [/\bamplified\b/i, 'AMPC'],
-  [/world english/i, 'WEB'],
-  [/american standard/i, 'ASV'],
-  [/berean standard/i, 'BSB'],
-  [/open english/i, 'OEB'],
-]
+const NAME_PATTERNS: Array<[RegExp, string]> = buildNamePatterns()
 
 function normalizeAbbreviation(value: string | undefined): string {
   return (value ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '')
@@ -110,20 +92,48 @@ export function buildApiBibleIdMap(bibles: ApiBibleSummary[]): Map<string, strin
   for (const bible of bibles) {
     if (bible.type && bible.type !== 'text') continue
 
+    // Whether this Bible matched a registry entry by any signal. Dynamic
+    // discovery below only fires when nothing matched, so one Bible never
+    // appears twice (e.g. KJV by name AND ENGKJV by abbreviation).
+    let known = false
+
     const preferred = PREFERRED_BIBLE_IDS[bible.id]
-    if (preferred) consider(preferred, bible.id, 85)
+    if (preferred) { consider(preferred, bible.id, 85); known = true }
 
     const local = catalogIdFromAbbreviation(bible.abbreviationLocal)
-    if (local) consider(local.id, bible.id, local.exact ? 100 : 80)
+    if (local) { consider(local.id, bible.id, local.exact ? 100 : 80); known = true }
 
     const fallback = catalogIdFromAbbreviation(bible.abbreviation)
-    if (fallback) consider(fallback.id, bible.id, fallback.exact ? 90 : 70)
+    if (fallback) { consider(fallback.id, bible.id, fallback.exact ? 90 : 70); known = true }
 
     const named = catalogIdFromName(bible.nameLocal) ?? catalogIdFromName(bible.name)
-    if (named) consider(named, bible.id, 40)
+    if (named) { consider(named, bible.id, 40); known = true }
+
+    // Dynamic discovery: an API.Bible text the registry never heard of still
+    // maps to its own normalized abbreviation, so a newly authorized Bible
+    // shows up without a code change or app release.
+    if (!known) {
+      const dynamic = normalizeAbbreviation(bible.abbreviationLocal ?? bible.abbreviation)
+      if (dynamic && !CATALOG_IDS.has(dynamic) && !(dynamic in ABBREVIATION_ALIASES)) {
+        consider(dynamic, bible.id, 10)
+      }
+    }
   }
 
   return new Map([...best.entries()].map(([id, value]) => [id, value.bibleId]))
+}
+
+/**
+ * Display names for API.Bible ids that have no registry entry (dynamic
+ * discovery above). Known ids resolve through the registry instead.
+ */
+export function displayNameForDynamicTranslation(id: string, bibles: ApiBibleSummary[]): string {
+  const normalized = id.toUpperCase()
+  const match = bibles.find(
+    (bible) =>
+      normalizeAbbreviation(bible.abbreviationLocal ?? bible.abbreviation) === normalized,
+  )
+  return match?.nameLocal ?? match?.name ?? normalized
 }
 
 function normalizeVerseId(value: string | undefined): string | null {

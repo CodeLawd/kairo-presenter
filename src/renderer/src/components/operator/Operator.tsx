@@ -38,6 +38,7 @@ import {
 } from "@shared/operator-layout";
 import type { OperatorPanelSide } from "@shared/operator-layout";
 import { Button } from "@/components/ui/button";
+import { DEFAULT_TRANSLATION_ID } from "@shared/bible-translations";
 import { VerseThemePreview } from "@/components/scripture/VerseThemePreview";
 import {
   DEFAULT_OVERLAY_SETTINGS,
@@ -439,7 +440,7 @@ export default function Operator(): React.ReactElement {
   );
   const [mediaLibrary, setMediaLibrary] = useState<MediaLibrary | null>(null);
   const [defaultTranslation, setDefaultTranslation] =
-    useState<AppSettings["scripture"]["defaultTranslation"]>("NKJV");
+    useState<AppSettings["scripture"]["defaultTranslation"]>(DEFAULT_TRANSLATION_ID);
   const [pendingAuto, setPendingAuto] = useState<PendingAutoPresent[]>([]);
   const [transcriptWidth, setTranscriptWidth] = useState(() =>
     normalizeOperatorPanelWidth(

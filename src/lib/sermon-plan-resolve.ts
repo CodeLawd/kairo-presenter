@@ -4,8 +4,12 @@ import type {
   ScriptureTranslationOption,
   SermonScriptureItem,
 } from "./ipc";
+import { bundledTranslationIdsInOrder } from "./bible-translations";
 
-const LOCAL_FALLBACKS: ScriptureTranslation[] = ["KJV", "BSB", "WEB", "ASV", "OEB"];
+// Prefer the requested translation, then the operator's default, then bundled
+// local Bibles (registry order) — derived so new bundled translations join the
+// fallback chain with no code change here.
+const LOCAL_FALLBACKS: ScriptureTranslation[] = bundledTranslationIdsInOrder();
 
 /** Prefer the requested translation, then the operator's default, then local Bibles. */
 export function translationFallbackOrder(

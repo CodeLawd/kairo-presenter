@@ -7,6 +7,7 @@ import type {
   ScriptureVerse,
   ScriptureTranslation,
   ScriptureTranslationOption,
+  InstalledLocalBiblePack,
   LocalBiblePackInstallResult,
   LocalBiblePackStatus,
 } from '@shared/ipc'
@@ -18,13 +19,19 @@ import { ApiBibleLookup, type ApiBibleLookupCache } from './api-bible-lookup'
 import type { ApiBibleCache } from './api-bible-cache'
 import { resolveReferenceLookup } from './reference-search'
 import {
-  NKJV_PACK_TRANSLATION_ID,
   packStatusFor,
-  downloadNkjvPack,
+  downloadBiblePack,
   temporaryPackPath,
   resolveWritableBibleDbPath,
   validatePackFile,
 } from './local-bible-pack'
+import {
+  DEFAULT_TRANSLATION_ID,
+  getDownloadablePack,
+  getTranslationDefinition,
+  isBundledTranslation,
+  translationCatalogEntries,
+} from '@shared/bible-translations'
 
 type SuggestionCallback = (suggestion: ScriptureSuggestion) => void
 
@@ -36,8 +43,10 @@ export class ScriptureService {
   private lookup: ApiBibleLookup | null = null
   /** Access revalidation happens once per app session, not once per search. */
   private readonly sessionStartedAt = Date.now()
-  private defaultTranslation: ScriptureTranslation = 'NKJV'
+  private defaultTranslation: ScriptureTranslation = DEFAULT_TRANSLATION_ID
   private apiBibleIds = new Map<string, string>()
+  /** Display names for the authorized API.Bible ids (covers dynamic ids too). */
+  private apiBibleNames = new Map<string, string>()
   /** Which API key `apiBibleIds` was loaded for; ids never outlive their key. */
   private apiBibleIdsKey: string | null = null
   private clientFactory: (apiKey: string) => ApiBibleClient = (apiKey) => new ApiBibleClient(apiKey)
@@ -86,6 +95,22 @@ export class ScriptureService {
       .some((item) => item.id.toUpperCase() === translation.toUpperCase())
   }
 
+  /**
+   * Every non-bundled translation in the local bible.db — downloaded packs and
+   * packs installed from a file alike — so each one can be managed (removed)
+   * from Settings, whether or not the registry knows its id.
+   */
+  listInstalledLocalBiblePacks(): InstalledLocalBiblePack[] {
+    const db = this.requireDb()
+    return db
+      .getAllTranslations()
+      .filter((row) => !isBundledTranslation(row.id))
+      .map((row) => ({
+        ...this.getLocalBiblePackStatus(row.id),
+        name: row.name || getTranslationDefinition(row.id)?.name || row.id.toUpperCase(),
+      }))
+  }
+
   getLocalBiblePackStatus(translation: string): LocalBiblePackStatus {
     const db = this.requireDb()
     const normalized = translation.toUpperCase()
@@ -102,17 +127,30 @@ export class ScriptureService {
   }
 
   /**
-   * Validate an NKJV SQLite pack and import it into the writable userData
-   * bible.db, replacing only NKJV rows. Validation runs before anything is
-   * written; the import itself is one transaction, so a failure preserves
-   * whatever NKJV copy was installed before.
+   * Validate a single-translation SQLite pack and import it into the writable
+   * userData bible.db, replacing only that translation's rows. Validation runs
+   * before anything is written; the import itself is one transaction, so a
+   * failure preserves whatever copy was installed before.
+   *
+   * When `expectedTranslationId` is given (registry downloads always pass it),
+   * the pack must contain exactly that translation — a checksum only proves
+   * the bytes are the listed ones, not that they hold the right translation.
+   *
+   * Bundled translations (KJV, BBE, BSB, …) are refused: the userData bible.db
+   * is copied from resources/ on first run only, so an overwrite could never
+   * be undone short of deleting the database.
    */
-  installLocalBiblePack(packPath: string): LocalBiblePackInstallResult {
+  installLocalBiblePack(packPath: string, expectedTranslationId?: string): LocalBiblePackInstallResult {
     const db = this.requireDb()
     // Throws on any structural problem — the database is untouched.
-    const pack = validatePackFile(packPath)
-    // Single-transaction replace of NKJV verses + FTS rows. A throw here
-    // rolls back to the previously installed NKJV.
+    const pack = validatePackFile(packPath, expectedTranslationId)
+    if (isBundledTranslation(pack.translationId)) {
+      throw new Error(
+        `The bundled ${pack.translationId} copy cannot be overwritten by a pack.`,
+      )
+    }
+    // Single-transaction replace of this translation's verses + FTS rows.
+    // A throw here rolls back to the previously installed copy.
     db.importTranslationPack(
       pack.translationId,
       pack.translationName,
@@ -133,29 +171,31 @@ export class ScriptureService {
 
   async downloadLocalBibleTranslation(translation: string): Promise<LocalBiblePackInstallResult> {
     const normalized = translation.toUpperCase()
-    if (normalized !== NKJV_PACK_TRANSLATION_ID) {
+    if (!getDownloadablePack(normalized)) {
       throw new Error(`No downloadable local pack is available for ${normalized}.`)
     }
-    const sqlite = await downloadNkjvPack()
-    const temporaryPath = temporaryPackPath()
+    const sqlite = await downloadBiblePack(normalized)
+    const temporaryPath = temporaryPackPath(normalized)
     try {
       fs.writeFileSync(temporaryPath, sqlite, { flag: 'wx', mode: 0o600 })
-      return this.installLocalBiblePack(temporaryPath)
+      // Pass the requested id through so a mislabeled pack is rejected even
+      // when its checksum matches the registry entry.
+      return this.installLocalBiblePack(temporaryPath, normalized)
     } finally {
       try { fs.unlinkSync(temporaryPath) } catch { /* best-effort temporary cleanup */ }
     }
   }
 
   /**
-   * Remove only the locally installed NKJV rows and their FTS entries.
-   * Restricted to NKJV so bundled translations (KJV, BSB, …) can never be
-   * removed through this path, no matter what id the renderer passes.
+   * Remove only the locally installed translation rows and their FTS entries.
+   * Bundled translations (KJV, BSB, …) can never be removed through this path,
+   * no matter what id the renderer passes.
    */
   removeLocalBibleTranslation(translation: string): LocalBiblePackStatus {
     const db = this.requireDb()
     const normalized = translation.toUpperCase()
-    if (normalized !== NKJV_PACK_TRANSLATION_ID) {
-      throw new Error(`Only the local ${NKJV_PACK_TRANSLATION_ID} copy can be removed.`)
+    if (isBundledTranslation(normalized)) {
+      throw new Error(`The bundled ${normalized} copy cannot be removed.`)
     }
     if (db.hasTranslation(normalized)) {
       db.removeTranslation(normalized)
@@ -246,6 +286,13 @@ export class ScriptureService {
         tx: string,
       ): ScriptureResult => {
         const bookName = this.db!.resolveBookName(ref.book)?.name ?? ref.book
+        if (ref.isChapter) {
+          return {
+            reference: `${bookName} ${ref.chapter}`,
+            verses,
+            translation: tx as typeof translation,
+          }
+        }
         const end = ref.verseEnd ? `–${ref.verseEnd}` : ''
         return {
           reference: `${bookName} ${ref.chapter}:${ref.verseStart}${end}`,
@@ -257,28 +304,40 @@ export class ScriptureService {
         requested: translation,
         localIds,
         lookupLocal: (tx) =>
-          this.lookupVerses(
-            ref.book,
-            ref.chapter,
-            ref.verseStart,
-            ref.verseEnd,
-            tx as typeof translation,
-          ),
+          ref.isChapter
+            ? this.lookupChapter(
+                ref.book,
+                ref.chapter,
+                tx as typeof translation,
+              )
+            : this.lookupVerses(
+                ref.book,
+                ref.chapter,
+                ref.verseStart as number,
+                ref.verseEnd,
+                tx as typeof translation,
+              ),
         lookupApi: apiKey
-          ? () => this.lookupFromApiBible(ref, translation, apiKey)
+          ? () =>
+              ref.isChapter
+                ? this.lookupChapterFromApiBible(ref, translation, apiKey)
+                : this.lookupFromApiBible(ref, translation, apiKey)
           : null,
         toLocalResult,
       })
     }
 
-    // Phrase / keyword search: a locally installed NKJV is always served
-    // from SQLite first and never touches API.Bible — the operator installed
-    // it precisely so no key or network is needed. Every other translation
-    // keeps the existing behavior: prefer the configured API.Bible
-    // translation (NKJV, NIV, …), then fall back to the local bible.db seed.
-    const localNkjvPreferred =
-      translation.toUpperCase() === NKJV_PACK_TRANSLATION_ID && preferredIsLocal
-    if (apiKey && !localNkjvPreferred) {
+    // Phrase / keyword search: when the requested translation is one the
+    // operator installed for offline use (a registry downloadable pack, e.g.
+    // NKJV), it is always served from SQLite first and never touches
+    // API.Bible — it was installed precisely so no key or network is needed.
+    // Every other translation keeps the existing behavior: prefer the
+    // configured API.Bible translation, then fall back to the local bible.db
+    // seed. In particular, bundled locals (KJV, BSB, …) still search the API
+    // first when a key is set, exactly as before the registry refactor.
+    const offlinePackPreferred =
+      getDownloadablePack(translation) !== undefined && preferredIsLocal
+    if (apiKey && !offlinePackPreferred) {
       try {
         const apiHits = await this.searchPhraseFromApiBible(query, translation, apiKey)
         if (apiHits.length > 0) {
@@ -300,8 +359,8 @@ export class ScriptureService {
     }
 
     // Remembered-phrase search uses the local bible.db. If the Settings
-    // translation is API-only (NKJV, NIV, …), search every seeded Bible and
-    // prefer rows from the requested translation when present.
+    // translation is API-only, search every seeded Bible and prefer rows from
+    // the requested translation when present.
     const phraseRows = preferredIsLocal
       ? this.db.searchText(query, translation)
       : this.db.searchText(query) // all local translations
@@ -375,6 +434,22 @@ export class ScriptureService {
     })
   }
 
+  async lookupChapter(
+    book: string,
+    chapter: number,
+    translation = this.defaultTranslation,
+  ): Promise<ScriptureVerse[]> {
+    log.info('Scripture chapter lookup', { book, chapter })
+    if (!this.db) return []
+    const rows = this.db.getChapter(translation, book, chapter)
+    return rows.map((v) => ({
+      book: v.bookName,
+      chapter,
+      verse: v.verse,
+      text: v.text,
+    }))
+  }
+
   async lookupVerses(
     book: string,
     chapter: number,
@@ -397,7 +472,9 @@ export class ScriptureService {
 
   async getTranslationOptions(apiKey = '', strict = false): Promise<ScriptureTranslationOption[]> {
     const catalog = TRANSLATION_CATALOG
-    const local = new Set(this.db?.getAllTranslations().map((item) => item.id.toUpperCase()) ?? [])
+    const localRows = this.db?.getAllTranslations() ?? []
+    const local = new Set(localRows.map((item) => item.id.toUpperCase()))
+    const localNames = new Map(localRows.map((item) => [item.id.toUpperCase(), item.name]))
     if (apiKey) {
       try {
         await this.loadApiBibleIds(apiKey)
@@ -406,16 +483,49 @@ export class ScriptureService {
         if (strict) throw error
       }
     }
-    return catalog.map(([id, name, access]) => ({
-      id, name, access,
-      available: local.has(id) || this.apiBibleIds.has(id),
-      requiresApiKey: access === 'api' && !local.has(id),
-    }))
+    const seen = new Set<string>()
+    const options: ScriptureTranslationOption[] = []
+    const push = (id: string, name: string, access: 'local' | 'api'): void => {
+      const key = id.toUpperCase()
+      if (seen.has(key)) return
+      seen.add(key)
+      options.push({
+        id: key,
+        name,
+        access,
+        available: local.has(key) || this.apiBibleIds.has(key),
+        requiresApiKey: access === 'api' && !local.has(key),
+        downloadable: getDownloadablePack(key) !== undefined,
+        downloadApprox: getDownloadablePack(key)?.approxLabel,
+      })
+    }
+    // Registry first (stable order), then any locally installed translation
+    // the registry never heard of (custom packs, BBE seed, …), then any
+    // API.Bible-authorized translation outside the registry.
+    for (const [id, name, access] of catalog) push(id, name, access)
+    for (const row of localRows) {
+      if (!seen.has(row.id.toUpperCase())) push(row.id.toUpperCase(), row.name || row.id, 'local')
+    }
+    for (const [id] of this.apiBibleIds) {
+      if (!seen.has(id.toUpperCase())) {
+        push(id.toUpperCase(), this.apiBibleNames.get(id.toUpperCase()) ?? localNames.get(id.toUpperCase()) ?? id, 'api')
+      }
+    }
+    return options
   }
 
   private async loadApiBibleIds(apiKey: string): Promise<void> {
     const bibles = await this.getClient(apiKey).listBibles()
     this.apiBibleIds = buildApiBibleIdMap(bibles)
+    const byBibleId = new Map(bibles.map((bible) => [bible.id, bible]))
+    this.apiBibleNames = new Map()
+    for (const [catalogId, bibleId] of this.apiBibleIds) {
+      const bible = byBibleId.get(bibleId)
+      this.apiBibleNames.set(
+        catalogId.toUpperCase(),
+        bible?.nameLocal ?? bible?.name ?? getTranslationDefinition(catalogId)?.name ?? catalogId,
+      )
+    }
     this.apiBibleIdsKey = apiKey
     log.info('[Scripture] API.Bible translations authorized', {
       count: this.apiBibleIds.size,
@@ -433,7 +543,11 @@ export class ScriptureService {
     return bibleId
   }
 
-  /** API translations the saved key can reach, for the offline cache UI. */
+  /**
+   * API translations the saved key can reach, for the offline cache UI.
+   * Bundled locals (KJV, BBE, BSB, …) are excluded — they already ship
+   * offline, so caching their API text would only clutter the list.
+   */
   async listAuthorizedTranslations(apiKey: string): Promise<
     Array<{ bibleId: string; translation: ScriptureTranslation; name: string }>
   > {
@@ -442,10 +556,16 @@ export class ScriptureService {
       return []
     }
     await this.loadApiBibleIds(apiKey)
-    return TRANSLATION_CATALOG.flatMap(([id, name, access]) => {
-      if (access !== 'api') return []
-      const bibleId = this.apiBibleIds.get(id)
-      return bibleId ? [{ bibleId, translation: id, name }] : []
+    return [...this.apiBibleIds.entries()].flatMap(([id, bibleId]) => {
+      const definition = getTranslationDefinition(id)
+      // Known entries participate only when their text comes from the API;
+      // dynamically discovered ids (no registry entry) always participate.
+      if (definition && definition.access !== 'api') return []
+      return [{
+        bibleId,
+        translation: id,
+        name: this.apiBibleNames.get(id.toUpperCase()) ?? definition?.name ?? id,
+      }]
     })
   }
 
@@ -478,6 +598,7 @@ export class ScriptureService {
 
   private forgetAuthorizedIds(): void {
     this.apiBibleIds = new Map()
+    this.apiBibleNames = new Map()
     this.apiBibleIdsKey = null
   }
 
@@ -489,7 +610,7 @@ export class ScriptureService {
   }
 
   private async lookupFromApiBible(
-    ref: { book: string; chapter: number; verseStart: number; verseEnd?: number },
+    ref: { book: string; chapter: number; verseStart?: number; verseEnd?: number },
     translation: ScriptureTranslation,
     apiKey: string,
   ): Promise<ScriptureResult[]> {
@@ -502,8 +623,25 @@ export class ScriptureService {
       translation,
       book: { id: book.id, name: book.name },
       chapter: ref.chapter,
-      verseStart: ref.verseStart,
+      verseStart: ref.verseStart ?? 1,
       verseEnd: ref.verseEnd,
+    })
+  }
+
+  private async lookupChapterFromApiBible(
+    ref: { book: string; chapter: number },
+    translation: ScriptureTranslation,
+    apiKey: string,
+  ): Promise<ScriptureResult[]> {
+    if (!this.db) return []
+    const bibleId = await this.resolveBibleId(translation, apiKey)
+    const book = this.db.resolveBookName(ref.book)
+    if (!book) return []
+    return this.getLookup(apiKey).lookupChapter({
+      bibleId,
+      translation,
+      book: { id: book.id, name: book.name },
+      chapter: ref.chapter,
     })
   }
 
@@ -524,8 +662,9 @@ export class ScriptureService {
   parseReference(input: string): {
     book: string
     chapter: number
-    verseStart: number
+    verseStart?: number
     verseEnd?: number
+    isChapter?: boolean
   } | null {
     return parseScriptureReference(input)
   }
@@ -538,7 +677,9 @@ export class ScriptureService {
   analyzeTranscript(text: string): void {
     if (!this.autoMode) return
     const ref = this.parseReference(text)
-    if (!ref) return
+    // Chapter-only mentions ("Psalms 23") are too noisy for live detection —
+    // auto mode still requires an explicit verse.
+    if (!ref || ref.isChapter || ref.verseStart == null) return
     const confidence = 0.8 // TODO: replace with NLP confidence score
     if (confidence < this.confidenceThreshold) return
 
@@ -555,22 +696,10 @@ export class ScriptureService {
   }
 }
 
-const TRANSLATION_CATALOG: Array<[ScriptureTranslation, string, 'local' | 'api']> = [
-  ['NKJV', 'New King James Version', 'api'],
-  ['KJV', 'King James Version', 'local'],
-  ['BSB', 'Berean Standard Bible', 'local'],
-  ['WEB', 'World English Bible', 'local'],
-  ['ASV', 'American Standard Version', 'local'],
-  ['OEB', 'Open English Bible', 'local'],
-  ['NIV', 'New International Version', 'api'],
-  ['NLT', 'New Living Translation', 'api'],
-  ['NASB', 'New American Standard Bible', 'api'],
-  ['MSG', 'The Message', 'api'],
-  ['AMPC', 'Amplified Bible, Classic Edition', 'api'],
-  ['TPT', 'The Passion Translation', 'api'],
-  ['ESV', 'English Standard Version', 'api'],
-  ['CSB', 'Christian Standard Bible', 'api'],
-]
+// Derived from the bible-translations registry — add an entry there and every
+// consumer (catalog UI, API mapping, sermon detection) learns it at once.
+const TRANSLATION_CATALOG: Array<[ScriptureTranslation, string, 'local' | 'api']> =
+  translationCatalogEntries()
 
 /** Used when OS encryption is unavailable: lookups still work, nothing persists. */
 const NO_CACHE: ApiBibleLookupCache = {

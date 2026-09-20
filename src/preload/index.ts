@@ -283,6 +283,10 @@ const scripture: ProAutomateAPI['scripture'] = {
   removeLocalBibleTranslation(translation: string) {
     return ipcRenderer.invoke(IPC.SCRIPTURE.REMOVE_LOCAL_BIBLE_TRANSLATION, translation)
   },
+
+  listInstalledLocalBiblePacks() {
+    return ipcRenderer.invoke(IPC.SCRIPTURE.LIST_INSTALLED_LOCAL_BIBLE_PACKS)
+  },
 }
 
 // ─── transcription ────────────────────────────────────────────────────────────

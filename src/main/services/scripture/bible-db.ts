@@ -557,7 +557,7 @@ export class BibleDatabase {
     log.info('[BibleDB] Translation imported', { id, verses: total })
   }
 
-  // ─── Local Bible packs (optional user-installed translations, e.g. NKJV) ───
+  // ─── Local Bible packs (optional user-installed translations) ───
 
   /**
    * Replace every row of one translation — verses, FTS entries and the

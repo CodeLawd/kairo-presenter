@@ -1,6 +1,7 @@
 import { DEFAULT_OVERLAY_SETTINGS } from '@shared/overlay-defaults'
 import type { SettingsWithSecretsStatus } from '@shared/ipc'
 import { EMPTY_PP_RESOURCE_BINDINGS } from '@shared/propresenter-resources'
+import { DEFAULT_TRANSLATION_ID } from '@shared/bible-translations'
 
 /** Neutral settings used until the real ones arrive from the main process. */
 export const DEFAULT_SETTINGS: SettingsWithSecretsStatus = {
@@ -8,7 +9,7 @@ export const DEFAULT_SETTINGS: SettingsWithSecretsStatus = {
   audio: { deviceId: '' },
   stt: { provider: 'none', apiKey: '', anthropicApiKey: '', deepseekApiKey: '', llmProvider: 'anthropic', llmModel: '', bibleApiKey: '', language: 'en-US' },
   scripture: {
-    defaultTranslation: 'NKJV',
+    defaultTranslation: DEFAULT_TRANSLATION_ID,
     showVerseNumbers: true,
     autoMode: false,
     confidenceThreshold: 0.7,

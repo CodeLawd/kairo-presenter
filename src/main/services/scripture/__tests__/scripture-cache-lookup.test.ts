@@ -49,6 +49,11 @@ function fakeClient(result: ApiBiblePassage | Error) {
       if (result instanceof Error) throw result
       return result
     },
+    async getChapter(_bibleId: string, chapterId: string) {
+      client.calls.push(chapterId)
+      if (result instanceof Error) throw result
+      return result
+    },
     async getBible(bibleId: string) {
       client.bibleCalls.push(bibleId)
       if (client.bibleError) throw client.bibleError
