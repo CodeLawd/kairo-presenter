@@ -55,8 +55,12 @@ export const SERVICE_CHANNEL = 'services:command'
 export const SERVICE_CHANGED = 'services:changed'
 export type ServiceCommand =
   | { action: 'list' }
-  | { action: 'create'; title: string; speaker: string; planId: string | null }
-  | { action: 'end' }
+  /** Open an unnamed service so transcription can start with no dialog first. */
+  | { action: 'start' }
+  /** Name and keep the open service. Blank title falls back to the date. */
+  | { action: 'end'; title: string; speaker: string; planId: string | null }
+  /** Throw the open service away — nothing about it is kept. */
+  | { action: 'discard' }
   | { action: 'analyze'; serviceId: string }
   | { action: 'nugget'; text: string; sourceIds: string[] }
   | { action: 'removeNugget'; serviceId: string; nuggetId: string }

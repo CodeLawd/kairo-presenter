@@ -3,7 +3,9 @@ import { app } from 'electron'
 import Database from 'better-sqlite3'
 import type BetterSqlite3 from 'better-sqlite3'
 import log from 'electron-log/main'
+import { findDuplicate } from '@shared/lyrics-duplicate'
 import type {
+  LyricsImportPreview,
   LyricsSong,
   LyricsSongSection,
   LyricsSectionType,
@@ -22,7 +24,9 @@ import {
   splitIntoSlideChunks,
 } from '@shared/lyrics-slides'
 import { normalizeResourceBindings } from '@shared/propresenter-resources'
-import { store } from '../../db'
+import { migrations, store } from '../../db'
+import { workspaceService } from '../workspace'
+import { deleteSongFile, readSongFiles, writeSongFile } from './song-files'
 import { proPresenterService } from '../propresenter'
 import type { PPSlideGroupSpec } from '../propresenter/types'
 import { lyricsScraperService } from './scraper'
@@ -185,6 +189,36 @@ function songMatchKey(title: string, artist: string): string {
   return `${norm(title)}|${norm(artist)}`
 }
 
+/** Metadata names a `Key: value` line is allowed to set. */
+const USR_META_KEYS = new Set([
+  'title',
+  'songtitle',
+  'author',
+  'artist',
+  'writer',
+  'writers',
+  'songwriter',
+  'authors',
+  'copyright',
+  'ccli#',
+  'cclinumber',
+  'cclisongnumber',
+  'cclinumber',
+  'key',
+  'tempo',
+  'admin',
+  'publisher',
+  'theme',
+  'themes',
+])
+
+/** "Balogun N'ile.txt" → "Balogun N'ile". */
+function titleFromFileName(filename?: string): string | undefined {
+  if (!filename) return undefined
+  const stem = filename.replace(/\.[^.]+$/, '').replace(/[_]+/g, ' ').trim()
+  return stem || undefined
+}
+
 /** Build a human label for a section type + index. */
 function sectionLabel(type: LyricsSectionType, index: number): string {
   switch (type) {
@@ -240,6 +274,7 @@ class LyricsService {
     this.initSchema()
     this.prepareStatements()
     log.info('[LyricsDB] Opened', { path: p })
+    this.syncFromFolder()
   }
 
   close(): void {
@@ -328,7 +363,7 @@ class LyricsService {
    * Supported section tags (bracketed or plain):
    *   V/V1–V9, C/C1–C9, B/B1–B9, PC/PreC, T/Tag, I/Intro, O/Outro, E/End/Ending
    */
-  parseUSR(content: string): Song {
+  parseUSR(content: string, filename?: string): Song {
     // Strip UTF-8 BOM and normalize line endings
     const text = content.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n')
     const lines = text.split('\n')
@@ -336,24 +371,31 @@ class LyricsService {
     const meta: Record<string, string> = {}
     let bodyStart = 0
 
-    // Parse leading key=value metadata block
+    // Parse the leading metadata block. SongSelect writes `Title=`, but hand-made
+    // sheets write `Title:` just as often, so both are read — a colon only when
+    // the key is one of the known metadata names, or "Chorus: sing it" would be
+    // swallowed as metadata instead of sung.
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i]
-      const eqIdx = line.indexOf('=')
-      if (eqIdx > 0) {
-        const key = line.slice(0, eqIdx).trim().toLowerCase().replace(/\s+/g, '')
-        const val = line.slice(eqIdx + 1).trim()
-        meta[key] = val
+      const match = line.match(/^\s*([A-Za-z][A-Za-z #]*)\s*([=:])\s*(.*)$/)
+      if (match) {
+        const key = match[1].trim().toLowerCase().replace(/\s+/g, '')
+        const isColon = match[2] === ':'
+        if (isColon && !USR_META_KEYS.has(key)) break
+        meta[key] = match[3].trim()
         bodyStart = i + 1
       } else {
-        // First non-key=value line ends the metadata block
+        // First non-metadata line ends the block
         // (allow blank lines within metadata to be skipped)
         if (line.trim() !== '') break
         bodyStart = i + 1
       }
     }
 
-    const title     = meta['title']     ?? meta['songtitle']                               ?? 'Untitled'
+    // A plain lyrics file has no metadata at all. Its name is the only title
+    // anyone wrote down, and a library of "Untitled" is unusable.
+    const title     = meta['title']     ?? meta['songtitle']
+                    ?? titleFromFileName(filename)                                          ?? 'Untitled'
     const artist    = meta['author']    ?? meta['artist']    ?? meta['writer']
                     ?? meta['songwriter'] ?? meta['authors']                                ?? ''
     const copyright = meta['copyright']                                                     ?? ''
@@ -607,6 +649,83 @@ class LyricsService {
     return groups
   }
 
+  // ─── Songs folder (source of truth) ─────────────────────────────────────────
+
+  private songsDir(): string {
+    return workspaceService.songsDir()
+  }
+
+  /** Mirrors a song into the Songs folder. Never throws — a read-only or
+   *  unplugged workspace must not block the in-app edit. */
+  private writeSongToFolder(song: LyricsSong): void {
+    writeSongFile(this.songsDir(), song)
+  }
+
+  /**
+   * Reconciles the database with the Songs folder, which wins every conflict.
+   *
+   * Files are read into the DB (new songs appear, edited files overwrite rows)
+   * and rows whose file is gone are dropped. The one exception is the first
+   * run after upgrading: the DB then holds songs that predate the folder, so
+   * they are exported instead of deleted.
+   */
+  syncFromFolder(): { imported: number; removed: number; exported: number } {
+    const dir = this.songsDir()
+    const result = { imported: 0, removed: 0, exported: 0 }
+
+    const entries = readSongFiles(dir)
+    const onDisk = new Set(entries.map((e) => e.song.id))
+
+    for (const { song } of entries) {
+      this.addSong(this.ipcToInternal(song), { writeFile: false })
+      result.imported++
+    }
+
+    const rows = this.stmts.listSongs.all() as SongRow[]
+    const firstExport = !migrations.get('songsFolderExportV1')
+
+    for (const row of rows) {
+      if (onDisk.has(row.id)) continue
+      if (firstExport) {
+        const song = this.rowToIPC(row, this.db!)
+        this.writeSongToFolder(song)
+        result.exported++
+        continue
+      }
+      // The file was deleted outside the app — the folder is authoritative.
+      this.stmts.deleteSong.run(row.id)
+      this.stmts.deleteFts.run(row.id)
+      result.removed++
+    }
+
+    if (firstExport) migrations.set('songsFolderExportV1', true)
+
+    log.info('[LyricsDB] Songs folder synced', { dir, ...result })
+    return result
+  }
+
+  /** Rebuilds the internal Song shape from the IPC/file shape. */
+  private ipcToInternal(song: LyricsSong): Song {
+    return {
+      id:         song.id,
+      title:      song.title,
+      artist:     song.artist ?? '',
+      copyright:  song.copyright ?? '',
+      ccliNumber: song.ccliNumber,
+      isFavorite: song.isFavorite ?? false,
+      source:     (song.source as LyricsSource) ?? 'text',
+      sections:   song.sections.map((s, i) => ({
+        type:  s.type,
+        label: s.label,
+        index: i + 1,
+        lines: s.lines,
+        ...(s.lineColors ? { lineColors: s.lineColors } : {}),
+      })),
+      createdAt:  song.createdAt,
+      updatedAt:  song.updatedAt,
+    }
+  }
+
   // ─── Library CRUD ───────────────────────────────────────────────────────────
 
   getLibrary(): LyricsSong[] {
@@ -622,7 +741,7 @@ class LyricsService {
     return this.rowToIPC(row, db)
   }
 
-  addSong(song: Song): void {
+  addSong(song: Song, options: { writeFile?: boolean } = {}): void {
     const db = this.requireDb()
     const lyricsText = song.sections.flatMap((s) => s.lines).join(' ')
 
@@ -656,6 +775,7 @@ class LyricsService {
       this.stmts.insertFts.run(song.id, song.title, song.artist, lyricsText)
     })
     tx()
+    if (options.writeFile !== false) this.writeSongToFolder(this.songToIPC(song))
     log.info('[LyricsDB] Song saved', { id: song.id, title: song.title })
   }
 
@@ -695,8 +815,10 @@ class LyricsService {
     })
     tx()
 
+    const saved = this.getSong(id)
+    if (saved) this.writeSongToFolder(saved)
     log.info('[LyricsDB] Song updated', { id, title: updates.title })
-    return this.getSong(id)
+    return saved
   }
 
   deleteSong(id: string): boolean {
@@ -704,6 +826,7 @@ class LyricsService {
     this.requireDb()
     const result = this.stmts.deleteSong.run(id)
     this.stmts.deleteFts.run(id)
+    deleteSongFile(this.songsDir(), id)
     if (result.changes > 0) {
       log.info('[LyricsDB] Song deleted', { id })
       return true
@@ -717,6 +840,8 @@ class LyricsService {
     if (!before) return false
     this.stmts.toggleFavorite.run(Date.now(), id)
     const after = (this.stmts.getFavorite.get(id) as { is_favorite: number }).is_favorite === 1
+    const saved = this.getSong(id)
+    if (saved) this.writeSongToFolder(saved)
     log.info('[LyricsDB] Favorite toggled', { id, isFavorite: after })
     return after
   }
@@ -881,6 +1006,27 @@ class LyricsService {
     }
   }
 
+  /**
+   * Parses a file into a song WITHOUT writing it to the library.
+   *
+   * Dropping a folder of song files is a review step, not a decision: the
+   * operator reads what was parsed and then commits. Importing on drop meant
+   * Cancel left ninety-seven songs behind.
+   */
+  previewImport(source: LyricsImportSource): LyricsImportPreview {
+    let song: Song
+    if (source.type === 'usr') {
+      song = this.parseUSR(source.content, source.filename)
+    } else if (source.type === 'text') {
+      song = this.parseText(source.text, source.title, source.artist, source.copyright)
+    } else {
+      throw new Error('Only file and text imports can be previewed.')
+    }
+    this.applyImportSlideBreaks(song)
+    const parsed = this.songToIPC(song)
+    return { song: parsed, duplicate: findDuplicate(parsed, this.getLibrary()) }
+  }
+
   async importSong(source: LyricsImportSource): Promise<LyricsSong> {
     log.info('[LyricsService] Importing song', { type: source.type })
 
@@ -888,7 +1034,7 @@ class LyricsService {
       let song: Song
 
       if (source.type === 'usr') {
-        song = this.parseUSR(source.content)
+        song = this.parseUSR(source.content, source.filename)
         // CCLI dedup: if we already have this song, return the existing entry
         if (song.ccliNumber) {
           const existing = this.findByCCLI(song.ccliNumber)
@@ -1058,6 +1204,10 @@ class LyricsService {
    * Fetches the current ProPresenter library and upserts all items as
    * stub songs with source='propresenter' (no lyrics content).
    * Returns the count of new or updated entries.
+   *
+   * These stubs get song files like any other entry: the Songs folder is the
+   * library's source of truth, so a stub that lived only in the database
+   * would disappear on the next launch.
    */
   async syncFromProPresenter(): Promise<number> {
     const ppStatus = proPresenterService.getStatus()

@@ -40,7 +40,13 @@ class NdiService {
   private sender: NdiSender | null = null
   private available = false
   private sending = false
-  private frameTimer: ReturnType<typeof setInterval> | null = null
+  private frameTimer: ReturnType<typeof setTimeout> | null = null
+  /** True while `sendVideo` is in flight, so ticks can never stack up. */
+  private sendingFrame = false
+  /** False once `stop()` runs, so the self-scheduling loop unwinds. */
+  private frameLoopActive = false
+  /** Set when new pixels arrive, so the next content reaches NDI immediately. */
+  private frameDirty = false
   private currentFrame: Buffer
   private starting: Promise<void> | null = null
   /** Why the last sender attempt failed, surfaced in status and logs. */
@@ -117,16 +123,41 @@ class NdiService {
     }
   }
 
+  /**
+   * Repeat loop for the current frame.
+   *
+   * Self-scheduling rather than `setInterval`: `sendVideo` is async and, on a
+   * busy machine, can take longer than one tick. An interval keeps queueing
+   * callbacks behind a slow send, and the backlog only grows — which is how a
+   * long slideshow ended up minutes of frames behind what the operator saw.
+   * Here the next tick is only scheduled once the previous send has returned.
+   */
   private startFrameLoop(): void {
-    if (this.frameTimer) return
-    this.frameTimer = setInterval(() => {
-      this.pushFrame().catch((err) => {
-        log.error('[NDI] Frame push failed', (err as Error).message)
-      })
-    }, FRAME_INTERVAL_MS)
+    if (this.frameLoopActive) return
+    this.frameLoopActive = true
+    const tick = (): void => {
+      if (!this.frameLoopActive) return
+      this.frameTimer = setTimeout(() => {
+        void this.pushFrame().finally(tick)
+      }, FRAME_INTERVAL_MS)
+    }
+    tick()
   }
 
   private async pushFrame(): Promise<void> {
+    if (!this.sender || this.sendingFrame) return
+    this.sendingFrame = true
+    this.frameDirty = false
+    try {
+      await this.sendCurrentFrame()
+    } catch (err) {
+      log.error('[NDI] Frame push failed', (err as Error).message)
+    } finally {
+      this.sendingFrame = false
+    }
+  }
+
+  private async sendCurrentFrame(): Promise<void> {
     if (!this.sender) return
     const frame: NdiVideoFrame = {
       xres: WIDTH,
@@ -149,16 +180,28 @@ class NdiService {
       return
     }
     this.currentFrame = bgraBuffer
+    this.frameDirty = true
+    // New pixels go out now instead of waiting for the next repeat tick — that
+    // wait was pure latency between a page turn and the wall.
+    if (!this.sendingFrame) void this.pushFrame()
+  }
+
+  /** True once new pixels have been handed to the sender. */
+  get hasPendingFrame(): boolean {
+    return this.frameDirty
   }
 
   /** Resets the repeating frame back to fully transparent (D2 clear semantics). */
   clearFrame(): void {
     this.currentFrame = Buffer.alloc(WIDTH * HEIGHT * 4, 0)
+    this.frameDirty = true
+    if (!this.sendingFrame) void this.pushFrame()
   }
 
   async stop(): Promise<void> {
+    this.frameLoopActive = false
     if (this.frameTimer) {
-      clearInterval(this.frameTimer)
+      clearTimeout(this.frameTimer)
       this.frameTimer = null
     }
     this.sending = false

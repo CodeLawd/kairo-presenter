@@ -21,6 +21,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import type { SermonPlan, SermonScriptureItem } from "@shared/ipc";
+import { LibrarySection } from "@/components/shared/LibrarySection";
+import { startLibraryItemDrag, useLibrary } from "@/stores/useLibraries";
+import { usePassagesStore, runPassagesCommand } from "@/stores/usePassages";
+import { DEFAULT_LIBRARY_ID, itemsInLibrary, libraryCounts } from "@shared/libraries";
+import { type SavedPassage } from "@shared/passages";
 
 export interface PlaylistSidebarProps {
   plans: SermonPlan[];
@@ -33,6 +38,13 @@ export interface PlaylistSidebarProps {
   pendingDeletePlanId: string | null;
   creatingPlaylist: boolean;
   showAddTarget: boolean;
+  /** How many verses the last search produced, for the Library row. */
+  searchResultCount: number;
+  /** True while the cards on screen come from search rather than a playlist. */
+  viewingSearch: boolean;
+  onSelectSearch: () => void;
+  /** Opens a kept passage back onto the cards. */
+  onOpenPassage: (passage: SavedPassage) => void;
   onCreate: () => void;
   onOpenPlan: (plan: SermonPlan) => void;
   onSelectItem: (itemId: string) => void;
@@ -63,6 +75,10 @@ export function PlaylistSidebar({
   pendingDeletePlanId,
   creatingPlaylist,
   showAddTarget,
+  searchResultCount,
+  viewingSearch,
+  onSelectSearch,
+  onOpenPassage,
   onCreate,
   onOpenPlan,
   onSelectItem,
@@ -77,6 +93,10 @@ export function PlaylistSidebar({
   onReorderItem,
 }: PlaylistSidebarProps): React.ReactElement {
   const [itemQuery, setItemQuery] = useState("");
+  const passages = usePassagesStore((store) => store.passages);
+  const passageLibrary = useLibrary("scripture");
+  const [activeLibraryId, setActiveLibraryId] = useState<string>(DEFAULT_LIBRARY_ID);
+  const visiblePassages = itemsInLibrary(passageLibrary, passages, activeLibraryId);
   const [draggingItemId, setDraggingItemId] = useState<string | null>(null);
   const [dragOverItemId, setDragOverItemId] = useState<string | null>(null);
   const [dropPosition, setDropPosition] = useState<"before" | "after">("before");
@@ -112,6 +132,70 @@ export function PlaylistSidebar({
       data-playlist-sidebar=""
       className="flex h-full min-h-0 w-64 shrink-0 flex-col overflow-hidden border-r border-surface-border bg-surface-secondary xl:w-72"
     >
+      {/* Library first, playlists under it — the same two-section rail the
+          Lyrics page uses, so "where does this list come from" reads the same
+          on both pages. */}
+      {/* Library first, playlists under it — the same two-section rail the
+          Lyrics page uses, so "where does this list come from" reads the same
+          on both pages. A library owns kept passages; a playlist orders them. */}
+      <div className="shrink-0 border-b border-surface-border px-1 py-1.5">
+        <LibrarySection
+          kind="scripture"
+          activeLibraryId={activeLibraryId}
+          counts={libraryCounts(passageLibrary, passages)}
+          onSelect={setActiveLibraryId}
+          extraRows={
+            <button
+              type="button"
+              aria-current={viewingSearch}
+              disabled={searchResultCount === 0}
+              onClick={onSelectSearch}
+              className={cn(
+                "group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] transition-colors disabled:opacity-40",
+                viewingSearch
+                  ? "bg-teal-600/20 text-zinc-50"
+                  : "text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-200",
+              )}
+            >
+              <Search size={13} className="shrink-0" aria-hidden />
+              <span className="min-w-0 flex-1 truncate">Search results</span>
+              <span className="shrink-0 text-[10px] tabular-nums text-zinc-600">{searchResultCount}</span>
+            </button>
+          }
+        />
+
+        {visiblePassages.length > 0 && (
+          <div className="mt-1.5 max-h-40 overflow-y-auto border-t border-surface-border/60 pt-1.5">
+            {visiblePassages.map((passage) => (
+              <div
+                key={passage.id}
+                draggable
+                onDragStart={(event) => startLibraryItemDrag(event, passage.id, passage.reference)}
+                className="group flex items-center gap-2 rounded-md px-2 py-1.5 text-[12px] text-zinc-400 transition-colors hover:bg-white/[0.04] hover:text-zinc-200"
+              >
+                <button
+                  type="button"
+                  className="min-w-0 flex-1 truncate text-left"
+                  onClick={() => onOpenPassage(passage)}
+                  title={`Open ${passage.reference}`}
+                >
+                  {passage.reference}
+                  <span className="ml-1.5 text-[10px] uppercase text-zinc-600">{passage.translation}</span>
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Remove ${passage.reference} from saved passages`}
+                  className="grid size-5 shrink-0 place-items-center rounded text-zinc-600 opacity-0 transition-opacity hover:text-rose-400 group-hover:opacity-100"
+                  onClick={() => void runPassagesCommand({ action: "remove", passageId: passage.id })}
+                >
+                  <Trash2 size={11} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       <div className="flex shrink-0 items-center justify-between gap-2 border-b border-surface-border bg-surface-tertiary px-3 py-2">
         <h2 className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">
           Playlists

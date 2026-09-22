@@ -16,6 +16,9 @@ import Operator from '@/components/operator/Operator'
 import ThemeEditor from '@/components/theme/ThemeEditor'
 import Settings from '@/components/settings/Settings'
 import { useAppStore } from '@/stores/useAppStore'
+import { useSetlistSync } from '@/stores/useSetlist'
+import { useLibrariesSync } from '@/stores/useLibraries'
+import { usePassagesSync } from '@/stores/usePassages'
 import { LoadingScreen } from '@/bootstrap/LoadingScreen'
 import PpConnectGate from '@/components/setup/PpConnectGate'
 import OnboardingWizard from '@/components/onboarding/OnboardingWizard'
@@ -261,6 +264,9 @@ function DraggableSettingsFrame({ onClose }: { onClose: () => void }): React.Rea
 
 export default function App(): React.ReactElement {
   const [route, setRoute] = useState<NavRoute>('operator')
+  useSetlistSync()
+  useLibrariesSync()
+  usePassagesSync()
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [songSearchOpen, setSongSearchOpen] = useState(false)
   useEffect(() => window.api.app.onImportRequested((kind) => {
@@ -451,7 +457,7 @@ export default function App(): React.ReactElement {
           className={`${route === 'documents' ? 'flex' : 'hidden'} min-h-0 w-full flex-1 flex-col overflow-hidden [&>*]:min-h-0 [&>*]:flex-1`}
           aria-hidden={route !== 'documents'}
         >
-          <Documents />
+          <Documents active={route === 'documents'} />
         </div>
         {route !== 'operator' && route !== 'theme' && route !== 'documents' && (
           <div key={route} className="flex min-h-0 w-full flex-1 flex-col overflow-hidden [&>*]:min-h-0 [&>*]:flex-1">
@@ -471,6 +477,13 @@ export default function App(): React.ReactElement {
           songs={lyricsLibrary}
           onClose={() => setSongSearchOpen(false)}
           onOpen={(song) => {
+            // A song imported from the web inside this palette is not in the
+            // bootstrap library yet; without adding it the Lyrics page routes
+            // to a selection it cannot resolve and shows nothing.
+            const bootstrap = useBootstrapStore.getState()
+            if (!bootstrap.lyrics.some((known) => known.id === song.id)) {
+              bootstrap.setLyrics([song, ...bootstrap.lyrics])
+            }
             useAppStore.getState().setLyricsViewState({ selectedSongId: song.id })
             setSettingsOpen(false)
             setRoute('lyrics')

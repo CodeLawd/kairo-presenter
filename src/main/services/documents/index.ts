@@ -50,13 +50,19 @@ class DocumentsService {
       : kind === 'powerpoint'
         ? ['ppt', 'pptx']
         : ['pdf', 'ppt', 'pptx']
+    // With no kind the picker takes both formats in one pass, so the operator
+    // never has to know in advance which one they are reaching for.
+    const filters = kind
+      ? [{ name: kind === 'powerpoint' ? 'PowerPoint' : 'PDF', extensions }]
+      : [
+          { name: 'PDF or PowerPoint', extensions },
+          { name: 'PDF', extensions: ['pdf'] },
+          { name: 'PowerPoint', extensions: ['ppt', 'pptx'] },
+        ]
     const result = await dialog.showOpenDialog({
       title: kind === 'powerpoint' ? 'Import PowerPoint' : kind === 'pdf' ? 'Import PDF' : 'Import document',
       properties: ['openFile'],
-      filters: [{
-        name: kind === 'powerpoint' ? 'PowerPoint' : kind === 'pdf' ? 'PDF' : 'PDF or PowerPoint',
-        extensions,
-      }],
+      filters,
     })
     if (result.canceled || !result.filePaths[0]) return null
     const source = result.filePaths[0]
@@ -143,11 +149,29 @@ class DocumentsService {
     await fs.rm(this.directory(id), { recursive: true, force: true })
     return this.list()
   }
+  /**
+   * Path of one page, read without scanning the library.
+   *
+   * `list()` opens and parses every document on disk; doing that on each page
+   * turn put the whole library between a clicker press and the screen. Only
+   * this document's metadata is read, and the page is allowlisted for the
+   * pa-media protocol exactly as a listing would do.
+   */
   async page(id: string, page: number): Promise<string> {
-    const doc = (await this.list()).find(doc => doc.id === id)
-    if (!doc || !validDocumentPage(page, doc.pages.length)) throw new Error('Document page not found.')
-    await fs.access(doc.pages[page])
-    return doc.pages[page]
+    const dir = this.directory(id)
+    let metadata: ProjectionDocument
+    try {
+      metadata = JSON.parse(await fs.readFile(join(dir, 'document.json'), 'utf8')) as ProjectionDocument
+    } catch {
+      throw new Error('Document page not found.')
+    }
+    if (!Array.isArray(metadata.pages) || !validDocumentPage(page, metadata.pages.length)) {
+      throw new Error('Document page not found.')
+    }
+    const path = join(dir, `${page}.png`)
+    await fs.access(path)
+    allowPickedOverlayMedia(path)
+    return path
   }
 }
 export const documentsService = new DocumentsService()

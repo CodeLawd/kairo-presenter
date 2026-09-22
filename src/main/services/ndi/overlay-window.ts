@@ -4,6 +4,7 @@ import overlayHtml from './overlay.html?asset'
 import { renderOverlayHTML, type OverlayColoredLine } from '@shared/overlay-template'
 import type { MediaPlayback, OverlayTheme } from '@shared/ipc'
 import { mediaFilterCss } from '@shared/media-playback'
+import { overlayMediaUrl } from '@shared/overlay-template'
 import { ndiService } from './index'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -14,6 +15,10 @@ const OSR_FRAME_RATE = 10
 // Video backgrounds repaint continuously — 10fps reads as a slideshow. 24 keeps
 // motion acceptable without tripling the BGRA copy load. Tune after live perf checks.
 const OSR_FRAME_RATE_VIDEO = 24
+/** Capture rate used for the moment a document page is swapped in. */
+const OSR_FRAME_RATE_SWAP = 60
+/** Longest a page turn waits for its own captured frame before giving up. */
+const PAINT_WAIT_MS = 400
 
 // ─── Offscreen overlay renderer ────────────────────────────────────────────────
 // D4/D5: offscreen hidden BrowserWindow loaded from the `?asset`-imported
@@ -26,6 +31,10 @@ class OverlayWindow {
   private creating: Promise<BrowserWindow> | null = null
   /** Which output last rendered here — see showScripture. */
   private lastOutputId: string | null = null
+  /** True while the overlay is showing a document page and nothing else. */
+  private documentMode = false
+  /** Resolvers waiting for the next offscreen capture to reach the NDI sender. */
+  private paintWaiters: Array<() => void> = []
   /**
    * What is currently painted, kept so the background can be swapped underneath
    * without the operator having to re-push the slide. Changing a background
@@ -76,6 +85,11 @@ class OverlayWindow {
         ? image
         : image.resize({ width: WIDTH, height: HEIGHT })
       ndiService.updateFrame(frame.getBitmap(), WIDTH, HEIGHT)
+      // Anyone awaiting "this page is really on the wire" is released here —
+      // the capture, not a guess at how long painting takes.
+      const waiters = this.paintWaiters
+      this.paintWaiters = []
+      for (const resolve of waiters) resolve()
     })
 
     win.webContents.on('render-process-gone', (_event, details) => {
@@ -187,6 +201,7 @@ class OverlayWindow {
     const isVideoBg = theme.background.type === 'video' && !!theme.background.mediaPath
     win.webContents.setFrameRate(isVideoBg ? OSR_FRAME_RATE_VIDEO : OSR_FRAME_RATE)
     const html = renderOverlayHTML(theme, reference, text, WIDTH, HEIGHT, { coloredLines })
+    this.documentMode = false
     await win.webContents.executeJavaScript(`window.__setContent(${JSON.stringify(html)})`)
   }
 
@@ -201,7 +216,70 @@ class OverlayWindow {
       root.style.background = '#000';
       await image.decode();
     })()`)
+    this.documentMode = true
+    await this.nextPaint(PAINT_WAIT_MS)
     return true
+  }
+
+  /** Resolves on the next captured frame, or after `timeoutMs` either way. */
+  private nextPaint(timeoutMs: number): Promise<void> {
+    return new Promise<void>(resolve => {
+      const timer = setTimeout(() => {
+        this.paintWaiters = this.paintWaiters.filter(waiter => waiter !== release)
+        resolve()
+      }, timeoutMs)
+      const release = (): void => { clearTimeout(timer); resolve() }
+      this.paintWaiters.push(release)
+    })
+  }
+
+  /**
+   * Page turn inside a deck that is already on screen.
+   *
+   * Swapping the one <img> skips rebuilding the slide HTML, which is most of
+   * the delay an operator feels on a clicker press. Returns false whenever the
+   * overlay is not currently showing a document from this output — the caller
+   * then does the full push, so correctness never depends on this shortcut.
+   */
+  async swapDocumentPage(outputId: string, mediaPath: string): Promise<boolean> {
+    const current = this.lastRender
+    if (!this.documentMode || !current || this.lastOutputId !== outputId) return false
+    if (!this.win || this.win.isDestroyed()) return false
+    const url = overlayMediaUrl(mediaPath)
+    // Static pages are captured at a slow offscreen frame rate, so a turn would
+    // otherwise sit up to a frame interval before anything is grabbed. Burst
+    // the capture rate around the swap, wait for the frame that actually
+    // carries the new page, then drop back: the wall updates at once and the
+    // CPU goes back to idle between pages.
+    let swapped = false
+    try {
+      this.win.webContents.setFrameRate(OSR_FRAME_RATE_SWAP)
+      swapped = await this.win.webContents.executeJavaScript(
+        `window.__swapDocumentPage(${JSON.stringify(url)})`,
+      )
+      if (swapped) await this.nextPaint(PAINT_WAIT_MS)
+    } catch (err) {
+      log.warn('[NDI] Document page swap failed', (err as Error).message)
+      return false
+    } finally {
+      if (this.win && !this.win.isDestroyed()) this.win.webContents.setFrameRate(OSR_FRAME_RATE)
+    }
+    if (!swapped) return false
+    this.lastRender = {
+      ...current,
+      theme: { ...current.theme, background: { ...current.theme.background, mediaPath } },
+    }
+    return true
+  }
+
+  /** Decode the following page ahead of the click that asks for it. */
+  async preloadDocumentPage(mediaPath: string): Promise<void> {
+    if (!this.documentMode || !this.win || this.win.isDestroyed()) return
+    try {
+      await this.win.webContents.executeJavaScript(
+        `window.__preloadDocumentPage(${JSON.stringify(overlayMediaUrl(mediaPath))})`,
+      )
+    } catch { /* A missed preload only costs the next swap its head start. */ }
   }
 
   /**

@@ -111,6 +111,31 @@
         if (video.ended) video.currentTime = 0;
         video.play().catch(function () {});
       };
+      // Document decks swap one <img> instead of rebuilding the slide: a full
+      // __setContent re-parses the DOM and re-lays out, which is the difference
+      // between a clicker feeling instant and feeling laggy. Resolves only once
+      // the new pixels are decoded AND painted, so the NDI sender never grabs a
+      // frame of the previous page.
+      window.__swapDocumentPage = function (src) {
+        var image = document.querySelector('.pa-bg img');
+        if (!image) return Promise.resolve(false);
+        image.src = src;
+        var decoded = image.decode ? image.decode() : Promise.resolve();
+        // One frame is enough to commit the new pixels; the main process then
+        // waits for the offscreen capture that carries them.
+        return decoded.catch(function () {}).then(function () {
+          return new Promise(function (resolve) {
+            requestAnimationFrame(function () { resolve(true); });
+          });
+        });
+      };
+      // Decode the page after the current one while the room is still reading
+      // this slide, so the next click swaps an image that is already in memory.
+      window.__preloadDocumentPage = function (src) {
+        var image = new Image();
+        image.src = src;
+        if (image.decode) image.decode().catch(function () {});
+      };
       window.__clearText = function () {
         var boxes = document.querySelectorAll('.pa-verse-box, .pa-reference-box');
         for (var i = 0; i < boxes.length; i++) boxes[i].remove();

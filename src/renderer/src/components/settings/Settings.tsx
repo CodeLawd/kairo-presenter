@@ -18,6 +18,7 @@ import {
   Search,
   MoreVertical,
   ExternalLink,
+  FolderOpen,
   type Icon,
 } from '@/icons'
 import { cn } from '@/lib/utils'
@@ -41,6 +42,8 @@ import { normalizeOverlaySettings } from '@shared/overlay-defaults'
 import type {
   AppSettings,
   AudioDevice,
+  MediaFolderMigration,
+  WorkspaceInfo,
   AudioLevel,
   AutoPresentDelaySec,
   ScriptureTranslation,
@@ -73,7 +76,7 @@ const SECTION_NAV: { id: Section; label: string; hint: string; icon?: Icon }[] =
   { id: 'scripture', label: 'Scripture', hint: 'Detection & display', icon: BookOpen },
   { id: 'overlay', label: 'Overlay', hint: 'Message template & styling', icon: MonitorPlay },
   { id: 'shortcuts', label: 'Keyboard Shortcuts', hint: 'Commands & key bindings', icon: SlidersHorizontal },
-  { id: 'general', label: 'General', hint: 'Theme, fonts & lyrics color', icon: SlidersHorizontal },
+  { id: 'general', label: 'General', hint: 'Theme, fonts, lyrics color & storage', icon: SlidersHorizontal },
   { id: 'account', label: 'Account', hint: 'Sign in, team sync & setup', icon: CircleUser },
 ]
 
@@ -935,6 +938,8 @@ function ApiKeysSection({
   const [anthropicMsg, setAnthropicMsg] = useState('')
   const [bibleStatus, setBibleStatus] = useState<TestStatus>('idle')
   const [bibleMsg, setBibleMsg] = useState('')
+  const [braveStatus, setBraveStatus] = useState<TestStatus>('idle')
+  const [braveMsg, setBraveMsg] = useState('')
   const [clearStt, setClearStt] = useState<SettingsSecretClearKey[]>([])
   const [clearLyrics, setClearLyrics] = useState<SettingsSecretClearKey[]>([])
 
@@ -979,6 +984,17 @@ function ApiKeysSection({
     const result = await window.api.settings.testApiKey('anthropic', anthropic.takeSaveValue())
     setAnthropicStatus(result.ok ? 'ok' : 'fail')
     setAnthropicMsg(result.message)
+  }
+
+  // The web tier falls back silently when Brave rejects a key, so without a
+  // test here a wrong key looks configured and songs the catalogues miss just
+  // never turn up.
+  const testBrave = async () => {
+    setBraveStatus('testing')
+    setBraveMsg('')
+    const result = await window.api.settings.testApiKey('brave', brave.takeSaveValue())
+    setBraveStatus(result.ok ? 'ok' : 'fail')
+    setBraveMsg(result.message)
   }
 
   const testBible = async () => {
@@ -1199,6 +1215,12 @@ function ApiKeysSection({
           placeholder="Paste key"
           fieldName="brave-key"
           aria-label="Brave Search API Key"
+          test={{
+            status: braveStatus,
+            message: braveMsg,
+            onClick: () => void testBrave(),
+            label: 'Test Brave Key',
+          }}
         />
         <ProviderKeyRow
           provider="google"
@@ -1649,6 +1671,181 @@ function UpdateGroup(): React.ReactElement {
 
 // ─── Section: General ─────────────────────────────────────────────────────────
 
+/**
+ * The Kairo workspace: one folder holding `Songs/` and `Media/`.
+ *
+ * Songs are files in that folder, so this panel is also where an operator
+ * finds them in Finder, points the app at a different drive, or re-reads the
+ * folder after editing files outside the app.
+ */
+function WorkspaceGroup(): React.ReactElement {
+  const [info, setInfo] = useState<WorkspaceInfo | null>(null)
+  const [migration, setMigration] = useState<MediaFolderMigration | null>(null)
+  const [busy, setBusy] = useState<null | 'change' | 'resync' | 'adopt'>(null)
+  const [note, setNote] = useState<string | null>(null)
+
+  const refresh = useCallback(async (): Promise<void> => {
+    const [next, media] = await Promise.all([
+      window.api.workspace.get(),
+      window.api.workspace.mediaMigration(),
+    ])
+    setInfo(next)
+    setMigration(media)
+  }, [])
+
+  useEffect(() => { void refresh() }, [refresh])
+
+  const changeFolder = useCallback(async (move: boolean): Promise<void> => {
+    setBusy('change')
+    setNote(null)
+    try {
+      const next = await window.api.workspace.chooseFolder({ move })
+      setInfo(next)
+      await refresh()
+      setNote(move ? 'Workspace moved.' : 'Workspace folder changed.')
+    } catch (err) {
+      setNote((err as Error).message)
+    } finally {
+      setBusy(null)
+    }
+  }, [refresh])
+
+  const resync = useCallback(async (): Promise<void> => {
+    setBusy('resync')
+    try {
+      const result = await window.api.workspace.resyncSongs()
+      setNote(
+        `Songs folder read — ${result.imported} in the library` +
+        (result.removed ? `, ${result.removed} removed` : '') +
+        (result.exported ? `, ${result.exported} written out` : '') + '.'
+      )
+    } catch (err) {
+      setNote((err as Error).message)
+    } finally {
+      setBusy(null)
+    }
+  }, [])
+
+  const adoptMedia = useCallback(async (move: boolean): Promise<void> => {
+    setBusy('adopt')
+    try {
+      await window.api.workspace.adoptMedia({ move })
+      await refresh()
+      setNote(move ? 'Backgrounds moved into the workspace.' : 'Backgrounds folder switched to the workspace.')
+    } catch (err) {
+      setNote((err as Error).message)
+    } finally {
+      setBusy(null)
+    }
+  }, [refresh])
+
+  return (
+    <PrefGroup title="Storage">
+      <PrefRow stacked label="Kairo folder" hint="Songs and backgrounds live here">
+        <p className="break-all rounded-md bg-black/40 px-3 py-2 font-mono text-[11px] leading-snug text-white/70">
+          {info?.root ?? 'Locating\u2026'}
+        </p>
+        {info && !info.ready && (
+          <p className="text-[11px] text-red-400">
+            This folder could not be created — {info.error}
+          </p>
+        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            className="btn-secondary flex items-center gap-1.5 text-[12px]"
+            onClick={() => void window.api.workspace.reveal()}
+          >
+            <FolderOpen size={13} /> Show folder
+          </button>
+          <button
+            type="button"
+            className="btn-secondary text-[12px]"
+            onClick={() => void window.api.workspace.revealSongs()}
+          >
+            Open Songs
+          </button>
+          <button
+            type="button"
+            className="btn-secondary text-[12px]"
+            disabled={busy !== null}
+            onClick={() => void changeFolder(true)}
+          >
+            {busy === 'change' ? 'Moving\u2026' : 'Move\u2026'}
+          </button>
+          <button
+            type="button"
+            className="btn-secondary text-[12px]"
+            disabled={busy !== null}
+            onClick={() => void changeFolder(false)}
+          >
+            Point elsewhere…
+          </button>
+        </div>
+        <p className="text-[11px] leading-snug text-white/40">
+          <span className="text-white/60">Move</span> takes the songs and backgrounds with it.{' '}
+          <span className="text-white/60">Point elsewhere</span> leaves the files behind and reads
+          whatever is already in the new folder.
+        </p>
+      </PrefRow>
+
+      <PrefRow
+        label="Re-read Songs folder"
+        hint="After adding, editing or deleting song files outside Kairo"
+      >
+        <button
+          type="button"
+          className="btn-secondary text-[12px]"
+          disabled={busy !== null}
+          onClick={() => void resync()}
+        >
+          {busy === 'resync' ? 'Reading\u2026' : 'Rescan'}
+        </button>
+      </PrefRow>
+
+      {migration?.needed && (
+        <PrefRow
+          stacked
+          label="Backgrounds are outside the Kairo folder"
+          hint={
+            migration.fileCount >= 0
+              ? `${migration.currentFolder} \u2014 ${migration.fileCount} file${migration.fileCount === 1 ? '' : 's'}`
+              : migration.currentFolder
+          }
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              className="btn-primary text-[12px]"
+              disabled={busy !== null}
+              onClick={() => void adoptMedia(true)}
+            >
+              {busy === 'adopt' ? 'Moving\u2026' : 'Move them in'}
+            </button>
+            <button
+              type="button"
+              className="btn-secondary text-[12px]"
+              disabled={busy !== null}
+              onClick={() => void adoptMedia(false)}
+            >
+              Use the Kairo folder anyway
+            </button>
+            <button
+              type="button"
+              className="btn-secondary text-[12px]"
+              onClick={() => setMigration(null)}
+            >
+              Keep as is
+            </button>
+          </div>
+        </PrefRow>
+      )}
+
+      {note && <p className="px-3.5 pb-2 text-[11px] text-teal-400/80">{note}</p>}
+    </PrefGroup>
+  )
+}
+
 function GeneralSection({
   settings,
   update,
@@ -1750,6 +1947,8 @@ function GeneralSection({
         </PrefRow>
       </PrefGroup>
 
+      <WorkspaceGroup />
+
       <UpdateGroup />
 
       <SaveBar sectionId="general" savedSection={savedSection} onSave={onSave} />
@@ -1787,9 +1986,11 @@ export default function Settings({ onClose }: { onClose?: () => void } = {}): Re
         display: { ...prev.display, ...stored.display },
         overlay: normalizeOverlaySettings({ ...prev.overlay, ...stored.overlay }),
         themeLibrary: stored.themeLibrary ?? prev.themeLibrary,
+        workspace: { ...prev.workspace, ...stored.workspace },
         media: { ...prev.media, ...stored.media },
         tracks: { ...prev.tracks, ...stored.tracks },
         church: { ...prev.church, ...stored.church },
+        documents: { ...prev.documents, ...stored.documents },
         propresenterResources: { ...prev.propresenterResources, ...stored.propresenterResources },
       }))
       setLoading(false)

@@ -26,6 +26,7 @@ import { PA_MEDIA_URL_PREFIX } from "@shared/overlay-template";
 import { registerIpcHandlers } from "./ipc";
 import { initDatabase, store } from "./db";
 import { lyricsService } from "./services/lyrics";
+import { workspaceService } from "./services/workspace";
 import { scriptureService } from "./services/scripture";
 import { initOfflineBibles } from "./services/scripture/offline-bibles";
 import { ndiService } from "./services/ndi";
@@ -338,7 +339,7 @@ function createWindow(): void {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   electronApp.setAppUserModelId("com.kairo.app");
   setupApplicationMenu();
 
@@ -348,6 +349,10 @@ app.whenReady().then(() => {
 
   initDatabase();
   registerPaMediaProtocol();
+  // The Songs folder has to exist before the library opens — the lyrics
+  // service rebuilds its database from that folder's contents.
+  await workspaceService.ensure();
+  await workspaceService.applyDefaultMediaFolder();
   lyricsService.open();
   scriptureService.open();
   scriptureService.setDefaultTranslation(

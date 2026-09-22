@@ -249,3 +249,51 @@ test("different songs are not collapsed by the lyric fingerprint", () => {
 
   assert.equal(ranked.length, 2);
 });
+
+// ─── "<title> by <artist>" queries ────────────────────────────────────────────
+// Typing the artist is a constraint, not a hint: worship titles are covered
+// constantly, so a cover by someone else must never outrank the recording the
+// operator asked for.
+
+test("a query naming an artist ranks that artist's recording first", () => {
+  const ranked = rankResults("way maker by sinach", [
+    result({ id: "lrclib:2", title: "Way Maker", artist: "Some Cover Artist", popularity: 5000 }),
+    result({ id: "genius:1", provider: "genius", title: "Way Maker", artist: "Sinach" }),
+  ]);
+  assert.equal(ranked[0].artist, "Sinach");
+});
+
+test("a mis-tagged record carrying the artist's name in its title does not win", () => {
+  // Catalogues do produce these: title "Maker Live", artist "Sinach Way".
+  const ranked = rankResults("way maker by sinach", [
+    result({ id: "genius:9", provider: "genius", title: "Maker Live", artist: "Sinach Way" }),
+    result({ id: "genius:1", provider: "genius", title: "Way Maker", artist: "Sinach" }),
+  ]);
+  assert.equal(ranked[0].title, "Way Maker");
+});
+
+test("the artist half of the query does not dilute title scoring", () => {
+  // Scored against the whole string, "Way Maker" covers only half the query
+  // and an unrelated fuller record can make up the difference.
+  const ranked = rankResults("way maker by sinach", [
+    result({ id: "lrclib:3", title: "Way Maker Medley Live Extended", artist: "Unrelated", lyrics: "x ".repeat(600) }),
+    result({ id: "genius:1", provider: "genius", title: "Way Maker", artist: "Sinach" }),
+  ]);
+  assert.equal(ranked[0].artist, "Sinach");
+});
+
+test("a dashed query treats either side as the named artist", () => {
+  const ranked = rankResults("Sinach - Way Maker", [
+    result({ id: "lrclib:2", title: "Way Maker", artist: "Another Choir" }),
+    result({ id: "genius:1", provider: "genius", title: "Way Maker", artist: "Sinach" }),
+  ]);
+  assert.equal(ranked[0].artist, "Sinach");
+});
+
+test("a plain title query still ranks on the title alone", () => {
+  const ranked = rankResults("way maker", [
+    result({ id: "lrclib:5", title: "Completely Different Song", artist: "Sinach" }),
+    result({ id: "genius:1", provider: "genius", title: "Way Maker", artist: "Anyone" }),
+  ]);
+  assert.equal(ranked[0].title, "Way Maker");
+});

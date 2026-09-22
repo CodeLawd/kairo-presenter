@@ -30,6 +30,8 @@ import {
   shouldLiveSuggestScriptureQuery,
 } from "@shared/scripture-query";
 import { PlaylistSidebar } from "./PlaylistSidebar";
+import { passageToResult } from "@shared/passages";
+import { runPassagesCommand } from "@/stores/usePassages";
 import { QueueDock } from "./QueueDock";
 import { ScriptureSearchBar } from "./ScriptureSearchBar";
 import { SermonNotesReviewModal } from "./SermonNotesReviewModal";
@@ -88,6 +90,14 @@ export default function Scripture(): React.ReactElement {
   const liveRail = useLiveRailWidth();
   const [query, setQuery] = useState("");
   const [rows, setRows] = useState<ResultRow[]>([]);
+  /**
+   * The last search's rows, kept while a playlist is open.
+   *
+   * `rows` is shared by both sources, so opening a playlist overwrites the
+   * search; without this the Library row could show what it found but never
+   * take the operator back to it.
+   */
+  const [searchRows, setSearchRows] = useState<ResultRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Startup data comes from the shared bootstrap snapshot, so switching tabs
@@ -326,11 +336,11 @@ export default function Scripture(): React.ReactElement {
           );
           results = reloaded.results;
         }
-        setRows(
-          results.map((result, index) =>
-            createResultRow(result, { id: `search-${index}-${result.reference}` }),
-          ),
+        const searchResultRows = results.map((result, index) =>
+          createResultRow(result, { id: `search-${index}-${result.reference}` }),
         );
+        setRows(searchResultRows);
+        setSearchRows(searchResultRows);
         setCardsSource("search");
         setAddedAllToPlan(null);
         setActiveCardIndex(0);
@@ -358,7 +368,9 @@ export default function Scripture(): React.ReactElement {
     suppressSuggestionsQueryRef.current = result.reference;
     suggestionRequestRef.current += 1;
     setQuery(result.reference);
-    setRows([createResultRow(result, { id: `suggest-${result.reference}` })]);
+    const previewRows = [createResultRow(result, { id: `suggest-${result.reference}` })];
+    setRows(previewRows);
+    setSearchRows(previewRows);
     setCardsSource("search");
     setError(null);
     setSuggestionsOpen(false);
@@ -1204,6 +1216,10 @@ export default function Scripture(): React.ReactElement {
         openPlanItems={openPlanItems}
         activeItemId={activeItemId}
         showItems={cardsSource === "plan"}
+        searchResultCount={searchRows.length}
+        viewingSearch={cardsSource === "search"}
+        onSelectSearch={() => { setRows(searchRows); setCardsSource("search") }}
+        onOpenPassage={(passage) => previewSuggestion(passageToResult(passage))}
         renamingPlanId={renamingPlanId}
         renameDraft={renameDraft}
         pendingDeletePlanId={pendingDeletePlanId}
@@ -1444,6 +1460,11 @@ export default function Scripture(): React.ReactElement {
             onNext={() => void loadAdjacentVerse("next")}
             onSendSelected={() => void handleSend(activeCardIndex)}
             onAddAll={(planId) => void addAllResultsToPlaylist(planId)}
+            onSaveToLibrary={(libraryId) => {
+              const result = cards[activeCardIndex]?.result;
+              if (!result) return;
+              void runPassagesCommand({ action: "save", result, libraryId });
+            }}
             onClear={handleClearResults}
           />
         )}

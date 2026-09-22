@@ -95,6 +95,8 @@ interface PreparedScriptureProjection {
 
 /** Milliseconds to let the offscreen overlay window paint at least once before triggering the PP video input (D — NDI push sequence). */
 const NDI_PAINT_SETTLE_MS = 150;
+/** How long a confirmed ProPresenter video input is trusted without re-listing. */
+const VIDEO_INPUT_MEMO_MS = 30_000;
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -142,6 +144,19 @@ class Orchestrator {
    * once and `clearOverlay` has to take down every one of them.
    */
   private activeLayers = new Set<OverlayLayer>();
+  /**
+   * Last confirmed ProPresenter video input, with the moment it was confirmed.
+   *
+   * Confirming costs a `/v1/video_inputs` round trip, and a booth pushing
+   * slide after slide paid it every single push. Inputs do not come and go
+   * mid-service, so a short memo is enough; anything older re-confirms.
+   */
+  private confirmedVideoInput: { uuid: string; at: number } | null = null;
+
+  /** Drop the memo when the operator rebinds the video input themselves. */
+  forgetVideoInputBinding(): void {
+    this.confirmedVideoInput = null;
+  }
 
   private session: Session | null = null;
 
@@ -732,11 +747,19 @@ class Orchestrator {
     text: string,
     coloredLines?: Array<{ text: string; color?: string }>,
   ): Promise<void> {
-    const ppStatus = proPresenterService.getStatus();
-    if (ppStatus.state !== "connected") {
-      throw new Error("ProPresenter is not connected. Connect in Settings → ProPresenter first.");
-    }
     if (!text.trim()) throw new Error("Slide is empty — nothing to push.");
+
+    // A disconnected ProPresenter is NOT a reason to withhold the slide. The
+    // rendered NDI frame leaves this machine over the network whatever PP is
+    // doing — only the "cut PP to that video input" step needs the API — so a
+    // projector fed from NDI keeps working through a PP restart mid-service.
+    // Outputs that genuinely require the API (stage message, library) report
+    // their own failure below.
+    const ppStatus = proPresenterService.getStatus();
+    const ppOffline = ppStatus.state !== "connected";
+    if (ppOffline) {
+      log.warn("[Orchestrator] Pushing lyric slide with ProPresenter disconnected", { reference });
+    }
 
     const results = await this.dispatchContent({ reference, text, coloredLines }, "lyrics", null);
     const failed = results.filter((r) => !r.ok);
@@ -744,7 +767,9 @@ class Orchestrator {
     if (!results.some((r) => r.ok)) {
       const msg = results.length === 0
         ? "No overlay outputs are enabled — cannot push this slide"
-        : `Failed to push "${reference}" on any output`;
+        : ppOffline
+          ? `Could not push "${reference}" — every output needs ProPresenter, which is not connected`
+          : `Failed to push "${reference}" on any output`;
       this.updateHealth("propresenter", "error", msg);
       this.emitStatus();
       throw new Error(msg);
@@ -756,6 +781,13 @@ class Orchestrator {
         "propresenter",
         "degraded",
         `Output failed: ${failed.map((f) => `${f.name} (${f.reason ?? "unknown"})`).join("; ")}`,
+      );
+    } else if (ppOffline) {
+      // The slide went out, but PP was never told to cut to it.
+      this.updateHealth(
+        "propresenter",
+        "degraded",
+        "Slide sent on NDI — ProPresenter is not connected, so it was not switched to it",
       );
     } else {
       this.updateHealth("propresenter", "ok");
@@ -1125,13 +1157,26 @@ class Orchestrator {
   private async ensureVideoInputBinding(output: OverlayOutput): Promise<string | null> {
     const bindings = normalizeResourceBindings(store.get("propresenterResources"));
     const durableId = bindings.ndiVideoInputId;
+    // Discovery talks to PP. With PP down those calls only burn the push's
+    // latency before failing, and the NDI frame has already gone out regardless.
+    if (proPresenterService.getStatus().state !== "connected") {
+      return durableId || output.ppVideoInputUuid || null;
+    }
     const client = proPresenterService.rawClient;
     let inputs: Awaited<ReturnType<typeof client.getVideoInputs>> | null = null;
 
     if (durableId) {
+      const memo = this.confirmedVideoInput;
+      if (memo && memo.uuid === durableId && Date.now() - memo.at < VIDEO_INPUT_MEMO_MS) {
+        return memo.uuid;
+      }
       inputs = await client.getVideoInputs();
       const confirmed = chooseNdiVideoInputId(durableId, "", inputs);
-      if (confirmed) return confirmed;
+      if (confirmed) {
+        this.confirmedVideoInput = { uuid: confirmed, at: Date.now() };
+        return confirmed;
+      }
+      this.confirmedVideoInput = null;
       log.warn("[Orchestrator] Bound NDI video input is unavailable — checking existing output binding", {
         uuid: durableId,
         output: output.name,
@@ -1177,7 +1222,19 @@ class Orchestrator {
       findNdiOutput(overlay.outputs);
     if (!ndi || !ndi.enabled) throw new Error("Enable an NDI output in Settings before projecting documents.");
     this.cancelOverlayAutoClear();
+    const deckAlreadyLive = this.activeLayers.has("presentation");
     this.activeLayers.add("presentation");
+
+    // Page turn inside a deck that is already on screen: swap the image and
+    // stop there. The slow parts of a first push — rebuilding the slide, the
+    // paint-settle wait and re-triggering the same ProPresenter video input —
+    // are all redundant once the deck is live, and they are what makes a
+    // clicker feel late. Any failure falls through to the full push below.
+    if (deckAlreadyLive && (await overlayWindow.swapDocumentPage(ndi.id, mediaPath))) {
+      mediaService.setLiveItem(null);
+      return true;
+    }
+
     const theme = outputThemeFor(ndi, "scripture");
     const shown = await overlayWindow.showDocument(ndi.id, {
       ...theme,
@@ -1193,8 +1250,10 @@ class Orchestrator {
         saturation: 1,
       },
     });
+    // No blind settle wait here: showDocument already returned on the captured
+    // frame, so the page is on the NDI wire before ProPresenter is asked to
+    // show it.
     if (!shown) return false;
-    await new Promise((resolve) => setTimeout(resolve, NDI_PAINT_SETTLE_MS));
 
     try {
       const uuid = await this.ensureVideoInputBinding(ndi);

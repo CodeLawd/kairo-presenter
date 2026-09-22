@@ -5,6 +5,7 @@ import { DEFAULT_TRANSLATION_ID } from '@shared/bible-translations'
 import { DEFAULT_OVERLAY_SETTINGS, normalizeOverlaySettings } from '@shared/overlay-defaults'
 import { normalizeThemeLibrary } from '@shared/theme-library'
 import { EMPTY_PP_RESOURCE_BINDINGS, normalizeResourceBindings } from '@shared/propresenter-resources'
+import { DEFAULT_DOCUMENTS_SETTINGS } from '@shared/documents'
 
 export type { AppSettings }
 
@@ -49,6 +50,9 @@ const defaults: AppSettings = {
   },
   overlay: DEFAULT_OVERLAY_SETTINGS,
   themeLibrary: [],
+  workspace: {
+    folder: '',
+  },
   media: {
     folder: '',
     playlists: [],
@@ -62,6 +66,7 @@ const defaults: AppSettings = {
     role: '',
     serviceTimes: [],
   },
+  documents: { ...DEFAULT_DOCUMENTS_SETTINGS },
   propresenterResources: { ...EMPTY_PP_RESOURCE_BINDINGS },
 }
 
@@ -74,9 +79,16 @@ export const migrations = new Store<{
   nkjvDefaultV1: boolean
   customThemeLibraryV1: boolean
   cloudOnboardingV1: boolean
+  /** Songs that predate the Songs folder have been exported into it. */
+  songsFolderExportV1: boolean
 }>({
   name: 'proautomate-migrations',
-  defaults: { nkjvDefaultV1: false, customThemeLibraryV1: false, cloudOnboardingV1: false },
+  defaults: {
+    nkjvDefaultV1: false,
+    customThemeLibraryV1: false,
+    cloudOnboardingV1: false,
+    songsFolderExportV1: false,
+  },
 })
 
 // Product decision: NKJV is the default. Apply once for existing installs whose
@@ -109,6 +121,16 @@ if (!migrations.get('nkjvDefaultV1')) {
     dirty = true
   }
   if (dirty) store.set('lyrics', next)
+}
+
+// Same shallow-merge caveat: a store written before the workspace folder
+// shipped has no `workspace` key, so heal it on every launch (a no-op once
+// present). '' keeps the machine on the default Documents location.
+{
+  const workspace = store.get('workspace') as AppSettings['workspace'] | undefined
+  if (!workspace || typeof workspace.folder !== 'string') {
+    store.set('workspace', { folder: '' })
+  }
 }
 
 // Same shallow-merge caveat: a store written before the onboarding wizard

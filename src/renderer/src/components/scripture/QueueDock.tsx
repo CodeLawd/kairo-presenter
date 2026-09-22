@@ -1,4 +1,6 @@
 import type { SermonPlan } from '@shared/ipc';
+import { useLibrary } from "@/stores/useLibraries";
+import { DEFAULT_LIBRARY_ID, DEFAULT_LIBRARY_NAME } from "@shared/libraries";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuLabel } from '@/components/ui/dropdown-menu';
 import {
   ChevronDown,
@@ -34,6 +36,8 @@ export interface QueueDockProps {
   onNext: () => void;
   onSendSelected: () => void;
   onAddAll: (planId: string) => void;
+  /** Keeps the selected verse in a library, with its text, for later. */
+  onSaveToLibrary: (libraryId: string) => void;
   onClear: () => void;
 }
 
@@ -53,8 +57,10 @@ export function QueueDock({
   onNext,
   onSendSelected,
   onAddAll,
+  onSaveToLibrary,
   onClear,
 }: QueueDockProps): React.ReactElement {
+  const libraries = useLibrary("scripture").libraries;
   const activeRef =
     queueLabel ?? cards[activeCardIndex]?.result.reference ?? "—";
 
@@ -171,6 +177,23 @@ export function QueueDock({
                 <DropdownMenuItem onSelect={onCreatePlaylist}>
                   <Plus size={12} /> New playlist…
                 </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                {/* A playlist orders one service; a library keeps the passage
+                    for any service. Both are offered from the one Save menu. */}
+                <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-zinc-600">
+                  Library
+                </DropdownMenuLabel>
+                <DropdownMenuItem onSelect={() => onSaveToLibrary(DEFAULT_LIBRARY_ID)}>
+                  <span className="truncate">{DEFAULT_LIBRARY_NAME.scripture}</span>
+                </DropdownMenuItem>
+                {libraries.map((library) => (
+                  <DropdownMenuItem
+                    key={library.id}
+                    onSelect={() => onSaveToLibrary(library.id)}
+                  >
+                    <span className="truncate">{library.name}</span>
+                  </DropdownMenuItem>
+                ))}
               </DropdownMenuContent>
             </DropdownMenu>
           )}

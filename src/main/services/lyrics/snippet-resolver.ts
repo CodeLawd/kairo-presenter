@@ -21,7 +21,6 @@ import { cleanPageTitle } from './page-title'
  */
 
 const BRAVE_SEARCH_URL = 'https://api.search.brave.com/res/v1/web/search'
-const BRAVE_HTML_URL = 'https://search.brave.com/search'
 const REQUEST_TIMEOUT_MS = 12_000
 const MIN_REQUEST_GAP_MS = 1_100
 const MAX_WEB_RESULTS = 8
@@ -37,6 +36,36 @@ const CACHE_TTL_MS = 10 * 60_000
 const USER_AGENT =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
   '(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+
+/**
+ * Headers a real browser sends. The keyless engines all bot-check, and a bare
+ * `User-Agent` with no `Accept-Language` is the giveaway that gets a request
+ * served a challenge page instead of results.
+ */
+const BROWSER_HEADERS = {
+  'User-Agent': USER_AGENT,
+  Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+  'Accept-Language': 'en-US,en;q=0.9',
+  'Sec-Fetch-Dest': 'document',
+  'Sec-Fetch-Mode': 'navigate',
+  'Sec-Fetch-Site': 'none',
+  'Upgrade-Insecure-Requests': '1',
+}
+
+/**
+ * Keyless engines, tried in order until one returns results.
+ *
+ * Every one of them rate-limits and serves captchas to unattended requests,
+ * but they do it independently: when one is blocking this machine another
+ * usually is not. A single engine made the whole web tier unavailable — and
+ * with it, every song the catalogues do not carry.
+ */
+const HTML_ENGINES: { name: string; url: string; parse: (html: string) => BraveWebResult[] }[] = [
+  { name: 'duckduckgo', url: 'https://html.duckduckgo.com/html/', parse: parseDuckHtml },
+  { name: 'duckduckgo-lite', url: 'https://lite.duckduckgo.com/lite/', parse: parseDuckHtml },
+  { name: 'brave', url: 'https://search.brave.com/search', parse: parseBraveHtml },
+  { name: 'mojeek', url: 'https://www.mojeek.com/search', parse: parseMojeekHtml },
+]
 
 interface BraveWebResult {
   title?: string
@@ -70,14 +99,29 @@ class SnippetResolver {
     if (cached && cached.expiresAt > Date.now()) return cached.value
     this.cache.delete(cacheKey)
 
-    let webResults: BraveWebResult[]
-    try {
-      webResults = apiKey
-        ? await this.searchWebApi(query, apiKey)
-        : await this.searchWebHtml(query)
-    } catch (err) {
-      log.warn('[SnippetResolver] web search failed', err)
-      return []
+    let webResults: BraveWebResult[] = []
+    let usedApi = false
+    if (apiKey) {
+      try {
+        webResults = await this.searchWebApi(query, apiKey)
+        usedApi = true
+      } catch (err) {
+        // A rejected or exhausted key must not take the tier down with it —
+        // the keyless engines are still there, and a booth mid-service would
+        // otherwise lose every song the catalogues do not carry.
+        log.warn('[SnippetResolver] Brave API search failed, falling back to keyless engines', {
+          error: (err as Error).message,
+        })
+      }
+    }
+
+    if (webResults.length === 0) {
+      try {
+        webResults = await this.searchWebHtml(query)
+      } catch (err) {
+        log.warn('[SnippetResolver] web search failed', err)
+        return []
+      }
     }
 
     if (webResults.length === 0) return []
@@ -90,7 +134,7 @@ class SnippetResolver {
       query,
       web: webResults.length,
       verified: verified.length,
-      via: apiKey ? 'api' : 'html',
+      via: usedApi ? 'api' : 'html',
     })
     return verified
   }
@@ -201,20 +245,49 @@ class SnippetResolver {
     }
   }
 
-  /** Keyless fallback — parse Brave's public HTML results page. */
+  /**
+   * Keyless fallback — public HTML result pages.
+   *
+   * Each engine gets one attempt; a block, a challenge page or an empty parse
+   * moves on to the next rather than failing the tier. Only a clean sweep
+   * throws, and then with the first engine's reason.
+   */
   private async searchWebHtml(query: string): Promise<BraveWebResult[]> {
-    await this.throttle()
-    try {
-      const response = await axios.get<string>(BRAVE_HTML_URL, {
-        params: { q: `${query} lyrics` },
-        headers: { 'User-Agent': USER_AGENT, Accept: 'text/html' },
-        timeout: REQUEST_TIMEOUT_MS,
-        responseType: 'text',
-      })
-      return parseBraveHtml(response.data).slice(0, MAX_WEB_RESULTS)
-    } catch (err) {
-      throw toFriendlyError(err)
+    let firstError: Error | null = null
+
+    for (const engine of HTML_ENGINES) {
+      await this.throttle()
+      try {
+        const response = await axios.get<string>(engine.url, {
+          params: { q: `${query} lyrics` },
+          headers: BROWSER_HEADERS,
+          timeout: REQUEST_TIMEOUT_MS,
+          responseType: 'text',
+          // A challenge page is a 202 here, not an error status.
+          validateStatus: (status) => status >= 200 && status < 400,
+        })
+        if (looksLikeChallenge(response.data)) {
+          log.warn('[SnippetResolver] web engine served a challenge page', { engine: engine.name })
+          continue
+        }
+        const results = engine.parse(response.data).slice(0, MAX_WEB_RESULTS)
+        if (results.length > 0) {
+          log.info('[SnippetResolver] web engine answered', { engine: engine.name, results: results.length })
+          return results
+        }
+        log.warn('[SnippetResolver] web engine returned nothing', {
+          engine: engine.name,
+          status: response.status,
+        })
+      } catch (err) {
+        const friendly = toFriendlyError(err)
+        log.warn('[SnippetResolver] web engine failed', { engine: engine.name, error: friendly.message })
+        firstError = firstError ?? friendly
+      }
     }
+
+    if (firstError) throw firstError
+    return []
   }
 
   clearCache(): void {
@@ -249,6 +322,77 @@ export function parseBraveHtml(html: string): BraveWebResult[] {
   })
 
   return results
+}
+
+/** Result links that are never a lyrics page worth scraping. */
+const JUNK_HOST = /brave\.com|duckduckgo\.com|mojeek\.com|google\.|bing\.com|youtube\.com|youtu\.be|scribd\.com|facebook\.com|instagram\.com|tiktok\.com|spotify\.com|apple\.com/i
+
+/**
+ * DuckDuckGo's HTML results wrap every link in a redirect
+ * (`//duckduckgo.com/l/?uddg=<encoded>`), so the real URL has to be unwrapped
+ * before the allowlist can judge it.
+ */
+export function parseDuckHtml(html: string): BraveWebResult[] {
+  const $ = cheerio.load(html)
+  const results: BraveWebResult[] = []
+  const seen = new Set<string>()
+
+  $('a.result__a, a.result-link, h2 a[href]').each((_, el) => {
+    const href = unwrapDuckUrl($(el).attr('href') ?? '')
+    if (!href || seen.has(href) || JUNK_HOST.test(href)) return
+    seen.add(href)
+    results.push({ title: $(el).text().replace(/\s+/g, ' ').trim(), url: href })
+  })
+
+  return results
+}
+
+function unwrapDuckUrl(href: string): string {
+  if (!href) return ''
+  const absolute = href.startsWith('//') ? `https:${href}` : href
+  const encoded = absolute.match(/[?&]uddg=([^&]+)/)?.[1]
+  if (encoded) {
+    try {
+      return decodeURIComponent(encoded)
+    } catch {
+      return ''
+    }
+  }
+  return absolute.startsWith('http') ? absolute : ''
+}
+
+/** Mojeek puts each hit in `ul.results-standard li > h2 > a`. */
+export function parseMojeekHtml(html: string): BraveWebResult[] {
+  const $ = cheerio.load(html)
+  const results: BraveWebResult[] = []
+  const seen = new Set<string>()
+
+  $('ul.results-standard li h2 a[href^="http"], li.result h2 a[href^="http"]').each((_, el) => {
+    const href = $(el).attr('href') ?? ''
+    if (!href || seen.has(href) || JUNK_HOST.test(href)) return
+    seen.add(href)
+    const title = $(el).text().replace(/\s+/g, ' ').trim()
+    if (!title) return
+    results.push({ title, url: href })
+  })
+
+  return results
+}
+
+/**
+ * True when an engine served a captcha or interstitial instead of results.
+ *
+ * These pages still parse — as navigation and footer links — so without this
+ * check the tier would hand a "Newsletter" link to the scraper and report a
+ * successful search.
+ */
+export function looksLikeChallenge(html: string): boolean {
+  const head = html.slice(0, 4000)
+  const title = head.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1] ?? ''
+  if (/captcha|robot|unusual traffic|are you human|access denied|just a moment/i.test(title)) {
+    return true
+  }
+  return /enable javascript and cookies to continue|verify you are (a )?human/i.test(head)
 }
 
 function matchesQuery(lyrics: string, canonicalSnippet: string): boolean {
@@ -313,8 +457,16 @@ function dedupeQueries(queries: string[]): string[] {
 function toFriendlyError(err: unknown): Error {
   const axiosErr = err as AxiosError
   const status = axiosErr?.response?.status
-  if (status === 401 || status === 403) return new Error('The Brave Search API key was rejected.')
-  if (status === 429) return new Error('Brave Search quota reached for now.')
+  // Brave answers a bad key with 422 and its own error code, not 401/403, so
+  // the status alone would read as "malformed request" and send an operator
+  // hunting the wrong problem.
+  const code = (axiosErr?.response?.data as { error?: { code?: string } } | undefined)?.error?.code
+  if (code === 'SUBSCRIPTION_TOKEN_INVALID' || status === 401 || status === 403) {
+    return new Error('The Brave Search API key was rejected. Check it in Settings → API Keys.')
+  }
+  if (code === 'RATE_LIMITED' || status === 429) {
+    return new Error('Web search is rate-limiting this machine right now.')
+  }
   return new Error(`Web search failed. ${axiosErr?.message ?? 'Unknown error.'}`)
 }
 

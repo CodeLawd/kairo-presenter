@@ -22,3 +22,13 @@ test('detects collisions against defaults and custom assignments', () => {
   assert.equal(commandForShortcut('Mod+p', { approve: [], clear: ['Mod+p'] }), 'clear')
   assert.equal(commandForShortcut('Mod+f', { search: [] }), undefined)
 })
+
+test('a presentation clicker drives previous and next out of the box', () => {
+  const press = (key: string): string | null =>
+    shortcutFromEvent({ key, metaKey: false, ctrlKey: false, altKey: false, shiftKey: false })
+  assert.equal(commandForShortcut(press('PageDown')!), 'next')
+  assert.equal(commandForShortcut(press('PageUp')!), 'previous')
+  assert.equal(commandForShortcut(press('ArrowRight')!), 'next')
+  // Remapping still wins: a clicker key is a default, not a hard wire.
+  assert.equal(commandForShortcut('PageDown', { next: ['ArrowRight'] }), undefined)
+})

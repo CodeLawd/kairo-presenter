@@ -11,6 +11,11 @@ export interface ServiceArchiveStorage {
   set<K extends keyof ServiceSnapshot>(key: K, value: ServiceSnapshot[K]): void
 }
 
+/** Name for a service the operator never titled. */
+export function defaultServiceTitle(createdAt: number): string {
+  return `Service — ${new Date(createdAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}`
+}
+
 export class ServiceRecords {
   constructor(
     private readonly db: ServiceArchiveStorage,
@@ -71,11 +76,17 @@ export class ServiceRecords {
     this.db.set('services', records)
     this.publish()
   }
-  create(title: string, speaker: string, note: SermonPlan | null): void {
+  /**
+   * Open a service.
+   *
+   * Title and speaker are optional on purpose: the operator starts
+   * transcription first and names the service when they end it, so a blank
+   * title here is the normal case, not a mistake.
+   */
+  create(title = '', speaker = '', note: SermonPlan | null = null): void {
     if (this.active()) throw new Error('End the current service before creating another.')
-    if (typeof title !== 'string' || !title.trim()) throw new Error('Enter a service name.')
     const record: ServiceRecord = {
-      id: randomUUID(), title: title.trim().slice(0, 200), speaker: String(speaker ?? '').trim().slice(0, 200),
+      id: randomUUID(), title: String(title ?? '').trim().slice(0, 200), speaker: String(speaker ?? '').trim().slice(0, 200),
       createdAt: Date.now(), endedAt: null, status: 'live', transcript: [], scriptures: [],
       notes: note ? [note] : [], nuggets: [], analysisError: null,
       upload: idleUpload(),
@@ -87,10 +98,24 @@ export class ServiceRecords {
   setRunning(running: boolean): void {
     if (!running) void this.analyze()
   }
-  end(): void {
+  /**
+   * Close the open service, applying the details the operator supplies now.
+   *
+   * Naming happens here rather than at the start: the booth hits record when
+   * the speaker begins, and only knows what the message was once it is over.
+   * An unnamed service still gets a title — losing the record over a blank
+   * field would be worse than an imperfect name.
+   */
+  end(details: { title?: string; speaker?: string; note?: SermonPlan | null } = {}): void {
     const record = this.active()
     if (!record) return
     this.update(record.id, item => {
+      const title = String(details.title ?? '').trim().slice(0, 200)
+      if (title) item.title = title
+      if (!item.title) item.title = defaultServiceTitle(item.createdAt)
+      const speaker = String(details.speaker ?? '').trim().slice(0, 200)
+      if (speaker) item.speaker = speaker
+      if (details.note) item.notes = [...item.notes.filter(n => n.id !== details.note!.id), structuredClone(details.note)]
       item.status = 'ended'
       item.endedAt = Date.now()
       item.upload = { ...idleUpload(), status: 'queued' }
@@ -100,6 +125,15 @@ export class ServiceRecords {
     void this.analyze()
     // Deliberately not awaited: ending a service is instant and works offline.
     for (const listener of this.endedListeners) listener(record.id)
+  }
+
+  /** Drop the open service entirely — used when the operator does not want it. */
+  discard(): void {
+    const record = this.active()
+    if (!record) return
+    this.pending.delete(record.id)
+    this.db.store = { activeId: null, services: this.services().filter(item => item.id !== record.id) }
+    this.publish()
   }
 
   /** Everything waiting to reach the web, oldest first. */
