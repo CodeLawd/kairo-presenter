@@ -23,6 +23,7 @@ export interface ScriptureSearchBarProps {
   translations: ScriptureTranslationOption[];
   loading: boolean;
   bookCompletion: BookCompletion | null;
+  bookCompletions: BookCompletion[];
   searchSuggestions: ScriptureResult[];
   suggestionsOpen: boolean;
   activeSuggestion: number;
@@ -31,6 +32,7 @@ export interface ScriptureSearchBarProps {
   onTranslationChange: (value: ScriptureTranslation) => void;
   onSearch: () => void;
   onClearQuery: () => void;
+  onBookCompletionSelect: (value: string) => void;
   onKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void;
   onFocus: () => void;
   onActiveSuggestionChange: (index: number) => void;
@@ -43,6 +45,7 @@ export function ScriptureSearchBar({
   translations,
   loading,
   bookCompletion,
+  bookCompletions,
   searchSuggestions,
   suggestionsOpen,
   activeSuggestion,
@@ -51,6 +54,7 @@ export function ScriptureSearchBar({
   onTranslationChange,
   onSearch,
   onClearQuery,
+  onBookCompletionSelect,
   onKeyDown,
   onFocus,
   onActiveSuggestionChange,
@@ -89,8 +93,8 @@ export function ScriptureSearchBar({
               </SelectItem>
             ))}
             {translations.length === 0 && (
-              <SelectItem value="NKJV">
-                NKJV · New King James Version
+              <SelectItem value={translation || "NKJV"}>
+                {translation || "NKJV"} · Loading translations…
               </SelectItem>
             )}
           </SelectGroup>
@@ -147,6 +151,25 @@ export function ScriptureSearchBar({
             <kbd className="rounded border border-surface-border bg-surface-tertiary px-1.5 py-0.5 font-mono text-[10px] text-teal-300">
               Tab
             </kbd>
+          </div>
+        )}
+        {bookCompletions.length > 1 && !suggestionsOpen && (
+          <div className="absolute left-0 right-0 top-[calc(100%+0.4rem)] z-40 overflow-hidden rounded-xl border border-surface-border bg-surface-elevated shadow-2xl">
+            <div className="border-b border-surface-border/70 px-3.5 py-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+              Choose a Bible book
+            </div>
+            {bookCompletions.map((completion) => (
+              <button
+                key={completion.book}
+                type="button"
+                className="flex w-full items-center justify-between border-b border-surface-border/40 px-3.5 py-2.5 text-left text-xs last:border-b-0 hover:bg-surface-tertiary/70"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => onBookCompletionSelect(completion.value)}
+              >
+                <span className="font-semibold text-teal-300">{completion.book}</span>
+                <span className="text-slate-500">{completion.value}</span>
+              </button>
+            ))}
           </div>
         )}
         {suggestionsOpen && searchSuggestions.length > 0 && (

@@ -1,7 +1,9 @@
 export const SHORTCUT_COMMANDS = [
   { id: 'search', label: 'Focus search', group: 'Navigation', defaults: ['Mod+f'] },
-  { id: 'previous', label: 'Previous suggestion', group: 'Navigation', defaults: ['ArrowLeft', 'ArrowUp'] },
-  { id: 'next', label: 'Next suggestion', group: 'Navigation', defaults: ['ArrowRight', 'ArrowDown'] },
+  // PageUp/PageDown are what a presentation clicker sends, so the same two
+  // commands drive suggestions in the booth and document pages on screen.
+  { id: 'previous', label: 'Previous suggestion / page', group: 'Navigation', defaults: ['ArrowLeft', 'ArrowUp', 'PageUp'] },
+  { id: 'next', label: 'Next suggestion / page', group: 'Navigation', defaults: ['ArrowRight', 'ArrowDown', 'PageDown'] },
   { id: 'approve', label: 'Present selected suggestion', group: 'Live commands', defaults: ['Space', 'Enter'] },
   { id: 'dismiss', label: 'Dismiss top suggestion', group: 'Live commands', defaults: ['Escape'] },
   { id: 'clear', label: 'Clear live text', group: 'Live commands', defaults: ['Backspace', 'Delete'] },
@@ -22,5 +24,5 @@ export function commandForShortcut(shortcut: string, bindings: ShortcutBindings 
   return SHORTCUT_COMMANDS.find(command => bindingsFor(command.id, bindings).includes(shortcut))?.id
 }
 export function shortcutLabel(shortcut: string): string {
-  return shortcut.split('+').map(key => ({ Mod: '⌘ / Ctrl', ArrowLeft: '←', ArrowRight: '→', ArrowUp: '↑', ArrowDown: '↓' })[key] ?? (key.length === 1 ? key.toUpperCase() : key)).join(' + ')
+  return shortcut.split('+').map(key => ({ Mod: '⌘ / Ctrl', ArrowLeft: '←', ArrowRight: '→', ArrowUp: '↑', ArrowDown: '↓', PageUp: 'Page Up', PageDown: 'Page Down' })[key] ?? (key.length === 1 ? key.toUpperCase() : key)).join(' + ')
 }

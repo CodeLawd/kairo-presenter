@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import {
   formatCardReference,
+  formatOverlayReference,
   formatOverlayVerseText,
 } from "@shared/overlay-content";
 import { renderOverlayHTML } from "@shared/overlay-template";
@@ -88,6 +89,7 @@ function useNearViewport(
 export function VerseThemePreview({
   result,
   theme,
+  showTranslation,
   showVerseNumbers,
   maxVerses,
   width,
@@ -108,7 +110,9 @@ export function VerseThemePreview({
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const drawSlide = useNearViewport(lazy, buttonRef);
 
-  const reference = formatCardReference(result.reference);
+  const reference = showTranslation
+    ? formatOverlayReference(result.reference, result.translation, true)
+    : formatCardReference(result.reference);
   const text = formatOverlayVerseText(result.verses, {
     showVerseNumbers,
     maxVerses,

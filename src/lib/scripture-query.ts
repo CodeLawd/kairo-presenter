@@ -16,8 +16,8 @@ const BOOKS: readonly BookEntry[] = [
   ['1 Samuel', ['1sam', '1 sam', '1sa']], ['2 Samuel', ['2sam', '2 sam', '2sa']],
   ['1 Kings', ['1kgs', '1 kgs', '1ki']], ['2 Kings', ['2kgs', '2 kgs', '2ki']],
   ['1 Chronicles', ['1chr', '1 chr', '1ch']], ['2 Chronicles', ['2chr', '2 chr', '2ch']],
-  ['Ezra', ['ezra', 'ezr']], ['Nehemiah', ['neh']], ['Esther', ['esth', 'est']],
-  ['Job', ['job']], ['Psalms', ['psalms', 'psalm', 'ps']], ['Proverbs', ['prov', 'pro']],
+  ['Ezra', ['ezra', 'ezr', 'ez']], ['Nehemiah', ['neh']], ['Esther', ['esth', 'est']],
+  ['Job', ['job']], ['Psalms', ['psalms', 'psalm', 'psa', 'pss', 'ps']], ['Proverbs', ['prov', 'pro']],
   ['Ecclesiastes', ['eccl', 'ecc']], ['Song of Solomon', ['song', 'song of songs', 'sos']],
   ['Isaiah', ['isa']], ['Jeremiah', ['jer']], ['Lamentations', ['lam']],
   ['Ezekiel', ['ezek', 'eze']], ['Daniel', ['dan']], ['Hosea', ['hos']],
@@ -51,25 +51,63 @@ function splitBookAndNumbers(input: string): { typedBook: string; suffix: string
     : { typedBook: normalized, suffix: '' }
 }
 
+function resolveBookName(input: string): string | null {
+  const needle = input.trim().toLowerCase().replace(/\s+/g, ' ')
+  if (!needle) return null
+
+  // A recognized abbreviation is more authoritative than a prefix. For
+  // example, "ez" conventionally means Ezra even though it also begins
+  // "Ezekiel".
+  const exact = BOOKS.find((book) => variants(book).includes(needle))
+  if (exact) return exact[0]
+
+  // Incomplete text is safe to expand only when every matching canonical
+  // name/alias points to the same book. Ambiguous input remains unresolved.
+  const candidates = BOOKS.filter((book) =>
+    variants(book).some((variant) => variant.startsWith(needle)),
+  )
+  return candidates.length === 1 ? candidates[0][0] : null
+}
+
+export function getBookCompletions(input: string): BookCompletion[] {
+  const { typedBook, suffix } = splitBookAndNumbers(input)
+  const needle = typedBook.toLowerCase()
+  if (!needle) return []
+
+  const exact = BOOKS.find((book) => variants(book).includes(needle))
+  const matches = exact
+    ? [exact]
+    : BOOKS.filter((book) =>
+        variants(book).some((variant) => variant.startsWith(needle)),
+      )
+  if (matches.length === 1 && matches[0][0].toLowerCase() === needle) return []
+
+  return matches
+    .map(([book]) => ({
+      value: suffix ? `${book}${suffix}` : `${book} `,
+      book,
+      typedBook,
+    }))
+    .sort((a, b) => a.book.localeCompare(b.book))
+}
+
 function findBookPrefix(input: string): { book: string; remainder: string } | null {
-  const normalized = input.trim().toLowerCase().replace(/\s+/g, ' ')
-  const matches: Array<{ book: string; variant: string }> = []
-  for (const book of BOOKS) {
-    for (const variant of variants(book)) {
-      if (normalized === variant || normalized.startsWith(`${variant} `)) {
-        matches.push({ book: book[0], variant })
-      }
-    }
-  }
-  matches.sort((a, b) => b.variant.length - a.variant.length)
-  const best = matches[0]
-  if (!best) return null
-  return { book: best.book, remainder: normalized.slice(best.variant.length).trim() }
+  const { typedBook, suffix } = splitBookAndNumbers(input)
+  const book = resolveBookName(typedBook)
+  if (!book) return null
+  return { book, remainder: suffix.trim() }
 }
 
 export function normalizeScriptureQuery(input: string): string | null {
   const match = findBookPrefix(input)
   if (!match || !match.remainder) return null
+  // Chapter-only reference ("Psalms 23", "ps 23") → whole chapter.
+  const chapterOnly = match.remainder.match(/^(\d+)$/)
+  if (chapterOnly) {
+    const chapter = Number(chapterOnly[1])
+    if (!Number.isInteger(chapter) || chapter < 1 || chapter > 150) return null
+    return `${match.book} ${chapter}`
+  }
   const numbers = match.remainder.match(/^(\d+)\s*(?::|\s)\s*(\d+)(?:\s*(?:-|\u2013|\u2014|\s)\s*(\d+))?$/)
   if (!numbers) return null
   const end = numbers[3] ? `–${Number(numbers[3])}` : ''
@@ -77,14 +115,8 @@ export function normalizeScriptureQuery(input: string): string | null {
 }
 
 export function getBookCompletion(input: string): BookCompletion | null {
-  const { typedBook, suffix } = splitBookAndNumbers(input)
-  const needle = typedBook.toLowerCase()
-  if (needle.length < 3) return null
-  const candidates = BOOKS.filter((book) => variants(book).some((variant) => variant.startsWith(needle)))
-  const unique = [...new Map(candidates.map((book) => [book[0], book])).values()]
-  if (unique.length !== 1 || unique[0][0].toLowerCase() === needle) return null
-  const book = unique[0][0]
-  return { value: suffix ? `${book}${suffix}` : `${book} `, book, typedBook }
+  const completions = getBookCompletions(input)
+  return completions.length === 1 ? completions[0] : null
 }
 
 export function isLikelyPhraseQuery(input: string): boolean {
@@ -111,7 +143,11 @@ export function shouldLiveSuggestScriptureQuery(input: string): boolean {
 }
 
 export function resolveSubmittedScriptureQuery(input: string): string {
-  return normalizeScriptureQuery(input) ?? input.trim()
+  // Apply a pending book completion first: if the box still holds "psa 23"
+  // when Enter is pressed, submit "Psalms 23" rather than a keyword search.
+  const completion = getBookCompletion(input)
+  const completed = completion ? completion.value : input.trim()
+  return normalizeScriptureQuery(completed) ?? completed.trim()
 }
 
 export function expandScriptureResult(result: ScriptureResult): ScriptureResult[] {

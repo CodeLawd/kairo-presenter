@@ -29,6 +29,7 @@
     "seed:bible": "npx tsx scripts/seed-bible.ts",
     "seed:bible:all": "npx tsx scripts/seed-bible.ts --translations KJV,BBE",
     "build:bible-pack": "cross-env ELECTRON_RUN_AS_NODE=1 electron ./node_modules/tsx/dist/cli.mjs scripts/build-bible-pack.ts",
+    "import:translation": "cross-env ELECTRON_RUN_AS_NODE=1 electron ./node_modules/tsx/dist/cli.mjs scripts/import-translation.ts",
     "build:mac": "npm run typecheck && electron-vite build && electron-builder --mac --arm64",
     "build:mac:arm64": "npm run typecheck && electron-vite build && electron-builder --mac --arm64",
     "build:mac:x64": "npm run typecheck && electron-vite build && electron-builder --mac --x64",

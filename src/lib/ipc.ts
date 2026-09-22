@@ -11,9 +11,12 @@ export type Unsubscribe = () => void
 
 // ─── App Settings ─────────────────────────────────────────────────────────────
 
-export type ScriptureTranslation =
-  | 'NKJV' | 'KJV' | 'BSB' | 'WEB' | 'ASV' | 'OEB'
-  | 'NIV' | 'NLT' | 'NASB' | 'MSG' | 'AMPC' | 'TPT' | 'ESV' | 'CSB'
+// ─── Bible translations ─────────────────────────────────────────────────────
+// The canonical registry lives in './bible-translations' — add ONE entry there
+// to support a new translation. This type stays `string` on purpose so a newly
+// registered (or user-installed) id never needs a type-level change; known ids
+// are imported from the registry for autocomplete where it matters.
+export type ScriptureTranslation = string
 export type STTProvider = 'deepgram' | 'whisper' | 'none'
 
 export interface AppSettings {
@@ -105,12 +108,62 @@ export interface AppSettings {
     theme: OverlayTheme
   }
   themeLibrary: CustomOverlayTheme[]
+  /** Document projection — currently the unattended slideshow. */
+  documents: import('./documents').DocumentsSettings
+  /**
+   * The folder holding `Songs/` and `Media/`. Empty means the built-in
+   * default (`~/Documents/Kairo Presenter`), so a machine that never chose a
+   * location tracks the default if it ever changes.
+   */
+  workspace: WorkspaceSettings
   media: MediaSettings
   /** House-audio folder. Empty until derived from the media sibling or picked. */
   tracks: TracksSettings
   church: ChurchProfile
   /** Stable ProPresenter UUIDs selected for ProAutomate roles. */
   propresenterResources: PPResourceBindings
+}
+
+// ─── Workspace ────────────────────────────────────────────────────────────────
+
+export interface WorkspaceSettings {
+  /** Absolute path, or '' for the default location. */
+  folder: string
+}
+
+export type { WorkspaceInfo, MediaFolderMigration } from './workspace'
+
+/** What a Songs-folder rescan changed in the library. */
+export interface WorkspaceSongSync {
+  /** Songs read from files into the library. */
+  imported: number
+  /** Library rows dropped because their file is gone. */
+  removed: number
+  /** Pre-folder songs written out to files (first run only). */
+  exported: number
+}
+
+export interface WorkspaceAPI {
+  /** Current workspace paths, creating the folders if they are missing. */
+  get: () => Promise<import('./workspace').WorkspaceInfo>
+  /**
+   * Opens a folder picker and moves the workspace there.
+   * `move` carries the existing Songs and Media contents across.
+   * Resolves to the unchanged workspace when the operator cancels.
+   */
+  chooseFolder: (options?: { move?: boolean }) => Promise<import('./workspace').WorkspaceInfo>
+  /** Opens the workspace (or its Songs folder) in Finder / Explorer. */
+  reveal: () => Promise<void>
+  revealSongs: () => Promise<void>
+  /** Re-reads the Songs folder into the library — the folder wins. */
+  resyncSongs: () => Promise<WorkspaceSongSync>
+  /** Whether an already-chosen media folder sits outside the workspace. */
+  mediaMigration: () => Promise<import('./workspace').MediaFolderMigration>
+  /**
+   * Points the media dock at `<workspace>/Media`, optionally moving the files
+   * that are already in the old folder.
+   */
+  adoptMedia: (options?: { move?: boolean }) => Promise<MediaLibrary>
 }
 
 // ─── Church profile (onboarding) ──────────────────────────────────────────────
@@ -665,6 +718,13 @@ export interface ScriptureTranslationOption {
   access: 'local' | 'api'
   available: boolean
   requiresApiKey: boolean
+  /**
+   * True when Settings can offer a one-click offline download for this id
+   * (see `downloadablePack` in the bible-translations registry).
+   */
+  downloadable?: boolean
+  /** Human size label for the one-click download, e.g. 'about 5 MB'. */
+  downloadApprox?: string
 }
 
 export type ApiBibleCacheStatus =
@@ -702,8 +762,9 @@ export interface ApiBibleDownloadProgress {
 }
 
 // ─── Optional local Bible packs ─────────────────────────────────────────────
-// A user-supplied SQLite pack (today: NKJV) installed into the writable
+// A user-supplied SQLite pack (e.g. NKJV) installed into the writable
 // userData bible.db. The renderer never sees file paths — only typed status.
+// Which ids are downloadable is driven by the bible-translations registry.
 
 export interface LocalBiblePackStatus {
   /** Normalized translation id, e.g. 'NKJV'. */
@@ -712,6 +773,12 @@ export interface LocalBiblePackStatus {
   chapterCount: number
   /** True once the full expected verse set for this translation is installed. */
   installed: boolean
+}
+
+/** A non-bundled translation present in the local bible.db (pack or download). */
+export interface InstalledLocalBiblePack extends LocalBiblePackStatus {
+  /** Display name stored with the pack, e.g. 'New Living Translation'. */
+  name: string
 }
 
 export interface LocalBiblePackInstallResult {
@@ -1027,6 +1094,15 @@ export interface LyricsSong {
   updatedAt: number
 }
 
+export type { DuplicateMatch, DuplicateReason } from './lyrics-duplicate'
+
+/** A parsed-but-unsaved song, with whatever the library already holds of it. */
+export interface LyricsImportPreview {
+  song: LyricsSong
+  /** Set when the library already has this song. Null when it is new. */
+  duplicate: import('./lyrics-duplicate').DuplicateMatch | null
+}
+
 export interface SongPresentOptions {
   /**
    * @deprecated Slides are defined by blank-line breaks in the song text.
@@ -1138,17 +1214,19 @@ export interface ScriptureAPI {
   /** Returns cleanup fn. Fires as chapters are downloaded or refreshed. */
   onOfflineDownloadProgress: (callback: (value: ApiBibleDownloadProgress) => void) => Unsubscribe
   /**
-   * Installs a user-supplied local Bible pack (NKJV) into the userData
-   * bible.db. With no argument the main process shows a native file picker;
-   * the chosen path is never exposed to the renderer.
+   * Installs a user-supplied local Bible pack (any single-translation SQLite
+   * pack) into the userData bible.db. With no argument the main process shows
+   * a native file picker; the chosen path is never exposed to the renderer.
    */
   installLocalBiblePack: () => Promise<LocalBiblePackInstallResult | null>
-  /** Downloads, verifies, and installs the official optional pack. */
+  /** Downloads, verifies, and installs the registry pack for `translation`. */
   downloadLocalBibleTranslation: (translation: string) => Promise<LocalBiblePackInstallResult>
   /** Whether a local copy of `translation` (e.g. 'NKJV') is installed. */
   getLocalBiblePackStatus: (translation: string) => Promise<LocalBiblePackStatus>
   /** Removes only the local `translation` rows and their FTS entries. */
   removeLocalBibleTranslation: (translation: string) => Promise<LocalBiblePackStatus>
+  /** Every installed, removable local pack (bundled Bibles are excluded). */
+  listInstalledLocalBiblePacks: () => Promise<InstalledLocalBiblePack[]>
 }
 
 export interface TranscriptionAPI {
@@ -1178,6 +1256,17 @@ export interface LyricsAPI {
     artist: string
   }) => Promise<LyricsOnlinePreview>
   import: (source: LyricsImportSource) => Promise<LyricsSong>
+  /**
+   * Parses a file or pasted text into a song without saving it, so a batch can
+   * be reviewed before anything reaches the library.
+   */
+  previewFile: (source: LyricsImportSource) => Promise<LyricsImportPreview>
+  /**
+   * Plain text currently on the system clipboard, for the Import → Paste tab.
+   * Read in main because the renderer is not a secure context, so the async
+   * Clipboard API is unavailable there.
+   */
+  readClipboard: () => Promise<string>
   getLibrary: () => Promise<LyricsSong[]>
   getSong: (id: string) => Promise<LyricsSong | null>
   update: (id: string, song: LyricsSong) => Promise<LyricsSong | null>
@@ -1256,7 +1345,7 @@ export interface SettingsAPI {
    * (when configured and write-only). Never returns the key itself.
    */
   testApiKey: (
-    kind: 'deepgram' | 'anthropic' | 'bible',
+    kind: 'deepgram' | 'anthropic' | 'bible' | 'brave',
     draft?: string,
   ) => Promise<{ ok: boolean; message: string }>
   /** Fires when main hydrates or saves API keys (e.g. after org vault pull). */
@@ -1440,12 +1529,19 @@ export interface ProAutomateAPI {
   audio: AudioAPI
   scripture: ScriptureAPI
   transcription: TranscriptionAPI
+  workspace: WorkspaceAPI
   lyrics: LyricsAPI
   settings: SettingsAPI
   orchestrator: OrchestratorAPI
   resilience: ResilienceAPI
   ndi: NdiAPI
   documents: import('./documents').DocumentsAPI
+  /** The service setlist: which songs, in which order. */
+  setlist: import('./setlist').SetlistAPI
+  /** User-made libraries for songs, documents and saved passages. */
+  libraries: import('./libraries').LibrariesAPI
+  /** Passages the operator kept, with their verse text. */
+  passages: import('./passages').PassagesAPI
   media: MediaAPI
   tracks: TracksAPI
   onboarding: OnboardingAPI
@@ -1568,6 +1664,7 @@ export const IPC = {
     DOWNLOAD_LOCAL_BIBLE_TRANSLATION: 'scripture:downloadLocalBibleTranslation', // invoke
     GET_LOCAL_BIBLE_PACK_STATUS: 'scripture:getLocalBiblePackStatus',    // invoke
     REMOVE_LOCAL_BIBLE_TRANSLATION: 'scripture:removeLocalBibleTranslation', // invoke
+    LIST_INSTALLED_LOCAL_BIBLE_PACKS: 'scripture:listInstalledLocalBiblePacks', // invoke
     SET_AUTO_MODE:          'scripture:setAutoMode',             // invoke
     SET_CONFIDENCE:         'scripture:setConfidenceThreshold',  // invoke
     SUGGESTION:             'scripture:suggestion',              // push
@@ -1577,6 +1674,15 @@ export const IPC = {
     CLEAR_HISTORY:  'transcription:clearHistory',   // invoke
     TRANSCRIPT:     'transcription:transcript',     // push
     INTERIM:        'transcription:interim',        // push
+  },
+  WORKSPACE: {
+    GET:             'workspace:get',              // invoke — WorkspaceInfo
+    CHOOSE_FOLDER:   'workspace:chooseFolder',     // invoke — WorkspaceInfo
+    REVEAL:          'workspace:reveal',           // invoke
+    REVEAL_SONGS:    'workspace:revealSongs',      // invoke
+    RESYNC_SONGS:    'workspace:resyncSongs',      // invoke — WorkspaceSongSync
+    MEDIA_MIGRATION: 'workspace:mediaMigration',   // invoke — MediaFolderMigration
+    ADOPT_MEDIA:     'workspace:adoptMedia',       // invoke — MediaLibrary
   },
   MEDIA: {
     IMPORT_FILES: 'media:importFiles',
@@ -1619,6 +1725,8 @@ export const IPC = {
     SEARCH_ONLINE:   'lyrics:searchOnline',         // invoke
     PREVIEW_ONLINE:  'lyrics:previewOnline',        // invoke
     IMPORT:          'lyrics:import',               // invoke
+    PREVIEW_FILE:    'lyrics:previewFile',          // invoke
+    READ_CLIPBOARD:  'lyrics:readClipboard',        // invoke
     GET_LIBRARY:     'lyrics:getLibrary',           // invoke
     GET_SONG:        'lyrics:getSong',              // invoke
     UPDATE:          'lyrics:update',               // invoke

@@ -15,3 +15,12 @@ test('parses relaxed space-separated scripture shorthand', () => {
     book: 'Joshua', chapter: 1, verseStart: 5, verseEnd: 9,
   })
 })
+
+test('parses incomplete book names and exact short abbreviations', () => {
+  assert.deepEqual(parseScriptureReference('joshu 1:9'), {
+    book: 'Joshua', chapter: 1, verseStart: 9, verseEnd: undefined,
+  })
+  assert.deepEqual(parseScriptureReference('ez 1'), {
+    book: 'Ezra', chapter: 1, isChapter: true,
+  })
+})

@@ -38,6 +38,7 @@ import {
 } from "@shared/operator-layout";
 import type { OperatorPanelSide } from "@shared/operator-layout";
 import { Button } from "@/components/ui/button";
+import { DEFAULT_TRANSLATION_ID } from "@shared/bible-translations";
 import { VerseThemePreview } from "@/components/scripture/VerseThemePreview";
 import {
   DEFAULT_OVERLAY_SETTINGS,
@@ -307,9 +308,6 @@ export default function Operator(): React.ReactElement {
   );
   const nuggets = activeService?.nuggets ?? legacyNuggets;
   const [serviceError, setServiceError] = useState("");
-  const [creationIntent, setCreationIntent] = useState<
-    "manual" | "start" | null
-  >(null);
   const pipelineBusyRef = useRef(false);
   const [pipelineBusy, setPipelineBusy] = useState(false);
   const [nuggetsOpen, setNuggetsOpen] = useState(false);
@@ -358,7 +356,7 @@ export default function Operator(): React.ReactElement {
   const toggleNugget = useCallback(
     (segment: DisplaySegment): void => {
       if (!activeService) {
-        setServiceError("Create a service to save this nugget.");
+        setServiceError("Start transcription to save this nugget.");
         return;
       }
       void window.api.services
@@ -439,7 +437,7 @@ export default function Operator(): React.ReactElement {
   );
   const [mediaLibrary, setMediaLibrary] = useState<MediaLibrary | null>(null);
   const [defaultTranslation, setDefaultTranslation] =
-    useState<AppSettings["scripture"]["defaultTranslation"]>("NKJV");
+    useState<AppSettings["scripture"]["defaultTranslation"]>(DEFAULT_TRANSLATION_ID);
   const [pendingAuto, setPendingAuto] = useState<PendingAutoPresent[]>([]);
   const [transcriptWidth, setTranscriptWidth] = useState(() =>
     normalizeOperatorPanelWidth(
@@ -1305,14 +1303,17 @@ export default function Operator(): React.ReactElement {
 
   const handleTogglePipeline = async () => {
     if (pipelineBusyRef.current) return;
-    if (!useServiceRecords.getState().activeId) {
-      setCreationIntent("start");
-      return;
-    }
     pipelineBusyRef.current = true;
     setPipelineBusy(true);
     setServiceError("");
     try {
+      // A service opens silently the first time the operator starts listening.
+      // Nothing is asked for here — the booth names and saves it at the end.
+      if (!isTranscribing && !useServiceRecords.getState().activeId) {
+        useServiceRecords
+          .getState()
+          .set(await window.api.services.command({ action: "start" }));
+      }
       if (isTranscribing) {
         await window.api.orchestrator.stop();
         setIsTranscribing(false);
@@ -1675,9 +1676,29 @@ export default function Operator(): React.ReactElement {
               }}
             />
             <div className="relative z-20 flex shrink-0 flex-wrap items-center justify-between gap-2 px-3 py-2">
-              <span className="text-[11px] font-medium text-zinc-300">
-                Transcript
-              </span>
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="text-[11px] font-medium text-zinc-300">
+                  Transcript
+                </span>
+                <span className="flex items-center gap-1.5 text-[10px] text-zinc-500">
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      "size-1.5 rounded-full",
+                      isTranscribing
+                        ? sttHealth?.status === "error" || sttHealth?.status === "degraded"
+                          ? "bg-amber-400"
+                          : "animate-pulse bg-teal-400"
+                        : "bg-zinc-600",
+                    )}
+                  />
+                  {isTranscribing
+                    ? sttHealth?.status === "error" || sttHealth?.status === "degraded"
+                      ? "Reconnecting"
+                      : "Listening"
+                    : "Paused"}
+                </span>
+              </div>
               <div className="flex items-center gap-1.5">
                 <button
                   type="button"
@@ -1702,13 +1723,7 @@ export default function Operator(): React.ReactElement {
                   type="button"
                   onClick={() => void handleTogglePipeline()}
                   disabled={pipelineBusy}
-                  title={
-                    isTranscribing
-                      ? "Pause transcription"
-                      : activeService
-                        ? "Start transcription"
-                        : "Create a service and start transcription"
-                  }
+                  title={isTranscribing ? "Pause transcription" : "Start transcription"}
                   className={cn(
                     "flex h-7 items-center gap-1.5 rounded-md px-2 text-[11px] font-medium transition-colors disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/60",
                     isTranscribing
@@ -1803,18 +1818,7 @@ export default function Operator(): React.ReactElement {
                 </div>
               )}
             </div>
-            <div className="flex shrink-0 items-center justify-between px-3 py-1.5 text-[10px] text-zinc-500">
-              <span className="flex items-center gap-1.5">
-                <span aria-hidden="true" className={cn("size-1.5 rounded-full", isTranscribing ? "bg-teal-400" : "bg-zinc-600")} />
-                {isTranscribing ? sttHealth?.status === "error" || sttHealth?.status === "degraded" ? "Reconnecting" : "Listening" : "Paused"}
-              </span>
-              <span>Auto-scroll on</span>
-            </div>
-            <ServicePanel
-              onStartTranscription={handleTogglePipeline}
-              creationIntent={creationIntent}
-              onCreationIntentChange={setCreationIntent}
-            />
+            <ServicePanel />
             {resilienceStatus &&
               (sttHealth?.status === "degraded" ||
                 sttHealth?.status === "error") && (
@@ -1886,33 +1890,16 @@ export default function Operator(): React.ReactElement {
               {segments.length === 0 &&
                 !interimText &&
                 (!activeService && !isTranscribing ? (
-                  <div className="mx-auto flex w-full max-w-[19rem] flex-1 flex-col items-center justify-center px-6 text-center">
-                    <div className="grid size-11 place-items-center rounded-full border border-white/[0.08] bg-white/[0.04] text-zinc-500">
-                      <Mic size={17} aria-hidden />
+                  // No button here on purpose: Start lives in the panel header,
+                  // and one live control is easier to find than two.
+                  <div className="mx-auto flex w-full max-w-[17rem] flex-1 flex-col items-center justify-center px-6 text-center">
+                    <div className="grid size-9 place-items-center rounded-full border border-white/[0.06] text-zinc-600">
+                      <Mic size={15} aria-hidden />
                     </div>
-                    <p className="mt-4 text-[14px] font-semibold tracking-tight text-zinc-200">
-                      No service yet
+                    <p className="mt-3 text-[12px] leading-relaxed text-zinc-500">
+                      Hit <span className="font-medium text-zinc-300">Start</span> when
+                      the message begins. Name the service when you end it.
                     </p>
-                    <p className="mt-1.5 text-[12px] leading-relaxed text-zinc-500">
-                      Transcript, nuggets and scriptures stay together in one
-                      service for this message.
-                    </p>
-                    <button
-                      type="button"
-                      disabled={pipelineBusy}
-                      onClick={() => void handleTogglePipeline()}
-                      className="mt-6 inline-flex h-9 items-center gap-2 rounded-lg bg-teal-500 px-4 text-[12px] font-semibold text-[#111827] shadow-sm transition-colors hover:bg-teal-400 disabled:opacity-40"
-                    >
-                      <Play size={12} aria-hidden />
-                      New service
-                    </button>
-                    <button
-                      type="button"
-                      className="mt-3 text-[12px] text-zinc-600 transition-colors hover:text-zinc-300"
-                      onClick={() => setCreationIntent("manual")}
-                    >
-                      Create without transcription
-                    </button>
                   </div>
                 ) : (
                   <p className="font-mono text-xs italic text-zinc-400">

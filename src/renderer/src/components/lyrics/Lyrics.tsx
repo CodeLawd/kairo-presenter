@@ -1,3 +1,7 @@
+import { LibraryRail } from '@/components/lyrics/LibraryRail'
+import { runSetlistCommand, songIdFromDrag, startSongDrag, useSetlistStore, SONG_DRAG_TYPE } from '@/stores/useSetlist'
+import { startLibraryItemDrag, useLibrary } from '@/stores/useLibraries'
+import { DEFAULT_LIBRARY_ID, itemsInLibrary, libraryCounts as countByLibrary } from '@shared/libraries'
 import { reorderLyricSlide } from '@shared/lyrics-reorder'
 import { useLibraryWidth } from './useLibraryWidth'
 import { useImportRequest } from '@/hooks/useImportRequest'
@@ -26,11 +30,11 @@ import {
   ChevronRight,
   Globe,
   Library,
+  ClipboardPaste,
 } from '@/icons'
 import { cn, downloadFile } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -39,6 +43,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import type {
+  DuplicateMatch,
   LyricsSong,
   LyricsSongSection,
   LyricsSectionType,
@@ -55,7 +60,11 @@ import {
   sectionSlideChunks,
   sectionColoredSlideChunks,
 } from '@shared/lyrics-slides'
-import { expandJammedLines, splitSectionAtCursor } from '@shared/lyrics-section-edit'
+import {
+  expandJammedLines,
+  parseMarkedSections,
+  splitSectionAtCursor,
+} from '@shared/lyrics-section-edit'
 import {
   sectionsHaveGlosses,
   stripLineGlosses,
@@ -63,6 +72,15 @@ import {
 import { DEFAULT_GLOSS_COLOR, normalizeGlossColor, resolveLyricLineColor } from '@shared/lyrics-style'
 import { isGlossLine } from '@shared/lyrics-translate'
 import { formatOnlineLyricsError } from '@shared/lyrics-online-error'
+import { cleanIpcError } from '@shared/ipc-error'
+import {
+  hasSongMetadata,
+  liftHeadingTitle,
+  looksLikeLyrics,
+  parseClipboardSong,
+} from '@shared/lyrics-clipboard'
+import { looksLikeRtf, rtfToPlainText } from '@shared/rtf-text'
+import { describeDuplicate, findDuplicate } from '@shared/lyrics-duplicate'
 import { useBootstrapStore } from '@/bootstrap/useBootstrapStore'
 import { useAppStore } from '@/stores/useAppStore'
 import { useSettings } from '@/hooks/useSettings'
@@ -277,12 +295,7 @@ function SectionSlideGrid({
               key={i}
               type="button"
               data-lyric-slide={zeroBased}
-              draggable={!reorderBusy}
               disabled={reorderBusy}
-              onDragStart={(event) => {
-                event.dataTransfer.setData('application/x-kairo-slide', String(zeroBased))
-                event.dataTransfer.effectAllowed = 'move'
-              }}
               onDragOver={(event) => {
                 if (reorderBusy || !event.dataTransfer.types.includes('application/x-kairo-slide')) return
                 event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setDropTarget(zeroBased)
@@ -294,10 +307,15 @@ function SectionSlideGrid({
                 const raw = event.dataTransfer.getData('application/x-kairo-slide')
                 if (raw && !reorderBusy) onReorder(Number(raw), zeroBased)
               }}
-              onClick={() => onPushSlide(zeroBased)}
+              onClick={() => {
+                // Finishing a text selection inside the tile is not a request
+                // to put the slide on screen.
+                if (hasTextSelection()) return
+                onPushSlide(zeroBased)
+              }}
               className={cn(
                 'group relative w-full aspect-video rounded-lg overflow-hidden',
-                'bg-black border text-left',
+                'bg-black border text-left cursor-default',
                 'shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]',
                 isLive
                   ? 'border-teal-400/70 ring-1 ring-teal-400/40'
@@ -339,13 +357,37 @@ function SectionSlideGrid({
                 <Eye size={11} />
               </span>
 
+              {/* Reordering moved onto a handle: a draggable tile starts a drag
+                  on mousedown, which makes the lyrics inside impossible to
+                  select and copy. */}
+              {!reorderBusy && (
+                <span
+                  draggable
+                  onDragStart={(event) => {
+                    event.stopPropagation()
+                    event.dataTransfer.setData('application/x-kairo-slide', String(zeroBased))
+                    event.dataTransfer.effectAllowed = 'move'
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                  title="Drag to reorder this slide"
+                  aria-label={`Drag to reorder slide ${slideNo}`}
+                  className={cn(
+                    'absolute bottom-1 left-1.5 z-10 grid place-items-center h-5 w-5 rounded-md cursor-grab active:cursor-grabbing',
+                    'text-white/35 hover:text-teal-300',
+                    'opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity'
+                  )}
+                >
+                  <GripVertical size={11} />
+                </span>
+              )}
+
               {isLive && (
                 <span className="absolute top-1.5 left-1.5 z-10 px-1.5 py-px rounded text-[8px] font-bold tracking-wider uppercase bg-teal-500/20 text-teal-300 border border-teal-500/30">
                   Live
                 </span>
               )}
 
-              <div className="absolute inset-0 flex flex-col items-center justify-center px-3.5 gap-0.5">
+              <div className="absolute inset-0 flex flex-col items-center justify-center px-3.5 gap-0.5 select-text cursor-text">
                 {lineCount > 0 ? (
                   lines.map((line, j) => (
                     <p
@@ -393,6 +435,13 @@ function SectionSlideGrid({
   )
 }
 
+/** True when the operator has text highlighted — used to tell a selection drag
+ *  apart from a click on something clickable. */
+function hasTextSelection(): boolean {
+  const selection = window.getSelection()
+  return Boolean(selection && !selection.isCollapsed && selection.toString().trim())
+}
+
 // ─── SongListItem ─────────────────────────────────────────────────────────────
 
 function SongListItem({
@@ -401,35 +450,66 @@ function SongListItem({
   onSelect,
   onContextMenu,
   onToggleFavorite,
+  position,
+  onRemoveFromSetlist,
+  onDropAt,
 }: {
   song: LyricsSong
   isSelected: boolean
   onSelect: (id: string) => void
   onContextMenu: (e: React.MouseEvent, id: string) => void
   onToggleFavorite: (id: string) => void
+  /** 1-based place in the setlist being viewed; absent in library views. */
+  position?: number
+  onRemoveFromSetlist?: (id: string) => void
+  onDropAt?: (songId: string, index: number) => void
 }): React.ReactElement {
+  const [dropping, setDropping] = useState(false)
   return (
     <div
       role="button"
       tabIndex={0}
+      draggable
+      onDragStart={(event) => {
+        startSongDrag(event, song.id, song.title)
+        startLibraryItemDrag(event, song.id, song.title)
+      }}
+      onDragOver={(event) => {
+        if (!onDropAt || !event.dataTransfer.types.includes(SONG_DRAG_TYPE)) return
+        event.preventDefault()
+        setDropping(true)
+      }}
+      onDragLeave={() => setDropping(false)}
+      onDrop={(event) => {
+        if (!onDropAt) return
+        event.preventDefault()
+        setDropping(false)
+        const dragged = songIdFromDrag(event.dataTransfer)
+        if (dragged) onDropAt(dragged, (position ?? 1) - 1)
+      }}
       className={cn(
         'group flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-all duration-150 border select-none',
         isSelected
           ? 'bg-teal-600/15 border-teal-500/30'
-          : 'hover:bg-surface-tertiary border-transparent hover:border-surface-border/50'
+          : 'hover:bg-surface-tertiary border-transparent hover:border-surface-border/50',
+        dropping && 'border-t-teal-400'
       )}
       onClick={() => onSelect(song.id)}
       onKeyDown={(e) => e.key === 'Enter' && onSelect(song.id)}
       onContextMenu={(e) => { e.preventDefault(); onContextMenu(e, song.id) }}
     >
-      <div className={cn(
-        'w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-colors',
-        isSelected
-          ? 'bg-teal-500/20 border border-teal-500/30'
-          : 'bg-surface-elevated border border-surface-border/50'
-      )}>
-        <Music2 size={12} className={cn(isSelected ? 'text-teal-400' : 'text-slate-500')} />
-      </div>
+      {position === undefined ? (
+        <div className={cn(
+          'w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-colors',
+          isSelected
+            ? 'bg-teal-500/20 border border-teal-500/30'
+            : 'bg-surface-elevated border border-surface-border/50'
+        )}>
+          <Music2 size={12} className={cn(isSelected ? 'text-teal-400' : 'text-slate-500')} />
+        </div>
+      ) : (
+        <span className="w-7 shrink-0 text-center text-[11px] tabular-nums text-slate-500">{position}</span>
+      )}
       <div className="flex-1 min-w-0">
         <p className={cn('text-[13px] font-semibold truncate leading-tight', isSelected ? 'text-white' : 'text-slate-200')}>
           {song.title}
@@ -451,6 +531,15 @@ function SongListItem({
       >
         <Star size={13} className={cn(song.isFavorite && 'fill-yellow-400')} />
       </button>
+      {onRemoveFromSetlist && (
+        <button
+          className="shrink-0 rounded p-0.5 text-slate-600 opacity-0 group-hover:opacity-100 hover:text-rose-400 transition-all duration-150 focus-visible:outline-none"
+          onClick={(e) => { e.stopPropagation(); onRemoveFromSetlist(song.id) }}
+          aria-label={`Remove ${song.title} from this setlist`}
+        >
+          <X size={13} />
+        </button>
+      )}
       <button
         className="shrink-0 rounded p-0.5 text-slate-600 opacity-0 group-hover:opacity-100 hover:text-slate-400 transition-all duration-150 focus-visible:outline-none"
         onClick={(e) => { e.stopPropagation(); onContextMenu(e, song.id) }}
@@ -693,15 +782,21 @@ function SectionEditBlock({
           >
             <ArrowDown size={12} />
           </button>
-          <button
-            onClick={() => onDelete(section._key)}
-            className="p-1 rounded text-slate-700 hover:text-red-400 transition-colors focus-visible:outline-none"
-            aria-label="Delete section"
-          >
-            <X size={13} />
-          </button>
         </div>
         </details>
+
+        {/* Deleting a section was inside "Reflow tools", where nothing suggests
+            it lives. It belongs on the header row, next to the section it
+            removes. */}
+        <button
+          type="button"
+          onClick={() => onDelete(section._key)}
+          className="shrink-0 rounded p-1 text-slate-600 transition-colors hover:bg-red-500/10 hover:text-red-400 focus-visible:outline-none"
+          title="Delete this section"
+          aria-label={`Delete section ${section.label || index + 1}`}
+        >
+          <Trash2 size={13} />
+        </button>
       </div>
 
       {/* Lyrics textarea */}
@@ -1045,7 +1140,7 @@ function OnlinePreviewPane({
           </div>
         )}
         {!loading && !error && preview && (
-          <div className="space-y-5">
+          <div className="space-y-5 select-text cursor-text">
             {preview.sections.map((section, i) => (
               <div key={`${section.label}-${i}`}>
                 <p className="text-[10px] font-bold uppercase tracking-widest text-teal-500/80 mb-2">
@@ -1104,6 +1199,410 @@ function OnlinePreviewPane({
   )
 }
 
+// ─── Song file import ─────────────────────────────────────────────────────────
+
+/** One file waiting in the import queue: parsed for reading, not yet saved. */
+interface QueuedSongFile {
+  /** Stable per-file key, so re-dropping a file replaces rather than repeats it. */
+  key: string
+  fileName: string
+  /** What the parse produced — shown in the preview panel, never persisted. */
+  song: LyricsSong
+  /** Replayed through `lyrics.import` when the operator confirms. */
+  source: LyricsImportSource
+  /**
+   * The song this one repeats: already in the library, or earlier in this same
+   * batch. A folder of song sheets is full of both.
+   */
+  duplicate: (DuplicateMatch & { inBatch?: boolean }) | null
+  /**
+   * What happens on Add. Duplicates start as 'skip'; everything else 'new'.
+   * 'replace' overwrites the song already in the library, keeping its id, so
+   * playlists and favourites that point at it survive.
+   */
+  action: QueuedFileAction
+  /** True once the operator corrected the title or artist by hand. */
+  renamed?: boolean
+}
+
+export type QueuedFileAction = 'skip' | 'new' | 'replace'
+
+/**
+ * The song as editable text: `[Label]` markers with the lines under them.
+ * This is the format `parseText` reads back, so an edit round-trips into
+ * sections without a second parser.
+ */
+function songToMarkedText(song: LyricsSong): string {
+  return song.sections
+    .map((section) => `[${section.label}]\n${section.lines.join('\n')}`)
+    .join('\n\n')
+}
+
+/** Song sheets arrive as SongSelect exports, plain text, or RTF from TextEdit. */
+const IMPORTABLE_SONG_FILE = /\.(usr|txt|rtf)$/i
+
+/** "Way Maker.rtf" → "Way Maker", the last resort for an untitled document. */
+function titleFromFileName(name: string): string {
+  return name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim() || 'Untitled'
+}
+
+/**
+ * Turns a dropped file into an import source.
+ *
+ * RTF carries no metadata block, so its text goes through the same reader as a
+ * pasted web page: title and artist are lifted from the document's own heading
+ * when it has one, and the file name stands in when it does not.
+ */
+async function sourceForFile(file: File): Promise<LyricsImportSource> {
+  const raw = await file.text()
+  const isRtf = file.name.toLowerCase().endsWith('.rtf') || looksLikeRtf(raw)
+
+  const text = isRtf ? rtfToPlainText(raw) : raw
+  if (isRtf && !text.trim()) throw new Error('That RTF file has no readable text.')
+
+  // A file with a header block is a SongSelect-style export — its own metadata
+  // beats anything guessed from the text.
+  if (hasSongMetadata(text)) {
+    return { type: 'usr', content: text, filename: file.name }
+  }
+
+  const draft = parseClipboardSong(text)
+  const body = draft?.text || text
+  // A song sheet opens with the song's name, often with the artist under it.
+  const lifted = draft?.title?.trim()
+    ? { title: '', artist: '', text: body }
+    : liftHeadingTitle(body)
+
+  return {
+    type: 'text',
+    title: draft?.title?.trim() || lifted.title || titleFromFileName(file.name),
+    artist: draft?.artist?.trim() || lifted.artist,
+    text: lifted.title ? lifted.text : body,
+    ...(draft?.copyright ? { copyright: draft.copyright } : {}),
+  }
+}
+
+
+/** Drop target for song files. Compact once the queue has something in it. */
+function FileDropZone({
+  compact,
+  dragOver,
+  progress,
+  inputRef,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onFileInput,
+}: {
+  compact: boolean
+  dragOver: boolean
+  progress: { done: number; total: number } | null
+  inputRef: React.RefObject<HTMLInputElement>
+  onDragOver: (e: React.DragEvent) => void
+  onDragLeave: () => void
+  onDrop: (e: React.DragEvent) => void
+  onFileInput: (e: React.ChangeEvent<HTMLInputElement>) => void
+}): React.ReactElement {
+  return (
+    <div
+      className={cn(
+        'border-2 border-dashed rounded-xl flex flex-col items-center gap-2 cursor-pointer transition-all text-center',
+        compact ? 'px-3 py-3' : 'px-6 py-12 gap-3',
+        dragOver ? 'border-teal-500/60 bg-teal-500/5' : 'border-surface-border/40 hover:border-surface-border'
+      )}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+      onClick={() => inputRef.current?.click()}
+    >
+      {progress
+        ? <Loader2 size={compact ? 16 : 28} className="text-teal-400 animate-spin" />
+        : <Upload size={compact ? 16 : 28} className="text-slate-600" />}
+      <div>
+        <p className={cn('font-medium text-slate-300', compact ? 'text-[12px]' : 'text-sm')}>
+          {progress
+            ? `Reading ${progress.done + 1} of ${progress.total}\u2026`
+            : compact
+              ? 'Drop more files'
+              : 'Drop .usr, .txt or .rtf files here'}
+        </p>
+        {!compact && (
+          <p className="text-xs text-slate-600 mt-1">
+            or click to browse — pick as many as you like
+          </p>
+        )}
+      </div>
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".usr,.txt,.rtf"
+        multiple
+        className="hidden"
+        onChange={onFileInput}
+      />
+    </div>
+  )
+}
+
+/** Files that could not be read. Named, so the operator can go find them. */
+function FileImportErrors({
+  errors,
+}: {
+  errors: { name: string; message: string }[]
+}): React.ReactElement | null {
+  if (errors.length === 0) return null
+  return (
+    <div className="space-y-1 px-1 pt-1">
+      {errors.map((file, i) => (
+        <p key={`${file.name}-${i}`} className="text-[11px] text-amber-400/80">
+          <span className="text-amber-300">{file.name}</span> — {file.message}
+        </p>
+      ))}
+    </div>
+  )
+}
+
+const ACTION_LABEL: Record<QueuedFileAction, string> = {
+  skip: 'Skipped',
+  new: 'New copy',
+  replace: 'Replaces',
+}
+
+function QueuedFileRow({
+  entry,
+  selected,
+  onSelect,
+  onRemove,
+}: {
+  entry: QueuedSongFile
+  selected: boolean
+  onSelect: () => void
+  onRemove: () => void
+}): React.ReactElement {
+  const { song, duplicate, action } = entry
+  const include = action !== 'skip'
+  return (
+    <div
+      className={cn(
+        'group flex items-center gap-2 rounded-lg border px-2 py-2 transition-colors cursor-pointer',
+        selected
+          ? 'bg-teal-500/10 border-teal-500/30'
+          : 'bg-transparent border-transparent hover:bg-surface-elevated/40',
+        !include && 'opacity-60'
+      )}
+      onClick={onSelect}
+    >
+      <div
+        className={cn(
+          'w-7 h-7 rounded-md border flex items-center justify-center shrink-0',
+          duplicate
+            ? 'bg-amber-500/15 border-amber-500/30'
+            : 'bg-teal-500/15 border-teal-500/25'
+        )}
+      >
+        {duplicate
+          ? <AlertCircle size={12} className="text-amber-400" />
+          : <Music2 size={12} className="text-teal-400" />}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className={cn('text-[13px] font-medium truncate', selected ? 'text-white' : 'text-slate-300')}>
+          {song.title}
+        </p>
+        <p className="text-[11px] text-slate-500 truncate">
+          {duplicate ? (
+            <span className="text-amber-400/90">
+              {duplicate.inBatch ? 'Already in this batch' : 'Already in your library'}
+            </span>
+          ) : (
+            <>
+              {song.artist || 'Unknown artist'}
+              <span className="text-slate-600">
+                {' \u00b7 '}
+                {song.sections.length} section{song.sections.length === 1 ? '' : 's'}
+              </span>
+            </>
+          )}
+        </p>
+      </div>
+      {duplicate && (
+        <span
+          className={cn(
+            'shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium',
+            action === 'skip' && 'text-slate-500',
+            action === 'new' && 'bg-teal-500/20 text-teal-300',
+            action === 'replace' && 'bg-amber-500/20 text-amber-300'
+          )}
+        >
+          {ACTION_LABEL[action]}
+        </span>
+      )}
+      <button
+        onClick={(e) => { e.stopPropagation(); onRemove() }}
+        className="text-slate-600 hover:text-slate-300 transition-colors p-0.5 shrink-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none"
+        aria-label={`Remove ${song.title} from this import`}
+      >
+        <X size={13} />
+      </button>
+    </div>
+  )
+}
+
+/**
+ * The song's lyrics in the import preview: always editable, never a mode.
+ *
+ * A song sheet that needs a line fixed, a stray heading removed, or its
+ * sections put in a different order should be correctable here rather than in
+ * the file, and an editor you have to switch on is an editor people assume is
+ * read-only. The text is the `[Label]` marker format the parser reads, so
+ * moving a block moves a section and a blank line is a slide break.
+ */
+function QueuedLyricsEditor({
+  entry,
+  onEditLyrics,
+}: {
+  entry: QueuedSongFile
+  onEditLyrics: (text: string) => void
+}): React.ReactElement {
+  const [draft, setDraft] = useState(() => songToMarkedText(entry.song))
+  /** The file this draft belongs to, so switching songs reloads the text
+   *  without throwing away what is being typed into the current one. */
+  const draftKeyRef = useRef(entry.key)
+
+  useEffect(() => {
+    if (draftKeyRef.current === entry.key) return
+    draftKeyRef.current = entry.key
+    setDraft(songToMarkedText(entry.song))
+  }, [entry.key, entry.song])
+
+  const handleChange = useCallback(
+    (text: string): void => {
+      setDraft(text)
+      onEditLyrics(text)
+    },
+    [onEditLyrics],
+  )
+
+  return (
+    <div className="flex-1 min-h-0 flex flex-col px-4 py-3 gap-2">
+      <textarea
+        className={cn(
+          'flex-1 min-h-0 w-full resize-none rounded-lg border bg-black/20 px-3 py-2.5',
+          'text-[13px] leading-relaxed text-slate-200 select-text',
+          'border-surface-border/40 hover:border-surface-border',
+          'focus:border-teal-500/50 focus:outline-none transition-colors'
+        )}
+        value={draft}
+        onChange={(e) => handleChange(e.target.value)}
+        spellCheck={false}
+        aria-label="Lyrics"
+        placeholder={'[Verse 1]\nType the lyrics here'}
+      />
+      {/* What the text parsed into, updating as it is typed — the operator can
+          see a mistyped marker land as the wrong section immediately. */}
+      <div className="shrink-0 space-y-1">
+        {entry.song.sections.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {entry.song.sections.map((section, i) => (
+              <SectionBadge key={i} type={section.type} />
+            ))}
+          </div>
+        )}
+        <p className="text-[11px] text-slate-600">
+          [Verse 1], [Chorus] mark sections · a blank line breaks a slide
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function QueuedFilePreview({
+  entry,
+  onRename,
+  onSetAction,
+  onEditLyrics,
+}: {
+  entry: QueuedSongFile | null
+  onRename: (fields: { title?: string; artist?: string }) => void
+  onSetAction: (action: QueuedFileAction) => void
+  onEditLyrics: (text: string) => void
+}): React.ReactElement {
+  if (!entry) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center gap-3 px-6 text-center">
+        <Eye size={16} className="text-slate-600" />
+        <p className="text-sm font-medium text-slate-400">Pick a song to read it</p>
+        <p className="text-xs text-slate-600">Check the titles and sections before adding them.</p>
+      </div>
+    )
+  }
+
+  const { song, fileName } = entry
+  return (
+    <div className="flex-1 min-w-0 flex flex-col">
+      <div className="px-4 py-3 border-b border-surface-border/40 shrink-0">
+        {entry.duplicate && (
+          <div className="mb-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-2">
+            <div className="flex items-start gap-2 text-[11px] text-amber-300">
+              <AlertCircle size={12} className="mt-0.5 shrink-0" />
+              <span>
+                {describeDuplicate(entry.duplicate)}
+                {entry.duplicate.inBatch ? ' (earlier in this import)' : ' (in your library)'}.
+              </span>
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              {(['skip', 'new', 'replace'] as const).map((choice) => {
+                // Nothing exists to overwrite when the twin is only queued.
+                if (choice === 'replace' && entry.duplicate?.inBatch) return null
+                const active = entry.action === choice
+                return (
+                  <button
+                    key={choice}
+                    type="button"
+                    onClick={() => onSetAction(choice)}
+                    aria-pressed={active}
+                    className={cn(
+                      'rounded-md px-2 py-1 text-[11px] font-medium transition-colors focus-visible:outline-none',
+                      active
+                        ? 'bg-amber-500/25 text-amber-200 border border-amber-400/40'
+                        : 'border border-transparent text-slate-400 hover:text-slate-200 hover:bg-white/5'
+                    )}
+                  >
+                    {choice === 'skip' ? "Don't add" : choice === 'new' ? 'Save a new copy' : 'Replace the old one'}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
+        {/* A file with no heading is named after itself, so the title is the
+            one field that regularly needs fixing before the song is saved. */}
+        <input
+          className="w-full bg-transparent text-base font-semibold text-white rounded px-1 -mx-1 border border-transparent hover:border-surface-border/60 focus:border-teal-500/50 focus:bg-black/20 focus:outline-none transition-colors"
+          value={song.title}
+          onChange={(e) => onRename({ title: e.target.value })}
+          placeholder="Song title"
+          aria-label="Song title"
+        />
+        <div className="flex items-center gap-1 mt-0.5 text-[11px] text-slate-500 min-w-0">
+          <input
+            className="min-w-0 flex-1 bg-transparent rounded px-1 -mx-1 border border-transparent hover:border-surface-border/60 focus:border-teal-500/50 focus:bg-black/20 focus:outline-none focus:text-slate-300 transition-colors"
+            value={song.artist ?? ''}
+            onChange={(e) => onRename({ artist: e.target.value })}
+            placeholder="Unknown artist"
+            aria-label="Artist"
+          />
+          <span className="shrink-0 text-slate-600 truncate">
+            {song.ccliNumber && <>CCLI #{song.ccliNumber}{' \u00b7 '}</>}
+            {fileName}
+          </span>
+        </div>
+      </div>
+
+      <QueuedLyricsEditor entry={entry} onEditLyrics={onEditLyrics} />
+    </div>
+  )
+}
+
 // ─── ImportModal ──────────────────────────────────────────────────────────────
 
 function ImportModal({
@@ -1118,9 +1617,17 @@ function ImportModal({
   const [status, setStatus] = useState<ImportStatus>('idle')
   const [error, setError] = useState<string | null>(null)
 
-  // File tab
-  const [filePreview, setFilePreview] = useState<LyricsSong | null>(null)
+  // File tab — a whole folder of song files is a normal drop, so files queue
+  // up, get read on screen, and reach the library only on Add.
+  const [fileQueue, setFileQueue] = useState<QueuedSongFile[]>([])
+  const [fileErrors, setFileErrors] = useState<{ name: string; message: string }[]>([])
+  const [fileProgress, setFileProgress] = useState<{ done: number; total: number } | null>(null)
+  /** Queued file shown in the preview panel. */
+  const [selectedFileKey, setSelectedFileKey] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  /** Mirrors `fileQueue` for `readFiles`, which must compare a new drop against
+   *  what is already queued without being re-created on every change. */
+  const fileQueueRef = useRef<QueuedSongFile[]>([])
 
   // Online tab
   const [onlineQuery, setOnlineQuery] = useState('')
@@ -1142,6 +1649,88 @@ function ImportModal({
   const setPasteField = useCallback(<K extends keyof typeof pasteForm>(key: K, val: string): void => {
     setPasteForm((p) => ({ ...p, [key]: val }))
   }, [])
+  const [clipboardNote, setClipboardNote] = useState<string | null>(null)
+  const [clipboardReading, setClipboardReading] = useState(false)
+  /** Auto-read runs once per modal so a cleared form is not refilled. */
+  const clipboardAutoRef = useRef(false)
+
+  const readClipboardText = useCallback(async (): Promise<string> => {
+    // Main-process read is the reliable path; the browser API is the fallback
+    // for dev builds served over http where the IPC handler may be absent.
+    if (typeof window.api.lyrics.readClipboard === 'function') {
+      return window.api.lyrics.readClipboard()
+    }
+    return navigator.clipboard.readText()
+  }, [])
+
+  /**
+   * Fills the paste form from whatever song text is on the clipboard.
+   * `silent` suppresses the "nothing usable" message for the automatic read
+   * that happens when the tab opens.
+   */
+  const applyClipboard = useCallback(async (silent = false): Promise<boolean> => {
+    setClipboardReading(true)
+    try {
+      const raw = await readClipboardText()
+      if (!raw.trim() || !looksLikeLyrics(raw)) {
+        if (!silent) setClipboardNote('No song text on the clipboard \u2014 copy the lyrics, then try again.')
+        return false
+      }
+      const draft = parseClipboardSong(raw)
+      if (!draft) {
+        if (!silent) setClipboardNote('Could not find lyrics in the copied text.')
+        return false
+      }
+      setPasteForm((prev) => ({
+        title: draft.title || prev.title,
+        artist: draft.artist || prev.artist,
+        copyright: draft.copyright || prev.copyright,
+        text: draft.text,
+      }))
+      setError(null)
+      const found = [
+        draft.title ? `title "${draft.title}"` : null,
+        draft.artist ? `artist "${draft.artist}"` : null,
+      ].filter(Boolean).join(', ')
+      setClipboardNote(
+        `Pasted ${draft.lineCount} lyric line${draft.lineCount === 1 ? '' : 's'}` +
+        (found ? ` \u2014 detected ${found}.` : '. Add a title below.')
+      )
+      return true
+    } catch {
+      if (!silent) {
+        setClipboardNote('Clipboard could not be read. Paste into the lyrics box instead.')
+      }
+      return false
+    } finally {
+      setClipboardReading(false)
+    }
+  }, [readClipboardText])
+
+  /** Cleans site chrome out of text dropped straight into the lyrics box. */
+  const handlePasteIntoTextarea = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>): void => {
+    const raw = e.clipboardData.getData('text/plain')
+    if (!raw || !looksLikeLyrics(raw)) return
+    const draft = parseClipboardSong(raw)
+    if (!draft) return
+    e.preventDefault()
+    setPasteForm((prev) => ({
+      title: prev.title || draft.title,
+      artist: prev.artist || draft.artist,
+      copyright: prev.copyright || draft.copyright,
+      text: draft.text,
+    }))
+    setClipboardNote(`Cleaned ${draft.lineCount} lyric line${draft.lineCount === 1 ? '' : 's'} from the pasted text.`)
+  }, [])
+
+  // Opening the Paste tab with an empty form pulls the song the operator just
+  // copied off a lyrics site, so importing is one click.
+  useEffect(() => {
+    if (tab !== 'paste' || clipboardAutoRef.current) return
+    if (pasteForm.title.trim() || pasteForm.text.trim()) return
+    clipboardAutoRef.current = true
+    void applyClipboard(true)
+  }, [tab, pasteForm.title, pasteForm.text, applyClipboard])
 
   useEffect(() => {
     const key = (e: KeyboardEvent): void => { if (e.key === 'Escape') onClose() }
@@ -1149,42 +1738,199 @@ function ImportModal({
     return () => document.removeEventListener('keydown', key)
   }, [onClose])
 
-  const readFile = useCallback((file: File): void => {
-    if (!file.name.endsWith('.usr') && !file.name.endsWith('.txt')) {
-      setError('Only .usr and .txt files are supported.')
+  /**
+   * Reads a batch of song files into the queue.
+   *
+   * Nothing is saved here — each file is only parsed, so the operator reads
+   * what came out before any of it reaches the library, and Cancel really does
+   * cancel. Files are read one at a time so a dropped folder of fifty does not
+   * open fifty parses at once, and one bad file lands in `fileErrors` while
+   * the rest carry on.
+   */
+  const readFiles = useCallback(async (files: File[]): Promise<void> => {
+    const accepted = files.filter((f) => IMPORTABLE_SONG_FILE.test(f.name))
+    const rejected = files.filter((f) => !accepted.includes(f))
+
+    setFileErrors(rejected.map((f) => ({ name: f.name, message: 'Only .usr, .txt and .rtf files can be imported.' })))
+    if (accepted.length === 0) {
+      if (rejected.length > 0) setError('Only .usr, .txt and .rtf files are supported.')
       return
     }
-    const reader = new FileReader()
-    reader.onload = (e): void => {
-      const content = e.target?.result as string
-      const source: LyricsImportSource = { type: 'usr', content, filename: file.name }
-      setStatus('importing')
-      setError(null)
-      window.api.lyrics.import(source)
-        .then((song) => { setFilePreview(song); setStatus('idle') })
-        .catch((err: Error) => { setError(err.message); setStatus('error') })
+
+    setStatus('importing')
+    setError(null)
+    setFileProgress({ done: 0, total: accepted.length })
+
+    const read: QueuedSongFile[] = []
+    // Songs already queued count as "already there" for the files after them,
+    // so a folder holding the same song twice flags the second copy.
+    const queuedSoFar = fileQueueRef.current.filter((e) => e.action !== 'skip').map((e) => e.song)
+
+    for (const file of accepted) {
+      try {
+        const source = await sourceForFile(file)
+        const preview = await window.api.lyrics.previewFile(source)
+        const inBatch = preview.duplicate ? null : findDuplicate(preview.song, queuedSoFar)
+        const duplicate = preview.duplicate ?? (inBatch ? { ...inBatch, inBatch: true } : null)
+        read.push({
+          key: `${file.name}:${file.size}:${file.lastModified}`,
+          fileName: file.name,
+          song: preview.song,
+          source,
+          duplicate,
+          action: duplicate ? 'skip' : 'new',
+        })
+        if (!duplicate) queuedSoFar.push(preview.song)
+      } catch (err) {
+        setFileErrors((prev) => [...prev, { name: file.name, message: (err as Error).message }])
+      }
+      setFileProgress((prev) => (prev ? { ...prev, done: prev.done + 1 } : prev))
     }
-    reader.readAsText(file)
+
+    // Re-dropping the same file replaces its entry rather than queueing it twice.
+    setFileQueue((prev) => {
+      const byKey = new Map(prev.map((entry) => [entry.key, entry]))
+      for (const entry of read) byKey.set(entry.key, entry)
+      return [...byKey.values()]
+    })
+    setSelectedFileKey((prev) => prev ?? read[0]?.key ?? null)
+    setFileProgress(null)
+    setStatus(read.length === 0 ? 'error' : 'idle')
+    if (read.length === 0) setError('None of those files could be read.')
   }, [])
 
   const handleDrop = useCallback((e: React.DragEvent): void => {
     e.preventDefault()
     setDragOver(false)
-    const file = e.dataTransfer.files[0]
-    if (file) readFile(file)
-  }, [readFile])
+    const files = Array.from(e.dataTransfer.files)
+    if (files.length > 0) void readFiles(files)
+  }, [readFiles])
 
   const handleFileInput = useCallback((e: React.ChangeEvent<HTMLInputElement>): void => {
-    const file = e.target.files?.[0]
-    if (file) readFile(file)
+    const files = Array.from(e.target.files ?? [])
+    if (files.length > 0) void readFiles(files)
     e.target.value = ''
-  }, [readFile])
+  }, [readFiles])
 
-  const handleConfirmFile = useCallback((): void => {
-    if (!filePreview) return
-    onImported(filePreview)
+  /** Writes the queue to the library. This is the only path that saves. */
+  const handleConfirmFile = useCallback(async (): Promise<void> => {
+    const chosen = fileQueue.filter((entry) => entry.action !== 'skip')
+    if (chosen.length === 0) return
+    setStatus('importing')
+    setError(null)
+    setFileProgress({ done: 0, total: chosen.length })
+
+    const failures: { name: string; message: string }[] = []
+    const saved: LyricsSong[] = []
+    for (const entry of chosen) {
+      try {
+        if (entry.action === 'replace' && entry.duplicate && !entry.duplicate.inBatch) {
+          // Overwrite in place: the existing id keeps playlists, favourites and
+          // anything else pointing at that song intact.
+          const replaced = await window.api.lyrics.update(entry.duplicate.songId, {
+            ...entry.song,
+            id: entry.duplicate.songId,
+          })
+          if (replaced) saved.push(replaced)
+          else failures.push({ name: entry.fileName, message: 'The song it replaces is no longer there.' })
+        } else {
+          const imported = await window.api.lyrics.import(entry.source)
+          // The parsers title a song from the file; a hand correction has to be
+          // written over that, and only when there was one.
+          const corrected =
+            entry.renamed &&
+            (imported.title !== entry.song.title ||
+              (imported.artist ?? '') !== (entry.song.artist ?? ''))
+              ? await window.api.lyrics.update(imported.id, {
+                  ...imported,
+                  title: entry.song.title.trim() || imported.title,
+                  artist: entry.song.artist ?? '',
+                  sections: entry.song.sections,
+                })
+              : null
+          saved.push(corrected ?? imported)
+        }
+      } catch (err) {
+        failures.push({ name: entry.fileName, message: (err as Error).message })
+      }
+      setFileProgress((prev) => (prev ? { ...prev, done: prev.done + 1 } : prev))
+    }
+
+    setFileProgress(null)
+    if (saved.length === 0) {
+      setFileErrors(failures)
+      setStatus('error')
+      setError('None of those songs could be added.')
+      return
+    }
+
+    // The last one opens in the editor — see `pendingOpenIdRef` in Lyrics.
+    for (const song of saved) onImported(song)
     onClose()
-  }, [filePreview, onImported, onClose])
+  }, [fileQueue, onImported, onClose])
+
+  /**
+   * Corrects the title or artist before the song is saved.
+   *
+   * The edit lands on the queued copy; `handleConfirmFile` writes it over the
+   * imported song, because the parsers read whatever the file itself said.
+   */
+  const renameQueuedFile = useCallback((key: string, fields: { title?: string; artist?: string }): void => {
+    setFileQueue((prev) =>
+      prev.map((entry) =>
+        entry.key === key
+          ? {
+              ...entry,
+              song: {
+                ...entry.song,
+                ...(fields.title !== undefined ? { title: fields.title } : {}),
+                ...(fields.artist !== undefined ? { artist: fields.artist } : {}),
+              },
+              renamed: true,
+            }
+          : entry,
+      ),
+    )
+  }, [])
+
+  const setQueuedFileAction = useCallback((key: string, action: QueuedFileAction): void => {
+    setFileQueue((prev) => prev.map((entry) => (entry.key === key ? { ...entry, action } : entry)))
+  }, [])
+
+  /**
+   * Replaces the queued song's lyrics with what the operator typed.
+   *
+   * The edit becomes a plain-text source, so the same parser that reads a
+   * pasted song reads this one — section markers and all.
+   */
+  const editQueuedLyrics = useCallback((key: string, text: string): void => {
+    setFileQueue((prev) =>
+      prev.map((entry) => {
+        if (entry.key !== key) return entry
+        const parsed = parseMarkedSections(text)
+        return {
+          ...entry,
+          song: { ...entry.song, sections: parsed },
+          source: {
+            type: 'text',
+            title: entry.song.title,
+            artist: entry.song.artist ?? '',
+            text,
+            ...(entry.song.copyright ? { copyright: entry.song.copyright } : {}),
+          },
+          renamed: true,
+        }
+      }),
+    )
+  }, [])
+
+  const removeQueuedFile = useCallback((key: string): void => {
+    setFileQueue((prev) => {
+      const next = prev.filter((entry) => entry.key !== key)
+      setSelectedFileKey((current) => (current === key ? next[0]?.key ?? null : current))
+      return next
+    })
+  }, [])
 
   const handlePasteImport = useCallback(async (): Promise<void> => {
     if (!pasteForm.title.trim() || !pasteForm.text.trim()) return
@@ -1300,6 +2046,15 @@ function ImportModal({
     }
   }, [])
 
+  useEffect(() => { fileQueueRef.current = fileQueue }, [fileQueue])
+
+  const selectedFile = fileQueue.find((entry) => entry.key === selectedFileKey) ?? null
+  const includedCount = fileQueue.filter((entry) => entry.action !== 'skip').length
+  const skippedCount = fileQueue.length - includedCount
+  const duplicateCount = fileQueue.filter((entry) => entry.duplicate).length
+  // Reading a folder of songs needs the room the search tab already takes.
+  const wideLayout = tab === 'online' || (tab === 'file' && fileQueue.length > 0)
+
   const handleTabChange = useCallback((next: ImportTab): void => {
     setTab(next)
     setError(null)
@@ -1309,16 +2064,21 @@ function ImportModal({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm animate-fade-in p-4"
-      onClick={onClose}
+      onClick={() => {
+        // Releasing a selection that started inside the panel lands here; that
+        // is a finished drag, not a click on the backdrop.
+        if (hasTextSelection()) return
+        onClose()
+      }}
     >
       <div
         className={cn(
           'w-full bg-surface rounded-2xl border border-surface-border shadow-2xl flex flex-col overflow-hidden',
-          tab === 'online' ? 'max-w-5xl' : 'max-w-xl'
+          wideLayout ? 'max-w-5xl' : 'max-w-xl'
         )}
         style={{
           maxHeight: 'calc(100vh - 4rem)',
-          ...(tab === 'online' ? { height: 'min(720px, calc(100vh - 4rem))' } : {}),
+          ...(wideLayout ? { height: 'min(720px, calc(100vh - 4rem))' } : {}),
         }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -1326,7 +2086,7 @@ function ImportModal({
         <div className="flex items-center justify-between px-5 py-4 border-b border-surface-border/50 shrink-0">
           <div>
             <h2 className="text-base font-semibold text-white">Import Song</h2>
-            <p className="text-xs text-slate-500 mt-0.5">Search online, upload a .usr file, or paste lyrics directly</p>
+            <p className="text-xs text-slate-500 mt-0.5">Search online, upload song files, or paste a song from your clipboard</p>
           </div>
           <button
             onClick={onClose}
@@ -1356,7 +2116,86 @@ function ImportModal({
         </div>
 
         {/* Body */}
-        {tab === 'online' ? (
+        {tab === 'file' ? (
+          fileQueue.length === 0 ? (
+            <div className="flex-1 overflow-y-auto px-5 py-5 space-y-3 min-h-0">
+              <FileDropZone
+                compact={false}
+                dragOver={dragOver}
+                progress={fileProgress}
+                inputRef={fileInputRef}
+                onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={handleDrop}
+                onFileInput={handleFileInput}
+              />
+              <FileImportErrors errors={fileErrors} />
+            </div>
+          ) : (
+            <div className="flex-1 flex flex-col min-h-0 px-5 py-4 gap-3">
+              <div className="flex-1 min-h-0 flex rounded-xl border border-surface-border/50 overflow-hidden bg-surface-secondary/30">
+                {/* Left: the queue */}
+                <div className="w-[42%] min-w-[240px] max-w-[380px] flex flex-col border-r border-surface-border/40">
+                  <div className="p-2 shrink-0">
+                    <FileDropZone
+                      compact
+                      dragOver={dragOver}
+                      progress={fileProgress}
+                      inputRef={fileInputRef}
+                      onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+                      onDragLeave={() => setDragOver(false)}
+                      onDrop={handleDrop}
+                      onFileInput={handleFileInput}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between px-3 pb-1.5 shrink-0">
+                    <p className="text-[11px] uppercase tracking-wide text-slate-500">
+                      {includedCount} ready
+                      {duplicateCount > 0 && (
+                        <span className="text-amber-400/80"> · {duplicateCount} duplicate{duplicateCount === 1 ? '' : 's'}</span>
+                      )}
+                      {skippedCount > 0 && (
+                        <span className="text-slate-600"> · {skippedCount} skipped</span>
+                      )}
+                    </p>
+                    <button
+                      onClick={() => { setFileQueue([]); setFileErrors([]); setSelectedFileKey(null) }}
+                      className="text-[11px] text-slate-500 hover:text-slate-300 transition-colors focus-visible:outline-none"
+                    >
+                      Clear all
+                    </button>
+                  </div>
+                  <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-1">
+                    {fileQueue.map((entry) => (
+                      <QueuedFileRow
+                        key={entry.key}
+                        entry={entry}
+                        selected={selectedFileKey === entry.key}
+                        onSelect={() => setSelectedFileKey(entry.key)}
+                        onRemove={() => removeQueuedFile(entry.key)}
+                      />
+                    ))}
+                    <FileImportErrors errors={fileErrors} />
+                  </div>
+                </div>
+
+                {/* Right: what the selected file parsed into */}
+                <QueuedFilePreview
+                  entry={selectedFile}
+                  onRename={(fields) => {
+                    if (selectedFile) renameQueuedFile(selectedFile.key, fields)
+                  }}
+                  onSetAction={(action) => {
+                    if (selectedFile) setQueuedFileAction(selectedFile.key, action)
+                  }}
+                  onEditLyrics={(text) => {
+                    if (selectedFile) editQueuedLyrics(selectedFile.key, text)
+                  }}
+                />
+              </div>
+            </div>
+          )
+        ) : tab === 'online' ? (
           <div className="flex-1 flex flex-col min-h-0 px-5 py-4 gap-3">
             <div className="shrink-0">
               <div className="relative">
@@ -1433,81 +2272,32 @@ function ImportModal({
           </div>
         ) : (
         <div className="flex-1 overflow-y-auto px-2 py-5 space-y-5 min-h-0">
-          {tab === 'file' && (
-            !filePreview ? (
-              <div
-                className={cn(
-                  'border-2 border-dashed rounded-xl px-6 py-12 flex flex-col items-center gap-3 cursor-pointer transition-all',
-                  dragOver
-                    ? 'border-teal-500/60 bg-teal-500/5'
-                    : 'border-surface-border/40 hover:border-surface-border'
-                )}
-                onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
-                onDragLeave={() => setDragOver(false)}
-                onDrop={handleDrop}
-                onClick={() => fileInputRef.current?.click()}
-              >
-                {status === 'importing'
-                  ? <Loader2 size={28} className="text-teal-400 animate-spin" />
-                  : <Upload size={28} className="text-slate-600" />
-                }
-                <div className="text-center">
-                  <p className="text-sm font-medium text-slate-300">
-                    {status === 'importing' ? 'Reading file…' : 'Drop a .usr or .txt file here'}
-                  </p>
-                  <p className="text-xs text-slate-600 mt-1">or click to browse your files</p>
-                </div>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".usr,.txt"
-                  className="hidden"
-                  onChange={handleFileInput}
-                />
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {/* File preview card */}
-                <div className="flex items-start gap-3 p-3.5 rounded-xl bg-surface-secondary/40 border border-surface-border/40">
-                  <div className="w-9 h-9 rounded-lg bg-teal-500/15 border border-teal-500/25 flex items-center justify-center shrink-0">
-                    <Music2 size={15} className="text-teal-400" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-white truncate">{filePreview.title}</p>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      {filePreview.artist || 'Unknown artist'}
-                      {filePreview.ccliNumber && <span className="text-slate-600"> · CCLI #{filePreview.ccliNumber}</span>}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => setFilePreview(null)}
-                    className="text-slate-600 hover:text-slate-400 transition-colors p-0.5 focus-visible:outline-none shrink-0"
-                    aria-label="Remove and choose another file"
-                  >
-                    <X size={14} />
-                  </button>
-                </div>
-
-                {/* Section preview */}
-                <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                  {filePreview.sections.map((sec, i) => (
-                    <div key={i} className="flex items-start gap-2 py-0.5">
-                      <SectionBadge type={sec.type} />
-                      <p className="text-[12px] text-slate-400 leading-relaxed line-clamp-2 pt-0.5">
-                        {sec.lines.slice(0, 2).join(' · ')}
-                        {sec.lines.length > 2 && (
-                          <span className="text-slate-600"> +{sec.lines.length - 2} more</span>
-                        )}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )
-          )}
-
           {tab === 'paste' && (
             <div className="space-y-3">
+              <div className="flex items-center justify-between gap-3 p-3 rounded-xl bg-surface-secondary/40 border border-surface-border/40">
+                <div className="min-w-0">
+                  <p className="text-[13px] font-medium text-slate-300">Import from clipboard</p>
+                  <p className="text-[11px] text-slate-600 mt-0.5">
+                    Copy a song from any lyrics site, then paste it here — title, artist and site clutter are sorted out for you.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="btn-secondary flex items-center gap-2 shrink-0 text-[13px]"
+                  onClick={() => void applyClipboard()}
+                  disabled={clipboardReading}
+                >
+                  {clipboardReading
+                    ? <Loader2 size={13} className="animate-spin" />
+                    : <ClipboardPaste size={13} />}
+                  Paste from clipboard
+                </button>
+              </div>
+
+              {clipboardNote && (
+                <p className="text-[11px] text-teal-400/80">{clipboardNote}</p>
+              )}
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="label">Title *</label>
@@ -1546,6 +2336,7 @@ function ImportModal({
                   rows={10}
                   value={pasteForm.text}
                   onChange={(e) => setPasteField('text', e.target.value)}
+                  onPaste={handlePasteIntoTextarea}
                 />
                 <p className="text-[11px] text-slate-600 mt-1">
                   Sections auto-detected from labels or double blank lines.
@@ -1570,12 +2361,12 @@ function ImportModal({
           </button>
           {tab === 'online' ? null : tab === 'file' ? (
             <button
-              disabled={!filePreview || status === 'importing'}
+              disabled={includedCount === 0 || status === 'importing'}
               className="btn-primary flex items-center gap-2"
-              onClick={handleConfirmFile}
+              onClick={() => void handleConfirmFile()}
             >
               {status === 'importing' && <Loader2 size={13} className="animate-spin" />}
-              Import Song
+              {includedCount > 1 ? `Add ${includedCount} Songs` : 'Add Song'}
             </button>
           ) : (
             <button
@@ -1656,6 +2447,18 @@ export default function Lyrics(): React.ReactElement {
   const [songs, setSongs] = useState<LyricsSong[]>(() => useBootstrapStore.getState().lyrics)
   // The library is already in hand from bootstrap; nothing to wait for.
   const [loading] = useState(false)
+
+  // Songs can arrive while this page is mounted — imported from the ⌘F palette,
+  // say — and the list above is seeded once. Merge anything new rather than
+  // replacing, so edits held here are not thrown away by the sync.
+  const bootstrapLyrics = useBootstrapStore((s) => s.lyrics)
+  useEffect(() => {
+    setSongs((prev) => {
+      const known = new Set(prev.map((song) => song.id))
+      const added = bootstrapLyrics.filter((song) => !known.has(song.id))
+      return added.length > 0 ? [...added, ...prev] : prev
+    })
+  }, [bootstrapLyrics])
   const [lyricsSettings] = useSettings('lyrics', {
     braveApiKey: '',
     googleTranslateApiKey: '',
@@ -1678,6 +2481,21 @@ export default function Lyrics(): React.ReactElement {
     (next: FilterType) => setLyricsViewState({ filter: next }),
     [setLyricsViewState]
   )
+  // Which setlist the song list is showing, or null for a library view. Local
+  // rather than persisted: a service order is picked fresh each time the page
+  // opens, and a stale selection would hide the library behind last week's list.
+  const [viewingSetlistId, setViewingSetlistId] = useState<string | null>(null)
+  const [activeLibraryId, setActiveLibraryId] = useState<string>(DEFAULT_LIBRARY_ID)
+  const songLibrary = useLibrary('songs')
+  const setlistState = useSetlistStore()
+  const viewingSetlist = viewingSetlistId
+    ? setlistState.lists.find((list) => list.id === viewingSetlistId) ?? null
+    : null
+  // A setlist deleted from the rail falls back to the library rather than
+  // leaving the list stuck on something that no longer exists.
+  useEffect(() => {
+    if (viewingSetlistId && !viewingSetlist) setViewingSetlistId(null)
+  }, [viewingSetlistId, viewingSetlist])
   const setSortBy = useCallback(
     (next: SortType) => setLyricsViewState({ sortBy: next }),
     [setLyricsViewState]
@@ -1756,6 +2574,7 @@ export default function Lyrics(): React.ReactElement {
   const [playlistOpen, setPlaylistOpen] = useState(false)
   const [, setPlaylistStatus] = useState<'idle' | 'adding' | 'added'>('idle')
   const [exportOpen, setExportOpen] = useState(false)
+  const [copiedLyrics, setCopiedLyrics] = useState(false)
   const playlistRef = useRef<HTMLDivElement>(null)
   const exportRef = useRef<HTMLDivElement>(null)
 
@@ -1779,12 +2598,14 @@ export default function Lyrics(): React.ReactElement {
 
   const filteredSongs = useMemo(() => {
     const q = query.trim().toLowerCase()
-    let pool = songs
+    // The library narrows the pool first: Favorites inside "Christmas" means
+    // favourites of that library, not of everything.
+    let pool = itemsInLibrary(songLibrary, songs, activeLibraryId)
 
     if (q) {
       // Metadata match runs locally so the list responds on every keystroke.
       const matches = new Map<string, LyricsSong>()
-      for (const song of songs) {
+      for (const song of pool) {
         if (
           song.title.toLowerCase().includes(q) ||
           (song.artist || '').toLowerCase().includes(q) ||
@@ -1794,15 +2615,26 @@ export default function Lyrics(): React.ReactElement {
         }
       }
       // Full-text hits arrive a beat later and add lyric-body matches.
+      const inLibrary = new Set(pool.map((song) => song.id))
       for (const hit of ftsMatches ?? []) {
-        if (!matches.has(hit.id)) matches.set(hit.id, songs.find((s) => s.id === hit.id) ?? hit)
+        if (!matches.has(hit.id) && inLibrary.has(hit.id)) {
+          matches.set(hit.id, pool.find((s) => s.id === hit.id) ?? hit)
+        }
       }
       pool = [...matches.values()]
     }
 
+    // A setlist is an order, so it is never re-sorted — only searched within.
+    if (viewingSetlist) {
+      const byId = new Map(pool.map((song) => [song.id, song]))
+      return viewingSetlist.songIds
+        .map((id) => byId.get(id))
+        .filter((song): song is LyricsSong => Boolean(song))
+    }
+
     const result = applyFilter(pool, filter)
     return applySort(result, filter === 'recent' ? 'recent' : sortBy)
-  }, [songs, filter, sortBy, query, ftsMatches])
+  }, [songs, filter, sortBy, query, ftsMatches, viewingSetlist, songLibrary, activeLibraryId])
 
   const contextMenuSong = useMemo(
     () => (contextMenu ? songs.find((s) => s.id === contextMenu.songId) ?? null : null),
@@ -1832,12 +2664,19 @@ export default function Lyrics(): React.ReactElement {
   // Drop a stale selection if the song was deleted or the library reloaded.
   // Never while an import is waiting to open — that selection is about to
   // become valid, and clearing it here is what closed the pane on import.
+  //
+  // The bootstrap library counts as "exists" too: a song imported from the ⌘F
+  // palette is selected there in the same tick it is added, one render before
+  // the merge above brings it into `songs`. Checking only `songs` cleared that
+  // selection in the gap, and the song silently never opened.
   useEffect(() => {
     if (pendingOpenIdRef.current) return
-    if (selectedId && !songs.some((song) => song.id === selectedId)) {
-      setSelectedId(null)
-    }
-  }, [songs, selectedId, setSelectedId])
+    if (!selectedId) return
+    const known =
+      songs.some((song) => song.id === selectedId) ||
+      bootstrapLyrics.some((song) => song.id === selectedId)
+    if (!known) setSelectedId(null)
+  }, [songs, bootstrapLyrics, selectedId, setSelectedId])
 
   // ── Timer cleanup on unmount ─────────────────────────────────────────────────
   useEffect(() => {
@@ -2327,7 +3166,7 @@ export default function Lyrics(): React.ReactElement {
       sendTimerRef.current = setTimeout(() => setSendStatus('idle'), 3000)
     } catch (err) {
       setSendStatus('error')
-      setSendError((err as Error).message)
+      setSendError(cleanIpcError(err))
     }
   }, [selectedId, selectedSong, songSlides])
 
@@ -2348,7 +3187,7 @@ export default function Lyrics(): React.ReactElement {
         )
       }
     } catch (err) {
-      setSendError((err as Error).message)
+      setSendError(cleanIpcError(err))
     } finally {
       setPushingSlideIndex(null)
     }
@@ -2362,7 +3201,7 @@ export default function Lyrics(): React.ReactElement {
       if (!updated) throw new Error('Could not save slide order')
       setSongs(previous => previous.map(song => song.id === updated.id ? updated : song))
       setLiveSlideIndex(null)
-    } catch (error) { setSendError((error as Error).message) }
+    } catch (error) { setSendError(cleanIpcError(error)) }
     finally { reorderLock.current = false; setReorderBusy(false) }
   }
 
@@ -2412,6 +3251,15 @@ export default function Lyrics(): React.ReactElement {
     )
   }, [selectedSong])
 
+  /** Copies the whole song as plain text — faster than selecting across tiles. */
+  const handleCopyLyrics = useCallback((): void => {
+    if (!selectedSong) return
+    void navigator.clipboard.writeText(toTxt(selectedSong)).then(
+      () => { setCopiedLyrics(true); setTimeout(() => setCopiedLyrics(false), 1800) },
+      () => undefined,
+    )
+  }, [selectedSong])
+
   // ── Context menu ─────────────────────────────────────────────────────────────
   const handleContextMenu = useCallback((e: React.MouseEvent, id: string): void => {
     const x = Math.min(e.clientX, window.innerWidth - 184)
@@ -2432,27 +3280,25 @@ export default function Lyrics(): React.ReactElement {
       }
     >
       <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-surface">
-        {/* Page header */}
-      <div className={cn("flex-shrink-0 px-6 pt-6 pb-4 items-start justify-between gap-4", editMode ? "hidden" : "flex")}>
-        <div>
-          <h1 className="page-header">Lyrics</h1>
-          <p className="page-subtitle">Manage and project worship songs to ProPresenter</p>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <Button variant="outline" onClick={() => setShowImport(true)}>
-            <Upload data-icon="inline-start" /> Import
-          </Button>
-          <Button onClick={handleNewSong}>
-            <FilePlus data-icon="inline-start" /> New Song
-          </Button>
-        </div>
-      </div>
-
       {/* Main split layout */}
-      <div ref={libraryWidth.containerRef} className={cn("flex-1 flex min-h-0 min-w-0 overflow-hidden", editMode ? "px-4 pb-4" : "px-6 pb-6")}>
+      <div ref={libraryWidth.containerRef} className={cn("flex-1 flex min-h-0 min-w-0 overflow-hidden", editMode ? "px-4 pb-4" : "")}>
 
-        {/* ── Left panel: Library (compact) ─────────────────────────────────── */}
-        <div style={{ width: libraryWidth.width }} className={cn("shrink-0 flex-col gap-2.5 min-h-0 min-w-0", editMode ? "hidden" : "flex")}>
+        {/* ── Left panel: the library, on its own surface ───────────────────── */}
+        {/* A sidebar rather than a card: it runs the full height of the page and
+            carries the page title with it, so the library and the song being
+            edited read as two rooms instead of one long page. */}
+        <div
+          style={{ width: libraryWidth.width }}
+          className={cn(
+            "shrink-0 flex-col gap-2.5 min-h-0 min-w-0 bg-surface-secondary border-r border-surface-border/40 px-4 pt-6 pb-5",
+            editMode ? "hidden" : "flex"
+          )}
+        >
+          <div className="shrink-0">
+            <h1 className="page-header">Lyrics</h1>
+            <p className="page-subtitle">Manage and project worship songs to ProPresenter</p>
+          </div>
+
           {/* Search */}
           <div className="relative">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
@@ -2477,26 +3323,30 @@ export default function Lyrics(): React.ReactElement {
             )}
           </div>
 
-          {/* Wrap controls within the library panel as the window narrows. */}
+          <LibraryRail
+            source={filter}
+            activeLibraryId={activeLibraryId}
+            activeSetlistId={viewingSetlistId}
+            libraryCounts={countByLibrary(songLibrary, songs)}
+            filterCounts={{
+              favorites: songs.filter((song) => song.isFavorite).length,
+              recent: songs.length,
+            }}
+            onSelectLibrary={(libraryId) => {
+              setViewingSetlistId(null)
+              setActiveLibraryId(libraryId)
+              setFilter('all')
+            }}
+            onSelectSource={(next) => { setViewingSetlistId(null); setFilter(next) }}
+            onSelectSetlist={setViewingSetlistId}
+          />
+
           <div className="flex flex-wrap items-center gap-x-1 gap-y-2">
-            <ToggleGroup
-              type="single"
-              value={filter}
-              className="min-w-0 max-w-full flex-wrap"
-              onValueChange={(value) => value && setFilter(value as FilterType)}
-              variant="outline"
-              size="sm"
-            >
-            {(['all', 'favorites', 'recent'] as FilterType[]).map((f) => (
-              <ToggleGroupItem
-                key={f}
-                value={f}
-                className="text-[11px]"
-              >
-                {f === 'all' ? 'All' : f === 'favorites' ? '★ Favorites' : 'Recent'}
-              </ToggleGroupItem>
-            ))}
-            </ToggleGroup>
+            <p className="min-w-0 flex-1 truncate text-[10px] font-semibold uppercase tracking-wider text-zinc-600">
+              {viewingSetlist
+                ? `${filteredSongs.length} ${filteredSongs.length === 1 ? 'song' : 'songs'}`
+                : 'Songs'}
+            </p>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="sm" className="ml-auto">Sort <ChevronDown data-icon="inline-end" /></Button>
@@ -2538,7 +3388,7 @@ export default function Lyrics(): React.ReactElement {
                   </div>
                 )}
 
-                {filteredSongs.map((song) => (
+                {filteredSongs.map((song, index) => (
                   <SongListItem
                     key={song.id}
                     song={song}
@@ -2546,6 +3396,13 @@ export default function Lyrics(): React.ReactElement {
                     onSelect={handleSelect}
                     onContextMenu={handleContextMenu}
                     onToggleFavorite={handleToggleFavorite}
+                    position={viewingSetlist ? index + 1 : undefined}
+                    onRemoveFromSetlist={viewingSetlist
+                      ? (id) => void runSetlistCommand({ action: 'removeSong', songId: id, listId: viewingSetlist.id })
+                      : undefined}
+                    onDropAt={viewingSetlist
+                      ? (songId, at) => void runSetlistCommand({ action: 'add', songId, index: at, listId: viewingSetlist.id })
+                      : undefined}
                   />
                 ))}
 
@@ -2649,9 +3506,17 @@ export default function Lyrics(): React.ReactElement {
           type="button"
           {...libraryWidth.separatorProps}
           title="Drag to resize library · double-click to reset"
-          className={cn("group mx-2 w-2 shrink-0 cursor-col-resize touch-none items-center justify-center rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50", editMode ? "hidden" : "flex")}
+          className={cn("group w-2 shrink-0 cursor-col-resize touch-none items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50", editMode ? "hidden" : "flex")}
         ><span className="h-12 w-px bg-white/10 transition-colors group-hover:bg-teal-400/70 group-active:bg-teal-400" /></button>
-        <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
+        <div className={cn("flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden", editMode ? "" : "px-6 pb-6")}>
+          <div className={cn("flex-shrink-0 pt-6 pb-4 items-center justify-end gap-2", editMode ? "hidden" : "flex")}>
+            <Button variant="outline" onClick={() => setShowImport(true)}>
+              <Upload data-icon="inline-start" /> Import
+            </Button>
+            <Button onClick={handleNewSong}>
+              <FilePlus data-icon="inline-start" /> New Song
+            </Button>
+          </div>
           {webPreviewResult && !editMode ? (
             <OnlinePreviewPane
               result={webPreviewResult}
@@ -2752,7 +3617,7 @@ export default function Lyrics(): React.ReactElement {
                       {canUndoTranslation && <button className="text-xs text-slate-400" disabled={translating || saving} onClick={() => void handleUndoTranslation()}>Undo translation</button>}
                     </div>
                   </details>
-                  {!editMode && <DropdownMenu><DropdownMenuTrigger asChild><button className="text-slate-400 hover:text-white">Export lyrics</button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onSelect={() => handleExport('txt')}>Plain text (.txt)</DropdownMenuItem><DropdownMenuItem onSelect={() => handleExport('usr')}>SongSelect (.usr)</DropdownMenuItem></DropdownMenuContent></DropdownMenu>}
+                  {!editMode && <DropdownMenu><DropdownMenuTrigger asChild><button className="text-slate-400 hover:text-white">Export lyrics</button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onSelect={handleCopyLyrics}>{copiedLyrics ? 'Copied' : 'Copy lyrics'}</DropdownMenuItem><DropdownMenuItem onSelect={() => handleExport('txt')}>Plain text (.txt)</DropdownMenuItem><DropdownMenuItem onSelect={() => handleExport('usr')}>SongSelect (.usr)</DropdownMenuItem></DropdownMenuContent></DropdownMenu>}
                 </div>
               )}
 

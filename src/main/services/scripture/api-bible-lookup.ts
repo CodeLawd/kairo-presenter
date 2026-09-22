@@ -26,6 +26,7 @@ export interface ApiBibleLookupCache {
 /** The slice of `ApiBibleClient` this orchestration needs. */
 export interface ApiBibleLookupClient {
   getPassage(bibleId: string, passageId: string, bookName: string): Promise<ApiBiblePassage>
+  getChapter(bibleId: string, chapterId: string, bookName: string): Promise<ApiBiblePassage>
   getBible(bibleId: string): Promise<ApiBibleDetails>
 }
 
@@ -36,6 +37,15 @@ export interface ApiBibleLookupRequest {
   chapter: number
   verseStart: number
   verseEnd?: number
+  /** Display name for the translation, when the caller already knows it. */
+  name?: string
+}
+
+export interface ApiBibleLookupChapterRequest {
+  bibleId: string
+  translation: ScriptureTranslation
+  book: { id: number; name: string }
+  chapter: number
   /** Display name for the translation, when the caller already knows it. */
   name?: string
 }
@@ -104,6 +114,54 @@ export class ApiBibleLookup {
     return [this.toResult(request, passage.verses)]
   }
 
+  /**
+   * Whole-chapter lookup ("Psalms 23") via the API.Bible chapter endpoint.
+   * The cache stores the chapter as fully covered, so later verse lookups
+   * inside it stay offline.
+   */
+  async lookupChapter(request: ApiBibleLookupChapterRequest): Promise<ScriptureResult[]> {
+    const { bibleId, book, chapter } = request
+    const now = this.clock()
+
+    // Ask for the widest possible span: a fully cached chapter satisfies any
+    // sub-range through its whole-chapter coverage marker.
+    const cached = this.cache.getRange(bibleId, book.id, chapter, 1, MAX_VERSES_PER_CHAPTER, now)
+    if (cached && cached.length > 0) {
+      this.revalidateAccess(bibleId, now)
+      return [this.toChapterResult(request, cached)]
+    }
+
+    if (this.cache.getTranslationState(bibleId, now)?.status === 'unavailable') {
+      throw new Error(API_CACHE_MESSAGES.accessRevoked)
+    }
+
+    let passage: ApiBiblePassage
+    try {
+      passage = await this.client.getChapter(bibleId, buildChapterId(request), book.name)
+    } catch (error) {
+      throw this.toChapterUserFacingError(error, request)
+    }
+
+    if (passage.verses.length === 0) return []
+
+    this.cache.upsertTranslation({
+      bibleId,
+      translation: request.translation,
+      name: request.name ?? request.translation,
+      copyright: passage.copyright,
+    })
+    this.cache.putPassage(bibleId, {
+      bookId: book.id,
+      bookName: book.name,
+      verses: passage.verses,
+      fetchedAt: now,
+      coverage: { chapter },
+    })
+    this.cache.markAccessChecked(bibleId, now)
+
+    return [this.toChapterResult(request, passage.verses)]
+  }
+
   private revalidateAccess(bibleId: string, now: number): void {
     const lastCheck = this.cache.getLastAccessCheck(bibleId)
     if (lastCheck !== null && lastCheck >= this.sessionStartedAt) return
@@ -135,6 +193,17 @@ export class ApiBibleLookup {
     }
   }
 
+  private toChapterResult(
+    request: ApiBibleLookupChapterRequest,
+    verses: ScriptureVerse[],
+  ): ScriptureResult {
+    return {
+      reference: `${request.book.name} ${request.chapter}`,
+      translation: request.translation,
+      verses,
+    }
+  }
+
   private toUserFacingError(error: unknown, request: ApiBibleLookupRequest): Error {
     if (error instanceof ApiBibleRequestError && error.isAccessError) {
       this.cache.markUnavailable(request.bibleId, API_CACHE_MESSAGES.accessRevoked)
@@ -142,6 +211,19 @@ export class ApiBibleLookup {
     }
     const { bibleId, book, chapter, verseStart, verseEnd } = request
     if (this.cache.hasRange(bibleId, book.id, chapter, verseStart, verseEnd)) {
+      // The text is on disk but past its 30-day licence window.
+      return new Error(API_CACHE_MESSAGES.refreshRequired)
+    }
+    return new Error(API_CACHE_MESSAGES.notAvailableOffline)
+  }
+
+  private toChapterUserFacingError(error: unknown, request: ApiBibleLookupChapterRequest): Error {
+    if (error instanceof ApiBibleRequestError && error.isAccessError) {
+      this.cache.markUnavailable(request.bibleId, API_CACHE_MESSAGES.accessRevoked)
+      return new Error(API_CACHE_MESSAGES.accessRevoked)
+    }
+    const { bibleId, book, chapter } = request
+    if (this.cache.hasRange(bibleId, book.id, chapter, 1, MAX_VERSES_PER_CHAPTER)) {
       // The text is on disk but past its 30-day licence window.
       return new Error(API_CACHE_MESSAGES.refreshRequired)
     }
@@ -158,4 +240,12 @@ export function buildPassageId(request: {
   const usfm = USFM_BOOK_CODES[request.book.id - 1]
   const start = `${usfm}.${request.chapter}.${request.verseStart}`
   return request.verseEnd ? `${start}-${usfm}.${request.chapter}.${request.verseEnd}` : start
+}
+
+/** Longest chapter in the canon (Psalm 119) — caps whole-chapter cache probes. */
+export const MAX_VERSES_PER_CHAPTER = 176
+
+export function buildChapterId(request: { book: { id: number }; chapter: number }): string {
+  const usfm = USFM_BOOK_CODES[request.book.id - 1]
+  return `${usfm}.${request.chapter}`
 }

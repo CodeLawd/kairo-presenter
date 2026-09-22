@@ -1,4 +1,6 @@
 import type { SermonPlan } from '@shared/ipc';
+import { useLibrary } from "@/stores/useLibraries";
+import { DEFAULT_LIBRARY_ID, DEFAULT_LIBRARY_NAME } from "@shared/libraries";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuLabel } from '@/components/ui/dropdown-menu';
 import {
   ChevronDown,
@@ -34,6 +36,8 @@ export interface QueueDockProps {
   onNext: () => void;
   onSendSelected: () => void;
   onAddAll: (planId: string) => void;
+  /** Keeps the selected verse in a library, with its text, for later. */
+  onSaveToLibrary: (libraryId: string) => void;
   onClear: () => void;
 }
 
@@ -53,8 +57,10 @@ export function QueueDock({
   onNext,
   onSendSelected,
   onAddAll,
+  onSaveToLibrary,
   onClear,
 }: QueueDockProps): React.ReactElement {
+  const libraries = useLibrary("scripture").libraries;
   const activeRef =
     queueLabel ?? cards[activeCardIndex]?.result.reference ?? "—";
 
@@ -70,10 +76,16 @@ export function QueueDock({
         </p>
 
         <div className="ml-auto flex flex-wrap items-center gap-1.5">
-          <div className="hidden items-center gap-1.5 sm:flex">
-            <ZoomOut size={12} className="text-zinc-600" aria-hidden="true" />
+          <div
+            className="flex items-center gap-2 rounded-md border border-white/10 bg-black/20 px-2.5 py-1.5"
+            title="Verse card size"
+          >
+            <ZoomOut size={14} className="shrink-0 text-zinc-400" aria-hidden="true" />
             <Slider
-              className="w-24"
+              className="w-32"
+              trackClassName="relative h-2 w-full grow overflow-hidden rounded-full bg-zinc-700"
+              rangeClassName="absolute h-full bg-blue-500 select-none"
+              thumbClassName="relative block h-5 w-7 shrink-0 rounded-full border border-black/20 bg-white shadow-lg transition-shadow select-none after:absolute after:-inset-2 hover:ring-2 hover:ring-blue-400/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60 disabled:pointer-events-none disabled:opacity-50"
               min={CARD_ZOOM_MIN}
               max={CARD_ZOOM_MAX}
               step={5}
@@ -81,9 +93,12 @@ export function QueueDock({
               onValueChange={(value) =>
                 onCardZoomChange(value[0] ?? CARD_ZOOM_DEFAULT)
               }
-              aria-label="Card size"
+              aria-label="Verse card size"
             />
-            <ZoomIn size={12} className="text-zinc-600" aria-hidden="true" />
+            <ZoomIn size={14} className="shrink-0 text-zinc-400" aria-hidden="true" />
+            <span className="min-w-9 text-right text-[11px] font-semibold tabular-nums text-zinc-300">
+              {cardZoom}%
+            </span>
           </div>
 
           <div className="flex items-center overflow-hidden rounded-md border border-white/10 bg-black/20">
@@ -162,6 +177,23 @@ export function QueueDock({
                 <DropdownMenuItem onSelect={onCreatePlaylist}>
                   <Plus size={12} /> New playlist…
                 </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                {/* A playlist orders one service; a library keeps the passage
+                    for any service. Both are offered from the one Save menu. */}
+                <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-zinc-600">
+                  Library
+                </DropdownMenuLabel>
+                <DropdownMenuItem onSelect={() => onSaveToLibrary(DEFAULT_LIBRARY_ID)}>
+                  <span className="truncate">{DEFAULT_LIBRARY_NAME.scripture}</span>
+                </DropdownMenuItem>
+                {libraries.map((library) => (
+                  <DropdownMenuItem
+                    key={library.id}
+                    onSelect={() => onSaveToLibrary(library.id)}
+                  >
+                    <span className="truncate">{library.name}</span>
+                  </DropdownMenuItem>
+                ))}
               </DropdownMenuContent>
             </DropdownMenu>
           )}

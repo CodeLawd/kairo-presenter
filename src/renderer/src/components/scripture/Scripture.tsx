@@ -23,12 +23,15 @@ import {
   expandScriptureResult,
   getAdjacentVerseQueries,
   getBookCompletion,
+  getBookCompletions,
   normalizeScriptureQuery,
   reloadPassagesInTranslation,
   resolveSubmittedScriptureQuery,
   shouldLiveSuggestScriptureQuery,
 } from "@shared/scripture-query";
 import { PlaylistSidebar } from "./PlaylistSidebar";
+import { passageToResult } from "@shared/passages";
+import { runPassagesCommand } from "@/stores/usePassages";
 import { QueueDock } from "./QueueDock";
 import { ScriptureSearchBar } from "./ScriptureSearchBar";
 import { SermonNotesReviewModal } from "./SermonNotesReviewModal";
@@ -87,6 +90,14 @@ export default function Scripture(): React.ReactElement {
   const liveRail = useLiveRailWidth();
   const [query, setQuery] = useState("");
   const [rows, setRows] = useState<ResultRow[]>([]);
+  /**
+   * The last search's rows, kept while a playlist is open.
+   *
+   * `rows` is shared by both sources, so opening a playlist overwrites the
+   * search; without this the Library row could show what it found but never
+   * take the operator back to it.
+   */
+  const [searchRows, setSearchRows] = useState<ResultRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Startup data comes from the shared bootstrap snapshot, so switching tabs
@@ -149,6 +160,7 @@ export default function Scripture(): React.ReactElement {
   const rowRefs = useRef<Map<string, HTMLElement>>(new Map());
 
   const bookCompletion = getBookCompletion(query);
+  const bookCompletions = getBookCompletions(query);
   const cardMinWidth = Math.round(CARD_BASE_WIDTH * (cardZoom / 100));
   const cardHeight = Math.round(CARD_BASE_HEIGHT * (cardZoom / 100));
   const cards = flattenResultRows(rows);
@@ -324,11 +336,11 @@ export default function Scripture(): React.ReactElement {
           );
           results = reloaded.results;
         }
-        setRows(
-          results.map((result, index) =>
-            createResultRow(result, { id: `search-${index}-${result.reference}` }),
-          ),
+        const searchResultRows = results.map((result, index) =>
+          createResultRow(result, { id: `search-${index}-${result.reference}` }),
         );
+        setRows(searchResultRows);
+        setSearchRows(searchResultRows);
         setCardsSource("search");
         setAddedAllToPlan(null);
         setActiveCardIndex(0);
@@ -356,7 +368,9 @@ export default function Scripture(): React.ReactElement {
     suppressSuggestionsQueryRef.current = result.reference;
     suggestionRequestRef.current += 1;
     setQuery(result.reference);
-    setRows([createResultRow(result, { id: `suggest-${result.reference}` })]);
+    const previewRows = [createResultRow(result, { id: `suggest-${result.reference}` })];
+    setRows(previewRows);
+    setSearchRows(previewRows);
     setCardsSource("search");
     setError(null);
     setSuggestionsOpen(false);
@@ -1202,6 +1216,10 @@ export default function Scripture(): React.ReactElement {
         openPlanItems={openPlanItems}
         activeItemId={activeItemId}
         showItems={cardsSource === "plan"}
+        searchResultCount={searchRows.length}
+        viewingSearch={cardsSource === "search"}
+        onSelectSearch={() => { setRows(searchRows); setCardsSource("search") }}
+        onOpenPassage={(passage) => previewSuggestion(passageToResult(passage))}
         renamingPlanId={renamingPlanId}
         renameDraft={renameDraft}
         pendingDeletePlanId={pendingDeletePlanId}
@@ -1259,6 +1277,7 @@ export default function Scripture(): React.ReactElement {
             translations={translations}
             loading={loading}
             bookCompletion={bookCompletion}
+            bookCompletions={bookCompletions}
             searchSuggestions={searchSuggestions}
             suggestionsOpen={suggestionsOpen}
             activeSuggestion={activeSuggestion}
@@ -1274,6 +1293,11 @@ export default function Scripture(): React.ReactElement {
               setQuery("");
               inputRef.current?.focus();
             }}
+            onBookCompletionSelect={(value) => {
+              const submitted = resolveSubmittedScriptureQuery(value);
+              setQuery(submitted);
+              void handleSearch(submitted);
+            }}
             onKeyDown={handleKeyDown}
             onFocus={() => {
               if (suppressSuggestionsQueryRef.current === query.trim()) return;
@@ -1288,12 +1312,13 @@ export default function Scripture(): React.ReactElement {
             Boolean(bootstrapSettings.secretsConfigured.bible),
             bootstrapPhase === 'ready' || bootstrapPhase === 'ready-with-warnings',
           ) &&
-            translation === "NKJV" &&
-            !translations.find((item) => item.id === "NKJV")?.available && (
+            translation &&
+            !translations.find((item) => item.id === translation)?.available && (
               <div className="flex gap-2 rounded-lg border border-yellow-500/25 bg-yellow-500/5 px-3.5 py-3 text-xs text-yellow-400">
                 <AlertCircle size={14} className="shrink-0" />
-                NKJV is the default, but its text requires an API.Bible key authorized for
-                NKJV. Add the key in Settings → API Keys.
+                {translations.find((item) => item.id === translation)?.downloadable
+                  ? `${translation} is the default but isn't installed yet. Download it in Settings → Scripture, or add an API.Bible key authorized for ${translation} in Settings → API Keys.`
+                  : `${translation} is the default, but its text requires an API.Bible key authorized for ${translation}. Add the key in Settings → API Keys.`}
               </div>
             )}
 
@@ -1435,6 +1460,11 @@ export default function Scripture(): React.ReactElement {
             onNext={() => void loadAdjacentVerse("next")}
             onSendSelected={() => void handleSend(activeCardIndex)}
             onAddAll={(planId) => void addAllResultsToPlaylist(planId)}
+            onSaveToLibrary={(libraryId) => {
+              const result = cards[activeCardIndex]?.result;
+              if (!result) return;
+              void runPassagesCommand({ action: "save", result, libraryId });
+            }}
             onClear={handleClearResults}
           />
         )}

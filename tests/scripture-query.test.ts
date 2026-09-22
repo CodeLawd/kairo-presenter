@@ -5,6 +5,7 @@ import {
   expandScriptureResult,
   getAdjacentVerseQueries,
   getBookCompletion,
+  getBookCompletions,
   isLikelyPhraseQuery,
   normalizeScriptureQuery,
   reloadPassagesInTranslation,
@@ -17,6 +18,25 @@ test('normalizes a space-separated abbreviated range', () => {
   assert.equal(normalizeScriptureQuery('jos 1 5 9'), 'Joshua 1:5–9')
 })
 
+test('normalizes incomplete book names through one general prefix resolver', () => {
+  assert.equal(normalizeScriptureQuery('josh 1'), 'Joshua 1')
+  assert.equal(normalizeScriptureQuery('joshu 1:9'), 'Joshua 1:9')
+  assert.equal(normalizeScriptureQuery('genes 1:1'), 'Genesis 1:1')
+  assert.equal(normalizeScriptureQuery('philipp 4:6'), 'Philippians 4:6')
+})
+
+test('prefers an exact standard abbreviation over longer prefix candidates', () => {
+  assert.equal(normalizeScriptureQuery('ez 1'), 'Ezra 1')
+  assert.equal(normalizeScriptureQuery('ezek 1'), 'Ezekiel 1')
+})
+
+test('normalizes chapter-only references to the whole chapter', () => {
+  assert.equal(normalizeScriptureQuery('Psalms 23'), 'Psalms 23')
+  assert.equal(normalizeScriptureQuery('ps 23'), 'Psalms 23')
+  assert.equal(normalizeScriptureQuery('psa 23'), 'Psalms 23')
+  assert.equal(normalizeScriptureQuery('pss 23'), 'Psalms 23')
+  assert.equal(normalizeScriptureQuery('psalm 23:1'), 'Psalms 23:1')
+})
 test('normalizes conventional references without changing their meaning', () => {
   assert.equal(normalizeScriptureQuery('John 3:16-18'), 'John 3:16–18')
   assert.equal(normalizeScriptureQuery('rom 8 28'), 'Romans 8:28')
@@ -45,6 +65,20 @@ test('does not offer ambiguous or already complete book names', () => {
   assert.equal(getBookCompletion('Joshua'), null)
 })
 
+test('offers every matching book for an ambiguous prefix and preserves its suffix', () => {
+  assert.deepEqual(
+    getBookCompletions('jo 1 2').map((completion) => completion.value),
+    ['Job 1 2', 'Joel 1 2', 'John 1 2', 'Jonah 1 2', 'Joshua 1 2'],
+  )
+})
+
+test('exact short abbreviations suppress unrelated prefix matches', () => {
+  assert.deepEqual(
+    getBookCompletions('ez 1').map((completion) => completion.value),
+    ['Ezra 1'],
+  )
+})
+
 test('classifies remembered verse words but not references as phrase queries', () => {
   assert.equal(isLikelyPhraseQuery('for God so loved'), true)
   assert.equal(isLikelyPhraseQuery('jos 1 5 9'), false)
@@ -62,6 +96,14 @@ test('live-suggests phrases and numeric references while typing', () => {
 
 test('returns the normalized value that Enter must submit immediately', () => {
   assert.equal(resolveSubmittedScriptureQuery('Ezek 1 2 3'), 'Ezekiel 1:2–3')
+})
+
+test('Enter applies a pending book completion before searching', () => {
+  assert.equal(resolveSubmittedScriptureQuery('psa 23'), 'Psalms 23')
+  assert.equal(resolveSubmittedScriptureQuery('josh 1 9'), 'Joshua 1:9')
+  // Phrases and unknown books pass through to keyword search untouched.
+  assert.equal(resolveSubmittedScriptureQuery('for God so loved'), 'for God so loved')
+  assert.equal(resolveSubmittedScriptureQuery('love 123'), 'love 123')
 })
 
 test('expands a passage into independently sendable verse results', () => {

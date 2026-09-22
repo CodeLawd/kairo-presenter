@@ -10,6 +10,7 @@ import type {
   SermonPlanDraft,
 } from '@shared/ipc'
 import { plainTextToEditorHtml } from '@shared/sermon-notes-review'
+import { buildTranslationAliasMap } from '@shared/bible-translations'
 import { BOOKS } from './bible-db'
 
 export interface SermonDocumentContent {
@@ -17,13 +18,9 @@ export interface SermonDocumentContent {
   html: string
 }
 
-const TRANSLATION_ALIASES: Record<string, ScriptureTranslation> = {
-  NKJV: 'NKJV', KJV: 'KJV', BSB: 'BSB', WEB: 'WEB', ASV: 'ASV', OEB: 'OEB',
-  NIV: 'NIV', NLT: 'NLT', NASB: 'NASB', MSG: 'MSG', MESSAGE: 'MSG',
-  AMPC: 'AMPC', AMP: 'AMPC', 'AMPLIFIED CLASSIC': 'AMPC',
-  TPT: 'TPT', PASSION: 'TPT', 'THE PASSION TRANSLATION': 'TPT',
-  ESV: 'ESV', CSB: 'CSB',
-}
+// Derived from the bible-translations registry — new translations (and their
+// aliases) are detected in sermon notes with no code change here.
+const TRANSLATION_ALIASES: Record<string, ScriptureTranslation> = buildTranslationAliasMap()
 
 const translationPattern = Object.keys(TRANSLATION_ALIASES)
   .sort((a, b) => b.length - a.length)

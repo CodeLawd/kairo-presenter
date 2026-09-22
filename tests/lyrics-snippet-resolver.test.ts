@@ -4,6 +4,11 @@ import test from "node:test";
 import { cleanPageTitle } from "../src/main/services/lyrics/page-title";
 import { needsWebResolution, queryVariants } from "../src/main/services/lyrics/online";
 import { parsePageHeading, cleanScrapedLyrics } from "../src/main/services/lyrics/web-lyrics";
+import {
+  looksLikeChallenge,
+  parseDuckHtml,
+  parseMojeekHtml,
+} from "../src/main/services/lyrics/snippet-resolver";
 import type { ProviderResult } from "../src/main/services/lyrics/provider-types";
 
 function result(over: Partial<ProviderResult> = {}): ProviderResult {
@@ -130,4 +135,69 @@ test("cleanScrapedLyrics maps Spoken and Bridge labels", () => {
   const cleaned = cleanScrapedLyrics("Spoken:\nHello\n\nBridge:\nPower belongs to Jesus");
   assert.match(cleaned, /\[Verse\]/);
   assert.match(cleaned, /\[Bridge\]/);
+});
+
+// ─── keyless web engines ──────────────────────────────────────────────────────
+// Every keyless engine rate-limits and serves captchas to unattended requests,
+// so the tier tries several. These are the two ways that goes wrong: a
+// challenge page that still parses, and a redirect-wrapped result URL.
+
+test("a captcha page is not mistaken for results", () => {
+  assert.equal(looksLikeChallenge("<html><head><title>Captcha</title></head><body>x</body></html>"), true);
+  assert.equal(
+    looksLikeChallenge("<html><head><title>Just a moment...</title></head><body/></html>"),
+    true,
+  );
+  assert.equal(
+    looksLikeChallenge("<html><body>Enable JavaScript and cookies to continue</body></html>"),
+    true,
+  );
+  assert.equal(looksLikeChallenge("<html><head><title>song lyrics - Search</title></head></html>"), false);
+});
+
+test("DuckDuckGo redirect links are unwrapped to the real page", () => {
+  const html = `
+    <a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fhymnary.org%2Ftext%2Fsome_hymn&rut=x">Some Hymn</a>
+  `;
+  assert.deepEqual(parseDuckHtml(html), [
+    { title: "Some Hymn", url: "https://hymnary.org/text/some_hymn" },
+  ]);
+});
+
+test("search-engine and social links are never offered as lyrics pages", () => {
+  const html = `
+    <a class="result__a" href="https://duckduckgo.com/settings">Settings</a>
+    <a class="result__a" href="https://www.youtube.com/watch?v=1">Video</a>
+    <a class="result__a" href="https://www.hymnal.net/song">Real page</a>
+  `;
+  assert.deepEqual(parseDuckHtml(html).map((r) => r.url), ["https://www.hymnal.net/song"]);
+});
+
+test("Mojeek results come from its hit list, not its chrome", () => {
+  const html = `
+    <a href="https://www.mojeek.com/about">About</a>
+    <ul class="results-standard">
+      <li><h2><a href="https://gospellyrics.example/song">A Song</a></h2></li>
+    </ul>
+  `;
+  assert.deepEqual(parseMojeekHtml(html), [
+    { title: "A Song", url: "https://gospellyrics.example/song" },
+  ]);
+});
+
+test("a dashed page heading splits into artist and title", () => {
+  // Lyric blogs and Genius slugs both put the artist first. Left whole, the
+  // same song appears twice — once parsed, once as one long title.
+  assert.deepEqual(parsePageHeading("Some Artist - A Song Title"), {
+    title: "A Song Title",
+    artist: "Some Artist",
+  });
+  assert.deepEqual(parsePageHeading("Some Artist \u2013 A Song Title Lyrics"), {
+    title: "A Song Title",
+    artist: "Some Artist",
+  });
+});
+
+test("a hyphenated title without spaces is not split", () => {
+  assert.equal(parsePageHeading("Wonder-Working God").title, "Wonder-Working God");
 });

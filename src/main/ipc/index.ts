@@ -1,6 +1,6 @@
 import { DOCUMENTS } from "@shared/documents";
 import { documentsService } from "../services/documents";
-import { ipcMain, BrowserWindow, dialog, shell } from "electron";
+import { ipcMain, BrowserWindow, clipboard, dialog, shell } from "electron";
 import type { OpenDialogOptions } from "electron";
 import log from "electron-log/main";
 import type {
@@ -44,9 +44,17 @@ import { livePlanService } from "../services/scripture/live-plan";
 import { scriptureTrace } from "../services/scripture/trace";
 import { serviceRecords, sermonUploader } from '../services/service-records';
 import { SERVICE_CHANNEL, SERVICE_CHANGED, type ServiceCommand } from '@shared/service-records';
+import { normalizeDocumentsSettings } from '@shared/documents';
+import { SETLIST_CHANGED, SETLIST_CHANNEL, type SetlistCommand } from '@shared/setlist';
+import { setlistService } from '../services/setlist';
+import { LIBRARIES_CHANGED, LIBRARIES_CHANNEL, type LibrariesCommand } from '@shared/libraries';
+import { librariesService } from '../services/libraries';
+import { PASSAGES_CHANGED, PASSAGES_CHANNEL, type PassagesCommand } from '@shared/passages';
+import { passagesService } from '../services/passages';
 import { getDownloadManager, hasDownloadManager } from "../services/scripture/offline-bibles";
 import path from "path";
 import { lyricsService } from "../services/lyrics";
+import { workspaceService } from "../services/workspace";
 import { buildSlides } from "@shared/lyrics-slides";
 import { normalizeGlossColor } from "@shared/lyrics-style";
 import { orchestrator } from "../orchestrator";
@@ -167,6 +175,7 @@ function registerProPresenterHandlers(): void {
     IPC.PROPRESENTER.SET_RESOURCE_BINDINGS,
     (_event, bindings: PPResourceBindings) => {
       store.set("propresenterResources", normalizeResourceBindings(bindings));
+      orchestrator.forgetVideoInputBinding();
       return store.get("propresenterResources");
     },
   );
@@ -348,7 +357,7 @@ function registerScriptureHandlers(): void {
     },
   );
 
-  // ── Optional local Bible packs (e.g. NKJV from a user-supplied file) ─────
+  // ── Optional local Bible packs (any single-translation SQLite pack) ────
   // Filesystem and database access stay here in the main process. The
   // renderer never sees the pack path: with no argument the native picker
   // runs here and only the typed install result crosses the bridge.
@@ -387,6 +396,10 @@ function registerScriptureHandlers(): void {
     }
     return scriptureService.removeLocalBibleTranslation(translation.trim());
   });
+
+  ipcMain.handle(IPC.SCRIPTURE.LIST_INSTALLED_LOCAL_BIBLE_PACKS, () =>
+    scriptureService.listInstalledLocalBiblePacks(),
+  );
 }
 
 // ─── Transcription handlers ───────────────────────────────────────────────────
@@ -402,16 +415,21 @@ function registerTranscriptionHandlers(): void {
     if (changingService) throw new Error('Service is updating. Please try again.');
     changingService = true;
     try {
-      if (command.action === 'create') {
-        if (orchestrator.getStatus().running) throw new Error('Pause transcription before creating a service.');
+      if (command.action === 'start') {
+        // No dialog first: the operator hits record, the service opens unnamed
+        // and is named when they end it. The live plan selection is theirs and
+        // is left alone here.
+        serviceRecords.create();
+        sttService.clearHistory();
+      } else if (command.action === 'end') {
         const plan = command.planId ? sermonPlanStore.get(command.planId) : null;
         if (command.planId && !plan) throw new Error('Selected notes are unavailable.');
-        serviceRecords.create(command.title, command.speaker, plan);
-        sttService.clearHistory();
-        livePlanService.setPlan(command.planId);
-      } else if (command.action === 'end') {
         await orchestrator.stop();
-        serviceRecords.end();
+        serviceRecords.end({ title: command.title, speaker: command.speaker, note: plan });
+      } else if (command.action === 'discard') {
+        await orchestrator.stop();
+        serviceRecords.discard();
+        sttService.clearHistory();
       } else if (command.action === 'nugget') {
         serviceRecords.nugget(command.text, command.sourceIds);
       } else if (command.action === 'analyze') {
@@ -483,6 +501,45 @@ function registerOrchestratorHandlers(): void {
   });
 }
 
+// ─── Workspace handlers ───────────────────────────────────────────────────────
+
+function registerWorkspaceHandlers(): void {
+  ipcMain.handle(IPC.WORKSPACE.GET, () => workspaceService.ensure());
+
+  ipcMain.handle(IPC.WORKSPACE.CHOOSE_FOLDER, async (_event, options?: { move?: boolean }) => {
+    const current = await workspaceService.ensure();
+    const result = await dialog.showOpenDialog({
+      title: "Choose where Kairo keeps songs and media",
+      defaultPath: current.root,
+      properties: ["openDirectory", "createDirectory"],
+      buttonLabel: "Use this folder",
+    });
+    if (result.canceled || result.filePaths.length === 0) return current;
+
+    const info = await workspaceService.setRoot(result.filePaths[0], { move: options?.move });
+    // Both libraries read from the new location: songs from the folder, the
+    // dock from whatever media.folder now points at.
+    lyricsService.syncFromFolder();
+    await mediaService.scan();
+    return info;
+  });
+
+  ipcMain.handle(IPC.WORKSPACE.REVEAL, () => workspaceService.reveal());
+  ipcMain.handle(IPC.WORKSPACE.REVEAL_SONGS, () => workspaceService.revealSongs());
+
+  ipcMain.handle(IPC.WORKSPACE.RESYNC_SONGS, async () => {
+    await workspaceService.ensure();
+    return lyricsService.syncFromFolder();
+  });
+
+  ipcMain.handle(IPC.WORKSPACE.MEDIA_MIGRATION, () => workspaceService.mediaMigration());
+
+  ipcMain.handle(IPC.WORKSPACE.ADOPT_MEDIA, async (_event, options?: { move?: boolean }) => {
+    const folder = await workspaceService.adoptMediaFolder({ move: options?.move });
+    return mediaService.setFolder(folder);
+  });
+}
+
 // ─── Lyrics handlers ──────────────────────────────────────────────────────────
 
 function registerLyricsHandlers(): void {
@@ -508,6 +565,14 @@ function registerLyricsHandlers(): void {
     return lyricsService.importSong(source);
   });
 
+  ipcMain.handle(IPC.LYRICS.PREVIEW_FILE, (_event, source) => {
+    return lyricsService.previewImport(source);
+  });
+
+  ipcMain.handle(IPC.LYRICS.READ_CLIPBOARD, () => {
+    return clipboard.readText();
+  });
+
   ipcMain.handle(IPC.LYRICS.GET_LIBRARY, () => {
     return lyricsService.getLibrary();
   });
@@ -520,8 +585,28 @@ function registerLyricsHandlers(): void {
     return lyricsService.updateSong(id, song);
   });
 
+  librariesService.onChanged((state) => broadcast(LIBRARIES_CHANGED, state));
+  passagesService.onChanged((passages) => broadcast(PASSAGES_CHANGED, passages));
+  handle(PASSAGES_CHANNEL, (_event, command: PassagesCommand) => {
+    return passagesService.apply(command);
+  });
+
+  handle(LIBRARIES_CHANNEL, (_event, command: LibrariesCommand) => {
+    return librariesService.apply(command);
+  });
+
+  setlistService.onChanged((setlist) => broadcast(SETLIST_CHANGED, setlist));
+  handle(SETLIST_CHANNEL, (_event, command: SetlistCommand) => {
+    return setlistService.apply(command);
+  });
+
   ipcMain.handle(IPC.LYRICS.DELETE, (_event, id: string) => {
-    return lyricsService.deleteSong(id);
+    const result = lyricsService.deleteSong(id);
+    // A deleted song must not linger in the service order as a dead row, nor
+    // keep a library assignment pointing at nothing.
+    setlistService.forgetSong(id);
+    librariesService.forgetItem('songs', id);
+    return result;
   });
 
   ipcMain.handle(IPC.LYRICS.TOGGLE_FAVORITE, (_event, id: string) => {
@@ -629,10 +714,22 @@ function registerDocumentHandlers(): void {
   handle(DOCUMENTS.FINISH, (_event, id) => documentsService.finish(id));
   handle(DOCUMENTS.CANCEL, (_event, id) => documentsService.cancel(id));
   handle(DOCUMENTS.RENAME, (_event, id, name) => documentsService.rename(id, name));
-  handle(DOCUMENTS.REMOVE, (_event, id) => documentsService.remove(id));
+  handle(DOCUMENTS.REMOVE, (_event, id) => {
+    librariesService.forgetItem('documents', id);
+    return documentsService.remove(id);
+  });
   handle(DOCUMENTS.PUSH, async (_event, id, page) => {
     const path = await documentsService.page(id, page);
-    return { applied: await orchestrator.presentDocumentPage(path) };
+    const applied = await orchestrator.presentDocumentPage(path);
+    // Decode the next page while the room reads this one. Never awaited: a
+    // missing next page (end of deck) must not slow or fail this push.
+    if (applied) {
+      void documentsService
+        .page(id, page + 1)
+        .then((next) => overlayWindow.preloadDocumentPage(next))
+        .catch(() => undefined);
+    }
+    return { applied };
   });
 }
 
@@ -937,6 +1034,8 @@ function registerSettingsHandlers(): void {
         store.set("lyrics", merged);
         broadcastSettingsChanged();
         void cloudSession.pushOrgSecrets(incoming.clearKeys ?? []);
+      } else if (key === "documents") {
+        store.set("documents", normalizeDocumentsSettings(value));
       } else {
         store.set(key, value);
         if (key === "church") {
@@ -965,7 +1064,7 @@ function registerSettingsHandlers(): void {
 
   ipcMain.handle(
     IPC.SETTINGS.TEST_API_KEY,
-    async (_event, kind: "deepgram" | "anthropic" | "bible", draft?: string) => {
+    async (_event, kind: "deepgram" | "anthropic" | "bible" | "brave", draft?: string) => {
       const stt = store.get("stt");
       const key =
         (typeof draft === "string" && draft.trim()) ||
@@ -973,9 +1072,37 @@ function registerSettingsHandlers(): void {
           ? stt.apiKey
           : kind === "anthropic"
             ? stt.anthropicApiKey
-            : stt.bibleApiKey);
+            : kind === "brave"
+              ? store.get("lyrics").braveApiKey
+              : stt.bibleApiKey);
 
       if (!key) return { ok: false, message: "No key entered" };
+
+      if (kind === "brave") {
+        try {
+          const res = await fetch(
+            "https://api.search.brave.com/res/v1/web/search?q=test&count=1",
+            { headers: { "X-Subscription-Token": key, Accept: "application/json" } },
+          );
+          if (res.ok) return { ok: true, message: "Key valid" };
+          // Brave answers a bad token with 422 and its own error code — not 401 —
+          // so an untested key can sit in Settings looking configured while
+          // every web-tier search silently falls back.
+          const body = (await res.json().catch(() => null)) as
+            | { error?: { code?: string; detail?: string } }
+            | null;
+          const code = body?.error?.code;
+          if (code === "SUBSCRIPTION_TOKEN_INVALID" || res.status === 401 || res.status === 403) {
+            return { ok: false, message: "Invalid key — Brave rejected it" };
+          }
+          if (code === "RATE_LIMITED" || res.status === 429) {
+            return { ok: true, message: "Key valid (rate limited right now)" };
+          }
+          return { ok: false, message: body?.error?.detail ?? `HTTP ${res.status}` };
+        } catch {
+          return { ok: false, message: "Could not reach Brave Search" };
+        }
+      }
 
       if (kind === "deepgram") {
         try {
@@ -1233,6 +1360,7 @@ export function registerIpcHandlers(): void {
   registerScriptureHandlers();
   registerTranscriptionHandlers();
   registerOrchestratorHandlers();
+  registerWorkspaceHandlers();
   registerLyricsHandlers();
   registerSettingsHandlers();
   registerResilienceHandlers();

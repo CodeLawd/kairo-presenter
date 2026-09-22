@@ -19,6 +19,7 @@
     "src/lib/**/*",
     "src/main/**/*",
     "src/preload/**/*",
-    "scripts/build-bible-pack.ts"
+    "scripts/build-bible-pack.ts",
+    "scripts/import-translation.ts"
   ]
 }

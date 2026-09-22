@@ -42,6 +42,24 @@ Three Electron process contexts, each built by electron-vite:
 - electron-store v8 (not v9+) — v9+ is ESM-only and breaks with Electron's CJS main process.
 - electron-log: import as `electron-log/main` in main process, `electron-log/renderer` in renderer if needed.
 
+## Workspace folder
+
+One folder on disk owns operator-facing content, default `~/Documents/Kairo Presenter`
+(changeable in Settings → General → Storage, stored as `workspace.folder`; `''` = default):
+
+```
+Kairo Presenter/
+  Songs/   one <slug>__<id>.song.json per song — SOURCE OF TRUTH for the library
+  Media/   backgrounds the media dock indexes (media.folder points here on fresh installs)
+```
+
+`workspaceService` (`src/main/services/workspace/`) creates the folders on launch, moves
+them, and offers to adopt a pre-existing media folder. `lyricsService.syncFromFolder()`
+rebuilds SQLite from `Songs/` at startup — a deleted file removes the song, a dropped-in
+file adds one. `lyrics.db` in userData is a search/index cache, not the record.
+Song file read/write helpers: `src/main/services/lyrics/song-files.ts`; the file format
+and path helpers are shared in `src/lib/workspace.ts`.
+
 ## Service layer (`src/main/services/`)
 
 Each service is a singleton class exported as a named instance:

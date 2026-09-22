@@ -99,7 +99,31 @@ class LrclibService {
   async search(query: string): Promise<ProviderResult[]> {
     const q = query.trim()
     if (q.length < 3) return []
+    return this.runSearch({ q }, q)
+  }
 
+  /**
+   * Searches by track and artist separately.
+   *
+   * LRCLIB's free-text `q=` matches one metadata field, so a typed
+   * "<title> by <artist>" finds nothing at all — the same song comes straight
+   * back when the two halves are sent as `track_name` and `artist_name`.
+   */
+  async searchStructured(track: string, artist: string): Promise<ProviderResult[]> {
+    const trackName = track.trim()
+    const artistName = artist.trim()
+    if (trackName.length < 2) return []
+    return this.runSearch(
+      { track_name: trackName, ...(artistName ? { artist_name: artistName } : {}) },
+      `${trackName} | ${artistName}`,
+    )
+  }
+
+  private async runSearch(
+    params: Record<string, string>,
+    cacheLabel: string,
+  ): Promise<ProviderResult[]> {
+    const q = cacheLabel.trim()
     const cacheKey = q.toLowerCase()
     const cached = this.searchCache.get(cacheKey)
     if (cached && cached.expiresAt > Date.now()) {
@@ -120,7 +144,7 @@ class LrclibService {
     let tracks: LrclibTrack[]
     try {
       const response = await axios.get<LrclibTrack[]>(SEARCH_URL, {
-        params: { q },
+        params,
         headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
         timeout: REQUEST_TIMEOUT_MS,
       })

@@ -16,6 +16,37 @@ export interface DocumentsCapabilities {
   libreOffice: boolean
 }
 
+/** Unattended page advance — announcement loops, pre-service slides. */
+export interface DocumentsSettings {
+  /** Seconds each page stays on screen before the next one is pushed. */
+  slideshowSec: number
+  /** Return to page 1 after the last page instead of stopping. */
+  slideshowLoop: boolean
+  /** Begin advancing as soon as a page is pushed, with no second click. */
+  slideshowAutoStart: boolean
+}
+
+export const SLIDESHOW_MIN_SEC = 2
+export const SLIDESHOW_MAX_SEC = 3600
+export const DEFAULT_DOCUMENTS_SETTINGS: DocumentsSettings = {
+  slideshowSec: 10,
+  slideshowLoop: true,
+  slideshowAutoStart: false,
+}
+
+/** Clamp anything a renderer or an old store hands us into a usable config. */
+export function normalizeDocumentsSettings(raw: unknown): DocumentsSettings {
+  const value = (raw ?? {}) as Partial<DocumentsSettings>
+  const seconds = Number(value.slideshowSec)
+  return {
+    slideshowSec: Number.isFinite(seconds)
+      ? Math.min(SLIDESHOW_MAX_SEC, Math.max(SLIDESHOW_MIN_SEC, Math.round(seconds)))
+      : DEFAULT_DOCUMENTS_SETTINGS.slideshowSec,
+    slideshowLoop: value.slideshowLoop ?? DEFAULT_DOCUMENTS_SETTINGS.slideshowLoop,
+    slideshowAutoStart: value.slideshowAutoStart ?? DEFAULT_DOCUMENTS_SETTINGS.slideshowAutoStart,
+  }
+}
+
 export interface DocumentsAPI {
   list(): Promise<ProjectionDocument[]>
   capabilities(): Promise<DocumentsCapabilities>

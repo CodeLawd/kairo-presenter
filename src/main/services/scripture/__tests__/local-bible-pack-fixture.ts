@@ -14,7 +14,7 @@ export const FIXTURE_VERSES = 31102
 /** Distinctive token embedded in one verse for phrase-search tests. */
 export const FIXTURE_MARKER = 'zephyrquill'
 
-import { NKJV_VERSE_COUNTS } from '../nkjv-verse-counts'
+import { BIBLE_VERSE_COUNTS } from '../bible-verse-counts'
 
 export interface FixtureVerse {
   bookId: number
@@ -33,11 +33,11 @@ export interface FixtureSource {
 }
 
 export function chaptersForBook(bookIndex0: number): number {
-  return NKJV_VERSE_COUNTS[bookIndex0]?.length ?? 0
+  return BIBLE_VERSE_COUNTS[bookIndex0]?.length ?? 0
 }
 
 export function versesForChapter(bookIndex0: number, chapterIndex0: number): number {
-  return NKJV_VERSE_COUNTS[bookIndex0]?.[chapterIndex0] ?? 0
+  return BIBLE_VERSE_COUNTS[bookIndex0]?.[chapterIndex0] ?? 0
 }
 
 const BOOK_NAMES = [

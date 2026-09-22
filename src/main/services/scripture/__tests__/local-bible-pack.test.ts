@@ -6,11 +6,11 @@ import os from 'node:os'
 import path from 'node:path'
 import { BibleDatabase } from '../bible-db'
 import { ScriptureService } from '../index'
-import { packStatusFor, validatePackFile, validatePackRows } from '../local-bible-pack'
+import { packStatusFor, validatePackFile, validatePackRowsFor } from '../local-bible-pack'
 import {
   buildBiblePack,
   parseConverterArgs,
-  parseNkjvSource,
+  parsePackSource,
   writePackFile,
 } from '../../../../../scripts/build-bible-pack'
 import {
@@ -49,8 +49,8 @@ function serviceWithDb(db: BibleDatabase): ScriptureService {
 function buildValidPack(dir: string, name = 'nkjv-pack.db'): string {
   const source = buildFixtureSource()
   markFixtureSource(source, 43, 3, 16, `${FIXTURE_MARKER} covenant of testing`)
-  const { rows } = parseNkjvSource(source)
-  const validated = validatePackRows('Synthetic Fixture Translation', 'en', rows)
+  const { rows } = parsePackSource(source)
+  const validated = validatePackRowsFor('NKJV', 'Synthetic Fixture Translation', 'en', rows)
   assert.equal(validated.verseCount, FIXTURE_VERSES)
   assert.equal(validated.chapterCount, FIXTURE_CHAPTERS)
   const out = path.join(dir, name)
@@ -80,7 +80,7 @@ test('converter requires an input path and defaults the output under bible-packs
 // ─── Source validation ────────────────────────────────────────────────────────
 
 test('converter accepts a complete synthetic source with canonical order', () => {
-  const { rows } = parseNkjvSource(buildFixtureSource())
+  const { rows } = parsePackSource(buildFixtureSource())
   assert.equal(rows.length, FIXTURE_VERSES)
   assert.deepEqual([rows[0]?.bookId, rows[0]?.chapter, rows[0]?.verse], [1, 1, 1])
   const last = rows[rows.length - 1]
@@ -88,14 +88,14 @@ test('converter accepts a complete synthetic source with canonical order', () =>
 })
 
 test('converter rejects a wrongly identified translation', () => {
-  assert.throws(() => parseNkjvSource(buildFixtureSource('KJV')), /expected translation abbrev "NKJV"/)
-  assert.throws(() => parseNkjvSource({ books: [] }), /expected translation abbrev/)
+  assert.throws(() => parsePackSource(buildFixtureSource('KJV')), /expected translation abbrev "NKJV"/)
+  assert.throws(() => parsePackSource({ books: [] }), /expected translation abbrev/)
 })
 
 test('converter rejects an incomplete canon', () => {
   const source = buildFixtureSource()
   source.books.pop()
-  assert.throws(() => parseNkjvSource(source), /expected 66 books, found 65/)
+  assert.throws(() => parsePackSource(source), /expected 66 books, found 65/)
 })
 
 test('converter rejects books out of canonical order', () => {
@@ -103,43 +103,43 @@ test('converter rejects books out of canonical order', () => {
   const firstName = renamed.books[0]?.name
   renamed.books[0] = { ...(renamed.books[0] as (typeof renamed.books)[number]), name: renamed.books[1]?.name as string }
   renamed.books[1] = { ...(renamed.books[1] as (typeof renamed.books)[number]), name: firstName as string }
-  assert.throws(() => parseNkjvSource(renamed), /canonical order/)
+  assert.throws(() => parsePackSource(renamed), /canonical order/)
 
   const swapped = buildFixtureSource()
   const first = swapped.books[0]
   swapped.books[0] = swapped.books[1] as (typeof swapped.books)[number]
   swapped.books[1] = first as (typeof swapped.books)[number]
-  assert.throws(() => parseNkjvSource(swapped), /has index/)
+  assert.throws(() => parsePackSource(swapped), /has index/)
 })
 
 test('converter rejects gaps in chapters and verses', () => {
   const chapters = buildFixtureSource()
   chapters.books[0]?.chapters.splice(1, 1)
-  assert.throws(() => parseNkjvSource(chapters), /expected chapter 2/)
+  assert.throws(() => parsePackSource(chapters), /expected chapter 2/)
 
   const verses = buildFixtureSource()
   verses.books[0]?.chapters[0]?.verses.splice(0, 1)
-  assert.throws(() => parseNkjvSource(verses), /expected verse 1/)
+  assert.throws(() => parsePackSource(verses), /expected verse 1/)
 })
 
 test('converter rejects empty verse text and duplicate references', () => {
   const empty = buildFixtureSource()
   const target = empty.books[0]?.chapters[0]?.verses[0]
   if (target) target.text = '   '
-  assert.throws(() => parseNkjvSource(empty), /empty verse text/)
+  assert.throws(() => parsePackSource(empty), /empty verse text/)
 
   const dupe = buildFixtureSource()
   const chapter = dupe.books[0]?.chapters[0]
   if (chapter) chapter.verses.push({ verse: 1, text: 'A second verse numbered 1.' })
   // A trailing duplicate shifts every later verse number, so the first error
   // surfaces as a numbering mismatch — still a rejection of bad input.
-  assert.throws(() => parseNkjvSource(dupe), /expected verse \d+, found 1/)
+  assert.throws(() => parsePackSource(dupe), /expected verse \d+, found 1/)
 })
 
 test('row validation rejects a verse-count mismatch, a chapter gap and an empty row', () => {
   const rows = buildFixtureVerses()
   assert.throws(
-    () => validatePackRows('Fixture', 'en', rows.slice(0, rows.length - 1)),
+    () => validatePackRowsFor('NKJV', 'Fixture', 'en', rows.slice(0, rows.length - 1)),
     /Expected 31,102 NKJV verses, found 31,101/,
   )
 
@@ -147,15 +147,15 @@ test('row validation rejects a verse-count mismatch, a chapter gap and an empty 
   const gap = buildFixtureVerses().map((row) =>
     row.bookId === 2 && row.chapter === 2 ? { ...row, chapter: 99 } : row,
   )
-  assert.throws(() => validatePackRows('Fixture', 'en', gap), /Exodus expected 40 chapters, found 99/)
+  assert.throws(() => validatePackRowsFor('NKJV', 'Fixture', 'en', gap), /Exodus expected 40 chapters, found 99/)
 
   const blank = buildFixtureVerses()
   blank[1000] = { ...blank[1000] as (typeof blank)[number], text: '' }
-  assert.throws(() => validatePackRows('Fixture', 'en', blank), /Empty verse text/)
+  assert.throws(() => validatePackRowsFor('NKJV', 'Fixture', 'en', blank), /Empty verse text/)
 
   const outOfRange = buildFixtureVerses()
   outOfRange[10] = { ...outOfRange[10] as (typeof outOfRange)[number], bookId: 67 }
-  assert.throws(() => validatePackRows('Fixture', 'en', outOfRange), /out-of-range book id/)
+  assert.throws(() => validatePackRowsFor('NKJV', 'Fixture', 'en', outOfRange), /out-of-range book id/)
 })
 
 test('row validation rejects globally complete rows with the wrong canonical chapter layout', () => {
@@ -166,7 +166,7 @@ test('row validation rejects globally complete rows with the wrong canonical cha
   moved.chapter = 40
   moved.verse = 39
   assert.throws(
-    () => validatePackRows('Fixture', 'en', rows),
+    () => validatePackRowsFor('NKJV', 'Fixture', 'en', rows),
     /Genesis 50 expected 26 verses, found 25/i,
   )
 })
@@ -213,7 +213,7 @@ test('converter refuses to overwrite without --force', () => {
   try {
     const out = path.join(dir, 'pack.db')
     const source = buildFixtureSource()
-    const { rows } = parseNkjvSource(source)
+    const { rows } = parsePackSource(source)
     writePackFile({ rows, name: 'Fixture', language: 'en' }, out, false)
     assert.throws(() => writePackFile({ rows, name: 'Fixture', language: 'en' }, out, false), /already exists/)
     const rebuilt = writePackFile({ rows, name: 'Fixture', language: 'en' }, out, true)
@@ -267,6 +267,69 @@ test('installer validates the generated pack and reads its counts', () => {
   }
 })
 
+/** A structurally complete pack file identified as `id` (bypasses the converter). */
+function buildPackWithId(dir: string, name: string, id: string): string {
+  const out = path.join(dir, name)
+  const raw = new Database(out)
+  try {
+    raw.exec(
+      `CREATE TABLE translations (id TEXT PRIMARY KEY, name TEXT NOT NULL, language TEXT NOT NULL DEFAULT 'en', is_default INTEGER NOT NULL DEFAULT 0);
+       CREATE TABLE verses (translation_id TEXT NOT NULL, book_id INTEGER NOT NULL, chapter INTEGER NOT NULL, verse INTEGER NOT NULL, text TEXT NOT NULL, PRIMARY KEY (translation_id, book_id, chapter, verse));`,
+    )
+    raw.prepare('INSERT INTO translations (id, name, language, is_default) VALUES (?, ?, ?, ?)').run(id, id, 'en', 0)
+    const insert = raw.prepare('INSERT INTO verses (translation_id, book_id, chapter, verse, text) VALUES (?, ?, ?, ?, ?)')
+    const tx = raw.transaction(() => {
+      for (const row of buildFixtureVerses()) insert.run(id, row.bookId, row.chapter, row.verse, row.text)
+    })
+    tx()
+  } finally {
+    raw.close()
+  }
+  return out
+}
+
+test('installer refuses to overwrite a bundled translation', () => {
+  const dir = tmpDir('kairo-pack-bundled-guard-')
+  const db = openDestWithKjv(dir)
+  try {
+    const service = serviceWithDb(db)
+    const before = db.getVerseCount('KJV')
+
+    const kjvPack = buildPackWithId(dir, 'kjv-pack.db', 'KJV')
+    assert.throws(() => service.installLocalBiblePack(kjvPack), /bundled KJV/)
+    assert.equal(db.getVerseCount('KJV'), before)
+
+    // BBE ships in resources/bible.db too, with or without local rows present.
+    const bbePack = buildPackWithId(dir, 'bbe-pack.db', 'BBE')
+    assert.throws(() => service.installLocalBiblePack(bbePack), /bundled BBE/)
+  } finally {
+    db.close()
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('installer enforces the expected translation id for downloads', () => {
+  const dir = tmpDir('kairo-pack-expected-id-')
+  const db = openDestWithKjv(dir)
+  try {
+    const service = serviceWithDb(db)
+    // A mislabeled pack is rejected even at full structural size — a checksum
+    // only proves the bytes are the listed ones, not the right translation.
+    const kjvPack = buildPackWithId(dir, 'kjv-pack.db', 'KJV')
+    assert.throws(() => service.installLocalBiblePack(kjvPack, 'NKJV'), /containing only NKJV, found: KJV/)
+    assert.equal(db.getVerseCount('KJV'), 2)
+
+    // The matching id installs for a non-bundled translation.
+    const esvPack = buildPackWithId(dir, 'esv-pack.db', 'ESV')
+    const installed = service.installLocalBiblePack(esvPack, 'ESV')
+    assert.equal(installed.translation, 'ESV')
+    assert.equal(db.getVerseCount('ESV'), FIXTURE_VERSES)
+  } finally {
+    db.close()
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('installer rejects non-database, unstructured and wrongly identified packs', () => {
   const dir = tmpDir('kairo-pack-reject-')
   try {
@@ -296,7 +359,12 @@ test('installer rejects non-database, unstructured and wrongly identified packs'
     } finally {
       raw.close()
     }
-    assert.throws(() => validatePackFile(wrongId), /containing only NKJV, found: KJV/)
+    // A pack identified as another translation installs generically — new
+    // translations need no code change. Callers that need a specific id pass
+    // it explicitly and get the refusal.
+    const kjvPack = validatePackFile(wrongId)
+    assert.equal(kjvPack.translationId, 'KJV')
+    assert.throws(() => validatePackFile(wrongId, 'NKJV'), /containing only NKJV, found: KJV/)
 
     // A pack holding two translations is refused even when NKJV is complete.
     const mixed = path.join(dir, 'mixed.db')
@@ -317,7 +385,7 @@ test('installer rejects non-database, unstructured and wrongly identified packs'
     } finally {
       mixedDb.close()
     }
-    assert.throws(() => validatePackFile(mixed), /containing only NKJV, found: NKJV, KJV/)
+    assert.throws(() => validatePackFile(mixed), /containing a single translation, found: NKJV, KJV/)
   } finally {
     fs.rmSync(dir, { recursive: true, force: true })
   }
@@ -472,8 +540,10 @@ test('removing NKJV leaves KJV verses, FTS rows and defaults untouched', async (
     const kjvHits = await service.search('stand-in', 'KJV', '')
     assert.ok(kjvHits.length > 0)
 
-    // Removing anything but NKJV is refused.
-    assert.throws(() => service.removeLocalBibleTranslation('KJV'), /Only the local NKJV/)
+    // Bundled translations are protected; anything else local stays removable.
+    // BBE ships in resources/bible.db, so it is bundled even with no local rows.
+    assert.throws(() => service.removeLocalBibleTranslation('KJV'), /bundled KJV/)
+    assert.throws(() => service.removeLocalBibleTranslation('BBE'), /bundled BBE/)
     assert.equal(db.getVerseCount('KJV'), 2)
   } finally {
     db.close()

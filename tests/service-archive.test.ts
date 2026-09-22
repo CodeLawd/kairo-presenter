@@ -178,3 +178,49 @@ test('records written before recaps existed get an upload state on load', () => 
   // publish itself the first time someone opens the new build.
   assert.equal(records.queuedForUpload().length, 0)
 })
+
+test('an unnamed service records first and is named when it ends', () => {
+  const db = new MemoryStorage()
+  const records = new ServiceRecords(db, async () => '[]')
+  records.create()
+  assert.equal(records.active()!.title, '')
+  records.transcript(segment('one'))
+  records.end({ title: '  Sunday morning  ', speaker: ' Pastor Ada ' })
+  const [saved] = records.snapshot().services
+  assert.equal(saved.title, 'Sunday morning')
+  assert.equal(saved.speaker, 'Pastor Ada')
+  assert.equal(saved.status, 'ended')
+  assert.equal(saved.transcript.length, 1)
+  assert.equal(records.snapshot().activeId, null)
+})
+
+test('ending without a name files the service by date rather than losing it', () => {
+  const db = new MemoryStorage()
+  const records = new ServiceRecords(db, async () => '[]')
+  records.create()
+  records.end()
+  assert.match(records.snapshot().services[0].title, /^Service — /)
+})
+
+test('notes chosen at the end are attached to the saved service', () => {
+  const db = new MemoryStorage()
+  const records = new ServiceRecords(db, async () => '[]')
+  const note: SermonPlan = { id: 'note', title: 'Faith', sourceFileName: 'faith.txt', sourceText: 'Notes', items: [], createdAt: 1, updatedAt: 1 }
+  records.create()
+  records.end({ title: 'Sunday', note })
+  assert.deepEqual(records.snapshot().services[0].notes.map(n => n.id), ['note'])
+})
+
+test('discarding the open service leaves nothing behind', () => {
+  const db = new MemoryStorage()
+  const records = new ServiceRecords(db, async () => '[]')
+  records.create('Kept', '', null)
+  records.end({})
+  records.create()
+  records.transcript(segment('one'))
+  records.discard()
+  assert.equal(records.snapshot().activeId, null)
+  assert.deepEqual(records.snapshot().services.map(s => s.title), ['Kept'])
+  records.create()
+  assert.ok(records.active())
+})

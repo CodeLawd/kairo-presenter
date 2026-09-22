@@ -13,7 +13,7 @@ test('fallback order prefers requested then operator default then local', () => 
       { id: 'KJV', name: 'KJV', access: 'local', available: true, requiresApiKey: false },
       { id: 'BSB', name: 'BSB', access: 'local', available: true, requiresApiKey: false },
     ]),
-    ['NLT', 'KJV', 'BSB', 'WEB', 'ASV', 'OEB'],
+    ['NLT', 'KJV', 'BBE', 'BSB'],
   )
 })
 

@@ -7,16 +7,30 @@ import {
   ChevronRight,
   FileText,
   Pencil,
+  Play,
   Send,
+  SlidersHorizontal,
+  Square,
   Trash2,
   Upload,
 } from '@/icons'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import {
+  DEFAULT_DOCUMENTS_SETTINGS,
   documentsErrorMessage,
+  normalizeDocumentsSettings,
+  SLIDESHOW_MAX_SEC,
+  SLIDESHOW_MIN_SEC,
+  type DocumentsSettings,
   type ProjectionDocument,
 } from '@shared/documents'
 import { overlayMediaUrl } from '@shared/overlay-template'
+import { commandForShortcut, shortcutFromEvent } from '@shared/keyboard-shortcuts'
+import { useBootstrapStore } from '@/bootstrap/useBootstrapStore'
+import { cn } from '@/lib/utils'
+import { LibrarySection } from '@/components/shared/LibrarySection'
+import { startLibraryItemDrag, useLibrary } from '@/stores/useLibraries'
+import { DEFAULT_LIBRARY_ID, itemsInLibrary, libraryCounts } from '@shared/libraries'
 
 interface ContextMenuState {
   id: string
@@ -24,7 +38,10 @@ interface ContextMenuState {
   y: number
 }
 
-export default function Documents(): React.ReactElement {
+/** Thrown to unwind the render loop when the operator cancels an import. */
+class ImportCanceled extends Error {}
+
+export default function Documents({ active = true }: { active?: boolean }): React.ReactElement {
   const [documents, setDocuments] = useState<ProjectionDocument[]>([])
   const [selected, setSelected] = useState<string | null>(null)
   const [page, setPage] = useState(0)
@@ -39,7 +56,24 @@ export default function Documents(): React.ReactElement {
   const contextMenuRef = useRef<HTMLDivElement>(null)
   const renameInputRef = useRef<HTMLInputElement>(null)
   const lock = useRef(false)
+  const shortcuts = useBootstrapStore((state) => state.settings.display.shortcuts)
+  const documentLibrary = useLibrary('documents')
+  const [activeLibraryId, setActiveLibraryId] = useState<string>(DEFAULT_LIBRARY_ID)
+  const storedSlideshow = useBootstrapStore((state) => state.settings.documents)
+  const [slideshow, setSlideshow] = useState<DocumentsSettings>(
+    () => normalizeDocumentsSettings(storedSlideshow ?? DEFAULT_DOCUMENTS_SETTINGS),
+  )
+  const [playing, setPlaying] = useState(false)
+  const [countdown, setCountdown] = useState(0)
+  const [slideshowMenuOpen, setSlideshowMenuOpen] = useState(false)
+  const slideshowMenuRef = useRef<HTMLDivElement>(null)
+  const liveThumbRef = useRef<HTMLButtonElement>(null)
+  /** Set by the Cancel button; the render loop checks it between pages. */
+  const cancelImport = useRef(false)
+  const [canceling, setCanceling] = useState(false)
+  const [importing, setImporting] = useState(false)
   const current = documents.find((doc) => doc.id === selected)
+  const visibleDocuments = itemsInLibrary(documentLibrary, documents, activeLibraryId)
 
   useEffect(() => {
     void window.api.documents.list().then(setDocuments).catch((err) => setError(documentsErrorMessage(err)))
@@ -84,9 +118,13 @@ export default function Documents(): React.ReactElement {
   }, [renamingId])
 
   const importDocument = useCallback(
-    async (kind: 'pdf' | 'powerpoint' = 'pdf'): Promise<void> => {
+    /** No `kind` opens one picker that takes PDFs and PowerPoints together. */
+    async (kind?: 'pdf' | 'powerpoint'): Promise<void> => {
       if (lock.current) return
       lock.current = true
+      cancelImport.current = false
+      setCanceling(false)
+      setImporting(true)
       setBusy(true)
       setImportMenuOpen(false)
       setError('')
@@ -100,6 +138,7 @@ export default function Documents(): React.ReactElement {
           return
         }
         id = prepared.id
+        if (cancelImport.current) throw new ImportCanceled()
         const [{ getDocument, GlobalWorkerOptions }, { default: workerUrl }] = await Promise.all([
           import('pdfjs-dist'),
           import('pdfjs-dist/build/pdf.worker.min.mjs?url'),
@@ -110,6 +149,7 @@ export default function Documents(): React.ReactElement {
           throw new Error('Documents can contain up to 500 pages. Split this document into smaller files.')
         }
         for (let index = 0; index < pdf.numPages; index++) {
+          if (cancelImport.current) throw new ImportCanceled()
           setStatus(`Rendering ${index + 1} / ${pdf.numPages}`)
           const sourcePage = await pdf.getPage(index + 1)
           const original = sourcePage.getViewport({ scale: 1 })
@@ -138,11 +178,16 @@ export default function Documents(): React.ReactElement {
         setPage(0)
         setStatus('')
       } catch (err) {
+        // A cancel is the operator's own doing — clean up the half-written
+        // import, but never shout about it in the error banner.
         if (id) await window.api.documents.cancel(id).catch(() => undefined)
         setStatus('')
-        setError(documentsErrorMessage(err))
+        if (!(err instanceof ImportCanceled)) setError(documentsErrorMessage(err))
       } finally {
         await pdf?.destroy().catch(() => undefined)
+        cancelImport.current = false
+        setCanceling(false)
+        setImporting(false)
         lock.current = false
         setBusy(false)
       }
@@ -167,6 +212,9 @@ export default function Documents(): React.ReactElement {
       useAppStore.setState({ liveOutputLabel: `${current.name} · Page ${target + 1}` })
       setPage(target)
       setStatus('')
+      // Announcement loops: the first page going live is the whole cue, so the
+      // operator should not have to press a second button to start the run.
+      if (slideshow.slideshowAutoStart) setPlaying(true)
     } catch (err) {
       setStatus('')
       setError(documentsErrorMessage(err))
@@ -175,6 +223,122 @@ export default function Documents(): React.ReactElement {
       setBusy(false)
     }
   }
+
+  /**
+   * Presentation-clicker and keyboard page control.
+   *
+   * A clicker is just a keyboard: most send Page Down / Page Up, some send the
+   * arrows. Both map to the same `previous`/`next` commands the booth uses, so
+   * a remap in Settings moves the pages too. The listener runs in the capture
+   * phase and calls `preventDefault`, which is how Operator's app-wide handler
+   * (it stays mounted on every route) knows to leave the event alone — without
+   * that, a clicker on this screen would scroll scripture suggestions instead.
+   */
+  const stepPage = useRef<(delta: number) => void>(() => {})
+  stepPage.current = (delta: number): void => {
+    if (!current || lock.current) return
+    void push(page + delta)
+  }
+  useEffect(() => {
+    if (!active || !current) return
+    const onKey = (event: KeyboardEvent): void => {
+      const target = event.target as HTMLElement | null
+      if (
+        event.defaultPrevented ||
+        event.isComposing ||
+        target?.matches('input, textarea, select, [contenteditable="true"]') ||
+        document.querySelector('[role="menu"], [role="dialog"], [role="alertdialog"]')
+      ) return
+      const shortcut = shortcutFromEvent(event)
+      const command = shortcut ? commandForShortcut(shortcut, shortcuts) : undefined
+      if (command !== 'previous' && command !== 'next') return
+      event.preventDefault()
+      event.stopPropagation()
+      stepPage.current(command === 'next' ? 1 : -1)
+    }
+    document.addEventListener('keydown', onKey, true)
+    return () => document.removeEventListener('keydown', onKey, true)
+  }, [active, current?.id, shortcuts])
+
+  const saveSlideshow = useCallback((patch: Partial<DocumentsSettings>): void => {
+    setSlideshow((previous) => {
+      const next = normalizeDocumentsSettings({ ...previous, ...patch })
+      useBootstrapStore.getState().setSettings({
+        ...useBootstrapStore.getState().settings,
+        documents: next,
+      })
+      void window.api.settings.set('documents', next).catch(() => undefined)
+      return next
+    })
+  }, [])
+
+  /**
+   * Unattended advance.
+   *
+   * The timer is rescheduled from `page`, so a manual push or a clicker press
+   * mid-run restarts the dwell rather than firing early on the old schedule.
+   * A single `setTimeout` per page (not a repeating interval) means a slow push
+   * can never stack a queue of overdue advances behind it.
+   */
+  const advance = useRef<() => void>(() => {})
+  advance.current = (): void => {
+    if (!current) return
+    const last = current.pages.length - 1
+    if (page >= last && !slideshow.slideshowLoop) {
+      setPlaying(false)
+      return
+    }
+    void push(page >= last ? 0 : page + 1)
+  }
+  useEffect(() => {
+    if (!playing || !current) {
+      setCountdown(0)
+      return
+    }
+    if (current.pages.length < 2) {
+      setPlaying(false)
+      return
+    }
+    const seconds = slideshow.slideshowSec
+    setCountdown(seconds)
+    const tick = setInterval(() => setCountdown((value) => Math.max(0, value - 1)), 1000)
+    // If a push is still in flight when the dwell expires, wait for it rather
+    // than dropping the turn: `push` refuses while locked, and a dropped turn
+    // would end the run silently (the next timer is scheduled off `page`).
+    let timer = setTimeout(function fire() {
+      if (lock.current) {
+        timer = setTimeout(fire, 250)
+        return
+      }
+      advance.current()
+    }, seconds * 1000)
+    return () => { clearInterval(tick); clearTimeout(timer) }
+  }, [playing, current?.id, current?.pages.length, page, slideshow.slideshowSec, slideshow.slideshowLoop])
+
+  // Keep the live page visible in the strip — during a slideshow nobody is
+  // there to scroll it by hand.
+  useEffect(() => {
+    liveThumbRef.current?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' })
+  }, [page, selected])
+
+  // A deck that is gone, or replaced by another, must not keep advancing.
+  useEffect(() => { setPlaying(false) }, [selected])
+
+  useEffect(() => {
+    if (!slideshowMenuOpen) return
+    const onPointer = (event: MouseEvent): void => {
+      if (!slideshowMenuRef.current?.contains(event.target as Node)) setSlideshowMenuOpen(false)
+    }
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') setSlideshowMenuOpen(false)
+    }
+    document.addEventListener('mousedown', onPointer)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onPointer)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [slideshowMenuOpen])
 
   const remove = async (id: string): Promise<void> => {
     if (!id || lock.current) return
@@ -262,9 +426,21 @@ export default function Documents(): React.ReactElement {
             <p className="truncate text-sm text-zinc-600">No document selected</p>
           )}
           {busy && status && (
-            <p className="truncate text-xs text-teal-400/90" aria-live="polite">
-              {status}
-            </p>
+            <div className="flex min-w-0 items-baseline gap-2">
+              <p className="truncate text-xs text-teal-400/90" aria-live="polite">
+                {canceling ? 'Canceling…' : status}
+              </p>
+              {importing && (
+                <button
+                  type="button"
+                  disabled={canceling}
+                  className="shrink-0 text-xs text-zinc-500 underline-offset-2 hover:text-zinc-200 hover:underline disabled:opacity-40"
+                  onClick={() => { cancelImport.current = true; setCanceling(true) }}
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
           )}
         </div>
 
@@ -274,7 +450,7 @@ export default function Documents(): React.ReactElement {
               type="button"
               className="btn-primary flex h-8 items-center gap-1.5 rounded-r-none px-3 text-xs"
               disabled={busy}
-              onClick={() => void importDocument('pdf')}
+              onClick={() => void importDocument()}
             >
               <Upload size={13} aria-hidden="true" />
               Import
@@ -333,16 +509,28 @@ export default function Documents(): React.ReactElement {
           className="flex w-52 shrink-0 flex-col border-r border-surface-border"
           aria-label="Imported documents"
         >
+          <div className="shrink-0 border-b border-surface-border p-1.5">
+            <LibrarySection
+              kind="documents"
+              activeLibraryId={activeLibraryId}
+              counts={libraryCounts(documentLibrary, documents)}
+              onSelect={setActiveLibraryId}
+            />
+          </div>
           <div className="min-h-0 flex-1 overflow-auto p-2">
-            {documents.length === 0 ? (
-              <p className="px-2 py-3 text-xs text-zinc-600">No documents</p>
+            {visibleDocuments.length === 0 ? (
+              <p className="px-2 py-3 text-xs text-zinc-600">
+                {documents.length === 0 ? 'No documents' : 'Nothing in this library'}
+              </p>
             ) : (
-              documents.map((doc) => {
+              visibleDocuments.map((doc) => {
                 const active = selected === doc.id
                 const renaming = renamingId === doc.id
                 return (
                   <div
                     key={doc.id}
+                    draggable={!renaming}
+                    onDragStart={(event) => startLibraryItemDrag(event, doc.id, doc.name)}
                     onContextMenu={(event) => openContextMenu(event, doc.id)}
                     className={[
                       'mb-0.5 rounded px-1 py-1 transition-colors',
@@ -411,15 +599,15 @@ export default function Documents(): React.ReactElement {
         <div className="flex min-w-0 flex-1 flex-col">
           {!current ? (
             <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6">
-              <p className="text-sm text-zinc-500">Import a PDF to present page by page</p>
+              <p className="text-sm text-zinc-500">Import a PDF or PowerPoint to present page by page</p>
               <button
                 type="button"
                 className="btn-secondary flex h-8 items-center gap-1.5 px-3 text-xs"
                 disabled={busy}
-                onClick={() => void importDocument('pdf')}
+                onClick={() => void importDocument()}
               >
                 <Upload size={13} aria-hidden="true" />
-                Import PDF
+                Import document
               </button>
             </div>
           ) : (
@@ -463,22 +651,116 @@ export default function Documents(): React.ReactElement {
                   >
                     <ChevronRight size={16} aria-hidden="true" />
                   </button>
+
+                  <div ref={slideshowMenuRef} className="relative ml-3 flex items-center gap-0.5">
+                    <button
+                      type="button"
+                      className={cn(
+                        'inline-flex h-9 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors disabled:opacity-40',
+                        playing
+                          ? 'bg-teal-500/15 text-teal-300'
+                          : 'text-zinc-500 hover:bg-white/5 hover:text-zinc-100',
+                      )}
+                      disabled={current.pages.length < 2}
+                      aria-pressed={playing}
+                      title={playing ? 'Stop the slideshow' : `Advance every ${slideshow.slideshowSec}s`}
+                      onClick={() => setPlaying((value) => !value)}
+                    >
+                      {playing ? <Square size={12} weight="fill" aria-hidden="true" /> : <Play size={12} aria-hidden="true" />}
+                      {playing ? (
+                        <span className="tabular-nums">{countdown}s</span>
+                      ) : (
+                        'Slideshow'
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      className="inline-flex h-9 items-center rounded-md px-2 text-zinc-500 transition-colors hover:bg-white/5 hover:text-zinc-100"
+                      aria-expanded={slideshowMenuOpen}
+                      aria-haspopup="dialog"
+                      aria-label="Slideshow settings"
+                      title="Slideshow settings"
+                      onClick={() => setSlideshowMenuOpen((open) => !open)}
+                    >
+                      <SlidersHorizontal size={13} aria-hidden="true" />
+                    </button>
+                    {slideshowMenuOpen && (
+                      <div
+                        role="dialog"
+                        aria-label="Slideshow settings"
+                        className="absolute bottom-full left-0 z-30 mb-1.5 w-60 rounded-lg border border-surface-border bg-surface-elevated p-3 shadow-2xl"
+                      >
+                        <label className="block text-[11px] text-zinc-400">
+                          Seconds per page
+                          <input
+                            type="number"
+                            className="input mt-1 h-8 text-xs"
+                            min={SLIDESHOW_MIN_SEC}
+                            max={SLIDESHOW_MAX_SEC}
+                            value={slideshow.slideshowSec}
+                            onChange={(event) => saveSlideshow({ slideshowSec: Number(event.target.value) })}
+                          />
+                        </label>
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {[5, 10, 15, 30, 60].map((preset) => (
+                            <button
+                              key={preset}
+                              type="button"
+                              className={cn(
+                                'rounded px-2 py-1 text-[11px] transition-colors',
+                                slideshow.slideshowSec === preset
+                                  ? 'bg-teal-500/20 text-teal-300'
+                                  : 'text-zinc-500 hover:bg-white/5 hover:text-zinc-200',
+                              )}
+                              onClick={() => saveSlideshow({ slideshowSec: preset })}
+                            >
+                              {preset}s
+                            </button>
+                          ))}
+                        </div>
+                        <label className="mt-3 flex items-center gap-2 text-[11px] text-zinc-300">
+                          <input
+                            type="checkbox"
+                            checked={slideshow.slideshowLoop}
+                            onChange={(event) => saveSlideshow({ slideshowLoop: event.target.checked })}
+                          />
+                          Loop back to page 1
+                        </label>
+                        <label className="mt-2 flex items-center gap-2 text-[11px] text-zinc-300">
+                          <input
+                            type="checkbox"
+                            checked={slideshow.slideshowAutoStart}
+                            onChange={(event) => saveSlideshow({ slideshowAutoStart: event.target.checked })}
+                          />
+                          Start on first push
+                        </label>
+                        <p className="mt-2 text-[10px] leading-relaxed text-zinc-500">
+                          Pushing a page by hand or with a clicker restarts the timer.
+                        </p>
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <button
-                  type="button"
-                  className="btn-secondary inline-flex h-9 w-9 items-center justify-center p-0 text-zinc-400 hover:text-rose-300"
-                  disabled={busy}
-                  onClick={() => void remove(current.id)}
-                  title="Remove imported copy"
-                  aria-label="Remove imported document"
-                >
-                  <Trash2 size={15} aria-hidden="true" />
-                </button>
+                <div className="flex items-center gap-3">
+                  <span className="font-mono text-xs tabular-nums text-zinc-500">
+                    {page + 1} / {current.pages.length}
+                  </span>
+                  <button
+                    type="button"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-md p-0 text-zinc-600 transition-colors hover:bg-white/5 hover:text-rose-300 disabled:opacity-40"
+                    disabled={busy}
+                    onClick={() => void remove(current.id)}
+                    title="Remove imported copy"
+                    aria-label="Remove imported document"
+                  >
+                    <Trash2 size={15} aria-hidden="true" />
+                  </button>
+                </div>
               </div>
 
               {current.pages.length > 1 && (
                 <div
-                  className="flex shrink-0 gap-2 overflow-x-auto border-t border-surface-border bg-surface-secondary/40 px-3 py-3"
+                  className="flex shrink-0 gap-2.5 overflow-x-auto border-t border-surface-border bg-black/20 px-3 py-3"
                   aria-label="Pages"
                 >
                   {current.pages.map((path, index) => (
@@ -490,20 +772,28 @@ export default function Documents(): React.ReactElement {
                       aria-label={`Push page ${index + 1}`}
                       title={`Push page ${index + 1}`}
                       aria-pressed={page === index}
-                      className={[
-                        'relative h-28 w-48 shrink-0 overflow-hidden rounded-md border bg-black',
+                      ref={page === index ? liveThumbRef : undefined}
+                      className={cn(
+                        // Height, not width: pages come portrait and landscape,
+                        // and a fixed box letterboxes one of them into a stamp.
+                        'group/page relative h-44 shrink-0 overflow-hidden rounded-md border bg-black transition-opacity',
                         page === index
                           ? 'border-teal-400/80 ring-1 ring-teal-400/40'
-                          : 'border-surface-border opacity-70 hover:opacity-100',
-                      ].join(' ')}
+                          : 'border-white/[0.06] opacity-60 hover:opacity-100',
+                      )}
                     >
                       <img
                         loading="lazy"
                         src={overlayMediaUrl(path)}
                         alt=""
-                        className="h-full w-full object-contain"
+                        className="h-full w-auto max-w-[22rem] object-contain"
                       />
-                      <span className="absolute bottom-1 right-1.5 rounded bg-black/55 px-1 text-[11px] font-medium text-white/85">
+                      <span
+                        className={cn(
+                          'absolute bottom-1 right-1.5 rounded px-1 text-[10px] font-medium tabular-nums',
+                          page === index ? 'bg-teal-400/90 text-black' : 'bg-black/55 text-white/70',
+                        )}
+                      >
                         {index + 1}
                       </span>
                     </button>

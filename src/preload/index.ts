@@ -21,6 +21,7 @@ import type {
   TranscriptResult,
   InterimResult,
   LivePlanState,
+  LyricsImportPreview,
   LyricsSong,
   LyricsImportSource,
   LyricsOnlineResult,
@@ -45,6 +46,9 @@ import type {
   PPResourcePreview,
 } from '@shared/propresenter-resources'
 import { IPC } from '@shared/ipc'
+import { SETLIST_CHANGED, SETLIST_CHANNEL } from '@shared/setlist'
+import { LIBRARIES_CHANGED, LIBRARIES_CHANNEL } from '@shared/libraries'
+import { PASSAGES_CHANGED, PASSAGES_CHANNEL } from '@shared/passages'
 
 /**
  * Creates a type-safe subscription to a push channel.
@@ -283,6 +287,10 @@ const scripture: ProAutomateAPI['scripture'] = {
   removeLocalBibleTranslation(translation: string) {
     return ipcRenderer.invoke(IPC.SCRIPTURE.REMOVE_LOCAL_BIBLE_TRANSLATION, translation)
   },
+
+  listInstalledLocalBiblePacks() {
+    return ipcRenderer.invoke(IPC.SCRIPTURE.LIST_INSTALLED_LOCAL_BIBLE_PACKS)
+  },
 }
 
 // ─── transcription ────────────────────────────────────────────────────────────
@@ -302,6 +310,32 @@ const transcription: ProAutomateAPI['transcription'] = {
 
   clearHistory(): Promise<void> {
     return ipcRenderer.invoke(IPC.TRANSCRIPTION.CLEAR_HISTORY)
+  },
+}
+
+// ─── workspace ────────────────────────────────────────────────────────────────
+
+const workspace: ProAutomateAPI['workspace'] = {
+  get() {
+    return ipcRenderer.invoke(IPC.WORKSPACE.GET)
+  },
+  chooseFolder(options) {
+    return ipcRenderer.invoke(IPC.WORKSPACE.CHOOSE_FOLDER, options)
+  },
+  reveal() {
+    return ipcRenderer.invoke(IPC.WORKSPACE.REVEAL)
+  },
+  revealSongs() {
+    return ipcRenderer.invoke(IPC.WORKSPACE.REVEAL_SONGS)
+  },
+  resyncSongs() {
+    return ipcRenderer.invoke(IPC.WORKSPACE.RESYNC_SONGS)
+  },
+  mediaMigration() {
+    return ipcRenderer.invoke(IPC.WORKSPACE.MEDIA_MIGRATION)
+  },
+  adoptMedia(options) {
+    return ipcRenderer.invoke(IPC.WORKSPACE.ADOPT_MEDIA, options)
   },
 }
 
@@ -327,6 +361,13 @@ const lyrics: ProAutomateAPI['lyrics'] = {
 
   import(source: LyricsImportSource): Promise<LyricsSong> {
     return ipcRenderer.invoke(IPC.LYRICS.IMPORT, source)
+  },
+  previewFile(source: LyricsImportSource): Promise<LyricsImportPreview> {
+    return ipcRenderer.invoke(IPC.LYRICS.PREVIEW_FILE, source)
+  },
+
+  readClipboard() {
+    return ipcRenderer.invoke(IPC.LYRICS.READ_CLIPBOARD)
   },
 
   getLibrary(): Promise<LyricsSong[]> {
@@ -393,7 +434,7 @@ const settings: ProAutomateAPI['settings'] = {
   },
 
   testApiKey(
-    kind: 'deepgram' | 'anthropic' | 'bible',
+    kind: 'deepgram' | 'anthropic' | 'bible' | 'brave',
     draft?: string,
   ): Promise<{ ok: boolean; message: string }> {
     return ipcRenderer.invoke(IPC.SETTINGS.TEST_API_KEY, kind, draft)
@@ -681,7 +722,22 @@ const services: ProAutomateAPI['services'] = {
   command: (command) => ipcRenderer.invoke('services:command', command),
   onChanged: (callback) => subscribe('services:changed', callback),
 }
-const api: ProAutomateAPI = { services, documents, app: appApi, propresenter, audio, scripture, transcription, lyrics, settings, orchestrator, resilience, ndi, media, tracks, onboarding, account, updates }
+const setlist: ProAutomateAPI['setlist'] = {
+  command: (command) => ipcRenderer.invoke(SETLIST_CHANNEL, command),
+  onChanged: (callback) => subscribe(SETLIST_CHANGED, callback),
+}
+
+const libraries: ProAutomateAPI['libraries'] = {
+  command: (command) => ipcRenderer.invoke(LIBRARIES_CHANNEL, command),
+  onChanged: (callback) => subscribe(LIBRARIES_CHANGED, callback),
+}
+
+const passages: ProAutomateAPI['passages'] = {
+  command: (command) => ipcRenderer.invoke(PASSAGES_CHANNEL, command),
+  onChanged: (callback) => subscribe(PASSAGES_CHANGED, callback),
+}
+
+const api: ProAutomateAPI = { passages, libraries, setlist, services, documents, app: appApi, propresenter, audio, scripture, transcription, workspace, lyrics, settings, orchestrator, resilience, ndi, media, tracks, onboarding, account, updates }
 
 if (process.contextIsolated) {
   try {

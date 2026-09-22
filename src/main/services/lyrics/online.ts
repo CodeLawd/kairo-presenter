@@ -5,6 +5,7 @@ import { canonicalText } from './normalize'
 import { lyricsScraperService } from './scraper'
 import { lrclibService } from './lrclib'
 import { MIN_WEB_QUERY_CHARS, snippetResolver } from './snippet-resolver'
+import { parseSongQuery, queryVariants } from '@shared/lyrics-query'
 
 /**
  * Fans one query out across every online catalogue and returns a single ranked
@@ -48,6 +49,15 @@ const SCORE_TITLE_CONTAINS = 1.5
  */
 const SCORE_TITLE_COVERAGE = 4
 const SCORE_ARTIST_COVERAGE = 1.5
+/**
+ * Weight for a result by the artist the operator actually named.
+ *
+ * "way maker by sinach" is a request for Sinach's recording, not the best-known
+ * cover of it, and worship titles are covered constantly. This sits above the
+ * completeness and popularity nudges so a fuller or more popular version by
+ * someone else cannot outrank the artist who was asked for.
+ */
+const SCORE_ARTIST_NAMED = 3.5
 /** Weight of the provider's own relevance ordering. */
 const SCORE_RANK_WEIGHT = 2
 /**
@@ -67,26 +77,9 @@ interface Scored {
   score: number
 }
 
-/**
- * Extra catalogue queries for African / compound titles.
- * "ami oluwa" is often catalogued as the single token "Amioluwa".
- * Skips long lyric lines — collapsing those only wastes a request.
- */
-export function queryVariants(query: string): string[] {
-  const q = query.trim()
-  if (!q) return []
-  const variants = [q]
-  const words = q.split(/\s+/).filter(Boolean)
-  if (
-    words.length >= 2 &&
-    words.length <= 3 &&
-    words.every((word) => word.length <= 10)
-  ) {
-    const collapsed = words.join('')
-    if (collapsed.length >= 4) variants.push(collapsed)
-  }
-  return variants
-}
+// Query decomposition (title vs artist, compound-title variants) lives in
+// `@shared/lyrics-query` so it can be tested without the network.
+export { queryVariants }
 
 export async function searchAllProviders(
   query: string,
@@ -95,13 +88,18 @@ export async function searchAllProviders(
   const q = query.trim()
   if (q.length < MIN_QUERY_LENGTH) return []
 
+  const parsed = parseSongQuery(q)
   const variants = queryVariants(q)
-  const settled = await Promise.allSettled(
-    variants.flatMap((variant) => [
+  const settled = await Promise.allSettled([
+    ...variants.flatMap((variant) => [
       lyricsScraperService.search(variant),
       lrclibService.search(variant),
-    ])
-  )
+    ]),
+    // A typed "<title> by <artist>" is invisible to LRCLIB's free-text search;
+    // the structured endpoint answers it. Both orders of a dashed query are
+    // tried because only the real one returns anything.
+    ...parsed.pairs.map((pair) => lrclibService.searchStructured(pair.title, pair.artist)),
+  ])
 
   const gathered: ProviderResult[] = []
   const failures: string[] = []
@@ -183,6 +181,22 @@ export function needsWebResolution(query: string, gathered: ProviderResult[]): b
 export function rankResults(query: string, results: ProviderResult[]): LyricsOnlineResult[] {
   const canonicalQuery = canonicalText(query)
   const queryWords = canonicalQuery.split(' ').filter(Boolean)
+  // A dashed query yields both orders, so either side may be the artist —
+  // both were typed by the operator either way.
+  const parsed = parseSongQuery(query)
+  const namedArtists = parsed.pairs
+    .map((pair) => canonicalText(pair.artist))
+    .filter((artist) => artist.length >= 3)
+  // When the query names a title and an artist, each field is scored against
+  // its own half. Measuring the title against the whole string ("way maker by
+  // sinach") caps a perfect title at half credit and lets a mis-tagged record
+  // that happens to carry the artist's name in its title make up the gap.
+  const titleWords = parsed.pairs.length > 0
+    ? canonicalText(parsed.pairs[0].title).split(' ').filter(Boolean)
+    : queryWords
+  const artistWords = parsed.pairs.length > 0
+    ? canonicalText(parsed.pairs[0].artist).split(' ').filter(Boolean)
+    : queryWords
 
   // Provider relevance is positional, so rank is per provider, not global.
   const rankByProvider = new Map<LyricsProvider, number>()
@@ -190,7 +204,11 @@ export function rankResults(query: string, results: ProviderResult[]): LyricsOnl
   const scored: Scored[] = results.map((result) => {
     const rank = rankByProvider.get(result.provider) ?? 0
     rankByProvider.set(result.provider, rank + 1)
-    return scoreResult(result, canonicalQuery, queryWords, rank)
+    return scoreResult(result, canonicalQuery, queryWords, rank, {
+      namedArtists,
+      titleWords,
+      artistWords,
+    })
   })
 
   scored.sort((a, b) => b.score - a.score)
@@ -223,7 +241,12 @@ function scoreResult(
   result: ProviderResult,
   canonicalQuery: string,
   queryWords: string[],
-  rank: number
+  rank: number,
+  profile: { namedArtists: string[]; titleWords: string[]; artistWords: string[] } = {
+    namedArtists: [],
+    titleWords: queryWords,
+    artistWords: queryWords,
+  }
 ): Scored {
   let score = SCORE_RANK_WEIGHT / (1 + rank)
   const enriched: ProviderResult = { ...result }
@@ -237,8 +260,8 @@ function scoreResult(
 
   // Coverage runs on the song and its lead artist rather than the raw strings,
   // so a "(feat. …)" credit can't make an unrelated song look like a match.
-  score += SCORE_TITLE_COVERAGE * wordCoverage(coreTitle(result.title), queryWords)
-  score += SCORE_ARTIST_COVERAGE * wordCoverage(primaryArtistKey(result.artist), queryWords)
+  score += SCORE_TITLE_COVERAGE * wordCoverage(coreTitle(result.title), profile.titleWords)
+  score += SCORE_ARTIST_COVERAGE * wordCoverage(primaryArtistKey(result.artist), profile.artistWords)
 
   if (result.lyrics) {
     const match = findLyricMatch(result.lyrics, canonicalQuery, queryWords)
@@ -251,6 +274,10 @@ function scoreResult(
     }
   }
 
+  if (profile.namedArtists.length > 0 && matchesNamedArtist(result.artist, profile.namedArtists)) {
+    score += SCORE_ARTIST_NAMED
+  }
+
   if (result.popularity) {
     score += Math.min(SCORE_POPULARITY_MAX, Math.log10(result.popularity + 1) / 5)
   }
@@ -261,6 +288,18 @@ function scoreResult(
   }
 
   return { result: enriched, score }
+}
+
+/**
+ * Whether a result is by an artist the query named.
+ *
+ * Credits are written every which way — "Sinach", "SINACH", "Sinach & Loveworld
+ * Singers" — so containment in either direction counts as the same artist.
+ */
+function matchesNamedArtist(artist: string, namedArtists: string[]): boolean {
+  const canonical = canonicalText(artist)
+  if (canonical.length < 3) return false
+  return namedArtists.some((named) => canonical.includes(named) || named.includes(canonical))
 }
 
 /** Share of the query's words this field accounts for. */

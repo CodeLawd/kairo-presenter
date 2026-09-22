@@ -5,27 +5,32 @@ import path from 'path'
 import { createHash, randomUUID } from 'crypto'
 import { gunzipSync } from 'zlib'
 import os from 'os'
-import { NKJV_VERSE_COUNTS } from './nkjv-verse-counts'
+import { BIBLE_VERSE_COUNTS } from './bible-verse-counts'
+import {
+  DEFAULT_TRANSLATION_ID,
+  getDownloadablePack,
+  getTranslationDefinition,
+} from '@shared/bible-translations'
 
-// ─── Expected NKJV pack shape ─────────────────────────────────────────────────
+// ─── Expected pack shape ────────────────────────────────────────────────────
 // The converter (scripts/build-bible-pack.ts) enforces the same expectations on
-// the source JSON. Both sides must agree before a single row is imported.
+// the source JSON. Both sides must agree before a single row is imported: the
+// canonical Protestant versification (BIBLE_VERSE_COUNTS) for every pack.
 
-export const NKJV_PACK_TRANSLATION_ID = 'NKJV'
-export const NKJV_PACK_DOWNLOAD_URL =
-  'https://github.com/CodeLawd/kairo-bible-packs/releases/download/bible-packs-v1/nkjv-pack.db.gz'
-export const NKJV_PACK_GZIP_SHA256 = '12efa45e3be35978ffc72ee2305f4f085ca7076ef5974b7046dfcb8ac450b041'
+function canonicalTotals(): { books: number; chapters: number; verses: number } {
+  let chapters = 0
+  let verses = 0
+  for (const book of BIBLE_VERSE_COUNTS) {
+    chapters += book.length
+    for (const count of book) verses += count
+  }
+  return { books: BIBLE_VERSE_COUNTS.length, chapters, verses }
+}
+
+const CANONICAL_TOTALS = canonicalTotals()
 
 const MAX_COMPRESSED_PACK_BYTES = 10 * 1024 * 1024
 const MAX_UNCOMPRESSED_PACK_BYTES = 24 * 1024 * 1024
-
-export const NKJV_PACK_EXPECTED = {
-  translationId: NKJV_PACK_TRANSLATION_ID,
-  translationName: 'New King James Version',
-  books: 66,
-  chapters: 1189,
-  verses: 31102,
-} as const
 
 // ─── Public shapes ────────────────────────────────────────────────────────────
 
@@ -106,10 +111,14 @@ function tableExists(db: BetterSqlite3.Database, name: string): boolean {
 /**
  * Validate a SQLite Bible pack file without modifying it.
  *
+ * Accepts any single-translation pack. When `expectedTranslationId` is given
+ * (file-picker installs of a specific translation) the pack must contain only
+ * that id; downloads always pass the registry id they requested.
+ *
  * Throws a plain Error describing the first problem found. Returns the pack
- * contents (NKJV rows only) ready for transactional import.
+ * contents ready for transactional import.
  */
-export function validatePackFile(packPath: string): ValidatedPack {
+export function validatePackFile(packPath: string, expectedTranslationId?: string): ValidatedPack {
   if (typeof packPath !== 'string' || packPath.trim() === '') {
     throw new Error('Select a Bible pack file to install.')
   }
@@ -142,33 +151,41 @@ export function validatePackFile(packPath: string): ValidatedPack {
       .prepare('SELECT id, name, language FROM translations')
       .all() as Array<{ id: string; name: string; language: string }>
 
-    const nkjv = translationRows.filter((row) => row.id === NKJV_PACK_TRANSLATION_ID)
-    if (translationRows.length !== 1 || nkjv.length !== 1) {
+    const expected = expectedTranslationId?.toUpperCase()
+    const matching = expected
+      ? translationRows.filter((row) => row.id.toUpperCase() === expected)
+      : translationRows
+    if (translationRows.length !== 1 || matching.length !== 1) {
       const found =
         translationRows.length === 0
           ? 'no translations'
           : translationRows.map((row) => row.id).join(', ')
       throw new Error(
-        `Expected a pack containing only NKJV, found: ${found}.`,
+        expected
+          ? `Expected a pack containing only ${expected}, found: ${found}.`
+          : `Expected a pack containing a single translation, found: ${found}.`,
       )
     }
-    const nkjvRow = nkjv[0] as { id: string; name: string; language: string }
+    const packRow = matching[0] as { id: string; name: string; language: string }
+    const translationId = packRow.id.toUpperCase()
+    const fallbackName = getTranslationDefinition(translationId)?.name ?? translationId
 
     // Fixed-column reads only — no trusted identifiers from the pack.
     const verses = db
       .prepare(
         'SELECT book_id as bookId, chapter, verse, text FROM verses WHERE translation_id = ? ORDER BY book_id, chapter, verse',
       )
-      .all(NKJV_PACK_TRANSLATION_ID) as Array<{
+      .all(packRow.id) as Array<{
       bookId: number
       chapter: number
       verse: number
       text: string | null
     }>
 
-    return validatePackRows(
-      nkjvRow.name || NKJV_PACK_EXPECTED.translationName,
-      nkjvRow.language || 'en',
+    return validatePackRowsFor(
+      translationId,
+      packRow.name || fallbackName,
+      packRow.language || 'en',
       verses,
     )
   } catch (error) {
@@ -181,32 +198,39 @@ export function validatePackFile(packPath: string): ValidatedPack {
   }
 }
 
-/** Download the allowlisted NKJV asset, verify it, and return its SQLite bytes. */
-export async function downloadNkjvPack(
+/** Download the allowlisted registry asset for `translationId` and return its SQLite bytes. */
+export async function downloadBiblePack(
+  translationId: string,
   fetcher: typeof fetch = fetch,
-  expectedHash: string = NKJV_PACK_GZIP_SHA256,
+  expectedHash?: string,
 ): Promise<Buffer> {
-  const response = await fetcher(NKJV_PACK_DOWNLOAD_URL, { redirect: 'follow' })
+  const normalized = translationId.toUpperCase()
+  const pack = getDownloadablePack(normalized)
+  if (!pack) {
+    throw new Error(`No downloadable local pack is available for ${normalized}.`)
+  }
+  const response = await fetcher(pack.url, { redirect: 'follow' })
   if (!response.ok) {
-    throw new Error(`NKJV download failed (HTTP ${response.status}).`)
+    throw new Error(`${normalized} download failed (HTTP ${response.status}).`)
   }
   const compressed = Buffer.from(await response.arrayBuffer())
   if (compressed.length === 0 || compressed.length > MAX_COMPRESSED_PACK_BYTES) {
-    throw new Error('The downloaded NKJV pack has an invalid size.')
+    throw new Error(`The downloaded ${normalized} pack has an invalid size.`)
   }
   const digest = createHash('sha256').update(compressed).digest('hex')
-  if (digest !== expectedHash) {
-    throw new Error('The downloaded NKJV pack failed its security check.')
+  if (digest !== (expectedHash ?? pack.sha256)) {
+    throw new Error(`The downloaded ${normalized} pack failed its security check.`)
   }
   try {
     return gunzipSync(compressed, { maxOutputLength: MAX_UNCOMPRESSED_PACK_BYTES })
   } catch {
-    throw new Error('The downloaded NKJV pack could not be decompressed.')
+    throw new Error(`The downloaded ${normalized} pack could not be decompressed.`)
   }
 }
 
-export function temporaryPackPath(): string {
-  return path.join(os.tmpdir(), `kairo-nkjv-${randomUUID()}.db`)
+export function temporaryPackPath(translationId = DEFAULT_TRANSLATION_ID): string {
+  const slug = translationId.toLowerCase().replace(/[^a-z0-9]+/g, '') || 'bible'
+  return path.join(os.tmpdir(), `kairo-${slug}-${randomUUID()}.db`)
 }
 
 /**
@@ -214,16 +238,18 @@ export function temporaryPackPath(): string {
  * (which validates parsed JSON before writing a pack). Throws on the first
  * problem; returns canonical counts otherwise.
  */
-export function validatePackRows(
+export function validatePackRowsFor(
+  translationId: string,
   translationName: string,
   language: string,
   verses: Array<{ bookId: number; chapter: number; verse: number; text: string | null }>,
 ): ValidatedPack {
-  const { books, chapters, verses: expectedVerses } = NKJV_PACK_EXPECTED
+  const normalized = translationId.toUpperCase()
+  const { books, chapters, verses: expectedVerses } = CANONICAL_TOTALS
 
   if (verses.length !== expectedVerses) {
     throw new Error(
-      `Expected ${expectedVerses.toLocaleString()} NKJV verses, found ${verses.length.toLocaleString()}.`,
+      `Expected ${expectedVerses.toLocaleString()} ${normalized} verses, found ${verses.length.toLocaleString()}.`,
     )
   }
 
@@ -283,7 +309,7 @@ export function validatePackRows(
   }
 
   for (let bookId = 1; bookId <= books; bookId++) {
-    const expectedChapterVerses = NKJV_VERSE_COUNTS[bookId - 1]
+    const expectedChapterVerses = BIBLE_VERSE_COUNTS[bookId - 1]
     if (!expectedChapterVerses) {
       throw new Error(`Missing canonical verse bounds for book ${bookId}.`)
     }
@@ -323,7 +349,7 @@ export function validatePackRows(
   }
 
   return {
-    translationId: NKJV_PACK_TRANSLATION_ID,
+    translationId: normalized,
     translationName,
     language,
     verses: rows,
@@ -340,12 +366,11 @@ export function packStatusFor(
   chapterCount: number,
   hasTranslation: boolean,
 ): LocalBiblePackStatusShape {
-  const expected =
-    translation.toUpperCase() === NKJV_PACK_TRANSLATION_ID ? NKJV_PACK_EXPECTED.verses : 0
+  const normalized = translation.toUpperCase()
   const installed =
     hasTranslation &&
-    (expected > 0
-      ? verseCount === expected && chapterCount === NKJV_PACK_EXPECTED.chapters
+    (getDownloadablePack(normalized)
+      ? verseCount === CANONICAL_TOTALS.verses && chapterCount === CANONICAL_TOTALS.chapters
       : verseCount > 0)
   return { translation, verseCount, chapterCount, installed }
 }

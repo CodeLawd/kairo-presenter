@@ -349,6 +349,17 @@ export function parsePageHeading(raw: string): { title: string; artist: string }
     }
   }
 
+  // "Dunsin Oyekan - Baruch Hashem Adonai". Lyric blogs and Genius slugs both
+  // put the artist first, so that reading wins; without this branch the whole
+  // heading becomes the title and the same song shows up twice in results —
+  // once parsed, once not.
+  const dashMatch = heading.match(/^(.+?)\s+[-–—]\s+(.+)$/)
+  if (dashMatch) {
+    const artist = cleanArtist(dashMatch[1])
+    const title = stripParenthetical(dashMatch[2])
+    if (artist.length >= 2 && title.length >= 2) return { title, artist }
+  }
+
   // "Amioluwa (The Mark of God) Sunmisola Agbebi and Yinka Okeleye"
   const trailingArtists = heading.match(
     /^(.*?)[\s,]+([A-Z][\w'.-]+(?:\s+[A-Z][\w'.-]+){0,3}(?:\s+(?:and|&|,)\s+[A-Z][\w'.-]+(?:\s+[A-Z][\w'.-]+){0,3})+)$/

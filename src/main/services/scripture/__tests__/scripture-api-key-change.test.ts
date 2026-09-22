@@ -5,12 +5,17 @@ import { ApiBibleClient, type ApiBibleTransport } from '../api-bible-client'
 
 /** Each key is authorized for a different set of Bibles. */
 function clientFor(apiKey: string): ApiBibleClient {
-  const catalogs: Record<string, Array<{ id: string; abbreviationLocal: string }>> = {
+  const catalogs: Record<string, Array<{ id: string; abbreviationLocal: string; name?: string }>> = {
     'key-one': [
       { id: 'nkjv-under-key-one', abbreviationLocal: 'NKJV' },
       { id: 'nlt-under-key-one', abbreviationLocal: 'NLT' },
     ],
     'key-two': [{ id: 'nlt-under-key-two', abbreviationLocal: 'NLT' }],
+    'key-mixed': [
+      { id: 'kjv-bundled-text', abbreviationLocal: 'KJV', name: 'King James Version' },
+      { id: 'niv-text', abbreviationLocal: 'NIV', name: 'New International Version' },
+      { id: 'xyz-text', abbreviationLocal: 'XYZ', name: 'Xyz Simple Translation' },
+    ],
   }
   const transport: ApiBibleTransport = {
     async get() {
@@ -66,4 +71,13 @@ test('an empty key clears everything the previous key authorized', async () => {
 
   await assert.rejects(() => scripture.resolveBibleId('NKJV', ''))
   assert.equal(scripture.isAuthorizedBibleId('nkjv-under-key-one'), false)
+})
+
+test('the offline-cache list skips bundled locals but keeps API and discovered texts', async () => {
+  const scripture = service()
+  const list = await scripture.listAuthorizedTranslations('key-mixed')
+  const ids = list.map((entry) => entry.translation)
+  assert.ok(!ids.includes('KJV'), 'bundled KJV already ships offline')
+  assert.ok(ids.includes('NIV'))
+  assert.ok(ids.includes('XYZ'), 'discovered translations stay downloadable for offline cache')
 })

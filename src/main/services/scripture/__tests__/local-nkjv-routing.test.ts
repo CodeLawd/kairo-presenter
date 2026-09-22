@@ -8,12 +8,16 @@ import { ScriptureService } from '../index'
 import type { ApiBibleClient } from '../api-bible-client'
 import { IPC } from '../../../../lib/ipc'
 import {
+  getTranslationDefinition,
+  isBundledTranslation,
+} from '../../../../lib/bible-translations'
+import {
   FIXTURE_MARKER,
   buildFixtureSource,
   buildFixtureVerses,
   markFixtureSource,
 } from './local-bible-pack-fixture'
-import { parseNkjvSource } from '../../../../../scripts/build-bible-pack'
+import { parsePackSource } from '../../../../../scripts/build-bible-pack'
 
 const ROOT = path.resolve(__dirname, '../../../../..')
 const read = (relative: string): string => fs.readFileSync(path.join(ROOT, relative), 'utf8')
@@ -28,7 +32,7 @@ function serviceWithLocalNkjv(dir: string): { service: ScriptureService; db: Bib
   const db = new BibleDatabase(path.join(dir, 'bible.db'))
   const source = buildFixtureSource()
   markFixtureSource(source, 43, 3, 16, `${FIXTURE_MARKER} covenant of testing`)
-  const { rows } = parseNkjvSource(source)
+  const { rows } = parsePackSource(source)
   db.importTranslationPack('NKJV', 'Synthetic Fixture Translation', 'en', rows)
   const service = new ScriptureService()
   Object.assign(service, { db })
@@ -149,7 +153,7 @@ test('NKJV is available without a key once installed, unavailable before', async
     assert.equal(nkjvBefore?.available, false)
 
     const source = buildFixtureSource()
-    const { rows } = parseNkjvSource(source)
+    const { rows } = parsePackSource(source)
     db.importTranslationPack('NKJV', 'Synthetic Fixture Translation', 'en', rows)
 
     const after = await service.getTranslationOptions()
@@ -160,6 +164,38 @@ test('NKJV is available without a key once installed, unavailable before', async
     assert.equal(nkjvAfter?.access, 'api')
   } finally {
     db.close()
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('installed-pack listing covers custom packs and excludes bundled Bibles', () => {
+  const dir = tmpDir('kairo-installed-packs-')
+  try {
+    const { service, db } = serviceWithLocalNkjv(dir)
+    const { rows } = parsePackSource(buildFixtureSource())
+    // A pack the registry has never heard of (installed from a file).
+    db.importTranslationPack('ZZT', 'Custom Test Translation', 'en', rows)
+    // A bundled Bible, written directly (the service refuses to overwrite it).
+    db.importTranslationPack('KJV', 'King James Version', 'en', rows)
+
+    const listed = service.listInstalledLocalBiblePacks()
+    assert.deepEqual(
+      listed.map((pack) => pack.translation).sort(),
+      ['NKJV', 'ZZT'],
+    )
+    const custom = listed.find((pack) => pack.translation === 'ZZT')
+    assert.ok(custom)
+    assert.equal(custom.name, 'Custom Test Translation')
+    assert.equal(custom.installed, true)
+    assert.equal(custom.verseCount, 31102)
+
+    // A custom pack is removable, and disappears from the listing afterwards.
+    const removed = service.removeLocalBibleTranslation('zzt')
+    assert.equal(removed.installed, false)
+    assert.deepEqual(service.listInstalledLocalBiblePacks().map((pack) => pack.translation), ['NKJV'])
+    assert.throws(() => service.removeLocalBibleTranslation('KJV'), /cannot be removed/)
+    db.close()
+  } finally {
     fs.rmSync(dir, { recursive: true, force: true })
   }
 })
@@ -185,6 +221,7 @@ const LOCAL_PACK_OPERATIONS = [
   ['GET_LOCAL_BIBLE_PACK_STATUS', 'getLocalBiblePackStatus'],
   ['REMOVE_LOCAL_BIBLE_TRANSLATION', 'removeLocalBibleTranslation'],
   ['DOWNLOAD_LOCAL_BIBLE_TRANSLATION', 'downloadLocalBibleTranslation'],
+  ['LIST_INSTALLED_LOCAL_BIBLE_PACKS', 'listInstalledLocalBiblePacks'],
 ] as const
 
 test('every local-pack operation has an IPC channel', () => {
@@ -206,18 +243,21 @@ test('ScriptureAPI exposes a zero-argument picker-only local-pack install', () =
   assert.match(api, /getLocalBiblePackStatus: \(translation: string\) => Promise<LocalBiblePackStatus>/)
   assert.match(api, /removeLocalBibleTranslation: \(translation: string\) => Promise<LocalBiblePackStatus>/)
   assert.match(api, /downloadLocalBibleTranslation: \(translation: string\) => Promise<LocalBiblePackInstallResult>/)
+  assert.match(api, /listInstalledLocalBiblePacks: \(\) => Promise<InstalledLocalBiblePack\[\]>/)
 
   for (const forbidden of ['packPath', 'absolutePath', 'filePaths']) {
     assert.ok(!api.includes(forbidden), `ScriptureAPI leaks a path via ${forbidden}`)
   }
   const interfaceBody = (name: string): string => {
-    const start = source.indexOf(`export interface ${name} {`)
+    const start = source.search(new RegExp(`export interface ${name}(?: extends \\w+)? \\{`))
     assert.ok(start >= 0, `${name} is missing`)
     const end = source.indexOf('\n}', start)
     return source.slice(start, end)
   }
   const status = interfaceBody('LocalBiblePackStatus')
   assert.ok(!status.includes('path'), 'LocalBiblePackStatus must not carry a filesystem path')
+  const installedPack = interfaceBody('InstalledLocalBiblePack')
+  assert.ok(!installedPack.includes('path'), 'InstalledLocalBiblePack must not carry a filesystem path')
   const result = interfaceBody('LocalBiblePackInstallResult')
   assert.ok(!result.includes('path'), 'LocalBiblePackInstallResult must not carry a filesystem path')
 })
@@ -243,18 +283,17 @@ test('the main process handles every local-pack invoke channel', () => {
   assert.ok(!settingsUi.includes('showOpenDialog'), 'renderer must not touch the file dialog')
 })
 
-test('selecting unavailable NKJV starts the one-click download flow', () => {
+test('selecting an unavailable downloadable translation starts the one-click download flow', () => {
   const settings = read('src/renderer/src/components/settings/Settings.tsx')
-  assert.ok(settings.includes('downloadLocalBibleTranslation'), 'translation picker must download NKJV')
-  assert.ok(settings.includes('Download and use NKJV'), 'user must confirm the one-time download')
+  assert.ok(settings.includes('downloadLocalBibleTranslation'), 'translation picker must download packs')
+  assert.ok(settings.includes('Download and use '), 'user must confirm the one-time download')
 })
 
-test('NKJV keeps its API-capable catalog entry for fallback', () => {
-  const service = read('src/main/services/scripture/index.ts')
-  assert.ok(
-    service.includes("['NKJV', 'New King James Version', 'api']"),
-    'NKJV must stay api-capable in the static catalog',
-  )
+test('NKJV keeps its API-capable registry entry for fallback', () => {
+  const definition = getTranslationDefinition('NKJV')
+  assert.ok(definition, 'NKJV must stay registered')
+  assert.equal(definition.access, 'api')
+  assert.equal(isBundledTranslation('NKJV'), false)
 })
 
 // ─── Installer / package configuration ────────────────────────────────────────

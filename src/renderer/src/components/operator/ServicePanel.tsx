@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { create } from 'zustand'
 import { Dialog } from 'radix-ui'
 import { X } from '@/icons'
@@ -72,23 +72,18 @@ function RecapStatus({ record, onRetry }: {
   )
 }
 
-export function ServicePanel({ onStartTranscription, creationIntent, onCreationIntentChange }: {
-  /** Called after create when the user started from the live transcript panel. */
-  onStartTranscription: () => Promise<void>
-  creationIntent: 'manual' | 'start' | null
-  onCreationIntentChange: (intent: 'manual' | 'start' | null) => void
-}): React.ReactElement {
+export function ServicePanel(): React.ReactElement {
   const snapshot = useServiceRecords()
   const active = snapshot.services.find(s => s.id === snapshot.activeId)
   const plans = useBootstrapStore(s => s.sermonPlans)
   const [title, setTitle] = useState('')
   const [speaker, setSpeaker] = useState('')
   const [planId, setPlanId] = useState('')
-  const creatingRef = useRef(false)
   const [viewId, setViewId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [confirmEnd, setConfirmEnd] = useState(false)
+  const [confirmDiscard, setConfirmDiscard] = useState(false)
   const [elapsedLabel, setElapsedLabel] = useState('00:00:00')
   const record = snapshot.services.find(s => s.id === viewId)
   const [tab, setTab] = useState<ReviewTab>('nuggets')
@@ -111,40 +106,39 @@ export function ServicePanel({ onStartTranscription, creationIntent, onCreationI
     const interval = setInterval(tick, 1000)
     return () => clearInterval(interval)
   }, [active?.id, active?.createdAt, active?.endedAt])
+  // The save form opens blank for an unnamed service and pre-filled when the
+  // operator already gave the service a name in an earlier end attempt.
+  useEffect(() => {
+    if (!confirmEnd || !active) return
+    setError('')
+    setTitle(active.title)
+    setSpeaker(active.speaker)
+    setPlanId(active.notes[0]?.id ?? '')
+  }, [confirmEnd, active?.id])
   const run = async (action: () => Promise<unknown>): Promise<void> => {
     setBusy(true); setError('')
     try { await action() } catch (e) { setError(e instanceof Error ? e.message : String(e)) } finally { setBusy(false) }
   }
-  useEffect(() => {
-    if (creationIntent) setError('')
-  }, [creationIntent])
-  const createService = async (): Promise<void> => {
-    if (creatingRef.current) return
-    creatingRef.current = true
-    const shouldStart = creationIntent === 'start'
-    await run(async () => {
-      const value = await window.api.services.command({ action: 'create', title, speaker, planId: planId || null })
-      useServiceRecords.getState().set(value)
-      onCreationIntentChange(null)
-      setTitle(''); setSpeaker(''); setPlanId('')
-      if (shouldStart) await onStartTranscription()
-    })
-    creatingRef.current = false
-  }
+  const liveLabel = active ? (active.title || 'Unnamed service') : ''
 
   return <>
     {active || error ? (
-      <div className="shrink-0 px-3 py-2">
+      <div className="shrink-0 border-y border-white/[0.06] bg-white/[0.02] px-3 py-1.5">
         {active ? (
           <div className="flex min-w-0 items-center gap-2">
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-[12px] font-semibold leading-tight text-zinc-100" title={active.title}>{active.title}</p>
-              {active.speaker ? <p className="mt-0.5 truncate text-[10px] leading-tight text-zinc-500">{active.speaker}</p> : null}
-            </div>
+            {/* The elapsed clock leads: mid-service it is the number the booth
+                glances at, and the name is often still a placeholder. */}
             <span className="shrink-0 font-mono text-[11px] tabular-nums text-zinc-300" title="Service duration">{elapsedLabel}</span>
+            <span className="text-zinc-700" aria-hidden>·</span>
+            <p
+              className={cn('min-w-0 flex-1 truncate text-[11px] leading-tight', active.title ? 'text-zinc-400' : 'italic text-zinc-600')}
+              title={active.speaker ? `${liveLabel} · ${active.speaker}` : liveLabel}
+            >
+              {liveLabel}
+              {active.speaker ? <span className="text-zinc-600"> · {active.speaker}</span> : null}
+            </p>
             <div className="flex shrink-0 items-center gap-0.5 text-[10px]">
               <button type="button" className="rounded px-1.5 py-0.5 text-zinc-500 hover:bg-white/5 hover:text-zinc-200" onClick={() => setViewId(active.id)}>Review</button>
-              <span className="text-zinc-700" aria-hidden>·</span>
               <button type="button" disabled={busy} className="rounded px-1.5 py-0.5 text-zinc-500 hover:bg-white/5 hover:text-zinc-200 disabled:opacity-40" onClick={() => setConfirmEnd(true)}>End</button>
             </div>
           </div>
@@ -153,52 +147,74 @@ export function ServicePanel({ onStartTranscription, creationIntent, onCreationI
         {error && <p role="alert" className="mt-1.5 text-[10px] text-red-400">{error}</p>}
       </div>
     ) : null}
-    <Dialog.Root open={creationIntent !== null} onOpenChange={open => { if (!open && !creatingRef.current) onCreationIntentChange(null) }}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/75" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 max-h-[85vh] w-[calc(100%-3rem)] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl border border-white/10 bg-zinc-950 p-6 text-white">
-          <Dialog.Title className="text-lg font-semibold">Create service</Dialog.Title>
-          <Dialog.Description className="mt-1 text-sm text-zinc-400">
-            {creationIntent === 'start' ? 'Create a service to save this message. Transcription will start automatically.' : 'Prepare a service for your notes and message. Start transcription from Live transcript when you’re ready.'}
-          </Dialog.Description>
-          <form className="mt-5 grid gap-4" onSubmit={event => { event.preventDefault(); void createService() }}>
-            <fieldset disabled={busy} className="grid gap-4">
-              <label className="text-xs text-zinc-400">Service name<input required maxLength={200} className="input mt-1" placeholder="Sunday morning service" value={title} onChange={e => setTitle(e.target.value)} /></label>
-              <label className="text-xs text-zinc-400">Speaker (optional)<input maxLength={200} className="input mt-1" value={speaker} onChange={e => setSpeaker(e.target.value)} /></label>
-              <label className="text-xs text-zinc-400">Sermon notes<select className="input mt-1" value={planId} onChange={e => setPlanId(e.target.value)}><option value="">No notes yet</option>{plans.map(plan => <option value={plan.id} key={plan.id}>{plan.title}</option>)}</select></label>
-            </fieldset>
-            {error && <p role="alert" className="text-xs text-red-400">{error}</p>}
-            <div className="flex justify-end gap-2">
-              <Dialog.Close type="button" disabled={busy} className="btn-secondary text-xs">Cancel</Dialog.Close>
-              <button disabled={busy || !title.trim() || !snapshot.loaded} className="btn-primary text-xs">{busy ? 'Creating…' : creationIntent === 'start' ? 'Create and start transcription' : 'Create service'}</button>
-            </div>
-          </form>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
     <Dialog.Root open={confirmEnd && Boolean(active)} onOpenChange={open => { if (!open && !busy) setConfirmEnd(false) }}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/80" />
         {active && (
-          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-xl border border-white/10 bg-zinc-950 p-5 text-white shadow-2xl">
-            <Dialog.Title className="text-base font-semibold tracking-tight text-zinc-50">End service?</Dialog.Title>
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl border border-white/10 bg-zinc-950 p-5 text-white shadow-2xl">
+            <Dialog.Title className="text-base font-semibold tracking-tight text-zinc-50">Save service</Dialog.Title>
             <Dialog.Description className="mt-1.5 text-[13px] leading-relaxed text-zinc-400">
-              “{active.title}” will close and transcription will stop. The recap stays available on the website.
+              Transcription stops and this message is saved. Name it now — leave the name blank and it is filed by date.
+            </Dialog.Description>
+            <form
+              className="mt-5 grid gap-4"
+              onSubmit={event => {
+                event.preventDefault()
+                void run(async () => {
+                  const value = await window.api.services.command({ action: 'end', title, speaker, planId: planId || null })
+                  useServiceRecords.getState().set(value)
+                  setConfirmEnd(false)
+                })
+              }}
+            >
+              <fieldset disabled={busy} className="grid gap-4">
+                <label className="text-xs text-zinc-400">Service name<input maxLength={200} className="input mt-1" placeholder="Sunday morning service" value={title} onChange={e => setTitle(e.target.value)} /></label>
+                <label className="text-xs text-zinc-400">Speaker (optional)<input maxLength={200} className="input mt-1" value={speaker} onChange={e => setSpeaker(e.target.value)} /></label>
+                <label className="text-xs text-zinc-400">Sermon notes<select className="input mt-1" value={planId} onChange={e => setPlanId(e.target.value)}><option value="">No notes</option>{plans.map(plan => <option value={plan.id} key={plan.id}>{plan.title}</option>)}</select></label>
+              </fieldset>
+              {error && <p role="alert" className="text-[11px] text-red-400">{error}</p>}
+              <div className="flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  disabled={busy}
+                  className="text-[11px] text-zinc-600 transition-colors hover:text-rose-400 disabled:opacity-40"
+                  onClick={() => { setConfirmEnd(false); setConfirmDiscard(true) }}
+                >
+                  Discard service
+                </button>
+                <div className="flex gap-2">
+                  <Dialog.Close type="button" disabled={busy} className="btn-secondary text-xs">Keep recording</Dialog.Close>
+                  <button type="submit" disabled={busy} className="btn-primary text-xs">{busy ? 'Saving…' : 'End and save'}</button>
+                </div>
+              </div>
+            </form>
+          </Dialog.Content>
+        )}
+      </Dialog.Portal>
+    </Dialog.Root>
+    <Dialog.Root open={confirmDiscard && Boolean(active)} onOpenChange={open => { if (!open && !busy) setConfirmDiscard(false) }}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/80" />
+        {active && (
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-xl border border-white/10 bg-zinc-950 p-5 text-white shadow-2xl">
+            <Dialog.Title className="text-base font-semibold tracking-tight text-zinc-50">Discard this service?</Dialog.Title>
+            <Dialog.Description className="mt-1.5 text-[13px] leading-relaxed text-zinc-400">
+              The transcript, nuggets and detected scriptures from this service are deleted. This cannot be undone.
             </Dialog.Description>
             {error && <p role="alert" className="mt-3 text-[11px] text-red-400">{error}</p>}
             <div className="mt-5 flex justify-end gap-2">
-              <Dialog.Close type="button" disabled={busy} className="btn-secondary text-xs">Keep open</Dialog.Close>
+              <Dialog.Close type="button" disabled={busy} className="btn-secondary text-xs">Cancel</Dialog.Close>
               <button
                 type="button"
                 disabled={busy}
-                className="btn-primary text-xs"
+                className="btn-primary text-xs !bg-rose-500 hover:!bg-rose-400"
                 onClick={() => void run(async () => {
-                  const value = await window.api.services.command({ action: 'end' })
+                  const value = await window.api.services.command({ action: 'discard' })
                   useServiceRecords.getState().set(value)
-                  setConfirmEnd(false)
+                  setConfirmDiscard(false)
                 })}
               >
-                {busy ? 'Ending…' : 'End and save'}
+                {busy ? 'Discarding…' : 'Discard'}
               </button>
             </div>
           </Dialog.Content>
@@ -216,7 +232,7 @@ export function ServicePanel({ onStartTranscription, creationIntent, onCreationI
             <header className="shrink-0 border-b border-white/10 px-5 pb-4 pt-5">
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
-                  <Dialog.Title className="truncate text-base font-semibold tracking-tight text-zinc-50">{record.title}</Dialog.Title>
+                  <Dialog.Title className="truncate text-base font-semibold tracking-tight text-zinc-50">{record.title || 'Unnamed service'}</Dialog.Title>
                   <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-zinc-500">
                     {record.speaker ? <span>{record.speaker}</span> : null}
                     {record.speaker ? <span className="text-zinc-700" aria-hidden>·</span> : null}
