@@ -74,6 +74,8 @@ interface AppState {
   lyricsSelectedSongId: string | null
   lyricsFilter: 'all' | 'favorites' | 'recent'
   lyricsSortBy: 'title' | 'artist' | 'recent' | 'added'
+  /** Size of the slide tiles in the Lyrics song view, in percent. */
+  lyricsSlideZoom: number
   /** Which output the Operator's live-output panel is previewing. */
   operatorPreviewOutputId: string | null
   /** Width of the shared live output rail, kept in the store so every screen
@@ -126,6 +128,7 @@ interface AppState {
     sortBy?: 'title' | 'artist' | 'recent' | 'added'
   }) => void
   setOperatorPreviewOutputId: (id: string | null) => void
+  setLyricsSlideZoom: (zoom: number) => void
   setLiveRailWidth: (width: number) => void
   setThemeViewState: (state: {
     selectedId?: string | null
@@ -181,6 +184,7 @@ export const useAppStore = create<AppState>((set) => ({
   lyricsSelectedSongId: null,
   lyricsFilter: 'all',
   lyricsSortBy: 'title',
+  lyricsSlideZoom: 100,
   operatorPreviewOutputId: null,
   liveRailWidth: readStoredRailWidth(),
   themeSelectedId: null,
@@ -306,6 +310,7 @@ export const useAppStore = create<AppState>((set) => ({
     })),
 
   setOperatorPreviewOutputId: (id) => set({ operatorPreviewOutputId: id }),
+  setLyricsSlideZoom: (zoom) => set({ lyricsSlideZoom: zoom }),
   setLiveRailWidth: (width) => {
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem(RAIL_WIDTH_KEY, String(width))

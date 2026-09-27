@@ -390,6 +390,14 @@
         "repo": "proautomate",
         "releaseType": "release"
       }
+    ],
+    "fileAssociations": [
+      {
+        "ext": "kairo",
+        "name": "Kairo File",
+        "description": "Kairo songs, setlist or scripture playlist",
+        "role": "Editor"
+      }
     ]
   }
 }

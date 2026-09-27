@@ -241,7 +241,7 @@ export function SermonNotesReviewModal({
   const matchCount = analysis.matches.length
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/82 p-5 backdrop-blur-md">
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-5">
       <section
         role="dialog"
         aria-modal="true"

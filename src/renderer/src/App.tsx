@@ -6,6 +6,7 @@ import { useState, useEffect, useRef, type PointerEvent } from 'react'
 import { AlertTriangle, RefreshCw, X } from '@/icons'
 import AppShell from '@/components/layout/AppShell'
 import UpdateToast from '@/components/layout/UpdateToast'
+import { TransferHost } from '@/components/transfer/TransferHost'
 import MediaDock from '@/components/media/MediaDock'
 import { TracksPlayer } from '@/components/tracks/TracksPlayer'
 import OperatorToolbar from '@/components/operator/OperatorToolbar'
@@ -287,7 +288,7 @@ export default function App(): React.ReactElement {
     if (!isImportKind(kind)) return
     const option = IMPORT_OPTIONS.find(option => option.kind === kind)!
     setSettingsOpen(false)
-    setRoute(option.route)
+    if (option.route) setRoute(option.route)
     requestImport(kind)
   }), [])
   const [ppGateResolved, setPpGateResolved] = useState(false)
@@ -416,13 +417,13 @@ export default function App(): React.ReactElement {
   }
 
   return (
-    <div className="relative flex h-screen flex-col overflow-hidden bg-transparent text-white select-none animate-fade-in">
+    <div className="relative flex h-screen flex-col overflow-hidden bg-surface text-white select-none animate-fade-in">
       <AudioPipeline />
       <TracksPlayer />
       {loaderMounted && <LoadingScreen progress={progress} fadingOut />}
       {errors.length > 0 && !warningDismissed && (
         <div
-          className="absolute inset-x-0 top-0 z-40 flex items-start gap-2.5 border-b border-yellow-500/20 bg-yellow-500/10 px-4 py-2.5 text-xs text-yellow-300"
+          className="absolute inset-x-0 top-0 z-40 flex items-start gap-2.5 border-b border-surface-border bg-surface-elevated px-4 py-2.5 text-xs text-yellow-300"
           role="alert"
         >
           <AlertTriangle size={14} className="mt-px shrink-0" aria-hidden="true" />
@@ -446,6 +447,7 @@ export default function App(): React.ReactElement {
         </div>
       )}
       <UpdateToast />
+      <TransferHost />
       <AppShell
         currentRoute={route}
         onNavigate={setRoute}
@@ -455,7 +457,7 @@ export default function App(): React.ReactElement {
         }}
         toolbar={route === 'operator' ? <OperatorToolbar /> : undefined}
       />
-      <main className="relative flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-transparent">
+      <main className="relative flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-surface">
         {/* Keep Operator and Theme mounted across navigation so live session
             state and the theme library/draft survive tab switches. */}
         <div

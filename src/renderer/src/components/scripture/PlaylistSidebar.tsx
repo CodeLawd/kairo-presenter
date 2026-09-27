@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   BookOpen,
   Check,
+  Download,
   GripVertical,
   FileText,
   Loader,
@@ -10,7 +11,9 @@ import {
   Plus,
   Search,
   Trash2,
+  Upload,
 } from '@/icons';
+import { exportKairo, importKairo } from "@/stores/useTransfer";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import {
@@ -153,7 +156,7 @@ export function PlaylistSidebar({
               className={cn(
                 "group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] transition-colors disabled:opacity-40",
                 viewingSearch
-                  ? "bg-teal-600/20 text-zinc-50"
+                  ? "row-selected"
                   : "text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-200",
               )}
             >
@@ -202,6 +205,15 @@ export function PlaylistSidebar({
         </h2>
         <button
           type="button"
+          className="ml-auto grid h-7 w-7 place-items-center rounded-md text-slate-400 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400"
+          onClick={() => void importKairo()}
+          aria-label="Import playlist"
+          title="Import a .kairo playlist"
+        >
+          <Download size={12} />
+        </button>
+        <button
+          type="button"
           className="flex h-7 items-center justify-center gap-1 rounded-md bg-white/5 px-2 text-[11px] font-medium text-slate-300 hover:bg-white/10 hover:text-white disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400"
           onClick={onCreate}
           disabled={creatingPlaylist}
@@ -236,7 +248,7 @@ export function PlaylistSidebar({
               key={plan.id}
               className={cn(
                 "group/plan mx-1 rounded-md",
-                selectedPlanId === plan.id && "bg-teal-500/15",
+                selectedPlanId === plan.id && "row-selected",
               )}
             >
               {renamingPlanId === plan.id ? (
@@ -350,6 +362,10 @@ export function PlaylistSidebar({
                           <Pencil size={13} />
                           Rename
                         </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => void exportKairo({ kind: 'playlist', planId: plan.id })}>
+                          <Upload size={13} />
+                          Export…
+                        </DropdownMenuItem>
                         <DropdownMenuItem
                           variant="destructive"
                           onSelect={() => onRequestDelete(plan.id)}
@@ -431,7 +447,7 @@ export function PlaylistSidebar({
                       "group relative flex w-full items-center gap-1 px-2 py-1.5 text-left",
                       !item.available && "opacity-55",
                       activeItemId === item.id
-                        ? "bg-teal-500/15 text-white"
+                        ? "row-selected"
                         : "text-slate-300 hover:bg-surface-tertiary/50",
                       draggingItemId === item.id && "opacity-40",
                       dragOverItemId === item.id &&

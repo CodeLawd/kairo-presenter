@@ -1,4 +1,6 @@
 import { DOCUMENTS } from "@shared/documents";
+import { TRANSFER, type TransferCommitRequest, type TransferExportRequest } from "@shared/kairo-bundle";
+import { transferService } from "../services/transfer";
 import { documentsService } from "../services/documents";
 import { ipcMain, BrowserWindow, clipboard, dialog, shell } from "electron";
 import type { OpenDialogOptions } from "electron";
@@ -83,6 +85,50 @@ function broadcast<T>(channel: string, data: T): void {
     if (!win.isDestroyed()) {
       win.webContents.send(channel, data);
     }
+  });
+}
+
+// ─── .kairo transfer handlers ─────────────────────────────────────────────────
+
+/** Files opened from Finder/Explorer before the window could show them. */
+const pendingKairoOpens: string[] = [];
+let kairoOpenTarget: Electron.WebContents | null = null;
+
+async function flushKairoOpens(): Promise<void> {
+  const target = kairoOpenTarget;
+  if (!target || target.isDestroyed()) return;
+  while (pendingKairoOpens.length > 0) {
+    const filePath = pendingKairoOpens.shift()!;
+    try {
+      target.send(TRANSFER.OPENED, await transferService.previewFile(filePath));
+    } catch (err) {
+      target.send(TRANSFER.OPENED, {
+        error: (err as Error).message,
+        fileName: path.basename(filePath),
+      });
+    }
+  }
+}
+
+/** Queue `.kairo` files opened from outside the app for the review screen. */
+export function openKairoFiles(filePaths: string[]): void {
+  pendingKairoOpens.push(...filePaths);
+  void flushKairoOpens();
+}
+
+function registerTransferHandlers(): void {
+  handle(TRANSFER.EXPORT, (_event, request: TransferExportRequest) =>
+    transferService.export(request),
+  );
+  handle(TRANSFER.PICK_AND_PREVIEW, () => transferService.pickAndPreview());
+  handle(TRANSFER.COMMIT, (_event, request: TransferCommitRequest) =>
+    transferService.commit(request),
+  );
+  handle(TRANSFER.DISCARD, (_event, token: string) => transferService.discard(token));
+  ipcMain.removeAllListeners(TRANSFER.READY);
+  ipcMain.on(TRANSFER.READY, (event) => {
+    kairoOpenTarget = event.sender;
+    void flushKairoOpens();
   });
 }
 
@@ -1371,6 +1417,7 @@ export function registerIpcHandlers(): void {
   registerTracksHandlers();
   registerOnboardingHandlers();
   registerAccountHandlers();
+  registerTransferHandlers();
   // Index the backgrounds folder without holding up startup — the dock renders
   // empty and fills in when the scan lands.
   // Restores a stored sign-in and starts the quiet refresh loop. Never awaited:

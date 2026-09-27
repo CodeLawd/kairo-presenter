@@ -963,8 +963,8 @@ function SidebarRow({
       className={cn(
         'group flex cursor-pointer items-center gap-2 rounded-[7px] px-2 py-1.5 border transition-colors',
         active
-          ? 'bg-teal-500/12 border-teal-500/30 text-teal-300'
-          : 'border-transparent text-slate-400 hover:bg-surface-tertiary'
+          ? 'row-selected border-transparent'
+          : 'border-transparent text-slate-400 hover:bg-white/[0.04]'
       )}
     >
       <span className={cn('shrink-0', active ? 'text-teal-300' : 'text-slate-500')}>{icon}</span>

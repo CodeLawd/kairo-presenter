@@ -11,7 +11,7 @@ import {
 } from "electron";
 import { PRODUCT_NAME } from "@shared/brand";
 import { join, resolve } from "path";
-import { createReadStream, realpathSync } from "fs";
+import { createReadStream, existsSync, realpathSync } from "fs";
 import { stat } from "fs/promises";
 import { Readable } from "stream";
 import { electronApp, optimizer, is } from "@electron-toolkit/utils";
@@ -23,7 +23,7 @@ import {
   rangeResponseHeaders,
 } from "@shared/pa-media-range";
 import { PA_MEDIA_URL_PREFIX } from "@shared/overlay-template";
-import { registerIpcHandlers } from "./ipc";
+import { openKairoFiles, registerIpcHandlers } from "./ipc";
 import { initDatabase, store } from "./db";
 import { lyricsService } from "./services/lyrics";
 import { workspaceService } from "./services/workspace";
@@ -195,13 +195,15 @@ function importMenuTemplate(): Electron.MenuItemConstructorOptions[] {
   const items: Electron.MenuItemConstructorOptions[] = [];
   let previousRoute: string | undefined;
   for (const option of IMPORT_OPTIONS) {
-    if (previousRoute && previousRoute !== option.route)
+    // Kairo files have no route of their own and sit in a group by themselves.
+    const group = option.route ?? option.kind;
+    if (previousRoute && previousRoute !== group)
       items.push({ type: "separator" });
     items.push({
       label: option.label,
       click: () => requestMenuImport(option.kind),
     });
-    previousRoute = option.route;
+    previousRoute = group;
   }
   return items;
 }
@@ -281,18 +283,10 @@ function createWindow(): void {
     icon,
     autoHideMenuBar: false,
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
-    ...(process.platform === "darwin"
-      ? {
-          vibrancy: "under-window" as const,
-          visualEffectState: "active" as const,
-          backgroundColor: "#00000000",
-        }
-      : process.platform === "win32"
-        ? {
-            backgroundMaterial: "acrylic" as const,
-            backgroundColor: "#00000000",
-          }
-        : { backgroundColor: "#171717" }),
+    // Opaque on every platform: a booth screen should look the same whatever
+    // is behind the window, and the desktop bleeding through reads as noise.
+    // Matches --surface so there is no flash before the first paint.
+    backgroundColor: "#161616",
     webPreferences: {
       preload: join(__dirname, "../preload/index.js"),
       sandbox: false,
@@ -338,6 +332,51 @@ function createWindow(): void {
     mainWindow.loadFile(join(__dirname, "../renderer/index.html"));
   }
 }
+
+// ─── Opening .kairo files from Finder / Explorer ─────────────────────────────
+
+function kairoPathsIn(argv: string[]): string[] {
+  return argv.filter(
+    (arg) => arg.toLowerCase().endsWith(".kairo") && existsSync(arg),
+  );
+}
+
+function openKairoFromOutside(filePaths: string[]): void {
+  if (filePaths.length === 0) return;
+  openKairoFiles(filePaths);
+  if (!app.isReady()) return; // shown once the window loads
+  if (!applicationWindow || applicationWindow.isDestroyed()) createWindow();
+  if (applicationWindow?.isMinimized()) applicationWindow.restore();
+  applicationWindow?.show();
+  applicationWindow?.focus();
+}
+
+// macOS delivers double-clicked files here — including the one that launched
+// the app, which arrives before `ready`, so this must be registered first.
+app.on("open-file", (event, filePath) => {
+  event.preventDefault();
+  openKairoFromOutside([filePath]);
+});
+
+// Windows and Linux pass the file on the command line, to a second process
+// when Kairo is already running. One instance also keeps two copies from
+// writing the same song library at once. Dev is exempt so a packaged Kairo
+// can stay open beside it.
+if (!is.dev) {
+  if (!app.requestSingleInstanceLock()) {
+    app.quit();
+  } else {
+    app.on("second-instance", (_event, argv) => {
+      const files = kairoPathsIn(argv);
+      if (files.length > 0) openKairoFromOutside(files);
+      else if (applicationWindow && !applicationWindow.isDestroyed()) {
+        if (applicationWindow.isMinimized()) applicationWindow.restore();
+        applicationWindow.focus();
+      }
+    });
+  }
+}
+if (process.platform !== "darwin") openKairoFromOutside(kairoPathsIn(process.argv.slice(1)));
 
 app.whenReady().then(async () => {
   electronApp.setAppUserModelId("com.kairo.app");

@@ -412,9 +412,9 @@ export default function ResourceCatalogue({ mode }: { mode: ResourceCatalogueMod
               />
             </label>
             <div className="flex flex-wrap gap-1.5" aria-label="Filter ProPresenter resources by type">
-              <button type="button" className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold ${kind === 'all' ? 'border-teal-500/50 bg-teal-500/10 text-teal-300' : 'border-surface-border/60 text-slate-500 hover:text-slate-300'}`} onClick={() => setKind('all')} aria-pressed={kind === 'all'}>All</button>
+              <button type="button" className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold ${kind === 'all' ? 'border-transparent chip-selected' : 'border-surface-border/60 text-slate-500 hover:text-slate-300'}`} onClick={() => setKind('all')} aria-pressed={kind === 'all'}>All</button>
               {KIND_LABELS.filter(({ kind: value }) => catalogue.resources.some((resource) => resource.kind === value)).map(({ kind: value, label }) => (
-                <button key={value} type="button" className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold ${kind === value ? 'border-teal-500/50 bg-teal-500/10 text-teal-300' : 'border-surface-border/60 text-slate-500 hover:text-slate-300'}`} onClick={() => setKind(value)} aria-pressed={kind === value}>{label}</button>
+                <button key={value} type="button" className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold ${kind === value ? 'border-transparent chip-selected' : 'border-surface-border/60 text-slate-500 hover:text-slate-300'}`} onClick={() => setKind(value)} aria-pressed={kind === value}>{label}</button>
               ))}
             </div>
           </div>
@@ -433,7 +433,7 @@ export default function ResourceCatalogue({ mode }: { mode: ResourceCatalogueMod
                   <button
                     type="button"
                     key={resourceKey}
-                    className={`flex w-full items-center gap-3 rounded-xl border p-2.5 text-left transition-colors ${isSelected ? 'border-teal-500/40 bg-teal-500/5' : 'border-surface-border/50 bg-surface-secondary/15 hover:border-surface-border hover:bg-surface-secondary/35'}`}
+                    className={`flex w-full items-center gap-3 rounded-xl border p-2.5 text-left transition-colors ${isSelected ? 'border-white/20 row-selected' : 'border-surface-border/50 bg-surface-secondary/15 hover:border-surface-border hover:bg-surface-secondary/35'}`}
                     onClick={() => setSelectedKey(resourceKey)}
                     aria-pressed={isSelected}
                     data-resource-id={resource.id}

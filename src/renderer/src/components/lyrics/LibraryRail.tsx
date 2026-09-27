@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { Clock, ListMusic, Pencil, Plus, Star, Trash2 } from '@/icons'
+import { Clock, ListMusic, Pencil, Plus, Star, Trash2, Upload } from '@/icons'
+import { exportKairo } from '@/stores/useTransfer'
 import { cn } from '@/lib/utils'
 import {
   runSetlistCommand,
@@ -86,7 +87,7 @@ export function LibraryRail({
   const rowClass = (selected: boolean): string =>
     cn(
       'group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] transition-colors',
-      selected ? 'bg-teal-600/20 text-zinc-50' : 'text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-200',
+      selected ? 'row-selected' : 'text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-200',
     )
 
   return (
@@ -187,6 +188,15 @@ export function LibraryRail({
                     onClick={() => { setDraftName(list.name); setRenamingId(list.id) }}
                   >
                     <Pencil size={10} />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Export ${list.name}`}
+                    title="Export setlist as a .kairo file"
+                    className="grid size-5 place-items-center rounded text-zinc-500 hover:text-zinc-200"
+                    onClick={() => void exportKairo({ kind: 'setlist', listId: list.id })}
+                  >
+                    <Upload size={10} />
                   </button>
                   <button
                     type="button"

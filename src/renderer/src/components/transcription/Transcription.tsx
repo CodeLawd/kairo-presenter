@@ -286,7 +286,7 @@ function AutoPresentToast({
         return (
           <div
             key={item.suggestionId}
-            className="px-3.5 py-3 rounded-xl bg-teal-950/90 border border-teal-500/30 shadow-2xl backdrop-blur-md space-y-2.5 shadow-glow-teal/10 relative overflow-hidden"
+            className="px-3.5 py-3 rounded-xl border border-surface-border bg-surface-elevated shadow-2xl space-y-2.5 relative overflow-hidden"
           >
             {/* Absolute countdown progress bar on bottom edge */}
             <div

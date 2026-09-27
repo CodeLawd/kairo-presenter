@@ -115,6 +115,24 @@ export default function Scripture(): React.ReactElement {
   const [translations, setTranslations] =
     useState<ScriptureTranslationOption[]>(bootstrapTranslations);
   const [plans, setPlans] = useState<SermonPlan[]>(bootstrapPlans);
+  // Playlists can land while this page is mounted (a .kairo import). Pick up
+  // new ones and newer copies without discarding edits held here.
+  useEffect(() => {
+    setPlans((previous) => {
+      const held = new Map(previous.map((plan) => [plan.id, plan]));
+      const added = bootstrapPlans.filter((plan) => !held.has(plan.id));
+      const fresher = new Map(
+        bootstrapPlans
+          .filter((plan) => {
+            const current = held.get(plan.id);
+            return current !== undefined && plan.updatedAt > current.updatedAt;
+          })
+          .map((plan) => [plan.id, plan]),
+      );
+      if (added.length === 0 && fresher.size === 0) return previous;
+      return [...added, ...previous.map((plan) => fresher.get(plan.id) ?? plan)];
+    });
+  }, [bootstrapPlans]);
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const [cardsSource, setCardsSource] = useState<"search" | "plan" | null>(null);
   const [pendingDeletePlanId, setPendingDeletePlanId] = useState<string | null>(null);

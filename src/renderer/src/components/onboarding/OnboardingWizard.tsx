@@ -117,16 +117,8 @@ export default function OnboardingWizard({
       data-onboarding-wizard="true"
     >
       <div className="absolute inset-0 bg-black/65" aria-hidden="true" />
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute left-1/2 top-[26%] h-64 w-64 -translate-x-1/2 rounded-full bg-[#F59E0B]/12 blur-3xl"
-      />
 
-      <div className="relative flex min-h-[28rem] w-[520px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border border-surface-border/60 bg-surface shadow-2xl animate-spring-in">
-        <div
-          aria-hidden="true"
-            className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-[#F59E0B]/10 to-transparent"
-        />
+      <div className="relative flex min-h-[28rem] w-[520px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border border-surface-border bg-surface shadow-2xl animate-spring-in">
 
         {/* Progress is a hairline, not a widget — it answers "how much longer"
             and nothing else. */}

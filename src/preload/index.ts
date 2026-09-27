@@ -47,6 +47,7 @@ import type {
 } from '@shared/propresenter-resources'
 import { IPC } from '@shared/ipc'
 import { SETLIST_CHANGED, SETLIST_CHANNEL } from '@shared/setlist'
+import { TRANSFER } from '@shared/kairo-bundle'
 import { LIBRARIES_CHANGED, LIBRARIES_CHANNEL } from '@shared/libraries'
 import { PASSAGES_CHANGED, PASSAGES_CHANNEL } from '@shared/passages'
 
@@ -737,7 +738,16 @@ const passages: ProAutomateAPI['passages'] = {
   onChanged: (callback) => subscribe(PASSAGES_CHANGED, callback),
 }
 
-const api: ProAutomateAPI = { passages, libraries, setlist, services, documents, app: appApi, propresenter, audio, scripture, transcription, workspace, lyrics, settings, orchestrator, resilience, ndi, media, tracks, onboarding, account, updates }
+const transfer: ProAutomateAPI['transfer'] = {
+  export: (request) => ipcRenderer.invoke(TRANSFER.EXPORT, request),
+  pickAndPreview: () => ipcRenderer.invoke(TRANSFER.PICK_AND_PREVIEW),
+  commit: (request) => ipcRenderer.invoke(TRANSFER.COMMIT, request),
+  discard: (token) => ipcRenderer.invoke(TRANSFER.DISCARD, token),
+  ready: () => ipcRenderer.send(TRANSFER.READY),
+  onOpened: (callback) => subscribe(TRANSFER.OPENED, callback),
+}
+
+const api: ProAutomateAPI = { transfer, passages, libraries, setlist, services, documents, app: appApi, propresenter, audio, scripture, transcription, workspace, lyrics, settings, orchestrator, resilience, ndi, media, tracks, onboarding, account, updates }
 
 if (process.contextIsolated) {
   try {

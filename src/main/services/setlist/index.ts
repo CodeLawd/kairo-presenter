@@ -109,6 +109,30 @@ class SetlistService {
     }
   }
 
+  /**
+   * Creates a setlist from an imported file, already filled. The name gets a
+   * numeric suffix when one with that name exists, so nothing is merged into
+   * a list the operator already made.
+   */
+  importList(name: string, songIds: string[]): SongSetlist {
+    const state = this.snapshot()
+    if (state.lists.length >= SETLIST_MAX_LISTS) throw new Error('Delete a setlist before importing another.')
+    const base = normalizeSetlistName(name, DEFAULT_SETLIST_NAME)
+    const taken = new Set(state.lists.map(list => list.name.toLowerCase()))
+    let unique = base
+    for (let n = 2; taken.has(unique.toLowerCase()); n++) unique = `${base} (${n})`
+    const now = Date.now()
+    const created: SongSetlist = {
+      id: randomUUID(),
+      name: unique,
+      songIds: songIds.reduce<string[]>((ids, id) => withSong(ids, id), []),
+      createdAt: now,
+      updatedAt: now,
+    }
+    this.write({ lists: [created, ...state.lists], activeId: created.id })
+    return created
+  }
+
   /** Drop a song the library no longer has, so deletes leave no ghosts behind. */
   forgetSong(songId: string): void {
     const state = this.snapshot()

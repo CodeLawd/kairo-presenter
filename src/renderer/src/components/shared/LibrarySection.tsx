@@ -78,7 +78,7 @@ export function LibrarySection({
   const rowClass = (selected: boolean, dropping: boolean): string =>
     cn(
       'group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] transition-colors',
-      selected ? 'bg-teal-600/20 text-zinc-50' : 'text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-200',
+      selected ? 'row-selected' : 'text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-200',
       dropping && 'ring-1 ring-teal-400/70',
     )
 

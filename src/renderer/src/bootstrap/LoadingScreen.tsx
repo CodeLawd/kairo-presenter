@@ -52,7 +52,6 @@ export function LoadingScreen({
             height={88}
             className="h-full w-full object-contain"
           />
-          <span className="splash-mark-sheen" aria-hidden="true" />
         </div>
 
         <div className="splash-copy text-center">

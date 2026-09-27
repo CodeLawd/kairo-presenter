@@ -6,6 +6,8 @@ export const IMPORT_OPTIONS = [
   { kind: 'audio', label: 'Audio files…', route: 'operator' },
   { kind: 'sermon', label: 'Sermon notes…', route: 'scripture' },
   { kind: 'lyrics', label: 'Lyrics file…', route: 'lyrics' },
+  // Opens the review screen over whatever is on screen; route is unused.
+  { kind: 'kairo', label: 'Kairo file (.kairo)…', route: null },
 ] as const
 export type ImportKind = typeof IMPORT_OPTIONS[number]['kind']
 export function isImportKind(value: unknown): value is ImportKind {

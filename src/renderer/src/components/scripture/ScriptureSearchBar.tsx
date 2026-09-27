@@ -192,7 +192,7 @@ export function ScriptureSearchBar({
                 className={cn(
                   "flex w-full items-start gap-3 border-b border-surface-border/40 px-3.5 py-3 text-left last:border-b-0",
                   index === activeSuggestion
-                    ? "bg-teal-500/10"
+                    ? "row-selected"
                     : "hover:bg-surface-tertiary/70",
                 )}
                 onMouseEnter={() => onActiveSuggestionChange(index)}

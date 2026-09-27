@@ -8,7 +8,7 @@ import { IMPORT_OPTIONS, isImportKind } from '../src/lib/import-menu'
 const ROOT = path.resolve(__dirname, '..')
 const read = (relative: string): string => fs.readFileSync(path.join(ROOT, relative), 'utf8')
 
-test('import kinds are the document, media, sermon and lyrics pickers', () => {
+test('import kinds are the document, media, sermon, lyrics and .kairo pickers', () => {
   assert.deepEqual(IMPORT_OPTIONS.map((option) => option.kind), [
     'pdf',
     'powerpoint',
@@ -17,6 +17,7 @@ test('import kinds are the document, media, sermon and lyrics pickers', () => {
     'audio',
     'sermon',
     'lyrics',
+    'kairo',
   ])
   assert.equal(isImportKind('pdf'), true)
   assert.equal(isImportKind('document'), false)

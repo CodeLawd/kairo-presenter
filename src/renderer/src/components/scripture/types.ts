@@ -21,8 +21,12 @@ export interface ResultRow {
 export const CARD_ZOOM_MIN = 50;
 export const CARD_ZOOM_MAX = 250;
 export const CARD_ZOOM_DEFAULT = 100;
-/** Base card width at 100% zoom — height is derived as 16:9 for theme preview. */
-export const CARD_BASE_WIDTH = 288;
+/**
+ * Minimum card width at 100% zoom — sized so a typical content area fits 4–5
+ * cards per row. The grid stretches cards to fill each row; height is derived
+ * as 16:9 for the theme preview.
+ */
+export const CARD_BASE_WIDTH = 200;
 export const CARD_BASE_HEIGHT = Math.round((CARD_BASE_WIDTH * 9) / 16);
 
 export function createResultRow(

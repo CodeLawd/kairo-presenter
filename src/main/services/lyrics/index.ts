@@ -779,6 +779,24 @@ class LyricsService {
     log.info('[LyricsDB] Song saved', { id: song.id, title: song.title })
   }
 
+  /**
+   * Adds a song that arrived whole — from a `.kairo` file — keeping its id so
+   * a later re-import recognises it. `freshId` makes a separate copy instead.
+   */
+  addImportedSong(song: LyricsSong, options: { freshId?: boolean } = {}): LyricsSong {
+    const now = Date.now()
+    const internal = this.ipcToInternal({
+      ...song,
+      id: options.freshId ? this.newId() : song.id,
+      createdAt: options.freshId ? now : song.createdAt,
+      updatedAt: now,
+    })
+    this.addSong(internal)
+    const saved = this.songToIPC(internal)
+    this.emitImported(saved)
+    return saved
+  }
+
   updateSong(id: string, updates: LyricsSong): LyricsSong | null {
     const db = this.requireDb()
     const existing = this.stmts.getSong.get(id) as SongRow | undefined

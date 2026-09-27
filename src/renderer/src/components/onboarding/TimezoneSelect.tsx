@@ -143,7 +143,7 @@ export default function TimezoneSelect({
                   role="option"
                   aria-selected={zone === value}
                   className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] transition-colors ${
-                    index === active ? 'bg-teal-500/15 text-white' : 'text-slate-300'
+                    index === active ? 'row-selected' : 'text-slate-300'
                   }`}
                   onMouseEnter={() => setActive(index)}
                   onClick={() => commit(zone)}

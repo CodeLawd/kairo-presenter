@@ -66,7 +66,7 @@ test('every hook runs before the loading-screen return', () => {
 
 test('the loading screen honours reduced motion and shows progress', () => {
   const screen = read('src/renderer/src/bootstrap/LoadingScreen.tsx')
-  // Transitions are disabled per-utility; the keyframe animations (sheen,
+  // Transitions are disabled per-utility; the keyframe animations (mark,
   // copy, step) are disabled centrally in CSS — either way reduced-motion
   // stays static.
   assert.match(screen, /motion-reduce:transition-none/)
@@ -74,7 +74,7 @@ test('the loading screen honours reduced motion and shows progress', () => {
   const reduced = css.slice(css.indexOf('@media (prefers-reduced-motion: reduce)'))
   assert.ok(reduced.length > 0, 'missing prefers-reduced-motion block')
   assert.ok(reduced.includes('animation: none'), 'reduced-motion must kill splash animations')
-  for (const selector of ['.splash-mark-sheen::after', '.splash-copy', '.splash-step']) {
+  for (const selector of ['.splash-mark', '.splash-copy', '.splash-step']) {
     assert.ok(reduced.includes(selector), `${selector} must be stilled under reduced-motion`)
   }
   // Staged booth-facing copy (see the splash-state tests), not the raw IPC step.

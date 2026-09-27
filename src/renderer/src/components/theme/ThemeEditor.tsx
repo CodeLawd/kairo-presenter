@@ -976,7 +976,7 @@ export default function ThemeEditor(): React.ReactElement {
                   className={cn(
                     'flex-1 rounded px-2 py-1 text-[11px] font-bold uppercase tracking-wider transition-colors',
                     contentKind === kind
-                      ? 'bg-teal-500/20 text-teal-300'
+                      ? 'chip-selected'
                       : 'text-slate-500 hover:text-slate-300'
                   )}
                 >
@@ -1335,7 +1335,7 @@ export default function ThemeEditor(): React.ReactElement {
                       onClick={() => setSampleLength(len)}
                       className={cn(
                         'rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider',
-                        sampleLength === len ? 'bg-teal-500/20 text-teal-300' : 'text-slate-500 hover:text-slate-300'
+                        sampleLength === len ? 'chip-selected' : 'text-slate-500 hover:text-slate-300'
                       )}
                     >
                       {len}
@@ -1514,7 +1514,7 @@ function ThemeTile({
             onDelete()
           }}
           className={cn(
-            'absolute right-1.5 top-1.5 rounded-md bg-black/55 p-1 text-zinc-300 opacity-0 backdrop-blur-sm transition-opacity hover:bg-rose-950/80 hover:text-rose-300 group-hover:opacity-100 focus-visible:opacity-100',
+            'absolute right-1.5 top-1.5 rounded-md bg-black/70 p-1 text-zinc-300 opacity-0 transition-opacity hover:bg-rose-950/80 hover:text-rose-300 group-hover:opacity-100 focus-visible:opacity-100',
             selected && 'opacity-100'
           )}
           aria-label={`Delete ${name}`}

@@ -16,12 +16,9 @@ const SIZE: Record<MarkSize, { box: string; img: number }> = {
 export function KairoMark({
   size = 'md',
   className,
-  glow = false,
 }: {
   size?: MarkSize
   className?: string
-  /** Soft amber halo behind the mark (auth / onboarding heroes). */
-  glow?: boolean
 }): React.ReactElement {
   const dim = SIZE[size]
   return (
@@ -32,12 +29,6 @@ export function KairoMark({
         className,
       )}
     >
-      {glow && (
-        <span
-          aria-hidden="true"
-          className="pointer-events-none absolute -inset-4 rounded-[28%] bg-[#F59E0B]/20 blur-2xl"
-        />
-      )}
       <img
         src={kairoIcon}
         alt=""
@@ -57,13 +48,11 @@ export function KairoLockup({
   size = 'md',
   tagline = false,
   align = 'center',
-  glow = false,
   className,
 }: {
   size?: MarkSize
   tagline?: boolean
   align?: 'center' | 'start'
-  glow?: boolean
   className?: string
 }): React.ReactElement {
   const titleSize =
@@ -77,7 +66,7 @@ export function KairoLockup({
         className,
       )}
     >
-      <KairoMark size={size} glow={glow} />
+      <KairoMark size={size} />
       <div className={cn(align === 'center' && 'flex flex-col items-center')}>
         <p
           className={cn(

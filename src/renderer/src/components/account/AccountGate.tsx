@@ -35,20 +35,11 @@ export default function AccountGate(): React.ReactElement {
 
   return (
     <div className="relative flex h-screen w-screen items-center justify-center overflow-hidden bg-surface animate-fade-in">
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute left-1/2 top-[28%] h-56 w-56 -translate-x-1/2 rounded-full bg-[#F59E0B]/12 blur-3xl"
-      />
-
-      <div className="relative w-[24.5rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-surface-border/60 bg-surface-secondary/40 shadow-2xl animate-spring-in">
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-x-0 top-0 h-36 bg-gradient-to-b from-[#F59E0B]/10 to-transparent"
-        />
+      <div className="relative w-[24.5rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-surface-border bg-surface-secondary shadow-2xl animate-spring-in">
 
         <div className="relative px-7 pb-7 pt-8">
           <div className="mb-6 flex justify-center">
-            <KairoMark size="md" glow />
+            <KairoMark size="md" />
           </div>
 
           <h2 className="text-[17px] font-semibold tracking-[-0.02em] text-white">{title}</h2>

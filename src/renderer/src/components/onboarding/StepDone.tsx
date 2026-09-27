@@ -27,7 +27,7 @@ export default function StepDone({
   return (
     <div className="flex flex-1 flex-col animate-fade-in">
       <div className="relative inline-flex self-start">
-        <KairoMark size="md" glow />
+        <KairoMark size="md" />
         <span
           className="absolute -bottom-0.5 -right-0.5 grid h-5 w-5 place-items-center rounded-full bg-teal-500 text-white ring-2 ring-surface"
           aria-hidden="true"

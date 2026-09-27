@@ -13,7 +13,8 @@
 
 import type { LyricsSong } from './ipc'
 
-export type DuplicateReason = 'ccli' | 'title-artist' | 'lyrics'
+/** `same-song`: the same song record, by id — a re-import of an export. */
+export type DuplicateReason = 'same-song' | 'ccli' | 'title-artist' | 'lyrics'
 
 export interface DuplicateMatch {
   /** The song already in the library (or earlier in the same batch). */
@@ -138,6 +139,8 @@ export function findDuplicate(
 export function describeDuplicate(match: DuplicateMatch): string {
   const who = match.artist ? ` by ${match.artist}` : ''
   switch (match.reason) {
+    case 'same-song':
+      return `Already in your library as "${match.title}"${who}`
     case 'ccli':
       return `Same CCLI number as "${match.title}"${who}`
     case 'title-artist':

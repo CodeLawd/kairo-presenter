@@ -9,10 +9,8 @@ import {
   Loader,
   Plus,
   Send,
-  ZoomIn,
-  ZoomOut,
 } from '@/icons';
-import { Slider } from "@/components/ui/slider";
+import { ZoomControl } from "@/components/shared/ZoomControl";
 import {
   CARD_ZOOM_DEFAULT,
   CARD_ZOOM_MAX,
@@ -76,30 +74,14 @@ export function QueueDock({
         </p>
 
         <div className="ml-auto flex flex-wrap items-center gap-1.5">
-          <div
-            className="flex items-center gap-2 rounded-md border border-white/10 bg-black/20 px-2.5 py-1.5"
-            title="Verse card size"
-          >
-            <ZoomOut size={14} className="shrink-0 text-zinc-400" aria-hidden="true" />
-            <Slider
-              className="w-32"
-              trackClassName="relative h-2 w-full grow overflow-hidden rounded-full bg-zinc-700"
-              rangeClassName="absolute h-full bg-blue-500 select-none"
-              thumbClassName="relative block h-5 w-7 shrink-0 rounded-full border border-black/20 bg-white shadow-lg transition-shadow select-none after:absolute after:-inset-2 hover:ring-2 hover:ring-blue-400/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60 disabled:pointer-events-none disabled:opacity-50"
-              min={CARD_ZOOM_MIN}
-              max={CARD_ZOOM_MAX}
-              step={5}
-              value={[cardZoom]}
-              onValueChange={(value) =>
-                onCardZoomChange(value[0] ?? CARD_ZOOM_DEFAULT)
-              }
-              aria-label="Verse card size"
-            />
-            <ZoomIn size={14} className="shrink-0 text-zinc-400" aria-hidden="true" />
-            <span className="min-w-9 text-right text-[11px] font-semibold tabular-nums text-zinc-300">
-              {cardZoom}%
-            </span>
-          </div>
+          <ZoomControl
+            label="Verse card size"
+            value={cardZoom}
+            min={CARD_ZOOM_MIN}
+            max={CARD_ZOOM_MAX}
+            defaultValue={CARD_ZOOM_DEFAULT}
+            onChange={onCardZoomChange}
+          />
 
           <div className="flex items-center overflow-hidden rounded-md border border-white/10 bg-black/20">
             <button

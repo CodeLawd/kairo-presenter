@@ -1542,6 +1542,8 @@ export interface ProAutomateAPI {
   libraries: import('./libraries').LibrariesAPI
   /** Passages the operator kept, with their verse text. */
   passages: import('./passages').PassagesAPI
+  /** `.kairo` export and import of songs, setlists and scripture playlists. */
+  transfer: import('./kairo-bundle').TransferAPI
   media: MediaAPI
   tracks: TracksAPI
   onboarding: OnboardingAPI

@@ -226,7 +226,7 @@ export function SongQuickOpen({ songs, onClose, onOpen }: SongQuickOpenProps): R
   }
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-start justify-center bg-black/55 px-4 pt-[12vh] backdrop-blur-[2px] animate-fade-in motion-reduce:animate-none"
+    <div className="fixed inset-0 z-[100] flex items-start justify-center bg-black/50 px-4 pt-[12vh] animate-fade-in motion-reduce:animate-none"
       role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
       <div className="flex w-full max-w-4xl items-start justify-center gap-3" onKeyDown={handleKeyDown}>
       <section role="dialog" aria-modal="true" aria-label="Search song library"
@@ -264,9 +264,9 @@ export function SongQuickOpen({ songs, onClose, onOpen }: SongQuickOpenProps): R
                     onDoubleClick={() => openRow(row)}
                     aria-current={isActive}
                     className={cn('group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors',
-                      isActive ? 'bg-teal-500/12 text-zinc-50' : 'text-zinc-300 hover:bg-white/[0.04]')}>
+                      isActive ? 'row-selected' : 'text-zinc-300 hover:bg-white/[0.04]')}>
                     <span className={cn('grid size-8 shrink-0 place-items-center rounded-md',
-                      isActive ? 'bg-teal-500/15 text-teal-300' : 'bg-white/[0.04] text-zinc-500')}>
+                      isActive ? 'chip-selected' : 'bg-white/[0.04] text-zinc-500')}>
                       {row.kind === 'local'
                         ? <Music2 size={15} weight={isActive ? 'fill' : 'regular'} aria-hidden="true" />
                         : <Globe size={14} aria-hidden="true" />}

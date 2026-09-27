@@ -58,16 +58,14 @@
     height: 100%;
     margin: 0;
     padding: 0;
-    background: transparent;
+    background: rgb(var(--surface));
   }
 
   html {
     color-scheme: dark;
-    background: transparent;
   }
 
   body {
-    background: transparent;
     color: rgb(var(--text-primary));
     font-family: 'Source Sans 3', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     font-size: 0.9375rem;
@@ -221,6 +219,24 @@
     box-shadow: inset 0 1px 0 rgb(0 0 0 / 0.06);
   }
 
+  /* Selection is neutral, as in a macOS sidebar or list. Amber is kept for
+     live and playing state, where the colour carries meaning — tinting every
+     selected row with it muddies to brown on charcoal. */
+  .row-selected {
+    background-color: rgb(255 255 255 / 0.1);
+    color: rgb(var(--text-primary));
+  }
+  .chip-selected {
+    background-color: rgb(255 255 255 / 0.13);
+    color: rgb(var(--text-primary));
+  }
+  [data-theme='light'] .row-selected {
+    background-color: rgb(0 0 0 / 0.07);
+  }
+  [data-theme='light'] .chip-selected {
+    background-color: rgb(0 0 0 / 0.09);
+  }
+
   .page-header {
     @apply text-xl font-semibold text-white tracking-[-0.02em] font-sans;
   }
@@ -253,7 +269,7 @@
     @apply px-3.5 py-1.5 rounded-md bg-teal-600 hover:bg-teal-500 text-white text-sm font-semibold
            transition-[background-color,color,border-color,transform] duration-200 ease-out-expo
            focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/80 focus-visible:ring-offset-2 focus-visible:ring-offset-surface
-           active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100;
+           active:brightness-90 disabled:opacity-50 disabled:cursor-not-allowed;
   }
 
   .btn-secondary {
@@ -261,7 +277,7 @@
            hover:text-white text-sm font-medium border border-surface-border
            transition-[background-color,color,border-color,transform] duration-200 ease-out-expo
            focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/80 focus-visible:ring-offset-2 focus-visible:ring-offset-surface
-           active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed;
+           active:brightness-90 disabled:opacity-50 disabled:cursor-not-allowed;
   }
 
   .input {
@@ -449,29 +465,6 @@
 .splash-copy {
   animation: splash-copy-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.12s both;
 }
-.splash-mark-sheen {
-  pointer-events: none;
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  border-radius: 22%;
-}
-.splash-mark-sheen::after {
-  content: '';
-  position: absolute;
-  top: -20%;
-  bottom: -20%;
-  left: 0;
-  width: 42%;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgb(255 255 255 / 0.38),
-    transparent
-  );
-  transform: translateX(-140%) rotate(18deg);
-  animation: splash-sheen 2.2s ease-in-out 0.45s infinite;
-}
 
 @keyframes splash-mark-in {
   from { opacity: 0; transform: scale(0.9); }
@@ -480,10 +473,6 @@
 @keyframes splash-copy-in {
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }
-}
-@keyframes splash-sheen {
-  0% { transform: translateX(-140%) rotate(18deg); }
-  45%, 100% { transform: translateX(280%) rotate(18deg); }
 }
 @keyframes splash-step-in {
   from { opacity: 0; transform: translateY(3px); }
@@ -496,7 +485,6 @@
 @media (prefers-reduced-motion: reduce) {
   .splash-mark,
   .splash-copy,
-  .splash-mark-sheen::after,
   .splash-step {
     animation: none;
   }

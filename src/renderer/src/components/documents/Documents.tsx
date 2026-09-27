@@ -709,7 +709,7 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
                               className={cn(
                                 'rounded px-2 py-1 text-[11px] transition-colors',
                                 slideshow.slideshowSec === preset
-                                  ? 'bg-teal-500/20 text-teal-300'
+                                  ? 'chip-selected'
                                   : 'text-zinc-500 hover:bg-white/5 hover:text-zinc-200',
                               )}
                               onClick={() => saveSlideshow({ slideshowSec: preset })}

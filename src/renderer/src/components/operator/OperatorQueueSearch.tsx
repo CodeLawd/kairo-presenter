@@ -271,7 +271,7 @@ export function OperatorQueueSearch({
           role="listbox"
           className="absolute left-0 right-0 top-[calc(100%+0.15rem)] z-40 max-h-56 overflow-y-auto rounded-lg border border-surface-border bg-surface-elevated shadow-2xl"
         >
-          <div className="sticky top-0 flex items-center justify-between bg-surface-elevated/80 px-2.5 py-1.5 text-[10px] font-medium text-zinc-500 backdrop-blur-sm">
+          <div className="sticky top-0 flex items-center justify-between bg-surface-elevated px-2.5 py-1.5 text-[10px] font-medium text-zinc-500">
             <span>Scripture matches</span>
             <span>{suggesting ? 'Searching…' : 'Enter to queue'}</span>
           </div>
@@ -295,7 +295,7 @@ export function OperatorQueueSearch({
               className={cn(
                 'flex w-full items-start gap-2 border-b border-surface-border/40 px-2.5 py-2 text-left last:border-b-0',
                 index === activeSuggestion
-                  ? 'bg-teal-500/10'
+                  ? 'row-selected'
                   : 'hover:bg-surface-tertiary/70'
               )}
               onMouseEnter={() => setActiveSuggestion(index)}

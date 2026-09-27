@@ -119,7 +119,7 @@ module.exports = {
       animation: {
         'fade-in': 'fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
         'slide-in': 'slideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
-        'spring-in': 'springIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)',
+        'spring-in': 'springIn 0.2s cubic-bezier(0.2, 0, 0, 1)',
         'caret-blink': 'caretBlink 1.25s ease-out infinite',
       },
       keyframes: {
@@ -137,7 +137,7 @@ module.exports = {
           '100%': { opacity: '1', transform: 'translateX(0)' },
         },
         springIn: {
-          '0%': { opacity: '0', transform: 'scale(0.92) translateY(10px)' },
+          '0%': { opacity: '0', transform: 'scale(0.98) translateY(4px)' },
           '100%': { opacity: '1', transform: 'scale(1) translateY(0)' },
         },
       },
