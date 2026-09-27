@@ -48,10 +48,10 @@ export function subscribeExplicitScriptureDetection(
       return;
     }
     // Deepgram can finalize "Isaiah forty nine" just before "fourteen to
-    // twenty six". Hold the model back for one segment so it cannot turn the
-    // incomplete citation into the schema placeholder Isaiah 49:1 while the
-    // range is still arriving; the next final carries this text with it.
-    if (detector.isIncompleteExplicitCitation(result.text)) return;
+    // twenty six". Hold the model back for one segment so it cannot guess while
+    // the range is still arriving; the next final carries this text with it.
+    // If no verse comes, the detector falls back to Isaiah 49:1 by itself.
+    if (detector.holdIncompleteCitation(result.text)) return;
     if (detector.analyzePlanQuote(result.text)) {
       settle();
       return;

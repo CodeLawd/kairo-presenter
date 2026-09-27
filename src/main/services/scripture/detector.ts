@@ -145,6 +145,11 @@ const SOURCE_TEXT_MAX_CHARS = 150; // ~15 words
 const PLAN_QUOTE_WINDOW_CHARS = 600;
 /** A gap this long means the preacher moved on; stale half-verses must not match. */
 const PLAN_QUOTE_WINDOW_TTL_MS = 60_000;
+/**
+ * How long "Romans 8" waits for its verse before the chapter is shown from
+ * verse 1. Long enough for "…verses fourteen to twenty six" in the next final.
+ */
+const CHAPTER_FALLBACK_MS = 5_000;
 /** Speech kept for matching a quote inside a named chapter ("In John 3 …"). */
 const CHAPTER_QUOTE_WINDOW_CHARS = 600;
 
@@ -393,6 +398,7 @@ export class ScriptureDetector extends EventEmitter {
     | ((book: string, chapter: number) => QuoteCandidate[])
     | null = null;
   private pendingBook: { book: string; updatedAt: number } | null = null;
+  private chapterFallback: NodeJS.Timeout | null = null;
   private explicitContext: {
     book: string;
     chapter: number;
@@ -527,7 +533,7 @@ export class ScriptureDetector extends EventEmitter {
     });
     // A new named citation must never borrow the previous book, even when its
     // numbers are invalid or its chapter has not arrived yet.
-    if (direct.length === 0 && NAMED_BOOK_RE.test(normalized)) {
+    if (direct.length === 0 && NAMED_CITATION_RE.test(normalized)) {
       this.explicitContext = null;
       this.pendingBook = null;
     }
@@ -644,6 +650,9 @@ export class ScriptureDetector extends EventEmitter {
     refs: ScriptureReference[],
     origin?: (TranscriptOrigin & { detectionStartedAt: number }) | null,
   ): ScriptureReference[] {
+    // The preacher named a verse or moved to another passage, so a pending
+    // chapter must not fall back to verse 1 on top of it.
+    if (refs.length > 0) this.cancelChapterFallback();
     const fresh = this.filterDedup(refs);
     this.statsData.cacheHits += refs.length - fresh.length;
     this.statsData.totalDetections += fresh.length;
@@ -652,12 +661,49 @@ export class ScriptureDetector extends EventEmitter {
     return fresh;
   }
 
-  /** Whether this transcript names a book and chapter but has not supplied a verse yet. */
-  isIncompleteExplicitCitation(text: string): boolean {
+  /**
+   * For a final that names a book, or a book and chapter, but no verse yet.
+   * Returns true so the caller holds the model back for the verse that
+   * usually follows.
+   *
+   * A chapter with no verse falls back to verse 1 unless a verse — or any
+   * other passage — is detected within CHAPTER_FALLBACK_MS. Only a
+   * citation-shaped mention arms it ("Romans chapter 8", "turn to Romans 8",
+   * "Psalm 23."), never "John 3 people came forward".
+   */
+  holdIncompleteCitation(text: string): boolean {
     const spoken = normalizeWordNumbers(text).trim();
     if (bareBookName(spoken)) return true;
-    const refs = matchNormalizedCitations(this.withRememberedBook(spoken));
-    return refs.length > 0 && refs.every((ref) => !hasExplicitVerseSignal(ref.sourceText));
+    const normalized = this.withRememberedBook(spoken);
+    const refs = matchNormalizedCitations(normalized);
+    if (refs.length === 0 || refs.some((ref) => hasExplicitVerseSignal(ref.sourceText))) {
+      return false;
+    }
+    const chapter = refs[refs.length - 1];
+    if (isCitationShaped(normalized, chapter.sourceText)) this.armChapterFallback(chapter);
+    return true;
+  }
+
+  private armChapterFallback(chapter: ScriptureReference): void {
+    this.cancelChapterFallback();
+    const origin = this.transcriptOrigin
+      ? { ...this.transcriptOrigin, detectionStartedAt: this.detectionStartedAt ?? Date.now() }
+      : null;
+    this.chapterFallback = setTimeout(() => {
+      this.chapterFallback = null;
+      if (this.lifetime.signal.aborted) return;
+      // matchNormalizedCitations already reads a chapter-only citation as verse 1.
+      chapter.resolver = "explicit";
+      this.supersedeModel();
+      this.publish([chapter], origin);
+    }, CHAPTER_FALLBACK_MS);
+    this.chapterFallback.unref?.();
+  }
+
+  private cancelChapterFallback(): void {
+    if (!this.chapterFallback) return;
+    clearTimeout(this.chapterFallback);
+    this.chapterFallback = null;
   }
 
   /** "Chapter 8" after "Go to Romans." means Romans 8. Takes normalized text. */
@@ -879,6 +925,7 @@ export class ScriptureDetector extends EventEmitter {
     this.pendingText = null;
     this.pendingOrigin = null;
     this.explicitContext = null;
+    this.cancelChapterFallback();
     this.removeAllListeners();
   }
 
@@ -1448,7 +1495,9 @@ const BOOK_PATTERN =
 const BOOK_NAME_ALTERNATION = Object.keys(CANONICAL_BOOKS)
   .sort((a, b) => b.length - a.length)
   .join("|");
-const NAMED_BOOK_RE = new RegExp(`\\b(?:${BOOK_NAME_ALTERNATION})\\b`, "i");
+// A bare book word can occur in a reading ("kind acts"). Clear the old
+// chapter only when the new book is followed by a chapter cue or number.
+const NAMED_CITATION_RE = new RegExp(`\\b(?:${BOOK_NAME_ALTERNATION})\\b\\s+(?:chapter\\b|\\d+\\b)`, "i");
 // A mixed alphanumeric number token straight after a book: "Psalm 1one512".
 const CORRUPTED_CITATION_RE = new RegExp(
   `\\b(?:${BOOK_NAME_ALTERNATION})\\b\\s+(?:chapter\\s+)?(?=[a-z0-9]*[a-z])(?=[a-z0-9]*\\d)[a-z0-9]+\\b`,
@@ -1510,6 +1559,23 @@ const VERSE_LEAD_IN_RE = new RegExp(
   "g",
 );
 
+/** "Genesis 1 versus 2": STT hearing "verse" as "versus" between two numbers. */
+const VERSUS_BETWEEN_NUMBERS_RE = /(\d+[,.]?\s+)versus(?=\s+\d)/g;
+/**
+ * Dictation pauses: "Romans. 8. 28." The period after the book name marks it,
+ * so "Romans chapter 8. 28 people came" is not read as a verse.
+ */
+const DICTATED_CITATION_RE = new RegExp(
+  `\\b(${BOOK_PATTERN})\\.\\s+(\\d+)\\.?\\s+(\\d+)\\b`,
+  "gi",
+);
+
+/** A book followed only by a spoken compound number: "Genesis fifty five." */
+const SPOKEN_CHAPTER_VERSE_RE = new RegExp(
+  `\\b(${BOOK_PATTERN})\\s+(?:chapter\\s+)?(twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)[-\\s](one|two|three|four|five|six|seven|eight|nine)\\b(?!\\s+(?:verses?\\b|\\d|(?:${NUMBER_WORD_ALTERNATION})\\b))`,
+  "gi",
+);
+
 /** "verse 28 of Romans chapter 8" → "romans 8 verse 28". */
 const VERSE_OF_BOOK_RE = new RegExp(
   `\\bverses?\\s+(\\d+(?:\\s*(?:-|to|through|thru|and)\\s*\\d+)?)\\s+(?:of|in|from)\\s+(?:the\\s+book\\s+of\\s+)?(${BOOK_PATTERN})\\s+(?:chapter\\s+)?(\\d+)\\b`,
@@ -1523,6 +1589,10 @@ const VERSE_OF_BOOK_RE = new RegExp(
 
 const NUMBERED_BOOKS =
   "(?:samuel|kings?|chronicles|corinthians|thessalonians|timothy|peter|john)";
+// Disfluencies, in case filler words are ever enabled on the STT side.
+const FILLER_WORD_RE = /[,.]?\s*\b(?:uh|um|uhm|erm|er)\b[,.]?/g;
+// "John's 3:16", "Roman's 8:28": a possessive straight before a chapter number.
+const POSSESSIVE_BEFORE_NUMBER_RE = new RegExp(`['’]s${NUMBER_AHEAD}`, "g");
 const PHILIPPIANS_MISSPELLING_RE = /\b(?:phill?ipp?ians?|filipp?ians?)\b/g;
 const SONG_OF_SONGS_RE = /\bsongs?\s+of\s+(?:songs|solomon)\b/g;
 const PSALMS_MISSPELLING_RE = new RegExp(`\\b(?:pslams?|salms?${NUMBER_AHEAD})`, "g");
@@ -1549,6 +1619,8 @@ const ROMAN_PREFIX_RE = new RegExp(
 
 function repairBookNames(text: string): string {
   return text
+    .replace(FILLER_WORD_RE, "")
+    .replace(POSSESSIVE_BEFORE_NUMBER_RE, "")
     .replace(PHILIPPIANS_MISSPELLING_RE, "philippians")
     .replace(SONG_OF_SONGS_RE, "song of solomon")
     .replace(PSALMS_MISSPELLING_RE, "psalms")
@@ -1564,6 +1636,25 @@ function canonicalBookName(raw: string): string | undefined {
     if (Object.hasOwn(CANONICAL_BOOKS, key)) return CANONICAL_BOOKS[key];
   }
   return undefined;
+}
+
+/** A word that introduces a citation right before the book: "turn to", "in". */
+const CITATION_LEAD_IN_RE =
+  /\b(?:in|to|into|from|read|open|turn|at|of|see)\s+(?:the\s+(?:book|gospel|epistle|letter)\s+of\s+)?$/;
+
+/**
+ * Whether a chapter-only mention reads as a citation rather than speech that
+ * happens to follow a name with a number: "Romans chapter 8", "turn to
+ * Romans 8", "Psalm 23." — but not "John 3 people came forward".
+ */
+function isCitationShaped(normalized: string, source: string): boolean {
+  if (/\bchapter\b/.test(source)) return true;
+  const at = normalized.lastIndexOf(source);
+  if (at < 0) return false;
+  return (
+    /^\s*(?:[.,;:!?]|$)/.test(normalized.slice(at + source.length)) ||
+    CITATION_LEAD_IN_RE.test(normalized.slice(0, at))
+  );
 }
 
 /** The canonical book when a normalized segment only announces one: "Go to Romans." */
@@ -1623,9 +1714,29 @@ function normalizeWordNumbers(text: string): string {
   // Psalm is the only Bible book with three-digit chapter numbers. Speakers
   // commonly say "Psalm one thirty nine" (139) without saying "hundred".
   normalized = normalized.replace(
-    /\b(psalms?)\s+one(?:\s+hundred(?:\s+and)?)?\s+(ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty)(?:[-\s](one|two|three|four|five|six|seven|eight|nine))?\b/g,
-    (_match, book: string, remainder: string, unit?: string) =>
-      `${book} ${100 + NUMBER_WORDS[remainder] + (unit ? NUMBER_WORDS[unit] : 0)}`,
+    // A unit joins only a tens word: "one hundred and eleven two" is 111, verse 2.
+    /\b(psalms?)\s+one(?:\s+hundred(?:\s+and)?)?\s+(?:(ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen)|(twenty|thirty|forty|fifty)(?:[-\s](one|two|three|four|five|six|seven|eight|nine))?)\b/g,
+    (_match, book: string, teen?: string, tens?: string, unit?: string) =>
+      `${book} ${100 + NUMBER_WORDS[teen ?? tens!] + (unit ? NUMBER_WORDS[unit] : 0)}`,
+  );
+
+  // "Genesis fifty five" cannot be chapter 55 — Genesis has 50 — so it is 50:5.
+  // Read that way only when it is the one valid reading, as with "John 316".
+  normalized = normalized.replace(
+    SPOKEN_CHAPTER_VERSE_RE,
+    (match: string, rawBook: string, tens: string, unit: string) => {
+      const book = canonicalBookName(rawBook);
+      const chapter = NUMBER_WORDS[tens];
+      const verse = NUMBER_WORDS[unit];
+      if (
+        !book ||
+        isValidScriptureReference({ book, chapter: chapter + verse, verseStart: 1 }) ||
+        !isValidScriptureReference({ book, chapter, verseStart: verse })
+      ) {
+        return match;
+      }
+      return `${rawBook} ${chapter}:${verse}`;
+    },
   );
 
   // Replace compound word numbers (e.g. "twenty-eight" or "twenty eight")
@@ -1654,6 +1765,8 @@ function normalizeWordNumbers(text: string): string {
     /\bthe\s+(\d+)(?:st|nd|rd|th)\s+verse\b/g,
     "verse $1",
   );
+  normalized = normalized.replace(VERSUS_BETWEEN_NUMBERS_RE, "$1verse");
+  normalized = normalized.replace(DICTATED_CITATION_RE, "$1 $2:$3");
   normalized = normalized.replace(VERSE_LEAD_IN_RE, " ");
   normalized = normalized.replace(VERSE_OF_BOOK_RE, "$2 $3 verse $1");
 

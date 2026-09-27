@@ -54,6 +54,40 @@ function longestSharedRun(heard: string[], verse: string[]): number {
   return best;
 }
 
+/** Exact words on both sides of one mistranscribed word. */
+function longestOneWordGap(heard: string[], verse: string[]): number {
+  let best = 0;
+  let exactPrevious = new Uint16Array(verse.length + 1);
+  let exactCurrent = new Uint16Array(verse.length + 1);
+  let beforePrevious = new Uint16Array(verse.length + 1);
+  let beforeCurrent = new Uint16Array(verse.length + 1);
+  let afterPrevious = new Uint16Array(verse.length + 1);
+  let afterCurrent = new Uint16Array(verse.length + 1);
+  for (let i = 1; i <= heard.length; i++) {
+    for (let j = 1; j <= verse.length; j++) {
+      if (heard[i - 1] === verse[j - 1]) {
+        exactCurrent[j] = exactPrevious[j - 1] + 1;
+        beforeCurrent[j] = beforePrevious[j - 1];
+        afterCurrent[j] = beforeCurrent[j] ? afterPrevious[j - 1] + 1 : 0;
+        if (beforeCurrent[j] >= 2 && afterCurrent[j] >= 2) {
+          best = Math.max(best, beforeCurrent[j] + afterCurrent[j]);
+        }
+      } else {
+        exactCurrent[j] = 0;
+        beforeCurrent[j] = exactPrevious[j - 1];
+        afterCurrent[j] = 0;
+      }
+    }
+    [exactPrevious, exactCurrent] = [exactCurrent, exactPrevious];
+    [beforePrevious, beforeCurrent] = [beforeCurrent, beforePrevious];
+    [afterPrevious, afterCurrent] = [afterCurrent, afterPrevious];
+    exactCurrent.fill(0);
+    beforeCurrent.fill(0);
+    afterCurrent.fill(0);
+  }
+  return best >= 6 ? best : 0;
+}
+
 /** One verse's wording, tokenized once for repeated matching. */
 export interface ChapterVerseTokens { verse: number; tokens: string[] }
 
@@ -62,7 +96,9 @@ export function tokenizeChapter(candidates: QuoteCandidate[]): ChapterVerseToken
   const seen = new Set<string>();
   const verses: ChapterVerseTokens[] = [];
   for (const candidate of candidates) {
-    const tokens = tokenize(candidate.text);
+    // Bundled Bible text can contain editorial notes in braces. They are not
+    // spoken scripture and must not break a contiguous reading match.
+    const tokens = tokenize(candidate.text.replace(/\{[^}]*\}/g, ' '));
     const key = `${candidate.verse}|${tokens.join(' ')}`;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -85,13 +121,22 @@ export function matchChapterQuote(
   const heard = tokenize(heardText);
   if (heard.length < CHAPTER_QUOTE_MIN_RUN) return null;
   const runByVerse = new Map<number, number>();
+  const gapByVerse = new Map<number, number>();
   for (const { verse, tokens } of verses) {
     const run = longestSharedRun(heard, tokens);
     if (run > (runByVerse.get(verse) ?? 0)) runByVerse.set(verse, run);
+    const gap = longestOneWordGap(heard, tokens);
+    if (gap > (gapByVerse.get(verse) ?? 0)) gapByVerse.set(verse, gap);
   }
   const ranked = [...runByVerse.entries()].sort((a, b) => b[1] - a[1]);
   const [best, runnerUp] = ranked;
-  if (!best || best[1] < CHAPTER_QUOTE_MIN_RUN) return null;
-  if (runnerUp && runnerUp[1] === best[1]) return null;
-  return { verse: best[0], confidence: best[1] >= CHAPTER_QUOTE_STRONG_RUN ? 0.85 : 0.65 };
+  if (best && best[1] >= CHAPTER_QUOTE_MIN_RUN && (!runnerUp || runnerUp[1] < best[1])) {
+    return { verse: best[0], confidence: best[1] >= CHAPTER_QUOTE_STRONG_RUN ? 0.85 : 0.65 };
+  }
+  // A short quote broken by one STT error, or a tie in exact runs, can still
+  // be resolved when a longer near-contiguous reading belongs to one verse.
+  const gapRanked = [...gapByVerse.entries()].sort((a, b) => b[1] - a[1]);
+  const [gapBest, gapRunnerUp] = gapRanked;
+  if (!gapBest || gapBest[1] < 6 || (gapRunnerUp && gapRunnerUp[1] === gapBest[1])) return null;
+  return { verse: gapBest[0], confidence: 0.65 };
 }

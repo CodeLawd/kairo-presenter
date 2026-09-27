@@ -1,7 +1,22 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import Database from 'better-sqlite3';
-import { recoverDamagedQuote } from '../quote-recovery';
+import { matchChapterQuote, recoverDamagedQuote, tokenizeChapter } from '../quote-recovery';
+
+test('chapter quotes tolerate one changed word only when the verse remains unique', () => {
+  const candidates = tokenizeChapter([
+    { book: 'Nahum', chapter: 2, verse: 6, text: 'The gates of the rivers shall be opened, and the palace shall be dissolved.' },
+    { book: 'Nahum', chapter: 2, verse: 7, text: 'And Huzzab shall be led away captive.' },
+  ]);
+  assert.equal(matchChapterQuote('The gates of the rivers shall be unexpected, and the palace shall be dissolved.', candidates)?.verse, 6);
+
+  const repeated = tokenizeChapter([
+    { book: 'Haggai', chapter: 1, verse: 5, text: 'Now therefore thus saith the LORD of hosts; Consider your ways.' },
+    { book: 'Haggai', chapter: 1, verse: 7, text: 'Thus saith the LORD of hosts; Consider your ways.' },
+  ]);
+  assert.equal(matchChapterQuote('Thus saith the LORD of hosts; Consider your ways.', repeated), null);
+  assert.equal(matchChapterQuote('Now therefore thus saith unexpected hosts; Consider your ways.', repeated)?.verse, 5);
+});
 
 test('recovers exact Psalm 115:12-13 using the bundled verse text, without AI', () => {
   const db = new Database('resources/bible.db', { readonly: true });

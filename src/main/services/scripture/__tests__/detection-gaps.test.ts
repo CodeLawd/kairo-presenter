@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import test, { mock } from 'node:test';
 
 import type { TranscriptResult } from '../../../../lib/ipc';
 import { ScriptureDetector, type ScriptureReference } from '../detector';
@@ -27,9 +27,16 @@ async function withDetector(
   try { await run(detector, found); } finally { detector.destroy(); }
 }
 
+/** Longer than the detector's chapter → verse 1 fallback wait. */
+const PAST_FALLBACK_MS = 10_000;
+/** A replay step: time passing between finals. */
+const wait = (ms: number) => (): void => { mock.timers.tick(ms); };
+
 /**
  * Feeds finals through the real live wiring; the model is stubbed to record
  * what it would see. A function step acts on the detector between finals.
+ * Timers are mocked and run out at the end, so a pending chapter fallback
+ * either fires or has been cancelled by the time results are read.
  */
 function replay(
   segments: Array<string | ((detector: ScriptureDetector) => void)>,
@@ -40,6 +47,7 @@ function replay(
     onTranscript(listener: typeof finalListener) { finalListener = listener; },
     offTranscript() {}, onInterim() {}, offInterim() {},
   };
+  mock.timers.enable({ apis: ['setTimeout'] });
   const detector = new ScriptureDetector({ apiKey: 'test-key' });
   const modelSaw: string[] = [];
   Object.assign(detector, { callModel: async (text: string) => { modelSaw.push(text); return '[]'; } });
@@ -52,7 +60,8 @@ function replay(
       if (typeof step === 'function') step(detector);
       else finalListener({ id: step, text: step, words: [], timestamp: Date.now(), duration: 0, isFinal: true });
     }
-  } finally { cleanup(); detector.destroy(); }
+    mock.timers.tick(PAST_FALLBACK_MS);
+  } finally { cleanup(); detector.destroy(); mock.timers.reset(); }
   return { found, modelSaw };
 }
 
@@ -99,6 +108,14 @@ for (const [segments, expected] of [
   [['Jeremiah 2911.'], 'Jeremiah 29:11'],
   [['Philippians 413'], 'Philippians 4:13'],
   [['Psalm 1195'], 'Psalms 119:5'],
+  // STT noise: "versus", possessives, fillers, dictation pauses.
+  [['Genesis 1 versus 2.'], 'Genesis 1:2'],
+  [["John's 3:16."], 'John 3:16'],
+  [["Roman's 8:28."], 'Romans 8:28'],
+  [['Numbers chapter 17, uh, verse number 4.'], 'Numbers 17:4'],
+  [['Romans. 8. 28.'], 'Romans 8:28'],
+  [['Psalm one eleven two.'], 'Psalms 111:2'],
+  [['Psalms one hundred and ten five.'], 'Psalms 110:5'],
   // Previously handled forms must keep working.
   [['Romans 8, verse 28.'], 'Romans 8:28'],
   [['Romans eight twenty eight.'], 'Romans 8:28'],
@@ -126,18 +143,20 @@ for (const segments of [
 }
 
 for (const segments of [
-  ['Romans chapter 8. 28 people came forward.'],
-  ['Romans chapter 8 and 28 people came forward.'],
   ['I want to talk to John.', 'Chapter 3 of my life was hard.'],
+  ['John 3 people came forward last night.'],
+  ['Mark 2 things before we pray.'],
+  ['Our youth pastor James 2 weeks ago said hello.'],
   ['That verse 3 of the song moved me.'],
   ['We have one hundred and five volunteers today.'],
   ['I John 3 times called the office.'],
   ['We sent a team to the Philippines last year.'],
   ['The Roman soldiers came.'],
+  ['It was David versus Goliath, 2 men.'],
+  ["God's 2 promises are enough."],
 ]) {
   test(`does not invent a verse: ${segments.join(' | ')}`, () => {
-    const found = replay(segments).found.filter(ref => ref.verseStart !== 1 || /verse/.test(ref.sourceText));
-    assert.deepEqual(found.map(key), []);
+    assert.deepEqual(replay(segments).found.map(key), []);
   });
 }
 
@@ -151,6 +170,18 @@ test('a quote after a named chapter resolves locally inside that chapter', () =>
   assert.equal(found[0].resolver, 'quotation-local');
   assert.ok(found[0].confidence >= 0.8, 'a long verbatim run is confident enough to auto-present');
   assert.deepEqual(modelSaw, []);
+});
+
+test('a book name used as an ordinary word inside a quote does not clear its chapter', () => {
+  const verse: QuoteCandidate = {
+    book: 'Galatians', chapter: 5, verse: 22,
+    text: 'But the fruit of the Spirit is love, joy, peace, a quiet mind, kind acts, well-doing, faith,',
+  };
+  const { found } = replay(
+    ['In Galatians chapter 5.', verse.text],
+    [verse],
+  );
+  assert.deepEqual(found.map(key), ['Galatians 5:22']);
 });
 
 test('the chapter stays in scope when the quote arrives in the next final', () => {
@@ -179,10 +210,36 @@ test('a chapter-only final reaches the model with the next final instead of vani
     ['Paul writes in Romans 12,', 'be not conformed to this world but be ye transformed by the renewing of your mind.'],
     [],
   );
-  assert.deepEqual(found, []);
   assert.equal(modelSaw.length, 1);
   assert.match(modelSaw[0], /Romans 12, be not conformed/);
+  // The model found nothing, so the named chapter falls back to verse 1.
+  assert.deepEqual(found.map(key), ['Romans 12:1']);
 });
+
+// A book and chapter with no verse falls back to verse 1…
+for (const [segments, expected] of [
+  [['Ezekiel thirty seven.'], ['Ezekiel 37:1']],
+  // A spoken number that cannot be a chapter is chapter and verse.
+  [['Genesis fifty five.'], ['Genesis 50:5']],
+  [['Revelation twenty nine.'], ['Revelation 20:9']],
+  [['Turn to Romans 8.'], ['Romans 8:1']],
+  [['Psalm 23.'], ['Psalms 23:1']],
+  [['Go to Romans.', 'Chapter 8.'], ['Romans 8:1']],
+  [['Romans chapter 8. 28 people came forward.'], ['Romans 8:1']],
+  [['Open your Bibles to Isaiah forty nine.', 'This is a beautiful chapter.'], ['Isaiah 49:1']],
+  // …unless a verse follows in time,
+  [['Please turn with me to Isaiah forty nine', 'fourteen to 26'], ['Isaiah 49:14-26']],
+  [['Romans chapter 8.', 'This is one of my favourite chapters.', 'Verse 28.'], ['Romans 8:28']],
+  // …or the preacher moves to another passage first.
+  [['Romans chapter 8.', 'But first, John 3:16.'], ['John 3:16']],
+  // A verse called after the wait still comes through.
+  [['Romans chapter 8.', wait(PAST_FALLBACK_MS), 'Verse 28.'], ['Romans 8:1', 'Romans 8:28']],
+] as Array<[Parameters<typeof replay>[0], string[]]>) {
+  const label = segments.map(step => typeof step === 'string' ? step : '(pause)').join(' | ');
+  test(`chapter without a verse: ${label}`, () => {
+    assert.deepEqual(replay(segments).found.map(key), expected);
+  });
+}
 
 test('a released reference detects again on the next mention, but not from the model', () =>
   withDetector({ apiKey: 'test', minIntervalMs: 0 }, async (detector, found) => {
@@ -214,11 +271,11 @@ test('releasing one verse of a passage frees the passage for the next mention', 
 
 for (const [text, expected] of [
   ['Luke 4:18, 20', 'Luke 4:18'],
-  ['Psalm 119', null],
+  ['Psalm 119', 'Psalms 119:1'],
   ['Genesis 111.', null],
   ['Psalm 911.', null],
 ] as Array<[string, string | null]>) {
-  test(`does not guess a verse from ambiguous numbers: ${text}`, () => {
+  test(`does not guess a split from ambiguous numbers: ${text}`, () => {
     const found = replay([text]).found.map(key);
     assert.deepEqual(found, expected ? [expected] : []);
   });
