@@ -50,6 +50,7 @@ import { sttService } from "./services/stt";
 import { proPresenterService } from "./services/propresenter";
 import { scriptureService } from "./services/scripture";
 import { lookupDetectedScripture } from "./services/scripture/detection-lookup";
+import { scriptureKeyterms } from "./services/stt/keyterms";
 import { resilienceManager } from "./services/resilience";
 import { ndiService } from "./services/ndi";
 import { mediaService } from "./services/media";
@@ -133,6 +134,16 @@ class Orchestrator {
 
   private autoTimers = new Map<string, NodeJS.Timeout>();
   private pendingSuggestions = new Map<string, ScriptureSuggestion>();
+  /**
+   * The verse behind each suggestion card, so dismissing the card can release
+   * the detector's dedup. Kept after the card is presented too (unlike
+   * pendingSuggestions): the card stays on the Operator and can still be
+   * dismissed. Cleared with the session.
+   */
+  private suggestionRefs = new Map<
+    string,
+    Pick<ScriptureReference, "book" | "chapter" | "verseStart">
+  >();
 
   /** Single pending auto-clear timer for the scripture overlay (one at a time). */
   private overlayClearTimer: NodeJS.Timeout | null = null;
@@ -234,54 +245,11 @@ class Orchestrator {
       this.updateHealth("detector", "error", msg);
     }
 
-    // Create ScriptureDetector. It is built even without an LLM key so the local
-    // regex path and the live-playlist match still drive the Operator; only the
-    // buffer → LLM wiring below is gated on the key.
-    this.detector = new ScriptureDetector({
-      provider: config.llmProvider,
-      apiKey: config.llmApiKey,
-      model: config.scriptureModel,
-    });
-    this.detector.setPlanIndexProvider(() => livePlanService.getIndex());
-    this.detector.setQuoteSearchProvider(phrase => scriptureService.searchLocalQuoteCandidates(phrase));
-    this.detector.on("planProgress", (reference, itemId) => livePlanService.observe(reference, itemId));
-
-    this.detector.on("detection", (refs) => {
-      this.handleDetection(refs).catch((err) =>
-        log.error("[Orchestrator] handleDetection error", (err as Error).message),
-      );
-    });
-
-    this.detector.on("requestSuccess", () => {
-      resilienceManager.handleClaudeSuccess();
-    });
-
-    this.detector.on("stats", (stats: DetectorStats) => {
-      if (this.session) {
-        this.session.detectorCalls = stats.totalCalls;
-        this.session.avgDetectorLatencyMs = stats.averageLatencyMs;
-      }
-    });
-
-    this.detector.on("error", (err: Error) => {
-      log.error("[Orchestrator] Detector error", err.message);
-      this.updateHealth("detector", "error", err.message);
-      this.emitStatus();
-      resilienceManager.handleClaudeError(err);
-    });
-
+    this.createDetector(config);
     if (config.llmApiKey) this.updateHealth("detector", "ok");
 
     // Configure STT
-    sttService.configure(config.sttProvider, config.sttApiKey, config.sttLanguage);
-
-    // Final transcript events drive analysis directly through the live wiring
-    // below. Keeping the older buffer timer attached here would duplicate model
-    // calls and reintroduce an avoidable delay.
-    this.explicitDetectionCleanup = subscribeExplicitScriptureDetection(
-      sttService,
-      this.detector,
-    );
+    this.configureStt(config);
 
     // Start STT (connects Deepgram WebSocket)
     try {
@@ -334,6 +302,7 @@ class Orchestrator {
     }
     this.autoTimers.clear();
     this.pendingSuggestions.clear();
+    this.suggestionRefs.clear();
 
     // Detach audio PCM stream from Deepgram
     sttService.deepgram.detachStream();
@@ -403,6 +372,11 @@ class Orchestrator {
   dismissSuggestion(suggestionId: string): void {
     this.cancelAutoPresent(suggestionId);
     this.pendingSuggestions.delete(suggestionId);
+    // The card is gone, so the next time the preacher says this verse it must
+    // come back instead of being swallowed as a duplicate.
+    const ref = this.suggestionRefs.get(suggestionId);
+    if (ref) this.detector?.release(ref);
+    this.suggestionRefs.delete(suggestionId);
     scriptureService.dismissSuggestion(suggestionId);
   }
 
@@ -426,6 +400,76 @@ class Orchestrator {
   dismissAuto(suggestionId: string): void {
     this.cancelAutoPresent(suggestionId);
     log.info("[Orchestrator] Auto-present dismissed by user", { suggestionId });
+  }
+
+  /**
+   * Configures transcription with book names boosted, the live playlist's own
+   * books first. Deepgram fixes keyterms per connection, so choosing a
+   * different playlist mid-service takes effect from the next start.
+   */
+  private configureStt(config: OrchestratorConfig): void {
+    const playlistBooks =
+      livePlanService.getIndex()?.ordered.map((entry) => entry.verse.book) ?? [];
+    sttService.configure(
+      config.sttProvider,
+      config.sttApiKey,
+      config.sttLanguage,
+      scriptureKeyterms(config.sttLanguage, playlistBooks),
+    );
+  }
+
+  /**
+   * Builds the detector and subscribes it to live transcription. It is built
+   * even without an LLM key so the local citation parser, chapter-quote match
+   * and live-playlist match still drive the Operator.
+   */
+  private createDetector(config: OrchestratorConfig): void {
+    this.explicitDetectionCleanup?.();
+    this.detector?.destroy();
+    this.suggestionRefs.clear();
+
+    const detector = new ScriptureDetector({
+      provider: config.llmProvider,
+      apiKey: config.llmApiKey,
+      model: config.scriptureModel,
+    });
+    this.detector = detector;
+    detector.setPlanIndexProvider(() => livePlanService.getIndex());
+    detector.setQuoteSearchProvider(phrase => scriptureService.searchLocalQuoteCandidates(phrase));
+    detector.setChapterVerseProvider((book, chapter) => scriptureService.getLocalChapterVerses(book, chapter));
+    detector.on("planProgress", (reference, itemId) => livePlanService.observe(reference, itemId));
+
+    detector.on("detection", (refs) => {
+      this.handleDetection(refs).catch((err) =>
+        log.error("[Orchestrator] handleDetection error", (err as Error).message),
+      );
+    });
+
+    detector.on("requestSuccess", () => {
+      resilienceManager.handleClaudeSuccess();
+    });
+
+    detector.on("stats", (stats: DetectorStats) => {
+      if (this.session) {
+        this.session.detectorCalls = stats.totalCalls;
+        this.session.avgDetectorLatencyMs = stats.averageLatencyMs;
+      }
+    });
+
+    detector.on("error", (err: Error) => {
+      log.error("[Orchestrator] Detector error", err.message);
+      this.updateHealth("detector", "error", err.message);
+      this.emitStatus();
+      resilienceManager.handleClaudeError(err);
+    });
+
+    // Final transcript events drive analysis directly through the live wiring.
+    // Keeping the older buffer timer attached here would duplicate model calls
+    // and reintroduce an avoidable delay.
+    this.explicitDetectionCleanup = subscribeExplicitScriptureDetection(
+      sttService,
+      detector,
+    );
   }
 
   // ─── Detection handler ─────────────────────────────────────────────────────
@@ -489,6 +533,8 @@ class Orchestrator {
           failureReason: "verse-not-found",
           error: `${translation} text is not available locally for this reference`,
         });
+        // No card reached the operator; let the next mention try again.
+        this.detector?.release(ref);
         continue;
       }
 
@@ -554,6 +600,11 @@ class Orchestrator {
         };
 
         this.pendingSuggestions.set(suggestion.id, suggestion);
+        this.suggestionRefs.set(suggestion.id, {
+          book: ref.book,
+          chapter: ref.chapter,
+          verseStart: verse.verse,
+        });
         if (this.session) this.session.totalDetections++;
 
         // Publish through scriptureService so existing IPC/renderer pipeline works
@@ -1551,47 +1602,11 @@ class Orchestrator {
         this.updateHealth("detector", "error", (err as Error).message);
       }
 
-      if (this.cfg.llmApiKey) {
-        this.detector = new ScriptureDetector({
-          provider: this.cfg.llmProvider,
-          apiKey: this.cfg.llmApiKey,
-          model: this.cfg.scriptureModel,
-        });
-        this.detector.setPlanIndexProvider(() => livePlanService.getIndex());
-        this.detector.setQuoteSearchProvider(phrase => scriptureService.searchLocalQuoteCandidates(phrase));
-        this.detector.on("planProgress", (reference, itemId) => livePlanService.observe(reference, itemId));
+      // Same wiring as a cold start. Recovery used to skip the detector when no
+      // LLM key was set, which silently disabled even explicit citations.
+      this.createDetector(this.cfg);
 
-        this.detector.on("detection", (refs) => {
-          this.handleDetection(refs).catch((err) =>
-            log.error("[Orchestrator] handleDetection error on recovery", (err as Error).message)
-          );
-        });
-        this.detector.on("requestSuccess", () => {
-          resilienceManager.handleClaudeSuccess();
-        });
-
-        this.detector.on("stats", (stats: DetectorStats) => {
-          if (this.session) {
-            this.session.detectorCalls = stats.totalCalls;
-            this.session.avgDetectorLatencyMs = stats.averageLatencyMs;
-          }
-        });
-
-        this.detector.on("error", (err: Error) => {
-          log.error("[Orchestrator] Detector recovery error", err.message);
-          this.updateHealth("detector", "error", err.message);
-          this.emitStatus();
-          resilienceManager.handleClaudeError(err);
-        });
-
-        this.explicitDetectionCleanup?.();
-        this.explicitDetectionCleanup = subscribeExplicitScriptureDetection(
-          sttService,
-          this.detector,
-        );
-      }
-
-      sttService.configure(this.cfg.sttProvider, this.cfg.sttApiKey, this.cfg.sttLanguage);
+      this.configureStt(this.cfg);
 
       try {
         await sttService.start();

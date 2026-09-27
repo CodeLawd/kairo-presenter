@@ -292,6 +292,8 @@ export default function App(): React.ReactElement {
     requestImport(kind)
   }), [])
   const [ppGateResolved, setPpGateResolved] = useState(false)
+  /** Opened on demand from the ProPresenter status in the header. */
+  const [ppGateRequested, setPpGateRequested] = useState(false)
   const [onboardingDismissed, setOnboardingDismissed] = useState(false)
   const [ppLaunch, setPpLaunch] = useState<PpLaunchOutcome>('pending')
 
@@ -364,7 +366,13 @@ export default function App(): React.ReactElement {
   useEffect(() => {
     if (!bootstrapped) return
     let cancelled = false
-    void probePpOnLaunch().then((outcome) => {
+    void probePpOnLaunch().then(async (outcome) => {
+      // Offered once per app launch — a reloaded interface or a reopened
+      // window does not ask again. After that it is the header status's job.
+      if (outcome === 'unavailable') {
+        const first = await window.api.app.claimPpConnectPrompt().catch(() => false)
+        if (!first && !cancelled) setPpGateResolved(true)
+      }
       if (!cancelled) setPpLaunch(outcome)
     })
     return () => {
@@ -455,6 +463,15 @@ export default function App(): React.ReactElement {
           setSettingsSection('propresenter')
           setSettingsOpen(true)
         }}
+        onProPresenterStatus={() => {
+          // Not connected: the connect prompt. Connected: its settings.
+          if (ppState === 'connected') {
+            setSettingsSection('propresenter')
+            setSettingsOpen(true)
+          } else {
+            setPpGateRequested(true)
+          }
+        }}
         toolbar={route === 'operator' ? <OperatorToolbar /> : undefined}
       />
       <main className="relative flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-surface">
@@ -523,18 +540,21 @@ export default function App(): React.ReactElement {
       )}
 
       {!onboardingOpen &&
-        shouldOfferPpConnectGate({
+        (ppGateRequested || shouldOfferPpConnectGate({
           sessionResolved: ppGateResolved,
           launch: ppLaunch,
           accountGateOpen,
-        }) && (
+        })) && (
         <PpConnectGate
           initialHost={ppSettings.host}
           initialPort={ppSettings.port}
           password={ppSettings.password}
           ppState={ppState}
           ppVersion={ppVersion}
-          onResolved={() => setPpGateResolved(true)}
+          onResolved={() => {
+            setPpGateResolved(true)
+            setPpGateRequested(false)
+          }}
         />
       )}
 

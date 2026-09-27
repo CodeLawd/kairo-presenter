@@ -56,10 +56,29 @@ export function useLibrariesSync(): void {
   }, [])
 }
 
-export function startLibraryItemDrag(event: React.DragEvent, itemId: string, label: string): void {
+/** Marks what kind of item a drag carries, so a Scripture library never
+ *  accepts a song dragged from the ⌘F song finder (which opens on any page). */
+export function libraryKindDragType(kind: LibraryKind): string {
+  return `application/x-kairo-kind-${kind}`
+}
+
+export function startLibraryItemDrag(
+  event: React.DragEvent,
+  itemId: string,
+  label: string,
+  kind?: LibraryKind,
+): void {
   event.dataTransfer.setData(LIBRARY_ITEM_DRAG_TYPE, itemId)
   event.dataTransfer.setData('text/plain', label)
+  if (kind) event.dataTransfer.setData(libraryKindDragType(kind), itemId)
   event.dataTransfer.effectAllowed = 'copyMove'
+}
+
+/** A library row accepts the drag: an item, and not one marked as another kind. */
+export function acceptsLibraryDrag(types: readonly string[], kind: LibraryKind): boolean {
+  if (!types.includes(LIBRARY_ITEM_DRAG_TYPE)) return false
+  const marked = types.filter((type) => type.startsWith('application/x-kairo-kind-'))
+  return marked.length === 0 || marked.includes(libraryKindDragType(kind))
 }
 
 export function itemIdFromDrag(transfer: DataTransfer): string {

@@ -64,12 +64,12 @@ class STTService {
 
   // ─── Public API ───────────────────────────────────────────────────────────
 
-  configure(provider: STTProvider, apiKey: string, language: string): void {
+  configure(provider: STTProvider, apiKey: string, language: string, keyterms: string[] = []): void {
     this.provider = provider
     log.info('[STT] Configured', { provider, language })
 
     if (provider === 'deepgram') {
-      this.deepgram.configure(apiKey, language)
+      this.deepgram.configure(apiKey, language, keyterms)
     }
   }
 

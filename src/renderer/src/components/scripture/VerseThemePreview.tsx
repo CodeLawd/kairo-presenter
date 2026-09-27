@@ -27,7 +27,11 @@ export interface VerseThemePreviewProps {
   /** Live on ProPresenter / last sent cue. */
   isLive: boolean;
   sendStatus: SendStatus;
-  onSelect: () => void;
+  onSelect: (event: React.MouseEvent<HTMLButtonElement>) => void;
+  /** Picked for a bulk action (⌘-click / rubber band) — not live. */
+  isPicked?: boolean;
+  /** Identity for rubber-band selection (`data-select-id`). */
+  selectId?: string;
   cardRef: (element: HTMLButtonElement | null) => void;
   /**
    * Card chrome (translation + Live) sits under the 16:9 frame so the slide
@@ -106,6 +110,8 @@ export function VerseThemePreview({
   seekTo = null,
   onTime,
   lazy = false,
+  isPicked = false,
+  selectId,
 }: VerseThemePreviewProps): React.ReactElement {
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const drawSlide = useNearViewport(lazy, buttonRef);
@@ -147,13 +153,16 @@ export function VerseThemePreview({
         chrome
           ? cn(
               "rounded-xl border shadow-sm",
-              isActive
-                ? "border-teal-400 ring-2 ring-teal-400/70"
-                : "border-surface-border/70 hover:border-slate-500 focus-visible:ring-1 focus-visible:ring-surface-border",
+              isPicked
+                ? "border-white ring-2 ring-white/30"
+                : isActive
+                  ? "border-teal-400 ring-2 ring-teal-400/70"
+                  : "border-surface-border/70 hover:border-slate-500 focus-visible:ring-1 focus-visible:ring-surface-border",
             )
           : "rounded-none border-0 shadow-none",
       )}
       style={{ width: responsive ? "100%" : width }}
+      data-select-id={selectId}
       onClick={onSelect}
       aria-pressed={isActive || isLive || isFocused}
       aria-current={isActive ? "true" : undefined}

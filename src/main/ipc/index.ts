@@ -1353,7 +1353,16 @@ async function cloudResult<T>(run: () => Promise<T>): Promise<{
 
 // ─── Startup bootstrap ────────────────────────────────────────────────────────
 
+/** Whether this launch has already shown the ProPresenter connect prompt. */
+let ppConnectPromptClaimed = false;
+
 function registerAppHandlers(): void {
+  handle(IPC.APP.CLAIM_PP_CONNECT_PROMPT, () => {
+    if (ppConnectPromptClaimed) return false;
+    ppConnectPromptClaimed = true;
+    return true;
+  });
+
   // One round trip for everything the first render needs. Only local resources
   // are awaited — API.Bible authorization, audio devices, NDI, and the
   // ProPresenter connection hydrate in the background afterwards.

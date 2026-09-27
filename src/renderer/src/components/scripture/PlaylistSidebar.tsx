@@ -15,6 +15,7 @@ import {
 } from '@/icons';
 import { exportKairo, importKairo } from "@/stores/useTransfer";
 import { cn } from "@/lib/utils";
+import { PICKED_ROW, listShortcuts, selectGesture, useMultiSelect } from "@/hooks/useMultiSelect";
 import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
@@ -51,6 +52,8 @@ export interface PlaylistSidebarProps {
   onCreate: () => void;
   onOpenPlan: (plan: SermonPlan) => void;
   onSelectItem: (itemId: string) => void;
+  /** Remove several items from the open playlist (⌘A + Delete). */
+  onRemoveItems?: (itemIds: string[]) => void;
   onStartRename: (plan: SermonPlan) => void;
   onCancelRename: () => void;
   onSaveRename: () => void;
@@ -85,6 +88,7 @@ export function PlaylistSidebar({
   onCreate,
   onOpenPlan,
   onSelectItem,
+  onRemoveItems,
   onStartRename,
   onCancelRename,
   onSaveRename,
@@ -100,6 +104,17 @@ export function PlaylistSidebar({
   const passageLibrary = useLibrary("scripture");
   const [activeLibraryId, setActiveLibraryId] = useState<string>(DEFAULT_LIBRARY_ID);
   const visiblePassages = itemsInLibrary(passageLibrary, passages, activeLibraryId);
+  const passageIds = useMemo(() => visiblePassages.map((passage) => passage.id), [visiblePassages]);
+  const passageSelect = useMultiSelect<string>(passageIds);
+  const removePickedPassages = (): void => {
+    const ids = passageIds.filter((id) => passageSelect.selected.has(id));
+    if (ids.length === 0) return;
+    if (ids.length > 1 && !window.confirm(`Remove ${ids.length} saved passages?`)) return;
+    void (async () => {
+      for (const passageId of ids) await runPassagesCommand({ action: "remove", passageId });
+      passageSelect.clear();
+    })();
+  };
   const [draggingItemId, setDraggingItemId] = useState<string | null>(null);
   const [dragOverItemId, setDragOverItemId] = useState<string | null>(null);
   const [dropPosition, setDropPosition] = useState<"before" | "after">("before");
@@ -129,6 +144,17 @@ export function PlaylistSidebar({
         );
       });
   }, [itemQuery, openPlanItems]);
+
+  // ── Multi-select: ⌘/Shift-click, ⌘A, Delete ─────────────────────────────
+  const itemIds = useMemo(() => filteredItems.map(({ item }) => item.id), [filteredItems]);
+  const itemSelect = useMultiSelect<string>(itemIds);
+  const removePickedItems = (): void => {
+    const ids = itemIds.filter((id) => itemSelect.selected.has(id));
+    if (ids.length === 0 || !onRemoveItems) return;
+    if (ids.length > 1 && !window.confirm(`Remove ${ids.length} items from this playlist?`)) return;
+    onRemoveItems(ids);
+    itemSelect.clear();
+  };
 
   return (
     <aside
@@ -168,18 +194,35 @@ export function PlaylistSidebar({
         />
 
         {visiblePassages.length > 0 && (
-          <div className="mt-1.5 max-h-40 overflow-y-auto border-t border-surface-border/60 pt-1.5">
+          <div
+            className="mt-1.5 max-h-40 overflow-y-auto border-t border-surface-border/60 pt-1.5 outline-none"
+            tabIndex={-1}
+            onKeyDown={listShortcuts({
+              selectAll: passageSelect.selectAll,
+              remove: removePickedPassages,
+              hasSelection: passageSelect.selected.size > 0,
+            })}
+          >
             {visiblePassages.map((passage) => (
               <div
                 key={passage.id}
                 draggable
-                onDragStart={(event) => startLibraryItemDrag(event, passage.id, passage.reference)}
-                className="group flex items-center gap-2 rounded-md px-2 py-1.5 text-[12px] text-zinc-400 transition-colors hover:bg-white/[0.04] hover:text-zinc-200"
+                onDragStart={(event) => startLibraryItemDrag(event, passage.id, passage.reference, "scripture")}
+                className={cn(
+                  "group flex items-center gap-2 rounded-md px-2 py-1.5 text-[12px] transition-colors",
+                  passageSelect.isSelected(passage.id)
+                    ? PICKED_ROW
+                    : "text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-200",
+                )}
               >
                 <button
                   type="button"
                   className="min-w-0 flex-1 truncate text-left"
-                  onClick={() => onOpenPassage(passage)}
+                  onClick={(event) => {
+                    const gesture = selectGesture(event);
+                    if (gesture) passageSelect.pick(passage.id, gesture);
+                    else onOpenPassage(passage);
+                  }}
                   title={`Open ${passage.reference}`}
                 >
                   {passage.reference}
@@ -196,6 +239,14 @@ export function PlaylistSidebar({
               </div>
             ))}
           </div>
+        )}
+        {passageSelect.selected.size > 0 && (
+          <PickedBar
+            count={passageSelect.selected.size}
+            noun="passage"
+            onRemove={removePickedPassages}
+            onClear={passageSelect.clear}
+          />
         )}
       </div>
 
@@ -437,7 +488,15 @@ export function PlaylistSidebar({
                 </p>
               </div>
             ) : (
-              <div className="pb-2">
+              <div
+                className="pb-2 outline-none"
+                tabIndex={-1}
+                onKeyDown={listShortcuts({
+                  selectAll: itemSelect.selectAll,
+                  remove: removePickedItems,
+                  hasSelection: itemSelect.selected.size > 0 && Boolean(onRemoveItems),
+                })}
+              >
                 {filteredItems.map(({ item, index }) => (
                   <button
                     key={item.id}
@@ -446,16 +505,22 @@ export function PlaylistSidebar({
                     className={cn(
                       "group relative flex w-full items-center gap-1 px-2 py-1.5 text-left",
                       !item.available && "opacity-55",
-                      activeItemId === item.id
-                        ? "row-selected"
-                        : "text-slate-300 hover:bg-surface-tertiary/50",
+                      itemSelect.isSelected(item.id)
+                        ? PICKED_ROW
+                        : activeItemId === item.id
+                          ? "row-selected"
+                          : "text-slate-300 hover:bg-surface-tertiary/50",
                       draggingItemId === item.id && "opacity-40",
                       dragOverItemId === item.id &&
                         (dropPosition === "before"
                           ? "before:absolute before:inset-x-2 before:top-0 before:h-px before:bg-teal-400"
                           : "after:absolute after:inset-x-2 after:bottom-0 after:h-px after:bg-teal-400"),
                     )}
-                    onClick={() => onSelectItem(item.id)}
+                    onClick={(event) => {
+                      const gesture = selectGesture(event);
+                      if (gesture) itemSelect.pick(item.id, gesture);
+                      else onSelectItem(item.id);
+                    }}
                     aria-current={activeItemId === item.id ? "true" : undefined}
                     title={item.error}
                     onDragStart={(event) => {
@@ -521,6 +586,14 @@ export function PlaylistSidebar({
                 ))}
               </div>
             )}
+            {itemSelect.selected.size > 0 && onRemoveItems && (
+              <PickedBar
+                count={itemSelect.selected.size}
+                noun="item"
+                onRemove={removePickedItems}
+                onClear={itemSelect.clear}
+              />
+            )}
           </div>
         )}
       </div>
@@ -545,5 +618,37 @@ export function PlaylistSidebar({
         </div>
       )}
     </aside>
+  );
+}
+
+/** Compact bar under a sidebar list while rows are picked. */
+function PickedBar({
+  count,
+  noun,
+  onRemove,
+  onClear,
+}: {
+  count: number;
+  noun: string;
+  onRemove: () => void;
+  onClear: () => void;
+}): React.ReactElement {
+  return (
+    <div className="mx-2 my-1.5 flex items-center gap-2 rounded-lg border border-surface-border bg-surface-elevated px-2.5 py-1.5 text-[11px]">
+      <span className="min-w-0 flex-1 truncate text-zinc-300">
+        {count} {noun}{count === 1 ? "" : "s"} selected
+      </span>
+      <button
+        type="button"
+        onClick={onRemove}
+        className="rounded px-1.5 py-0.5 font-medium text-rose-300 hover:bg-rose-500/15"
+        title="Remove (Delete)"
+      >
+        Remove
+      </button>
+      <button type="button" onClick={onClear} className="rounded px-1.5 py-0.5 text-zinc-400 hover:bg-white/5 hover:text-white" title="Clear (Esc)">
+        Clear
+      </button>
+    </div>
   );
 }

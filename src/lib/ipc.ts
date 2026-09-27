@@ -1453,6 +1453,12 @@ export interface AppAPI {
   bootstrap: () => Promise<AppBootstrapSnapshot>
   /** Returns cleanup fn. Fires as each bootstrap resource settles. */
   onBootstrapProgress: (callback: (progress: BootstrapProgress) => void) => Unsubscribe
+  /**
+   * True the first time it is asked in this app launch, false after — so the
+   * "Connect to ProPresenter" prompt shows once per launch, not on every
+   * reload of the interface or reopened window.
+   */
+  claimPpConnectPrompt: () => Promise<boolean>
 }
 
 export interface OnboardingAPI {
@@ -1637,6 +1643,7 @@ export const IPC = {
     IMPORT_READY: 'app:importReady',
     BOOTSTRAP:          'app:bootstrap',          // invoke
     BOOTSTRAP_PROGRESS: 'app:bootstrapProgress',  // push
+    CLAIM_PP_CONNECT_PROMPT: 'app:claimPpConnectPrompt', // invoke
   },
   SCRIPTURE: {
     APPROVE:                'scripture:approve',                 // invoke

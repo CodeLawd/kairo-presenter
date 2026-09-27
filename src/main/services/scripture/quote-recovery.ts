@@ -1,5 +1,6 @@
 import type { ScriptureReference } from './detector';
 import { isValidScriptureReference } from './verse-bounds';
+import { tokenize } from '@shared/scripture-live-progress';
 
 export interface QuoteCandidate { book: string; chapter: number; verse: number; text: string }
 
@@ -32,4 +33,65 @@ export function recoverDamagedQuote(
     if (isValidScriptureReference(ref)) unique.set(`${ref.book} ${ref.chapter}:${ref.verseStart}`, ref);
   }
   return unique.size === 1 ? [...unique.values()] : [];
+}
+
+/** Content words (stop words removed) the heard text must share in order with one verse. */
+const CHAPTER_QUOTE_MIN_RUN = 4;
+/** A run this long is a reading, not a coincidence — confident enough to auto-present. */
+const CHAPTER_QUOTE_STRONG_RUN = 6;
+
+function longestSharedRun(heard: string[], verse: string[]): number {
+  let best = 0;
+  let previous = new Uint16Array(verse.length + 1);
+  let current = new Uint16Array(verse.length + 1);
+  for (let i = 1; i <= heard.length; i++) {
+    for (let j = 1; j <= verse.length; j++) {
+      current[j] = heard[i - 1] === verse[j - 1] ? previous[j - 1] + 1 : 0;
+      if (current[j] > best) best = current[j];
+    }
+    [previous, current] = [current, previous];
+  }
+  return best;
+}
+
+/** One verse's wording, tokenized once for repeated matching. */
+export interface ChapterVerseTokens { verse: number; tokens: string[] }
+
+/** Tokenizes a chapter across translations, dropping identical wordings. */
+export function tokenizeChapter(candidates: QuoteCandidate[]): ChapterVerseTokens[] {
+  const seen = new Set<string>();
+  const verses: ChapterVerseTokens[] = [];
+  for (const candidate of candidates) {
+    const tokens = tokenize(candidate.text);
+    const key = `${candidate.verse}|${tokens.join(' ')}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    verses.push({ verse: candidate.verse, tokens });
+  }
+  return verses;
+}
+
+/**
+ * Finds the verse of an already-named chapter that the speaker is quoting:
+ * "In John 3 Jesus says, for God so loved the world…". Knowing the chapter
+ * makes a short ordered run of the verse's wording decisive, so this resolves
+ * locally instead of waiting on the model. Verses may repeat across
+ * translations; a tie between two different verses is treated as no match.
+ */
+export function matchChapterQuote(
+  heardText: string,
+  verses: ChapterVerseTokens[],
+): { verse: number; confidence: number } | null {
+  const heard = tokenize(heardText);
+  if (heard.length < CHAPTER_QUOTE_MIN_RUN) return null;
+  const runByVerse = new Map<number, number>();
+  for (const { verse, tokens } of verses) {
+    const run = longestSharedRun(heard, tokens);
+    if (run > (runByVerse.get(verse) ?? 0)) runByVerse.set(verse, run);
+  }
+  const ranked = [...runByVerse.entries()].sort((a, b) => b[1] - a[1]);
+  const [best, runnerUp] = ranked;
+  if (!best || best[1] < CHAPTER_QUOTE_MIN_RUN) return null;
+  if (runnerUp && runnerUp[1] === best[1]) return null;
+  return { verse: best[0], confidence: best[1] >= CHAPTER_QUOTE_STRONG_RUN ? 0.85 : 0.65 };
 }

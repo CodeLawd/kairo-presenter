@@ -1,5 +1,11 @@
 /* eslint-disable @typescript-eslint/no-unsafe-declaration-merging -- typed EventEmitter idiom: `declare interface` refines the inherited emitter surface. */
-import { recoverDamagedQuote, type QuoteCandidate } from "./quote-recovery";
+import {
+  matchChapterQuote,
+  recoverDamagedQuote,
+  tokenizeChapter,
+  type ChapterVerseTokens,
+  type QuoteCandidate,
+} from "./quote-recovery";
 import { isValidScriptureReference } from "./verse-bounds";
 import { EventEmitter } from "events";
 import Anthropic from "@anthropic-ai/sdk";
@@ -32,6 +38,11 @@ export interface ScriptureReference {
   detectionStartedAt?: number;
   transcriptSource?: "interim" | "final";
   resolver?: ScriptureResolver;
+  /**
+   * Set on model results that landed after a newer local detection. They are
+   * still shown for review but are too late to put on screen automatically.
+   */
+  superseded?: boolean;
 }
 
 /** What the caller knows about the transcript currently being analyzed. */
@@ -45,7 +56,11 @@ export interface TranscriptOrigin {
 export function canAutoPresentScriptureReference(
   ref: ScriptureReference,
 ): boolean {
-  return ref.detectionType !== "partial" && isValidScriptureReference(ref);
+  return (
+    ref.detectionType !== "partial" &&
+    !ref.superseded &&
+    isValidScriptureReference(ref)
+  );
 }
 
 export interface DetectorConfig {
@@ -130,6 +145,8 @@ const SOURCE_TEXT_MAX_CHARS = 150; // ~15 words
 const PLAN_QUOTE_WINDOW_CHARS = 600;
 /** A gap this long means the preacher moved on; stale half-verses must not match. */
 const PLAN_QUOTE_WINDOW_TTL_MS = 60_000;
+/** Speech kept for matching a quote inside a named chapter ("In John 3 …"). */
+const CHAPTER_QUOTE_WINDOW_CHARS = 600;
 
 // ─── System prompt ────────────────────────────────────────────────────────────
 
@@ -372,6 +389,9 @@ export class ScriptureDetector extends EventEmitter {
   private transcriptOrigin: TranscriptOrigin | null = null;
   private detectionStartedAt: number | undefined;
   private quoteSearchProvider: ((phrase: string) => QuoteCandidate[]) | null = null;
+  private chapterVerseProvider:
+    | ((book: string, chapter: number) => QuoteCandidate[])
+    | null = null;
   private pendingBook: { book: string; updatedAt: number } | null = null;
   private explicitContext: {
     book: string;
@@ -380,6 +400,10 @@ export class ScriptureDetector extends EventEmitter {
     verseStart?: number;
     awaitingRangeEnd?: boolean;
     updatedAt: number;
+    /** Speech since a chapter was named without a verse; see analyzeChapterQuote. */
+    quoteText?: string;
+    /** That chapter's verses, fetched and tokenized once per citation. */
+    quoteVerses?: ChapterVerseTokens[];
   } | null = null;
 
   // Live sermon-playlist matching. Held as a provider rather than a snapshot so
@@ -391,9 +415,10 @@ export class ScriptureDetector extends EventEmitter {
   // Dedup cache: normalized ref key → reference + expiry timestamp. Keeping the
   // interval lets a later single-verse detection overlap a previously-detected
   // passage range (and vice versa) instead of appearing as a duplicate card.
+  // A `released` entry no longer blocks fresh speech (see `release`).
   private dedupCache = new Map<
     string,
-    { ref: ScriptureReference; expiry: number }
+    { ref: ScriptureReference; expiry: number; released?: boolean }
   >();
 
   // Stats
@@ -446,7 +471,7 @@ export class ScriptureDetector extends EventEmitter {
     // Explicit citations are deterministic and latency-sensitive. Resolve them
     // locally before entering the throttled AI queue; the AI remains the path
     // for quotation/paraphrase detection when no explicit reference is present.
-    if (this.analyzeExplicit(text, true)) return;
+    if (this.analyzeWindowCitation(text)) return;
     if (!this.cfg.apiKey.trim()) return;
 
     this.pendingText = text;
@@ -483,29 +508,26 @@ export class ScriptureDetector extends EventEmitter {
     }
 
     if (this.pendingBook && now - this.pendingBook.updatedAt > 12_000) this.pendingBook = null;
-    const normalizedInput = normalizeWordNumbers(text).trim();
-    const bookOnly = Object.keys(CANONICAL_BOOKS).find(book => normalizedInput === book);
+    const spoken = normalizeWordNumbers(text).trim();
+    const bookOnly = bareBookName(spoken);
     if (bookOnly) {
-      this.pendingBook = { book: CANONICAL_BOOKS[bookOnly], updatedAt: now };
+      this.pendingBook = { book: bookOnly, updatedAt: now };
       this.explicitContext = null;
       return false;
     }
-    if (/^(?:(?:now|and)\s+)?chapter\s+\d+/.test(normalizedInput)) {
-      const book = this.pendingBook?.book ?? this.explicitContext?.book;
-      if (book) text = `${book} ${normalizedInput.replace(/^(?:now|and)\s+/, "")}`;
-    }
+    const normalized = this.withRememberedBook(spoken);
 
     // Never carry a previous chapter into an unreadable new citation.
-    if (hasCorruptedScriptureCitation(text)) {
+    if (CORRUPTED_CITATION_RE.test(normalized)) {
       this.explicitContext = null;
       this.pendingBook = null;
     }
-    const direct = matchExplicitScriptures(text);
+    const direct = matchNormalizedCitations(normalized, {
+      splitMergedDigits: !deferAmbiguousRepeatedPair,
+    });
     // A new named citation must never borrow the previous book, even when its
     // numbers are invalid or its chapter has not arrived yet.
-    if (direct.length === 0 && new RegExp(
-      `\\b(?:${Object.keys(CANONICAL_BOOKS).join("|")})\\b`, "i",
-    ).test(normalizeWordNumbers(text))) {
+    if (direct.length === 0 && NAMED_BOOK_RE.test(normalized)) {
       this.explicitContext = null;
       this.pendingBook = null;
     }
@@ -521,11 +543,11 @@ export class ScriptureDetector extends EventEmitter {
         book: remembered.book,
         chapter: remembered.chapter,
         awaitingVerse:
-          /\bverses?\b/i.test(text) ||
+          /\bverses?\b/.test(normalized) ||
           !hasExplicitVerseSignal(remembered.sourceText),
         updatedAt: now,
       };
-    } else if (this.explicitContext && /\bverses?\b/i.test(text)) {
+    } else if (this.explicitContext && /\bverses?\b/.test(normalized)) {
       this.explicitContext.awaitingVerse = true;
       this.explicitContext.updatedAt = now;
     }
@@ -536,7 +558,6 @@ export class ScriptureDetector extends EventEmitter {
       direct.length === 0 &&
       this.explicitContext?.awaitingVerse
     ) {
-      const normalized = normalizeWordNumbers(text).trim();
       const continuation = this.explicitContext.verseStart !== undefined &&
         (/^(?:to|through|thru|and|-)\s*\d+\b/.test(normalized) ||
           (this.explicitContext.awaitingRangeEnd && /^\d+\b/.test(normalized)));
@@ -579,28 +600,71 @@ export class ScriptureDetector extends EventEmitter {
     const latest = explicit[explicit.length - 1];
     if (latest && this.explicitContext) {
       this.explicitContext.verseStart = latest.verseStart;
-      this.explicitContext.awaitingRangeEnd = /\b(?:and|to|through|thru)\s*[,.;]?\s*$/i.test(text);
+      this.explicitContext.awaitingRangeEnd = /\b(?:and|to|through|thru)\s*[,.;]?\s*$/.test(normalized);
       this.explicitContext.awaitingVerse = true;
     }
     if (explicit.length === 0) return false;
-    this.resolutionGeneration++;
     for (const ref of explicit) ref.resolver = "explicit";
-    // A spoken citation supersedes whatever reading was in progress.
-    this.resetPlanQuoteWindow();
-    const deduplicated = this.filterDedup(explicit);
-    this.statsData.cacheHits += explicit.length - deduplicated.length;
-    if (deduplicated.length > 0) {
-      this.statsData.totalDetections += deduplicated.length;
-      this.emitDetection(deduplicated);
-    }
-    this.emit("stats", this.getStats());
+    this.supersedeModel();
+    this.publish(explicit);
     return true;
+  }
+
+  /**
+   * Finds verse citations anywhere in a rolling transcript window, including
+   * one split across finals ("Paul writes in Romans" | "8, verse 28.").
+   *
+   * Stateless on purpose: every segment in the window has already been through
+   * analyzeExplicit, and replaying old announcements into its book/chapter
+   * memory would corrupt it. Returns true when a citation was found, even if
+   * it is already on the Operator, so the caller can consume the window.
+   */
+  analyzeWindowCitation(text: string): boolean {
+    if (this.lifetime.signal.aborted) return false;
+    const refs = matchExplicitScriptures(text, { splitMergedDigits: true })
+      .filter((ref) => hasExplicitVerseSignal(ref.sourceText));
+    if (refs.length === 0) return false;
+    for (const ref of refs) ref.resolver = "explicit";
+    this.supersedeModel();
+    this.publish(refs);
+    return true;
+  }
+
+  /**
+   * A local resolution outranks the model: results for older requests become
+   * review-only, and the playlist reading window starts over.
+   */
+  private supersedeModel(): void {
+    this.resolutionGeneration++;
+    this.resetPlanQuoteWindow();
+  }
+
+  /** Dedups, counts and emits. Returns the references that were new. */
+  private publish(
+    refs: ScriptureReference[],
+    origin?: (TranscriptOrigin & { detectionStartedAt: number }) | null,
+  ): ScriptureReference[] {
+    const fresh = this.filterDedup(refs);
+    this.statsData.cacheHits += refs.length - fresh.length;
+    this.statsData.totalDetections += fresh.length;
+    if (fresh.length > 0) this.emitDetection(fresh, origin);
+    this.emit("stats", this.getStats());
+    return fresh;
   }
 
   /** Whether this transcript names a book and chapter but has not supplied a verse yet. */
   isIncompleteExplicitCitation(text: string): boolean {
-    const refs = matchExplicitScriptures(text);
+    const spoken = normalizeWordNumbers(text).trim();
+    if (bareBookName(spoken)) return true;
+    const refs = matchNormalizedCitations(this.withRememberedBook(spoken));
     return refs.length > 0 && refs.every((ref) => !hasExplicitVerseSignal(ref.sourceText));
+  }
+
+  /** "Chapter 8" after "Go to Romans." means Romans 8. Takes normalized text. */
+  private withRememberedBook(normalized: string): string {
+    if (!CHAPTER_ONLY_RE.test(normalized)) return normalized;
+    const book = this.pendingBook?.book ?? this.explicitContext?.book;
+    return book ? `${book} ${normalized.replace(LEADING_FILLER_RE, "")}` : normalized;
   }
 
   /**
@@ -640,14 +704,69 @@ export class ScriptureDetector extends EventEmitter {
     if (this.lifetime.signal.aborted || !this.quoteSearchProvider) return false;
     const refs = recoverDamagedQuote(text, this.quoteSearchProvider);
     if (!refs.length) return false;
-    this.resolutionGeneration++;
     for (const ref of refs) ref.resolver = "quotation-local";
-    const fresh = this.filterDedup(refs);
-    this.statsData.cacheHits += refs.length - fresh.length;
-    this.statsData.totalDetections += fresh.length;
-    if (fresh.length) this.emitDetection(fresh);
-    this.emit("stats", this.getStats());
+    this.supersedeModel();
+    this.publish(refs);
     return true;
+  }
+
+  /** Supplies every local translation's verses for one chapter. */
+  setChapterVerseProvider(
+    provider: ((book: string, chapter: number) => QuoteCandidate[]) | null,
+  ): void {
+    this.chapterVerseProvider = provider;
+  }
+
+  /**
+   * Resolves a quotation inside a chapter the speaker has named but not given
+   * a verse for: "In John 3 Jesus says, for God so loved the world…". The
+   * scope is the citation analyzeExplicit is already holding open, so it
+   * covers "Go to John." | "Chapter 3." and lasts as long as that citation.
+   * Returns true when a verse was identified, even if it was already shown.
+   */
+  analyzeChapterQuote(text: string): boolean {
+    const scope = this.explicitContext;
+    if (
+      this.lifetime.signal.aborted ||
+      !this.chapterVerseProvider ||
+      !scope?.awaitingVerse ||
+      scope.verseStart !== undefined ||
+      !text.trim()
+    ) {
+      return false;
+    }
+    scope.quoteText = `${scope.quoteText ?? ""} ${text}`.slice(-CHAPTER_QUOTE_WINDOW_CHARS);
+    scope.quoteVerses ??= tokenizeChapter(this.chapterVerseProvider(scope.book, scope.chapter));
+    const match = matchChapterQuote(scope.quoteText, scope.quoteVerses);
+    if (!match) return false;
+
+    const ref: ScriptureReference = {
+      book: scope.book,
+      chapter: scope.chapter,
+      verseStart: match.verse,
+      confidence: match.confidence,
+      detectionType: "quote",
+      sourceText: text.slice(0, SOURCE_TEXT_MAX_CHARS),
+      resolver: "quotation-local",
+    };
+    if (!isValidScriptureReference(ref)) return false;
+    this.explicitContext = null;
+    this.supersedeModel();
+    this.publish([ref]);
+    return true;
+  }
+
+  /**
+   * Stops suppressing a reference whose card never reached the operator
+   * (lookup failed) or was removed by them, so the next time it is spoken it
+   * detects again. Model results stay suppressed until the normal expiry: the
+   * model re-reads recent transcript, so a release must not resurrect a card
+   * from speech the operator has already dealt with.
+   */
+  release(ref: { book: string; chapter: number; verseStart: number; verseEnd?: number }): void {
+    for (const entry of this.dedupCache.values()) {
+      if (referencesOverlap(entry.ref, ref)) entry.released = true;
+    }
   }
 
   /** Supplies the live sermon-playlist index used by {@link analyzePlanQuote}. */
@@ -694,18 +813,10 @@ export class ScriptureDetector extends EventEmitter {
       resolver: "sermon-plan",
     };
 
-    const deduplicated = this.filterDedup([ref]);
+    const fresh = this.publish([ref]);
     this.resetPlanQuoteWindow();
-    if (deduplicated.length === 0) {
-      this.statsData.cacheHits += 1;
-      this.emit("stats", this.getStats());
-      return false;
-    }
-
-    this.statsData.totalDetections += deduplicated.length;
+    if (fresh.length === 0) return false;
     this.resolutionGeneration++;
-    this.emitDetection(deduplicated);
-    this.emit("stats", this.getStats());
     return true;
   }
 
@@ -823,18 +934,10 @@ export class ScriptureDetector extends EventEmitter {
       const parsed = matchExplicitScriptures(text);
       if (generation !== this.resolutionGeneration) return;
       for (const ref of parsed) ref.resolver = "explicit";
-      const deduplicated = this.filterDedup(parsed);
-      this.statsData.cacheHits += parsed.length - deduplicated.length;
-
-      if (deduplicated.length > 0) {
-        this.statsData.totalDetections += deduplicated.length;
-        this.emitDetection(deduplicated, origin);
-      }
-
-      this.emit("stats", this.getStats());
+      const emitted = this.publish(parsed, origin);
       log.info("[ScriptureDetector] Offline regex analysis complete", {
         found: parsed.length,
-        emitted: deduplicated.length,
+        emitted: emitted.length,
       });
     } catch (err) {
       log.error("[ScriptureDetector] Regex detection error:", err);
@@ -890,26 +993,31 @@ export class ScriptureDetector extends EventEmitter {
 
         this.emit("requestSuccess");
 
-        if (generation !== this.resolutionGeneration) {
-          log.info("[ScriptureDetector] AI result superseded", { generation });
-          return;
+        // A newer local detection landed while the model was working. Its
+        // findings are kept — a quote it recognised may be a different verse
+        // from the citation that superseded it — but they are too late to
+        // auto-present, and chapter placeholders are dropped outright.
+        const superseded = generation !== this.resolutionGeneration;
+        const found = superseded
+          ? parsed.filter((ref) => ref.detectionType !== "partial")
+          : parsed;
+        if (superseded) {
+          log.info("[ScriptureDetector] AI result superseded; review only", {
+            generation,
+            found: found.length,
+          });
         }
 
-        for (const ref of parsed) ref.resolver = "ai";
-
-        const deduplicated = this.filterDedup(parsed);
-        this.statsData.cacheHits += parsed.length - deduplicated.length;
-
-        if (deduplicated.length > 0) {
-          this.statsData.totalDetections += deduplicated.length;
-          this.emitDetection(deduplicated, origin);
+        for (const ref of found) {
+          ref.resolver = "ai";
+          if (superseded) ref.superseded = true;
         }
 
-        this.emit("stats", this.getStats());
+        const emitted = this.publish(found, origin);
         log.info("[ScriptureDetector] Analysis complete", {
           latencyMs: latency,
           found: parsed.length,
-          emitted: deduplicated.length,
+          emitted: emitted.length,
           model: this.cfg.model,
         });
         return;
@@ -994,6 +1102,10 @@ export class ScriptureDetector extends EventEmitter {
       if (!isValidScriptureReference(ref)) return false;
       const key = dedupKey(ref);
       for (const [cachedKey, entry] of this.dedupCache) {
+        if (entry.released && ref.resolver !== "ai") {
+          if (referencesOverlap(entry.ref, ref)) this.dedupCache.delete(cachedKey);
+          continue;
+        }
         if (referenceContains(entry.ref, ref)) return false;
         if (referenceContains(ref, entry.ref)) {
           this.dedupCache.delete(cachedKey);
@@ -1048,6 +1160,18 @@ function referenceContains(
   const candidateEnd = candidate.verseEnd ?? candidate.verseStart;
   return (
     container.verseStart <= candidate.verseStart && containerEnd >= candidateEnd
+  );
+}
+
+function referencesOverlap(
+  a: { book: string; chapter: number; verseStart: number; verseEnd?: number },
+  b: { book: string; chapter: number; verseStart: number; verseEnd?: number },
+): boolean {
+  return (
+    a.book.toLowerCase() === b.book.toLowerCase() &&
+    a.chapter === b.chapter &&
+    a.verseStart <= (b.verseEnd ?? b.verseStart) &&
+    b.verseStart <= (a.verseEnd ?? a.verseStart)
   );
 }
 
@@ -1311,69 +1435,189 @@ const CANONICAL_BOOKS: Record<string, string> = {
   revelations: "Revelation",
 };
 
-function normalizeWordNumbers(text: string): string {
-  const wordsMap: Record<string, string> = {
-    one: "1",
-    two: "2",
-    three: "3",
-    four: "4",
-    five: "5",
-    six: "6",
-    seven: "7",
-    eight: "8",
-    nine: "9",
-    ten: "10",
-    eleven: "11",
-    twelve: "12",
-    thirteen: "13",
-    fourteen: "14",
-    fifteen: "15",
-    sixteen: "16",
-    seventeen: "17",
-    eighteen: "18",
-    nineteen: "19",
-    twenty: "20",
-    thirty: "30",
-    forty: "40",
-    fifty: "50",
-    sixty: "60",
-    seventy: "70",
-    eighty: "80",
-    ninety: "90",
-  };
+const BOOK_PATTERN =
+  "(?:Gen(?:esis)?|Exo(?:dus)?|Lev(?:iticus)?|Num(?:bers)?|Deut(?:eronomy)?|Josh(?:ua)?|Judg(?:es)?|Ruth|" +
+  "1\\s*Sam(?:uel)?|2\\s*Sam(?:uel)?|1\\s*Kings?|2\\s*Kings?|1\\s*Chr(?:onicles)?|2\\s*Chr(?:onicles)?|Ezra|Neh(?:emiah)?|Esth(?:er)?|Job|" +
+  "Psa?(?:lms?)?|Prov(?:erbs)?|Eccl(?:esiastes)?|Song(?:\\s+of\\s+Solomon)?|Isa(?:iah)?|Jer(?:emiah)?|Lam(?:entations)?|Eze(?:kiel)?|Dan(?:iel)?|" +
+  "Hos(?:ea)?|Joel|Amos|Obad(?:iah)?|Jon(?:ah)?|Mic(?:ah)?|Nah(?:um)?|Hab(?:akkuk)?|Zeph(?:aniah)?|Hag(?:gai)?|Zech(?:ariah)?|Mal(?:achi)?|" +
+  "Matt(?:hew)?|Mark|Luke|John|Acts|Rom(?:ans)?|1\\s*Cor(?:inthians)?|2\\s*Cor(?:inthians)?|Gal(?:atians)?|Eph(?:esians)?|Phil(?:ippians)?|Col(?:ossians)?|" +
+  "1\\s*Thess?(?:alonians)?|2\\s*Thess?(?:alonians)?|1\\s*Tim(?:othy)?|2\\s*Tim(?:othy)?|Tit(?:us)?|Phlm|Philemon|Heb(?:rews)?|Jas|James|" +
+  "1\\s*Pet(?:er)?|2\\s*Pet(?:er)?|1\\s*Jn|1\\s*John|2\\s*Jn|2\\s*John|3\\s*Jn|3\\s*John|Jude|Rev(?:elation)?s?)";
 
-  let normalized = text
-    .toLowerCase()
-    .replace(/\bpslams?\b/g, "psalms")
-    .replace(/[–—]/g, "-");
+/** Every spelling in CANONICAL_BOOKS, longest first so "1 john" beats "john". */
+const BOOK_NAME_ALTERNATION = Object.keys(CANONICAL_BOOKS)
+  .sort((a, b) => b.length - a.length)
+  .join("|");
+const NAMED_BOOK_RE = new RegExp(`\\b(?:${BOOK_NAME_ALTERNATION})\\b`, "i");
+// A mixed alphanumeric number token straight after a book: "Psalm 1one512".
+const CORRUPTED_CITATION_RE = new RegExp(
+  `\\b(?:${BOOK_NAME_ALTERNATION})\\b\\s+(?:chapter\\s+)?(?=[a-z0-9]*[a-z])(?=[a-z0-9]*\\d)[a-z0-9]+\\b`,
+  "i",
+);
+
+// Book, chapter, then optionally a verse and a range end. Groups: 1 book,
+// 2 chapter, 3 verse, 4 range separator, 5 range end. A repeated chapter
+// ("John nineteen nineteen twenty eight to thirty") is skipped.
+const CITATION_RE = new RegExp(
+  `\\b(${BOOK_PATTERN})\\b\\s*(?:chapter\\s+)?(\\d+)\\b(?:\\s+\\2(?=\\s+(?:verses?\\s+)?\\d+\\s*(?:-|thru|through|to|and)))?(?:\\s*[:,\\s]\\s*(?:verses?\\s+)?(\\d+)(?:(\\s*,\\s*|\\s*(?:-|thru|through|to|and)\\s*|\\s+)(\\d+))?)?`,
+  "gi",
+);
+
+const NUMBER_WORDS: Record<string, number> = {
+  one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9,
+  ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15,
+  sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19,
+  twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90,
+};
+const NUMBER_WORD_ALTERNATION = Object.keys(NUMBER_WORDS).join("|");
+const SINGLE_NUMBER_WORD_RE = new RegExp(`\\b(?:${NUMBER_WORD_ALTERNATION})\\b`, "g");
+/** A chapter number, spoken or in digits, follows — scopes book-name repairs. */
+const NUMBER_AHEAD = `(?=\\s+(?:chapter\\s+)?(?:\\d+|${NUMBER_WORD_ALTERNATION})\\b)`;
+
+/** Filler that can open any spoken citation fragment: "So,", "And now". */
+const LEADING_FILLER = "(?:(?:and|so|now|okay|ok),?\\s+)?";
+const LEADING_FILLER_RE = new RegExp(`^${LEADING_FILLER}`);
+/** "Chapter 8" on its own, after the book was announced separately. */
+const CHAPTER_ONLY_RE = new RegExp(`^${LEADING_FILLER}chapter\\s+\\d+`);
+
+/**
+ * Spoken lead-in before a bare book name: "Go to Romans.", "Open your Bible
+ * to the book of Romans." The book is remembered for a following "chapter N".
+ */
+const BOOK_ONLY_LEAD_IN = new RegExp(
+  "^" +
+    LEADING_FILLER +
+    "(?:(?:let's|let\\s+us|we're\\s+going\\s+to|we\\s+are\\s+going\\s+to|i\\s+want\\s+you\\s+to|please)\\s+)?" +
+    "(?:(?:go|turn|open|flip|come)\\s+(?:with\\s+me\\s+)?(?:(?:your|our)\\s+bibles?\\s+)?(?:with\\s+me\\s+)?(?:to|in(?:to)?)\\s+)?" +
+    "(?:the\\s+(?:book|gospel|epistle|letter)\\s+of\\s+)?",
+);
+
+/**
+ * Lead-ins between a chapter and its verse: "from verse", "beginning at
+ * verse", "and we begin to read from verse", "and the Bible says in verse",
+ * or a sentence break ("Romans chapter 8. Look at verse 28."). Bounded to a
+ * verse number so ordinary speech before unrelated numbers is untouched.
+ */
+const VERSE_LEAD_IN_RE = new RegExp(
+  "(?:[,.;]\\s*|\\s+)" +
+    LEADING_FILLER +
+    "(?:(?:let's|let\\s+us|we(?:'ll|\\s+will|\\s+shall|\\s+are\\s+going\\s+to)?|i\\s+want\\s+us\\s+to)\\s+)?" +
+    "(?:(?:begin|start)(?:ning|ing)?\\s+(?:to\\s+)?)?" +
+    "(?:(?:look(?:ing)?\\s+at|read(?:ing)?|go(?:ing)?\\s+to|turn(?:ing)?\\s+to|see)\\s+)?" +
+    "(?:(?:the\\s+bible|it|he|she|paul|jesus|scripture)\\s+(?:says|said)\\s+)?" +
+    "(?:(?:at|from|with|in|on)\\s+)?" +
+    "(?=verses?\\s+\\d)",
+  "g",
+);
+
+/** "verse 28 of Romans chapter 8" → "romans 8 verse 28". */
+const VERSE_OF_BOOK_RE = new RegExp(
+  `\\bverses?\\s+(\\d+(?:\\s*(?:-|to|through|thru|and)\\s*\\d+)?)\\s+(?:of|in|from)\\s+(?:the\\s+book\\s+of\\s+)?(${BOOK_PATTERN})\\s+(?:chapter\\s+)?(\\d+)\\b`,
+  "gi",
+);
+
+// ─── Book-name repairs ────────────────────────────────────────────────────────
+// STT spellings of book names. Unambiguous misspellings are always repaired;
+// words that are also ordinary speech ("Roman", "Hebrew", "the Philippines")
+// only when a chapter number follows.
+
+const NUMBERED_BOOKS =
+  "(?:samuel|kings?|chronicles|corinthians|thessalonians|timothy|peter|john)";
+const PHILIPPIANS_MISSPELLING_RE = /\b(?:phill?ipp?ians?|filipp?ians?)\b/g;
+const SONG_OF_SONGS_RE = /\bsongs?\s+of\s+(?:songs|solomon)\b/g;
+const PSALMS_MISSPELLING_RE = new RegExp(`\\b(?:pslams?|salms?${NUMBER_AHEAD})`, "g");
+const PHILIPPINES_RE = new RegExp(`\\bphilippines${NUMBER_AHEAD}`, "g");
+const SINGULAR_BOOK_RE = new RegExp(
+  `\\b(roman|hebrew|galatian|ephesian|colossian|corinthian|thessalonian)${NUMBER_AHEAD}`,
+  "g",
+);
+// "First/1st Corinthians", "second/2nd Timothy". Restricted to numbered books
+// so "the second time" is left alone.
+const ORDINAL_PREFIX_RE = new RegExp(
+  `\\b(first|second|third|1st|2nd|3rd)\\s+(?=${NUMBERED_BOOKS}\\b)`,
+  "g",
+);
+const ORDINAL_DIGIT: Record<string, string> = {
+  first: "1", second: "2", third: "3", "1st": "1", "2nd": "2", "3rd": "3",
+};
+// "I Corinthians 13", "II Timothy 3" — only with a chapter, so the pronoun in
+// "I John …" is never read as a book number.
+const ROMAN_PREFIX_RE = new RegExp(
+  `\\b(i{1,3})\\s+(?=${NUMBERED_BOOKS}${NUMBER_AHEAD})`,
+  "g",
+);
+
+function repairBookNames(text: string): string {
+  return text
+    .replace(PHILIPPIANS_MISSPELLING_RE, "philippians")
+    .replace(SONG_OF_SONGS_RE, "song of solomon")
+    .replace(PSALMS_MISSPELLING_RE, "psalms")
+    .replace(PHILIPPINES_RE, "philippians")
+    .replace(SINGULAR_BOOK_RE, "$1s")
+    .replace(ORDINAL_PREFIX_RE, (_match, ordinal: string) => `${ORDINAL_DIGIT[ordinal]} `)
+    .replace(ROMAN_PREFIX_RE, (_match, numeral: string) => `${numeral.length} `);
+}
+
+function canonicalBookName(raw: string): string | undefined {
+  const spaced = raw.toLowerCase().trim().replace(/\s+/g, " ");
+  for (const key of [spaced, spaced.replace(/\s+/g, "")]) {
+    if (Object.hasOwn(CANONICAL_BOOKS, key)) return CANONICAL_BOOKS[key];
+  }
+  return undefined;
+}
+
+/** The canonical book when a normalized segment only announces one: "Go to Romans." */
+function bareBookName(normalized: string): string | undefined {
+  // Deepgram punctuates, so "Romans." must still count as a bare book name.
+  return canonicalBookName(
+    normalized.replace(/[.,!?;:]+$/, "").replace(BOOK_ONLY_LEAD_IN, ""),
+  );
+}
+
+/**
+ * Smart formatting sometimes fuses "three sixteen" into "316". Returns the
+ * only chapter:verse reading that exists, or null when the number is a real
+ * chapter or more than one reading is valid ("Genesis 111": 1:11 or 11:1).
+ */
+function splitMergedChapterVerse(
+  book: string,
+  digits: string,
+): { chapter: number; verse: number } | null {
+  if (!/^\d{3,4}$/.test(digits)) return null;
+  if (isValidScriptureReference({ book, chapter: Number(digits), verseStart: 1 })) {
+    return null;
+  }
+  const readings: Array<{ chapter: number; verse: number }> = [];
+  for (let cut = 1; cut < digits.length; cut++) {
+    const verseDigits = digits.slice(cut);
+    if (verseDigits.startsWith("0")) continue;
+    const chapter = Number(digits.slice(0, cut));
+    const verse = Number(verseDigits);
+    if (isValidScriptureReference({ book, chapter, verseStart: verse })) {
+      readings.push({ chapter, verse });
+    }
+  }
+  return readings.length === 1 ? readings[0] : null;
+}
+
+// ─── Normalization ────────────────────────────────────────────────────────────
+
+function normalizeWordNumbers(text: string): string {
+  let normalized = repairBookNames(text.toLowerCase().replace(/[–—]/g, "-"));
   normalized = normalized.replace(/\b(chapter|verses?)\s+number\s+/g, "$1 ");
   normalized = normalized.replace(/\bacts\s+of\s+the\s+apostles?\b/g, "acts");
-  // Normalize only bounded citation connectors, never arbitrary intervening speech.
-  normalized = normalized.replace(
-    /(?:,\s*|\s+)(?:(?:and\s+)?(?:we\s+)?(?:(?:will|shall)\s+)?(?:begin\s+to\s+)?read\s+from\s+|look\s+at\s+|and\s+)(?=verses?\b)/g,
-    " ",
-  );
 
   // Deepgram occasionally joins one half of a spoken compound number while
   // rendering the other half differently: "2four" / "twenty4" for 24.
   normalized = normalized.replace(
     /\b([2-9])(one|two|three|four|five|six|seven|eight|nine)\b/g,
     (_match, tensDigit: string, unit: string) =>
-      String(Number(tensDigit) * 10 + Number(wordsMap[unit])),
+      String(Number(tensDigit) * 10 + NUMBER_WORDS[unit]),
   );
   normalized = normalized.replace(
     /\b(twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)([1-9])\b/g,
     (_match, tens: string, unitDigit: string) =>
-      String(Number(wordsMap[tens]) + Number(unitDigit)),
-  );
-
-  // STT commonly spells numbered book prefixes as ordinals. Restrict this
-  // conversion to canonical numbered-book names so ordinary sermon phrases
-  // such as "the second time" are left untouched.
-  normalized = normalized.replace(
-    /\b(first|second|third)\s+(?=(?:samuel|kings?|chronicles|corinthians|thessalonians|timothy|peter|john)\b)/g,
-    (_match, ordinal: string) =>
-      ordinal === "first" ? "1 " : ordinal === "second" ? "2 " : "3 ",
+      String(NUMBER_WORDS[tens] + Number(unitDigit)),
   );
 
   // Psalm is the only Bible book with three-digit chapter numbers. Speakers
@@ -1381,26 +1625,37 @@ function normalizeWordNumbers(text: string): string {
   normalized = normalized.replace(
     /\b(psalms?)\s+one(?:\s+hundred(?:\s+and)?)?\s+(ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty)(?:[-\s](one|two|three|four|five|six|seven|eight|nine))?\b/g,
     (_match, book: string, remainder: string, unit?: string) =>
-      `${book} ${100 + parseInt(wordsMap[remainder], 10) + (unit ? parseInt(wordsMap[unit], 10) : 0)}`,
+      `${book} ${100 + NUMBER_WORDS[remainder] + (unit ? NUMBER_WORDS[unit] : 0)}`,
   );
 
   // Replace compound word numbers (e.g. "twenty-eight" or "twenty eight")
   normalized = normalized.replace(
     /\b(twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)[-\s](one|two|three|four|five|six|seven|eight|nine)\b/g,
-    (match, p1, p2) => {
-      const tens = parseInt(wordsMap[p1], 10);
-      const ones = parseInt(wordsMap[p2], 10);
-      return String(tens + ones);
-    },
+    (_match, tens: string, ones: string) => String(NUMBER_WORDS[tens] + NUMBER_WORDS[ones]),
   );
 
   // Replace single word numbers
+  normalized = normalized.replace(SINGLE_NUMBER_WORD_RE, (word) => String(NUMBER_WORDS[word]));
+
+  // "one hundred and five" → 105. Psalm chapters are handled above; this covers
+  // verse numbers, which otherwise collapse to the leading "1".
   normalized = normalized.replace(
-    /\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)\b/g,
-    (match) => {
-      return wordsMap[match] || match;
-    },
+    /\b([1-9])\s+hundred(?:\s+and)?\s+(\d{1,2})\b/g,
+    (_match, hundreds: string, rest: string) =>
+      String(Number(hundreds) * 100 + Number(rest)),
   );
+  normalized = normalized.replace(
+    /\b([1-9])\s+hundred\b/g,
+    (_match, hundreds: string) => String(Number(hundreds) * 100),
+  );
+
+  // "chapter 11, the 6th verse" → "chapter 11, verse 6".
+  normalized = normalized.replace(
+    /\bthe\s+(\d+)(?:st|nd|rd|th)\s+verse\b/g,
+    "verse $1",
+  );
+  normalized = normalized.replace(VERSE_LEAD_IN_RE, " ");
+  normalized = normalized.replace(VERSE_OF_BOOK_RE, "$2 $3 verse $1");
 
   normalized = normalized.replace(
     /\b(jude|obadiah|philemon|2 john|3 john)\s+(?=verses?\s+\d+)/g,
@@ -1416,57 +1671,55 @@ function normalizeWordNumbers(text: string): string {
 // Only flag mixed alphanumeric number tokens immediately following a book.
 // Known recoverable forms (e.g. twenty4) have already been normalized.
 export function hasCorruptedScriptureCitation(text: string): boolean {
-  const normalized = normalizeWordNumbers(text);
-  const books = Object.keys(CANONICAL_BOOKS)
-    .sort((a, b) => b.length - a.length)
-    .join("|");
-  return new RegExp(
-    `\\b(?:${books})\\b\\s+(?:chapter\\s+)?(?=[a-z0-9]*[a-z])(?=[a-z0-9]*\\d)[a-z0-9]+\\b`,
-    "i",
-  ).test(normalized);
+  return CORRUPTED_CITATION_RE.test(normalizeWordNumbers(text));
 }
 
-export function matchExplicitScriptures(text: string): ScriptureReference[] {
-  const normalized = normalizeWordNumbers(text);
+interface MatchOptions {
+  /**
+   * Split a fused chapter+verse number ("John 316" → John 3:16) when exactly
+   * one split names a real verse. Settled speech only: an interim
+   * "Jeremiah 291" is usually "Jeremiah 29:11" still arriving.
+   */
+  splitMergedDigits?: boolean;
+}
+
+export function matchExplicitScriptures(
+  text: string,
+  options: MatchOptions = {},
+): ScriptureReference[] {
+  return matchNormalizedCitations(normalizeWordNumbers(text), options);
+}
+
+function matchNormalizedCitations(
+  normalized: string,
+  options: MatchOptions = {},
+): ScriptureReference[] {
   const results: ScriptureReference[] = [];
-
-  // Match list of books
-  const bookRegexStr =
-    "(?:Gen(?:esis)?|Exo(?:dus)?|Lev(?:iticus)?|Num(?:bers)?|Deut(?:eronomy)?|Josh(?:ua)?|Judg(?:es)?|Ruth|" +
-    "1\\s*Sam(?:uel)?|2\\s*Sam(?:uel)?|1\\s*Kings?|2\\s*Kings?|1\\s*Chr(?:onicles)?|2\\s*Chr(?:onicles)?|Ezra|Neh(?:emiah)?|Esth(?:er)?|Job|" +
-    "Psa?(?:lms?)?|Prov(?:erbs)?|Eccl(?:esiastes)?|Song(?:\\s+of\\s+Solomon)?|Isa(?:iah)?|Jer(?:emiah)?|Lam(?:entations)?|Eze(?:kiel)?|Dan(?:iel)?|" +
-    "Hos(?:ea)?|Joel|Amos|Obad(?:iah)?|Jon(?:ah)?|Mic(?:ah)?|Nah(?:um)?|Hab(?:akkuk)?|Zeph(?:aniah)?|Hag(?:gai)?|Zech(?:ariah)?|Mal(?:achi)?|" +
-    "Matt(?:hew)?|Mark|Luke|John|Acts|Rom(?:ans)?|1\\s*Cor(?:inthians)?|2\\s*Cor(?:inthians)?|Gal(?:atians)?|Eph(?:esians)?|Phil(?:ippians)?|Col(?:ossians)?|" +
-    "1\\s*Thess?(?:alonians)?|2\\s*Thess?(?:alonians)?|1\\s*Tim(?:othy)?|2\\s*Tim(?:othy)?|Tit(?:us)?|Phlm|Philemon|Heb(?:rews)?|Jas|James|" +
-    "1\\s*Pet(?:er)?|2\\s*Pet(?:er)?|1\\s*Jn|1\\s*John|2\\s*Jn|2\\s*John|3\\s*Jn|3\\s*John|Jude|Rev(?:elation)?s?)";
-
-  // Match book name, followed by chapter, optionally verse, optionally verse range
-  const regex = new RegExp(
-    `\\b(${bookRegexStr})\\b\\s*(?:chapter\\s+)?(\\d+)\\b(?:\\s+\\2(?=\\s+(?:verses?\\s+)?\\d+\\s*(?:-|thru|through|to|and)))?(?:\\s*[:,\\s]\\s*(?:verses?\\s+)?(\\d+)(?:(?:\\s*(?:-|thru|through|to|and)\\s*|\\s+)(\\d+))?)?`,
-    "gi",
-  );
+  CITATION_RE.lastIndex = 0;
 
   let match;
-  while ((match = regex.exec(normalized)) !== null) {
-    const rawBook = match[1].toLowerCase().replace(/\s+/g, " ");
-    const chapterStr = match[2];
-    const verseStartStr = match[3];
-    const verseEndStr = match[4];
-
-    // Find canonical book mapping
-    let canonicalBook = "";
-    for (const key of Object.keys(CANONICAL_BOOKS)) {
-      if (rawBook === key || rawBook.replace(/\s+/g, "") === key) {
-        canonicalBook = CANONICAL_BOOKS[key];
-        break;
-      }
-    }
-
+  while ((match = CITATION_RE.exec(normalized)) !== null) {
+    const [source, rawBook, chapterStr, verseStartStr, separator, verseEndStr] = match;
+    const canonicalBook = canonicalBookName(rawBook);
     if (!canonicalBook) continue;
 
-    const chapter = parseInt(chapterStr, 10);
-    const verseStart = verseStartStr ? parseInt(verseStartStr, 10) : 1;
-    const verseEnd = verseEndStr ? parseInt(verseEndStr, 10) : undefined;
+    let chapter = Number(chapterStr);
+    let verseStart = verseStartStr ? Number(verseStartStr) : 1;
+    let verseEnd = verseEndStr ? Number(verseEndStr) : undefined;
+    let sourceText = source;
+    // "Luke 4:18,19" is a range; "Luke 4:18, 20" names two verses, and only
+    // the first is kept rather than inventing 18–20.
+    if (verseEnd !== undefined && separator.includes(",") && verseEnd !== verseStart + 1) {
+      verseEnd = undefined;
+    }
+    const split = !verseStartStr && options.splitMergedDigits
+      ? splitMergedChapterVerse(canonicalBook, chapterStr)
+      : null;
+    if (split) {
+      chapter = split.chapter;
+      verseStart = split.verse;
+      sourceText = `${rawBook} ${split.chapter}:${split.verse}`;
+    }
 
     const ref: ScriptureReference = {
       book: canonicalBook,
@@ -1475,21 +1728,21 @@ export function matchExplicitScriptures(text: string): ScriptureReference[] {
       verseEnd,
       confidence: 0.9,
       detectionType: "explicit",
-      sourceText: match[0],
+      sourceText,
     };
-    const verseOffset = match[0].search(/\bverses?\s+/);
+    const verseOffset = source.search(/\bverses?\s+/);
     const list = verseOffset < 0 ? null : normalized.slice(match.index + verseOffset).match(
       /^verses?\s+(\d+(?:(?:,\s*(?:and\s+)?|\s+and\s+)\d+)+)/,
     );
     if (list) {
-      const sourceText = normalized.slice(match.index, match.index + verseOffset + list[0].length);
+      const listSource = normalized.slice(match.index, match.index + verseOffset + list[0].length);
       const numbers = list[1].match(/\d+/g)!.map(Number);
       if (numbers.length === 2 && numbers[1] === numbers[0] + 1) {
-        results.push({ ...ref, verseStart: numbers[0], verseEnd: numbers[1], sourceText });
+        results.push({ ...ref, verseStart: numbers[0], verseEnd: numbers[1], sourceText: listSource });
       } else {
-        results.push(...numbers.map(verseStart => ({ ...ref, verseStart, verseEnd: undefined, sourceText })));
+        results.push(...numbers.map(verseStart => ({ ...ref, verseStart, verseEnd: undefined, sourceText: listSource })));
       }
-      regex.lastIndex = match.index + verseOffset + list[0].length;
+      CITATION_RE.lastIndex = match.index + verseOffset + list[0].length;
     } else results.push(ref);
   }
 

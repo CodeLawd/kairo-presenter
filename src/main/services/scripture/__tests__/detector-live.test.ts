@@ -328,7 +328,7 @@ test('an AI result keeps the transcript origin that started its request', async 
   detector.destroy();
 });
 
-test('a newer explicit citation supersedes an in-flight AI result', async () => {
+test('a newer explicit citation keeps an in-flight AI quote for review only', async () => {
   const detector = new ScriptureDetector({ apiKey: 'test', minIntervalMs: 0 });
   let resolve!: (value: string) => void;
   Object.assign(detector, { callModel: () => new Promise<string>(done => { resolve = done; }) });
@@ -338,9 +338,17 @@ test('a newer explicit citation supersedes an in-flight AI result', async () => 
   detector.analyze('a remembered quotation');
   detector.beginTranscript({ sttReceivedAt: 200, source: 'interim' });
   detector.analyzeExplicit('John 3:16', true, true);
-  resolve(JSON.stringify([{ book: 'Romans', chapter: 8, verseStart: 28, confidence: 0.8, detectionType: 'paraphrase', sourceText: 'all things work' }]));
+  resolve(JSON.stringify([
+    { book: 'Romans', chapter: 8, verseStart: 28, confidence: 0.8, detectionType: 'paraphrase', sourceText: 'all things work' },
+    { book: 'John', chapter: 3, verseStart: 1, confidence: 0.8, detectionType: 'partial', sourceText: 'John chapter three' },
+  ]));
   await new Promise(resolveTick => setImmediate(resolveTick));
-  assert.deepEqual(refs.map(ref => `${ref.book} ${ref.chapter}:${ref.verseStart}`), ['John 3:16']);
+  // The quote was a different verse from the citation, so it must not be lost;
+  // the chapter placeholder is dropped. Arriving late, it may never auto-present.
+  assert.deepEqual(refs.map(ref => `${ref.book} ${ref.chapter}:${ref.verseStart}`), ['John 3:16', 'Romans 8:28']);
+  assert.equal(canAutoPresentScriptureReference(refs[0]), true);
+  assert.equal(refs[1].superseded, true);
+  assert.equal(canAutoPresentScriptureReference(refs[1]), false);
   detector.destroy();
 });
 

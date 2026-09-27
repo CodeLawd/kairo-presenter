@@ -1,6 +1,16 @@
 import { useImportRequest } from '@/hooks/useImportRequest'
-import { useState, useRef, useCallback, useEffect } from "react";
-import { AlertCircle, BookOpen, Loader, Settings as SettingsIcon, Upload } from '@/icons';
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import { AlertCircle, BookOpen, Loader, Plus, Settings as SettingsIcon, Upload } from '@/icons';
+import { useMultiSelect } from "@/hooks/useMultiSelect";
+import { SelectionAction, SelectionBar } from "@/components/shared/SelectionBar";
+import { useTransferStore } from "@/stores/useTransfer";
+import { DEFAULT_LIBRARY_ID } from "@shared/libraries";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { useAppStore } from "@/stores/useAppStore";
 import {
@@ -182,6 +192,14 @@ export default function Scripture(): React.ReactElement {
   const cardMinWidth = Math.round(CARD_BASE_WIDTH * (cardZoom / 100));
   const cardHeight = Math.round(CARD_BASE_HEIGHT * (cardZoom / 100));
   const cards = flattenResultRows(rows);
+  // Picked cards for bulk actions. A new passage or playlist starts clean.
+  const cardOrder = useMemo(() => cards.map((_card, index) => index), [cards.length]);
+  const cardSelect = useMultiSelect<number>(cardOrder);
+  const clearCardSelection = cardSelect.clear;
+  // Keyed on which passages are loaded, not on `rows` itself: rows also change
+  // when a card's send status updates, and going live must not drop a selection.
+  const loadedPassages = rows.map((row) => `${row.id}:${row.cards.length}`).join("|");
+  useEffect(() => { clearCardSelection(); }, [loadedPassages, clearCardSelection]);
   const selectedPlan = plans.find((plan) => plan.id === selectedPlanId) ?? null;
   const showQueueDock = rows.length > 0;
   const showVerseGrid = rows.length > 0;
@@ -783,6 +801,51 @@ export default function Scripture(): React.ReactElement {
     }
   }, [creatingPlaylist, cardsSource, rows, setScriptureViewState]);
 
+  /** Picked cards as passages: one per row, keeping multi-verse runs together. */
+  const pickedResults = useCallback((): ScriptureResult[] => {
+    const results: ScriptureResult[] = [];
+    let flat = 0;
+    for (const row of rows) {
+      const picked = row.cards.filter((_card, index) => cardSelect.selected.has(flat + index));
+      flat += row.cards.length;
+      const combined = combineScriptureResults(picked.map((card) => card.result));
+      if (combined && combined.verses.length > 0) results.push(combined);
+    }
+    return results;
+  }, [rows, cardSelect.selected]);
+
+  const addPickedToPlaylist = useCallback(async (targetId: string): Promise<void> => {
+    const target = plans.find((plan) => plan.id === targetId);
+    const results = pickedResults();
+    if (!target || results.length === 0) return;
+    try {
+      const saved = await window.api.scripture.saveSermonPlan(
+        appendScriptureResultsToPlan(target, results, `manual-${Date.now()}`),
+      );
+      setPlans((previous) => previous.map((plan) => (plan.id === saved.id ? saved : plan)));
+      cardSelect.clear();
+      useTransferStore.getState().notify({
+        tone: "ok",
+        text: `Added ${results.length} passage${results.length === 1 ? "" : "s"} to ${saved.title}`,
+      });
+    } catch (saveError) {
+      setError((saveError as Error).message || "Could not add those verses to the playlist.");
+    }
+  }, [cardSelect, pickedResults, plans]);
+
+  const savePickedToLibrary = useCallback(async (): Promise<void> => {
+    const results = pickedResults();
+    if (results.length === 0) return;
+    for (const result of results) {
+      await runPassagesCommand({ action: "save", result, libraryId: DEFAULT_LIBRARY_ID });
+    }
+    cardSelect.clear();
+    useTransferStore.getState().notify({
+      tone: "ok",
+      text: `Saved ${results.length} passage${results.length === 1 ? "" : "s"} to your library`,
+    });
+  }, [cardSelect, pickedResults]);
+
   const addAllResultsToPlaylist = useCallback(async (targetId: string): Promise<void> => {
     const target = plans.find((plan) => plan.id === targetId);
     // One playlist item per row (keep multi-verse passages together)
@@ -807,6 +870,24 @@ export default function Scripture(): React.ReactElement {
       );
     }
   }, [openPlan, plans, rows, selectedPlanId]);
+
+  /** Removes several items from the open playlist (sidebar ⌘A + Delete). */
+  const removePlanItems = useCallback(async (itemIds: string[]): Promise<void> => {
+    const plan = plans.find((candidate) => candidate.id === selectedPlanId);
+    if (!plan || itemIds.length === 0) return;
+    const drop = new Set(itemIds);
+    try {
+      const saved = await window.api.scripture.saveSermonPlan({
+        ...plan,
+        items: plan.items.filter((item) => !drop.has(item.id)),
+      });
+      setPlans((previous) => previous.map((candidate) => (candidate.id === saved.id ? saved : candidate)));
+      setRows((previous) => previous.filter((row) => !row.planItemId || !drop.has(row.planItemId)));
+      setActiveCardIndex(0);
+    } catch (removeError) {
+      setError((removeError as Error).message || "Could not remove those items.");
+    }
+  }, [plans, selectedPlanId]);
 
   /** Reorders the open playlist from the sidebar, rows and all. */
   const reorderPlanItem = useCallback(
@@ -1246,6 +1327,7 @@ export default function Scripture(): React.ReactElement {
         onCreate={() => void createPlaylist()}
         onOpenPlan={(plan) => void openPlan(plan)}
         onSelectItem={selectPlanItem}
+        onRemoveItems={cardsSource === "plan" ? (ids) => void removePlanItems(ids) : undefined}
         onStartRename={startRenamePlan}
         onCancelRename={cancelRenamePlan}
         onSaveRename={() => void saveRenamePlan()}
@@ -1442,6 +1524,10 @@ export default function Scripture(): React.ReactElement {
                 gridRef={gridRef}
                 cardRefs={cardRefs}
                 rowRefs={rowRefs}
+                pickedCards={cardSelect.selected}
+                onPickCard={cardSelect.pick}
+                onMarqueeBegin={cardSelect.beginMarquee}
+                onMarqueeChange={cardSelect.updateMarquee}
                   onSelectCard={(index) => {
                     setActiveCardIndex(index);
                     setCueHighlight(true);
@@ -1460,6 +1546,35 @@ export default function Scripture(): React.ReactElement {
                     void handleSend(index);
                   }}
               />
+            )}
+            {cardSelect.selected.size > 0 && (
+              <SelectionBar
+                className="sticky bottom-3 mt-4"
+                count={cardSelect.selected.size}
+                noun="verse"
+                onClear={cardSelect.clear}
+              >
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button type="button" className="inline-flex h-7 items-center gap-1.5 rounded-md bg-white/[0.08] px-2.5 text-[12px] font-medium text-white hover:bg-white/[0.13]">
+                      <Plus size={12} /> Add to playlist
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="max-h-72 w-56 overflow-y-auto">
+                    {plans.length === 0 && (
+                      <DropdownMenuItem disabled>No playlists yet</DropdownMenuItem>
+                    )}
+                    {plans.map((plan) => (
+                      <DropdownMenuItem key={plan.id} onSelect={() => void addPickedToPlaylist(plan.id)}>
+                        <span className="truncate">{plan.title}</span>
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <SelectionAction onClick={() => void savePickedToLibrary()}>
+                  <BookOpen size={12} /> Save to library
+                </SelectionAction>
+              </SelectionBar>
             )}
           </div>
         </div>

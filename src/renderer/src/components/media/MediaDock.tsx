@@ -1,3 +1,12 @@
+import { selectGesture, useMultiSelect, type SelectGesture } from '@/hooks/useMultiSelect'
+import { MarqueeSelect } from '@/components/shared/MarqueeSelect'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { SelectionAction, SelectionBar } from '@/components/shared/SelectionBar'
 import { useImportRequest } from '@/hooks/useImportRequest'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -380,6 +389,55 @@ export default function MediaDock(): React.ReactElement | null {
       setError((err as Error).message)
     }
   }, [])
+
+  // ── Bulk selection ─────────────────────────────────────────────────────────
+  const visibleIds = useMemo(() => visibleItems.map((item) => item.id), [visibleItems])
+  const mediaSelect = useMultiSelect<string>(visibleIds)
+
+  const addPickedToPlaylist = useCallback(async (playlistId: string): Promise<void> => {
+    const playlist = library.playlists.find((p) => p.id === playlistId)
+    if (!playlist) return
+    const adding = visibleIds.filter((id) => mediaSelect.selected.has(id) && !playlist.itemIds.includes(id))
+    setError(null)
+    try {
+      setLibrary(await window.api.media.setPlaylistItems(playlistId, [...playlist.itemIds, ...adding]))
+      mediaSelect.clear()
+    } catch (err) {
+      setError((err as Error).message)
+    }
+  }, [library.playlists, mediaSelect, visibleIds])
+
+  const removePickedFromPlaylist = useCallback(async (playlistId: string): Promise<void> => {
+    const playlist = library.playlists.find((p) => p.id === playlistId)
+    if (!playlist) return
+    setError(null)
+    try {
+      setLibrary(await window.api.media.setPlaylistItems(
+        playlistId,
+        playlist.itemIds.filter((id) => !mediaSelect.selected.has(id)),
+      ))
+      mediaSelect.clear()
+    } catch (err) {
+      setError((err as Error).message)
+    }
+  }, [library.playlists, mediaSelect])
+
+  const deletePicked = useCallback(async (): Promise<void> => {
+    const ids = visibleIds.filter((id) => mediaSelect.selected.has(id))
+    if (ids.length === 0) return
+    if (!window.confirm(
+      `Delete ${ids.length} item${ids.length === 1 ? '' : 's'} from the backgrounds folder?\n\nThis removes the files from disk and cannot be undone.`,
+    )) return
+    setError(null)
+    try {
+      let next: MediaLibrary | null = null
+      for (const id of ids) next = await window.api.media.deleteItem(id)
+      if (next) setLibrary(next)
+      mediaSelect.clear()
+    } catch (err) {
+      setError((err as Error).message)
+    }
+  }, [mediaSelect, visibleIds])
 
   const renameItem = useCallback(async (itemId: string, name: string): Promise<void> => {
     setRenamingItemId(null)
@@ -794,6 +852,11 @@ export default function MediaDock(): React.ReactElement | null {
               </p>
             )}
 
+            <MarqueeSelect
+              className="flex min-h-0 flex-1 flex-col"
+              onBegin={mediaSelect.beginMarquee}
+              onChange={mediaSelect.updateMarquee}
+            >
             <div
               className="grid flex-1 min-h-0 content-start items-start gap-x-3.5 gap-y-3 overflow-y-auto px-5 py-2.5 [grid-template-columns:repeat(auto-fill,minmax(168px,1fr))]"
               onContextMenu={(event) => {
@@ -812,6 +875,8 @@ export default function MediaDock(): React.ReactElement | null {
                   key={item.id}
                   item={item}
                   live={item.id === library.liveItemId}
+                  picked={mediaSelect.isSelected(item.id)}
+                  onPick={(gesture) => mediaSelect.pick(item.id, gesture)}
                   paused={item.id === library.liveItemId && library.livePaused}
                   busy={item.id === busyId}
                   undecodable={undecodable.has(item.id)}
@@ -896,6 +961,40 @@ export default function MediaDock(): React.ReactElement | null {
                 </button>
               )}
             </div>
+            {mediaSelect.selected.size > 0 && (
+              <SelectionBar
+                className="mx-5 mb-2.5 shrink-0"
+                count={mediaSelect.selected.size}
+                noun="item"
+                onClear={mediaSelect.clear}
+              >
+                {library.playlists.length > 0 && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button type="button" className="inline-flex h-7 items-center gap-1.5 rounded-md bg-white/[0.08] px-2.5 text-[12px] font-medium text-white hover:bg-white/[0.13]">
+                        <Plus size={12} /> Add to playlist
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="max-h-72 w-52 overflow-y-auto">
+                      {library.playlists.map((playlist) => (
+                        <DropdownMenuItem key={playlist.id} onSelect={() => void addPickedToPlaylist(playlist.id)}>
+                          <span className="truncate">{playlist.name}</span>
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+                {selection?.kind === 'playlist' && (
+                  <SelectionAction onClick={() => void removePickedFromPlaylist(selection.id)}>
+                    Remove from playlist
+                  </SelectionAction>
+                )}
+                <SelectionAction danger onClick={() => void deletePicked()}>
+                  <Trash2 size={12} /> Delete
+                </SelectionAction>
+              </SelectionBar>
+            )}
+            </MarqueeSelect>
 
             {bgMenu && (
               <BackgroundMenu
@@ -1120,6 +1219,8 @@ function InlineNameInput({
 function MediaCard({
   item,
   live,
+  picked,
+  onPick,
   paused,
   busy,
   undecodable,
@@ -1152,6 +1253,9 @@ function MediaCard({
 }: {
   item: MediaItem
   live: boolean
+  /** Picked for a bulk action (⌘/Shift-click or rubber band). */
+  picked: boolean
+  onPick: (gesture: SelectGesture) => void
   paused: boolean
   busy: boolean
   undecodable: boolean
@@ -1243,11 +1347,15 @@ function MediaCard({
           if (event.clientX !== 0 || event.clientY !== 0) didDragRef.current = true
         }}
         onDragEnd={onDragEnd}
-        onClick={() => {
+        data-select-id={item.id}
+        onClick={(event) => {
           if (didDragRef.current) {
             didDragRef.current = false
             return
           }
+          // ⌘/Shift-click only selects; a plain click still goes live.
+          const gesture = selectGesture(event)
+          if (gesture) { onPick(gesture); return }
           onPush()
         }}
         onKeyDown={(event) => {
@@ -1266,12 +1374,19 @@ function MediaCard({
         aria-label={`Push ${item.name} to screen`}
         className={cn(
           'relative w-full aspect-video overflow-hidden rounded-xl bg-black border transition-all duration-150 cursor-grab active:cursor-grabbing',
-          live
-            ? 'border-teal-400/70 ring-1 ring-teal-400/40'
-            : 'border-white/[0.08] hover:border-teal-500/40 hover:ring-1 hover:ring-teal-500/20',
+          picked
+            ? 'border-white ring-2 ring-white/30'
+            : live
+              ? 'border-teal-400/70 ring-1 ring-teal-400/40'
+              : 'border-white/[0.08] hover:border-white/25',
           busy && 'opacity-70'
         )}
       >
+        {picked && (
+          <span className="absolute left-1.5 top-1.5 z-10 grid size-4 place-items-center rounded-full bg-white text-black" aria-hidden="true">
+            <Check size={10} weight="bold" />
+          </span>
+        )}
         <Thumb
           item={item}
           className="pointer-events-none absolute inset-0 h-full w-full object-cover"

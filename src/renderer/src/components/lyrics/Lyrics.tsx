@@ -1,9 +1,14 @@
 import { LibraryRail } from '@/components/lyrics/LibraryRail'
 import { ZoomControl } from '@/components/shared/ZoomControl'
+import { leavesTarget } from '@/lib/drag'
+import { PICKED_ROW, listShortcuts, selectGesture, useMultiSelect, type SelectGesture } from '@/hooks/useMultiSelect'
+import { MarqueeSelect } from '@/components/shared/MarqueeSelect'
+import { SelectionBar } from '@/components/shared/SelectionBar'
+import { SLIDE_LABEL_CHOICES, sectionColor } from '@/components/lyrics/section-colors'
 import { runSetlistCommand, songIdFromDrag, startSongDrag, useSetlistStore, SONG_DRAG_TYPE } from '@/stores/useSetlist'
 import { startLibraryItemDrag, useLibrary } from '@/stores/useLibraries'
 import { DEFAULT_LIBRARY_ID, itemsInLibrary, libraryCounts as countByLibrary } from '@shared/libraries'
-import { reorderLyricSlide } from '@shared/lyrics-reorder'
+import { labelLyricSlides, moveLyricSlide } from '@shared/lyrics-reorder'
 import { useLibraryWidth } from './useLibraryWidth'
 import { useImportRequest } from '@/hooks/useImportRequest'
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
@@ -27,12 +32,12 @@ import {
   Edit2,
   Save,
   FilePlus,
-  ChevronLeft,
-  ChevronRight,
   Globe,
   Library,
   ClipboardPaste,
   MoreHorizontal,
+  Check,
+  ListChecks,
   Scissors,
   Languages,
   RotateCcw,
@@ -131,17 +136,6 @@ interface ContextMenuState {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const SECTION_COLORS: Record<LyricsSectionType, string> = {
-  verse: 'text-blue-400 bg-blue-500/10 border-blue-500/25',
-  chorus: 'text-teal-400 bg-teal-500/10 border-teal-500/25',
-  bridge: 'text-purple-400 bg-purple-500/10 border-purple-500/25',
-  'pre-chorus': 'text-orange-400 bg-orange-500/10 border-orange-500/25',
-  tag: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/25',
-  intro: 'text-slate-400 bg-slate-500/10 border-slate-500/25',
-  outro: 'text-slate-400 bg-slate-500/10 border-slate-500/25',
-  ending: 'text-rose-400 bg-rose-500/10 border-rose-500/25',
-}
-
 const SECTION_TYPE_OPTS: { value: LyricsSectionType; label: string }[] = [
   { value: 'verse', label: 'Verse' },
   { value: 'chorus', label: 'Chorus' },
@@ -235,6 +229,16 @@ function applySort(songs: LyricsSong[], sort: SortType): LyricsSong[] {
 
 // ─── SectionBadge ─────────────────────────────────────────────────────────────
 
+/** Drag payload type for moving a slide within a song. */
+const SLIDE_DRAG_TYPE = 'application/x-kairo-slide'
+
+interface SlideDrag {
+  /** Zero-based slide being carried. */
+  from: number
+  /** The card under the pointer and which side of it the slide would land. */
+  over: { index: number; side: 'before' | 'after' } | null
+}
+
 /** Comparable form of the editor state — section keys are UI-only. */
 function editSnapshot(state: EditState | null): string {
   return state
@@ -262,10 +266,10 @@ function SectionBadge({ type }: { type: LyricsSectionType }): React.ReactElement
     type === 'pre-chorus' ? 'Pre-C'
     : type.charAt(0).toUpperCase() + type.slice(1)
   return (
-    <span className={cn(
-      'inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border shrink-0',
-      SECTION_COLORS[type]
-    )}>
+    <span
+      className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border shrink-0"
+      style={{ color: sectionColor(type), backgroundColor: sectionColor(type, 0.12), borderColor: sectionColor(type, 0.35) }}
+    >
       {label}
     </span>
   )
@@ -280,15 +284,25 @@ function SectionSlideGrid({
   liveSlideIndex,
   pushingSlideIndex,
   onPushSlide,
-  onPreviewSlide,
+  slideDrag,
+  onSlideDrag,
   onSetLineColor,
   onReorder,
   reorderBusy,
   zoom,
+  selectedSlides,
+  selecting,
+  onSelectSlide,
 }: {
   /** Tile size in percent; 100 is the original 180–200px tile. */
   zoom: number
-  onReorder: (from: number, to: number) => void
+  /** Slides picked for labelling (zero-based, whole song). */
+  selectedSlides: ReadonlySet<number>
+  /** Select mode: a plain click picks the slide instead of going live. */
+  selecting: boolean
+  onSelectSlide: (zeroBasedIndex: number, gesture: SelectGesture) => void
+  /** Move slide `from` beside slide `target`; it joins that slide's section. */
+  onReorder: (from: number, target: number, side: 'before' | 'after') => void
   reorderBusy: boolean
   section: LyricsSongSection
   sectionIndex: number
@@ -302,17 +316,47 @@ function SectionSlideGrid({
   /** Zero-based index of the slide mid-push, if any. */
   pushingSlideIndex: number | null
   onPushSlide: (zeroBasedIndex: number) => void
-  onPreviewSlide: (zeroBasedIndex: number) => void
+  /** The slide being dragged and where it would land, shared across sections. */
+  slideDrag: SlideDrag | null
+  onSlideDrag: (next: SlideDrag | null) => void
   onSetLineColor: (sectionIndex: number, lineIndex: number, color: string | null) => void
 }): React.ReactElement {
-  const [dropTarget, setDropTarget] = useState<number | null>(null)
   const chunks = sectionColoredSlideChunks(section, glossColor)
   const scale = zoom / 100
+  const color = sectionColor(section.type)
+  const firstSlide = startIndex - 1
+  const lastSlide = firstSlide + chunks.length - 1
+  const isDestination = Boolean(
+    slideDrag?.over && slideDrag.over.index >= firstSlide && slideDrag.over.index <= lastSlide,
+  )
 
   return (
-    <section className="space-y-1.5">
+    <section
+      className="-mx-2 space-y-1.5 rounded-xl px-2 py-1.5 transition-colors duration-150"
+      style={isDestination ? { backgroundColor: sectionColor(section.type, 0.07) } : undefined}
+      // Anywhere in the section that is not a card: join it, at the end.
+      onDragOver={(event) => {
+        if (reorderBusy || !slideDrag || chunks.length === 0 || !event.dataTransfer.types.includes(SLIDE_DRAG_TYPE)) return
+        event.preventDefault()
+        event.dataTransfer.dropEffect = 'move'
+        if (slideDrag.over?.index !== lastSlide || slideDrag.over.side !== 'after') {
+          onSlideDrag({ ...slideDrag, over: { index: lastSlide, side: 'after' } })
+        }
+      }}
+      onDrop={(event) => {
+        if (chunks.length === 0) return
+        event.preventDefault()
+        const from = Number(event.dataTransfer.getData(SLIDE_DRAG_TYPE))
+        onSlideDrag(null)
+        if (Number.isInteger(from) && !reorderBusy) onReorder(from, lastSlide, 'after')
+      }}
+    >
       <div className="flex items-baseline gap-2">
-        <h3 className="text-xs font-semibold tracking-tight text-slate-300">
+        <h3
+          className="inline-flex items-center gap-1.5 text-xs font-semibold tracking-tight"
+          style={{ color }}
+        >
+          <span className="size-2 shrink-0 self-center rounded-full" style={{ backgroundColor: color }} aria-hidden="true" />
           {section.label}
         </h3>
         <span className="text-[11px] tabular-nums text-slate-600">
@@ -334,99 +378,104 @@ function SectionSlideGrid({
           const lineCount = lines.length
           const isLive = liveSlideIndex === zeroBased
           const isPushing = pushingSlideIndex === zeroBased
+          const isPicked = selectedSlides.has(zeroBased)
           return (
             <button
               key={i}
               type="button"
               data-lyric-slide={zeroBased}
+              data-select-id={zeroBased}
               disabled={reorderBusy}
+              // The whole card drags. Pressing ⌘ first starts a rubber band
+              // instead (MarqueeSelect cancels the native drag).
+              draggable={!reorderBusy && paintColor === undefined}
+              onDragStart={(event) => {
+                event.dataTransfer.setData(SLIDE_DRAG_TYPE, String(zeroBased))
+                event.dataTransfer.effectAllowed = 'move'
+                // Grab the card where the pointer is, like picking it up.
+                const rect = event.currentTarget.getBoundingClientRect()
+                event.dataTransfer.setDragImage(event.currentTarget, event.clientX - rect.left, event.clientY - rect.top)
+                // After the image is captured, so the ghost is not the dimmed card.
+                requestAnimationFrame(() => onSlideDrag({ from: zeroBased, over: null }))
+              }}
+              onDragEnd={() => onSlideDrag(null)}
               onDragOver={(event) => {
-                if (reorderBusy || !event.dataTransfer.types.includes('application/x-kairo-slide')) return
-                event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setDropTarget(zeroBased)
+                if (reorderBusy || !event.dataTransfer.types.includes(SLIDE_DRAG_TYPE)) return
+                event.preventDefault()
+                event.stopPropagation()
+                event.dataTransfer.dropEffect = 'move'
+                const rect = event.currentTarget.getBoundingClientRect()
+                const side = event.clientX < rect.left + rect.width / 2 ? 'before' : 'after'
+                if (slideDrag && (slideDrag.over?.index !== zeroBased || slideDrag.over.side !== side)) {
+                  onSlideDrag({ ...slideDrag, over: { index: zeroBased, side } })
+                }
               }}
-              onDragLeave={() => setDropTarget(null)}
-              onDragEnd={() => setDropTarget(null)}
               onDrop={(event) => {
-                event.preventDefault(); setDropTarget(null)
-                const raw = event.dataTransfer.getData('application/x-kairo-slide')
-                if (raw && !reorderBusy) onReorder(Number(raw), zeroBased)
+                event.preventDefault()
+                event.stopPropagation()
+                const from = Number(event.dataTransfer.getData(SLIDE_DRAG_TYPE))
+                const rect = event.currentTarget.getBoundingClientRect()
+                const side = event.clientX < rect.left + rect.width / 2 ? 'before' : 'after'
+                onSlideDrag(null)
+                if (!Number.isInteger(from) || reorderBusy) return
+                onReorder(from, zeroBased, side)
               }}
-              onClick={() => {
+              onClick={(event) => {
                 // Finishing a text selection inside the tile is not a request
                 // to put the slide on screen.
                 if (hasTextSelection()) return
+                // ⌘/Shift-click picks slides without going live, in or out of
+                // select mode — the same gestures as Finder.
+                const gesture = selectGesture(event)
+                if (gesture) { onSelectSlide(zeroBased, gesture); return }
+                if (selecting) { onSelectSlide(zeroBased, 'toggle'); return }
                 onPushSlide(zeroBased)
+              }}
+              style={{
+                // The section's colour frames every one of its slides; live
+                // (amber) and picked (white) override it.
+                borderColor: isLive || isPicked ? undefined : sectionColor(section.type, 0.55),
+                overflow: 'visible',
               }}
               className={cn(
                 'group relative w-full aspect-video rounded-lg overflow-hidden',
-                'bg-black border text-left cursor-default',
-                'shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]',
-                isLive
-                  ? 'border-teal-400/70 ring-1 ring-teal-400/40'
-                  : 'border-white/[0.08] hover:border-teal-500/40 hover:ring-1 hover:ring-teal-500/20',
-                dropTarget === zeroBased && 'ring-2 ring-teal-400',
+                'bg-black border-2 text-left cursor-default',
+                isLive && 'border-teal-400 ring-2 ring-teal-400/30',
+                isPicked && !isLive && 'border-white ring-2 ring-white/25',
+                !isLive && !isPicked && 'hover:brightness-125',
                 isPushing && 'opacity-70',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50',
-                'transition-all duration-150'
+                // The card being carried stays in place, faded, so the gap it
+                // leaves is visible while the insertion bar shows where it goes.
+                slideDrag?.from === zeroBased && 'scale-[0.97] opacity-35',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50',
+                'transition-[border-color,box-shadow,filter,opacity,transform] duration-150'
               )}
-              aria-label={`Push slide ${slideNo} to ProPresenter`}
-              title="Push this slide to ProPresenter"
+              aria-pressed={selecting ? isPicked : undefined}
+              aria-label={selecting ? `Select slide ${slideNo}` : `Push slide ${slideNo} to ProPresenter`}
+              title={selecting ? 'Select this slide' : 'Click to go live · drag to move · ⌘-click to select'}
             >
-              {/* Preview is the secondary action now — click the tile to go live. */}
-              <span
-                role="button"
-                tabIndex={0}
-                onClick={(e) => { e.stopPropagation(); onPreviewSlide(zeroBased) }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault()
-                    e.stopPropagation()
-                    onPreviewSlide(zeroBased)
-                  }
-                }}
-                title={`Preview slide ${slideNo}`}
-                aria-label={`Preview slide ${slideNo}`}
-                className={cn(
-                  'absolute top-1.5 right-1.5 z-10 grid place-items-center h-5 w-5 rounded-md',
-                  'bg-black/60 text-white/50 border border-white/10 cursor-pointer',
-                  'opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity',
-                  'hover:text-teal-300 hover:border-teal-500/40'
-                )}
-              >
-                <Eye size={11} />
-              </span>
-
-              {/* Reordering moved onto a handle: a draggable tile starts a drag
-                  on mousedown, which makes the lyrics inside impossible to
-                  select and copy. */}
-              {!reorderBusy && (
+              {slideDrag && slideDrag.from !== zeroBased && slideDrag.over?.index === zeroBased && (
                 <span
-                  draggable
-                  onDragStart={(event) => {
-                    event.stopPropagation()
-                    event.dataTransfer.setData('application/x-kairo-slide', String(zeroBased))
-                    event.dataTransfer.effectAllowed = 'move'
-                  }}
-                  onClick={(e) => e.stopPropagation()}
-                  title="Drag to reorder this slide"
-                  aria-label={`Drag to reorder slide ${slideNo}`}
+                  aria-hidden="true"
                   className={cn(
-                    'absolute bottom-1 left-1.5 z-10 grid place-items-center h-5 w-5 rounded-md cursor-grab active:cursor-grabbing',
-                    'text-white/35 hover:text-teal-300',
-                    'opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity'
+                    'pointer-events-none absolute inset-y-1 z-20 w-0.5 rounded-full',
+                    slideDrag.over.side === 'before' ? '-left-[5px]' : '-right-[5px]',
                   )}
-                >
-                  <GripVertical size={11} />
+                  style={{ backgroundColor: color }}
+                />
+              )}
+              {isPicked && (
+                <span className="absolute left-1.5 top-1.5 z-10 grid size-4 place-items-center rounded-full bg-white text-black" aria-hidden="true">
+                  <Check size={10} weight="bold" />
                 </span>
               )}
-
               {isLive && (
                 <span className="absolute top-1.5 left-1.5 z-10 px-1.5 py-px rounded text-[8px] font-bold tracking-wider uppercase bg-teal-500/20 text-teal-300 border border-teal-500/30">
                   Live
                 </span>
               )}
 
-              <div className="absolute inset-0 flex flex-col items-center justify-center px-3.5 gap-0.5 select-text cursor-text">
+              <div className="absolute inset-0 overflow-hidden rounded-[6px] flex flex-col items-center justify-center px-3.5 gap-0.5">
                 {lineCount > 0 ? (
                   lines.map((line, j) => (
                     <p
@@ -495,6 +544,8 @@ function SongListItem({
   position,
   onRemoveFromSetlist,
   onDropAt,
+  picked = false,
+  onPick,
 }: {
   song: LyricsSong
   isSelected: boolean
@@ -504,9 +555,14 @@ function SongListItem({
   /** 1-based place in the setlist being viewed; absent in library views. */
   position?: number
   onRemoveFromSetlist?: (id: string) => void
-  onDropAt?: (songId: string, index: number) => void
+  /** Setlist view: a song dropped on this row lands at `position - 1` (before) or after it. */
+  onDropAt?: (songId: string, insertAt: number) => void
+  /** Part of a multi-selection (setlist view). */
+  picked?: boolean
+  /** ⌘/Shift-click picks instead of opening (setlist view). */
+  onPick?: (gesture: SelectGesture) => void
 }): React.ReactElement {
-  const [dropping, setDropping] = useState(false)
+  const [dropping, setDropping] = useState<'before' | 'after' | null>(null)
   return (
     <div
       role="button"
@@ -514,53 +570,59 @@ function SongListItem({
       draggable
       onDragStart={(event) => {
         startSongDrag(event, song.id, song.title)
-        startLibraryItemDrag(event, song.id, song.title)
+        startLibraryItemDrag(event, song.id, song.title, 'songs')
       }}
       onDragOver={(event) => {
         if (!onDropAt || !event.dataTransfer.types.includes(SONG_DRAG_TYPE)) return
         event.preventDefault()
-        setDropping(true)
+        event.stopPropagation()
+        event.dataTransfer.dropEffect = 'copy'
+        // Top half drops above this song, bottom half below — so the last
+        // song in the list can have one added after it.
+        const rect = event.currentTarget.getBoundingClientRect()
+        setDropping(event.clientY < rect.top + rect.height / 2 ? 'before' : 'after')
       }}
-      onDragLeave={() => setDropping(false)}
+      onDragLeave={(event) => { if (leavesTarget(event)) setDropping(null) }}
       onDrop={(event) => {
         if (!onDropAt) return
         event.preventDefault()
-        setDropping(false)
+        event.stopPropagation()
+        const side = dropping
+        setDropping(null)
         const dragged = songIdFromDrag(event.dataTransfer)
-        if (dragged) onDropAt(dragged, (position ?? 1) - 1)
+        const index = (position ?? 1) - 1
+        if (dragged) onDropAt(dragged, side === 'after' ? index + 1 : index)
       }}
       className={cn(
-        'group flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-all duration-150 border select-none',
-        isSelected
-          ? 'row-selected border-transparent'
-          : 'hover:bg-white/[0.04] border-transparent',
-        dropping && 'border-t-teal-400'
+        // One line per song so a setlist or library shows many at once.
+        'group relative flex h-8 items-center gap-2 rounded-md px-2 cursor-pointer select-none',
+        picked ? PICKED_ROW : isSelected ? 'row-selected' : 'hover:bg-white/[0.04]',
       )}
-      onClick={() => onSelect(song.id)}
+      style={dropping ? {
+        boxShadow: dropping === 'before' ? 'inset 0 2px 0 rgb(255 255 255 / 0.85)' : 'inset 0 -2px 0 rgb(255 255 255 / 0.85)',
+      } : undefined}
+      onClick={(event) => {
+        const gesture = onPick ? selectGesture(event) : null
+        if (gesture && onPick) onPick(gesture)
+        else onSelect(song.id)
+      }}
       onKeyDown={(e) => e.key === 'Enter' && onSelect(song.id)}
       onContextMenu={(e) => { e.preventDefault(); onContextMenu(e, song.id) }}
+      title={[song.title, song.artist, song.ccliNumber ? `CCLI #${song.ccliNumber}` : ''].filter(Boolean).join(' · ')}
     >
       {position === undefined ? (
-        <div className={cn(
-          'w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-colors',
-          isSelected
-            ? 'bg-teal-500/20 border border-teal-500/30'
-            : 'bg-surface-elevated border border-surface-border/50'
-        )}>
-          <Music2 size={12} className={cn(isSelected ? 'text-teal-400' : 'text-slate-500')} />
-        </div>
+        <Music2 size={12} className={cn('shrink-0', isSelected ? 'text-slate-300' : 'text-slate-600')} aria-hidden="true" />
       ) : (
-        <span className="w-7 shrink-0 text-center text-[11px] tabular-nums text-slate-500">{position}</span>
+        <span className="w-4 shrink-0 text-right text-[11px] tabular-nums text-slate-500">{position}</span>
       )}
-      <div className="flex-1 min-w-0">
-        <p className={cn('text-[13px] font-semibold truncate leading-tight', isSelected ? 'text-white' : 'text-slate-200')}>
+      <p className="flex min-w-0 flex-1 items-baseline gap-1.5">
+        <span className={cn('truncate text-[13px]', isSelected ? 'text-white' : 'text-slate-200')}>
           {song.title}
-        </p>
-        <p className="text-[11px] text-slate-500 truncate mt-0.5">
-          {song.artist || 'Unknown Artist'}
-          {song.ccliNumber && <span className="text-slate-600"> · #{song.ccliNumber}</span>}
-        </p>
-      </div>
+        </span>
+        {song.artist && (
+          <span className="min-w-0 shrink truncate text-[11px] text-slate-500">{song.artist}</span>
+        )}
+      </p>
       <button
         className={cn(
           'shrink-0 rounded p-0.5 transition-all duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-teal-500/50',
@@ -706,15 +768,23 @@ function SectionEditBlock({
     <div
       onDragOver={(e) => onDragOver(e, index)}
       onDrop={() => onDrop(index)}
+      style={isDragTarget ? undefined : {
+        // Same colour as the section's slides in the song view.
+        borderColor: sectionColor(section.type, 0.45),
+        boxShadow: `inset 3px 0 0 ${sectionColor(section.type)}`,
+      }}
       className={cn(
-        'overflow-hidden rounded-xl border transition-colors duration-150 focus-within:border-white/15',
+        'overflow-hidden rounded-xl border transition-colors duration-150',
         isDragTarget
-          ? 'border-teal-500/50 bg-teal-500/5 shadow-[0_0_0_1px_rgba(20,184,166,0.25)]'
-          : 'border-white/[0.07] bg-white/[0.02]'
+          ? 'border-white/40 bg-white/[0.04]'
+          : 'bg-white/[0.02]'
       )}
     >
       {/* Section header row */}
-      <div className="flex items-center gap-2 border-b border-white/[0.055] bg-white/[0.015] px-3 py-2">
+      <div
+        className="flex items-center gap-2 border-b px-3 py-2"
+        style={{ backgroundColor: sectionColor(section.type, 0.06), borderColor: sectionColor(section.type, 0.18) }}
+      >
         <div
           draggable
           onDragStart={(e) => {
@@ -738,11 +808,12 @@ function SectionEditBlock({
             const opt = SECTION_TYPE_OPTS.find((o) => o.value === t)
             onUpdate(section._key, { type: t, label: opt?.label ?? t })
           }}
-          className={cn(
-            'appearance-none text-[11px] font-bold uppercase tracking-wider cursor-pointer focus-visible:outline-none rounded px-1.5 py-0.5 border',
-            SECTION_COLORS[section.type]
-          )}
-          style={{ backgroundColor: 'transparent' }}
+          className="appearance-none text-[11px] font-bold uppercase tracking-wider cursor-pointer focus-visible:outline-none rounded px-1.5 py-0.5 border"
+          style={{
+            color: sectionColor(section.type),
+            backgroundColor: sectionColor(section.type, 0.12),
+            borderColor: sectionColor(section.type, 0.35),
+          }}
           title="Change section type"
         >
           {SECTION_TYPE_OPTS.map((o) => (
@@ -844,167 +915,6 @@ function SectionEditBlock({
         spellCheck
       />
 
-    </div>
-  )
-}
-
-// ─── SlidePreviewModal ────────────────────────────────────────────────────────
-
-function SlidePreviewModal({
-  song,
-  glossColor,
-  initialIndex = 0,
-  onClose,
-}: {
-  song: LyricsSong
-  glossColor: string
-  initialIndex?: number
-  onClose: () => void
-}): React.ReactElement {
-  const slides = useMemo(
-    () => buildSlides(song, { glossColor }),
-    [song, glossColor]
-  )
-  const [slideIndex, setSlideIndex] = useState(() =>
-    Math.min(Math.max(0, initialIndex), Math.max(0, slides.length - 1))
-  )
-  const slide = slides[slideIndex] ?? null
-
-  useEffect(() => {
-    setSlideIndex(Math.min(Math.max(0, initialIndex), Math.max(0, slides.length - 1)))
-  }, [song.id, initialIndex, slides.length])
-
-  useEffect(() => {
-    const key = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') { onClose(); return }
-      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
-        setSlideIndex((i) => Math.min(i + 1, slides.length - 1))
-      }
-      if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
-        setSlideIndex((i) => Math.max(i - 1, 0))
-      }
-    }
-    document.addEventListener('keydown', key)
-    return () => document.removeEventListener('keydown', key)
-  }, [onClose, slides.length])
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/85 animate-fade-in p-4"
-      onClick={onClose}
-    >
-      <div
-        className="relative w-full max-w-3xl flex flex-col gap-4"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-semibold text-white">{song.title}</p>
-            <p className="text-xs text-slate-500 mt-0.5">{song.artist}</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-slate-500 tabular-nums">{slideIndex + 1} / {slides.length}</span>
-            <button
-              onClick={onClose}
-              className="p-1.5 rounded-lg text-slate-500 hover:text-white hover:bg-white/10 transition-colors focus-visible:outline-none"
-              aria-label="Close preview"
-            >
-              <X size={16} />
-            </button>
-          </div>
-        </div>
-
-        {/* Slide canvas */}
-        <div
-          className="relative rounded-2xl overflow-hidden bg-black border border-white/5 shadow-2xl"
-          style={{ aspectRatio: '16/9' }}
-        >
-          {slide && (
-            <>
-              {/* Section label */}
-              <div className="absolute top-4 left-5 z-10">
-                <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-white/25">
-                  {slide.sectionLabel}
-                </span>
-              </div>
-
-              {/* Lyrics content */}
-              <div className="absolute inset-0 flex flex-col items-center justify-center px-14 gap-2">
-                {slide.lines.length > 0 ? (
-                  slide.lines.map((line, i) => {
-                    const color = slide.lineColors?.[i]
-                    return (
-                      <p
-                        key={i}
-                        className={cn(
-                          'text-center leading-snug font-semibold tracking-wide',
-                          !color && 'text-white'
-                        )}
-                        style={{
-                          fontSize: slide.lines.length <= 2 ? '2.25rem' : slide.lines.length <= 3 ? '1.75rem' : '1.4rem',
-                          ...(color ? { color } : {}),
-                        }}
-                      >
-                        {line}
-                      </p>
-                    )
-                  })
-                ) : (
-                  <p className="text-white/15 text-sm italic">Empty slide</p>
-                )}
-              </div>
-
-              {/* Progress bar */}
-              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white/5">
-                <div
-                  className="h-full bg-white/20 transition-all duration-200"
-                  style={{ width: `${((slideIndex + 1) / slides.length) * 100}%` }}
-                />
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* Navigation */}
-        <div className="flex items-center justify-between">
-          <button
-            disabled={slideIndex === 0}
-            onClick={() => setSlideIndex((i) => Math.max(0, i - 1))}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-slate-400 hover:text-white hover:bg-white/10 border border-transparent hover:border-white/10 disabled:opacity-30 transition-all focus-visible:outline-none"
-          >
-            <ChevronLeft size={14} /> Previous
-          </button>
-
-          {slides.length <= 24 && (
-            <div className="flex items-center gap-1">
-              {slides.map((_, i) => (
-                <button
-                  key={i}
-                  onClick={() => setSlideIndex(i)}
-                  className={cn(
-                    'rounded-full transition-all duration-150 focus-visible:outline-none',
-                    i === slideIndex
-                      ? 'w-4 h-1.5 bg-white'
-                      : 'w-1.5 h-1.5 bg-white/20 hover:bg-white/40'
-                  )}
-                  aria-label={`Slide ${i + 1}`}
-                />
-              ))}
-            </div>
-          )}
-
-          <button
-            disabled={slideIndex === slides.length - 1}
-            onClick={() => setSlideIndex((i) => Math.min(slides.length - 1, i + 1))}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-slate-400 hover:text-white hover:bg-white/10 border border-transparent hover:border-white/10 disabled:opacity-30 transition-all focus-visible:outline-none"
-          >
-            Next <ChevronRight size={14} />
-          </button>
-        </div>
-
-        <p className="text-center text-[11px] text-white/20">Use arrow keys to navigate · Esc to close</p>
-      </div>
     </div>
   )
 }
@@ -2598,8 +2508,6 @@ export default function Lyrics(): React.ReactElement {
   const [deleteTarget, setDeleteTarget] = useState<LyricsSong | null>(null)
   const [showImport, setShowImport] = useState(false)
   useImportRequest(['lyrics'], () => setShowImport(true), !showImport)
-  const [showSlidePreview, setShowSlidePreview] = useState(false)
-  const [previewSlideIndex, setPreviewSlideIndex] = useState(0)
 
   // ── Live slide push ──────────────────────────────────────────────────────────
   /** Zero-based index of the slide last pushed to ProPresenter, if any. */
@@ -3254,14 +3162,122 @@ export default function Lyrics(): React.ReactElement {
     }
   }, [selectedId, selectedSong, songSlides])
 
-  const handleReorderSlide = async (from: number, to: number): Promise<void> => {
-    if (!selectedSong || reorderLock.current || from === to || !Number.isInteger(from)) return
+  const handleReorderSlide = async (from: number, target: number, side: 'before' | 'after'): Promise<void> => {
+    if (!selectedSong || reorderLock.current || !Number.isInteger(from)) return
     reorderLock.current = true; setReorderBusy(true); setSendError(null)
     try {
-      const updated = await window.api.lyrics.update(selectedSong.id, { ...selectedSong, sections: reorderLyricSlide(selectedSong.sections, from, to) })
+      const updated = await window.api.lyrics.update(selectedSong.id, { ...selectedSong, sections: moveLyricSlide(selectedSong.sections, from, target, side) })
       if (!updated) throw new Error('Could not save slide order')
       setSongs(previous => previous.map(song => song.id === updated.id ? updated : song))
       setLiveSlideIndex(null)
+    } catch (error) { setSendError(cleanIpcError(error)) }
+    finally { reorderLock.current = false; setReorderBusy(false) }
+  }
+
+  // ── Picking songs in the setlist on screen: ⌘/Shift-click, ⌘A, Delete ─────
+  const setlistSongIds = useMemo(
+    () => (viewingSetlist ? filteredSongs.map((song) => song.id) : []),
+    [viewingSetlist, filteredSongs],
+  )
+  const setlistSelect = useMultiSelect<string>(setlistSongIds)
+  const removePickedFromSetlist = (): void => {
+    if (!viewingSetlist) return
+    const ids = setlistSongIds.filter((id) => setlistSelect.selected.has(id))
+    if (ids.length === 0) return
+    if (ids.length > 1 && !window.confirm(`Remove ${ids.length} songs from ${viewingSetlist.name}? They stay in your library.`)) return
+    void (async () => {
+      for (const songId of ids) await runSetlistCommand({ action: 'removeSong', songId, listId: viewingSetlist.id })
+      setlistSelect.clear()
+    })().catch((error) => setSendError(cleanIpcError(error)))
+  }
+
+  // ── Dropping songs into the setlist on screen ─────────────────────────────
+  const [setlistDropEnd, setSetlistDropEnd] = useState(false)
+
+  /**
+   * Insert at a gap in the setlist being viewed. `insertAt` counts gaps in the
+   * list as shown; a song already on the list is moved, so its own slot is
+   * discounted, which is what `withSong` expects.
+   */
+  const dropIntoSetlist = useCallback((songId: string, insertAt: number): void => {
+    if (!viewingSetlist) return
+    const current = viewingSetlist.songIds.indexOf(songId)
+    const index = current >= 0 && current < insertAt ? insertAt - 1 : insertAt
+    if (current === index) return
+    void runSetlistCommand({ action: 'add', songId, index, listId: viewingSetlist.id })
+      .catch((error) => setSendError(cleanIpcError(error)))
+  }, [viewingSetlist])
+
+  // ── Dragging slides ────────────────────────────────────────────────────────
+  const [slideDrag, setSlideDrag] = useState<SlideDrag | null>(null)
+  const songScrollRef = useRef<HTMLDivElement>(null)
+
+  // While a slide is carried, the list scrolls when the pointer nears its top
+  // or bottom — so a slide can be moved further than one screen.
+  const dragging = slideDrag !== null
+  useEffect(() => {
+    if (!dragging) return
+    let frame = 0
+    let speed = 0
+    const tick = (): void => {
+      if (speed !== 0) songScrollRef.current?.scrollBy({ top: speed })
+      frame = requestAnimationFrame(tick)
+    }
+    const onOver = (event: DragEvent): void => {
+      const box = songScrollRef.current?.getBoundingClientRect()
+      if (!box) return
+      const edge = 64
+      if (event.clientY < box.top + edge) speed = -Math.ceil((box.top + edge - event.clientY) / 4)
+      else if (event.clientY > box.bottom - edge) speed = Math.ceil((event.clientY - (box.bottom - edge)) / 4)
+      else speed = 0
+    }
+    window.addEventListener('dragover', onOver)
+    frame = requestAnimationFrame(tick)
+    return () => {
+      window.removeEventListener('dragover', onOver)
+      cancelAnimationFrame(frame)
+    }
+  }, [dragging])
+
+  // ── Labelling slides ───────────────────────────────────────────────────────
+  // Select mode: a plain click picks a slide. Outside it, ⌘/Shift-click and
+  // dragging across empty space pick slides without sending anything live.
+  const [selectingSlides, setSelectingSlides] = useState(false)
+  const slideOrder = useMemo(() => songSlides.map((_, index) => index), [songSlides])
+  const slideSelect = useMultiSelect<number>(slideOrder)
+  const pickedSlides = slideSelect.selected
+  const pickSlide = slideSelect.pick
+  const clearSlideSelection = slideSelect.clear
+
+  const clearPicked = useCallback((): void => {
+    clearSlideSelection()
+    setSelectingSlides(false)
+  }, [clearSlideSelection])
+
+  // A different song, or the editor, starts with nothing picked.
+  useEffect(() => {
+    clearPicked()
+  }, [selectedSong?.id, editMode, clearPicked])
+
+  // Esc also leaves select mode when nothing is picked yet.
+  useEffect(() => {
+    if (!selectingSlides || pickedSlides.size > 0) return
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') { event.stopPropagation(); setSelectingSlides(false) }
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [selectingSlides, pickedSlides.size])
+
+  const handleLabelSlides = async (target: { type: LyricsSectionType; label: string }): Promise<void> => {
+    if (!selectedSong || pickedSlides.size === 0 || reorderLock.current) return
+    reorderLock.current = true; setReorderBusy(true); setSendError(null)
+    try {
+      const sections = labelLyricSlides(selectedSong.sections, pickedSlides, target)
+      const updated = await window.api.lyrics.update(selectedSong.id, { ...selectedSong, sections })
+      if (!updated) throw new Error('Could not label those slides')
+      setSongs(previous => previous.map(song => song.id === updated.id ? updated : song))
+      clearPicked()
     } catch (error) { setSendError(cleanIpcError(error)) }
     finally { reorderLock.current = false; setReorderBusy(false) }
   }
@@ -3270,7 +3286,7 @@ export default function Lyrics(): React.ReactElement {
     const navigate = (event: KeyboardEvent) => {
       if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key) || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.repeat || event.isComposing) return
       const target = event.target as HTMLElement | null
-      if (editMode || !selectedSong || showSlidePreview || showImport || deleteTarget || webPreviewResult || reorderBusy || pushingSlideIndex !== null || !document.hasFocus() || document.querySelector('.kairo-pp-settings, [role="dialog"], [role="menu"]') || target?.closest('input, textarea, select, [contenteditable="true"], [role="separator"]')) return
+      if (editMode || !selectedSong || showImport || deleteTarget || webPreviewResult || reorderBusy || pushingSlideIndex !== null || !document.hasFocus() || document.querySelector('.kairo-pp-settings, [role="dialog"], [role="menu"]') || target?.closest('input, textarea, select, [contenteditable="true"], [role="separator"]')) return
       event.preventDefault(); event.stopImmediatePropagation()
       const delta = event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 1
       const next = liveSlideIndex === null ? 0 : Math.max(0, Math.min(songSlides.length - 1, liveSlideIndex + delta))
@@ -3280,7 +3296,7 @@ export default function Lyrics(): React.ReactElement {
     }
     window.addEventListener('keydown', navigate, true)
     return () => window.removeEventListener('keydown', navigate, true)
-  }, [editMode, selectedSong, showSlidePreview, showImport, deleteTarget, webPreviewResult, reorderBusy, pushingSlideIndex, liveSlideIndex, songSlides.length, handlePushSlide])
+  }, [editMode, selectedSong, showImport, deleteTarget, webPreviewResult, reorderBusy, pushingSlideIndex, liveSlideIndex, songSlides.length, handlePushSlide])
 
   // ── Playlists ────────────────────────────────────────────────────────────────
   // TODO: wire to the playlist UI when it lands (kept for the WIP).
@@ -3478,8 +3494,44 @@ export default function Lyrics(): React.ReactElement {
             </DropdownMenu>
           </div>
 
-          {/* Song list */}
-          <div className="flex-1 overflow-y-auto space-y-0.5 min-h-0">
+          {viewingSetlist && setlistSelect.selected.size > 0 && (
+            <div className="flex shrink-0 items-center gap-2 rounded-lg border border-surface-border bg-surface-elevated px-2.5 py-1.5 text-[11px]">
+              <span className="min-w-0 flex-1 truncate text-zinc-300">
+                {setlistSelect.selected.size} song{setlistSelect.selected.size === 1 ? '' : 's'} selected
+              </span>
+              <button type="button" onClick={removePickedFromSetlist} className="rounded px-1.5 py-0.5 font-medium text-rose-300 hover:bg-rose-500/15" title="Remove from setlist (Delete)">
+                Remove
+              </button>
+              <button type="button" onClick={setlistSelect.clear} className="rounded px-1.5 py-0.5 text-zinc-400 hover:bg-white/5 hover:text-white" title="Clear (Esc)">
+                Clear
+              </button>
+            </div>
+          )}
+          {/* Song list. In a setlist, the whole area takes a drop: anywhere
+              below the last song adds to the end. */}
+          <div
+            className={cn('flex-1 overflow-y-auto space-y-px min-h-0 rounded-md transition-colors', setlistDropEnd && 'bg-white/[0.04]')}
+            onDragOver={(event) => {
+              if (!viewingSetlist || !event.dataTransfer.types.includes(SONG_DRAG_TYPE)) return
+              event.preventDefault()
+              event.dataTransfer.dropEffect = 'copy'
+              setSetlistDropEnd(true)
+            }}
+            onDragLeave={(event) => { if (leavesTarget(event)) setSetlistDropEnd(false) }}
+            onDrop={(event) => {
+              if (!viewingSetlist) return
+              event.preventDefault()
+              setSetlistDropEnd(false)
+              const songId = songIdFromDrag(event.dataTransfer)
+              if (songId) dropIntoSetlist(songId, viewingSetlist.songIds.length)
+            }}
+            tabIndex={-1}
+            onKeyDown={viewingSetlist ? listShortcuts({
+              selectAll: setlistSelect.selectAll,
+              remove: removePickedFromSetlist,
+              hasSelection: setlistSelect.selected.size > 0,
+            }) : undefined}
+          >
             {loading ? (
               <div className="flex items-center justify-center py-16 text-slate-600">
                 <Loader2 size={20} className="animate-spin" />
@@ -3512,9 +3564,9 @@ export default function Lyrics(): React.ReactElement {
                     onRemoveFromSetlist={viewingSetlist
                       ? (id) => void runSetlistCommand({ action: 'removeSong', songId: id, listId: viewingSetlist.id })
                       : undefined}
-                    onDropAt={viewingSetlist
-                      ? (songId, at) => void runSetlistCommand({ action: 'add', songId, index: at, listId: viewingSetlist.id })
-                      : undefined}
+                    onDropAt={viewingSetlist ? dropIntoSetlist : undefined}
+                    picked={setlistSelect.isSelected(song.id)}
+                    onPick={viewingSetlist ? (gesture) => setlistSelect.pick(song.id, gesture) : undefined}
                   />
                 ))}
 
@@ -3685,6 +3737,18 @@ export default function Lyrics(): React.ReactElement {
                   ) : null}
                 </div>
                 <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                  {!editMode && selectedSong && (
+                    <Button
+                      variant={selectingSlides ? 'secondary' : 'ghost'}
+                      size="sm"
+                      onClick={() => (selectingSlides ? clearPicked() : setSelectingSlides(true))}
+                      aria-pressed={selectingSlides}
+                      title="Select slides to label them as a verse, chorus, bridge… (or ⌘-click a slide)"
+                    >
+                      <ListChecks data-icon="inline-start" />
+                      {selectingSlides ? 'Done' : 'Select'}
+                    </Button>
+                  )}
                   {!editMode && (
                     <ZoomControl
                       label="Slide size"
@@ -3782,7 +3846,7 @@ export default function Lyrics(): React.ReactElement {
               )}
 
               {/* Scrollable content */}
-              <div className={cn("flex-1 overflow-y-auto space-y-4 min-h-0 px-4", editMode ? "py-6" : "py-4")}>
+              <div ref={songScrollRef} className={cn("flex-1 overflow-y-auto space-y-4 min-h-0 px-4", editMode ? "py-6" : "py-4")}>
                 {editMode && editState ? (
                   /* Edit mode: metadata + sections */
                   <div className="mx-auto w-full max-w-3xl space-y-6">
@@ -3861,13 +3925,20 @@ export default function Lyrics(): React.ReactElement {
                 ) : selectedSong && (
                   /* View mode: stage filmstrips in push order */
                   <>
-                    <div className="space-y-5">
+                    <MarqueeSelect
+                      className="space-y-5"
+                      onBegin={slideSelect.beginMarquee}
+                      onChange={(ids) => slideSelect.updateMarquee(ids.map(Number))}
+                    >
                       {selectedSong.sections.map((section, i) => (
                         <SectionSlideGrid
                           key={i}
                           zoom={slideZoom}
+                          selectedSlides={pickedSlides}
+                          selecting={selectingSlides}
+                          onSelectSlide={pickSlide}
                           section={section}
-                          onReorder={(from, to) => void handleReorderSlide(from, to)}
+                          onReorder={(from, target, side) => void handleReorderSlide(from, target, side)}
                           reorderBusy={reorderBusy}
                           sectionIndex={i}
                           startIndex={sectionSlideStarts[i] ?? 1}
@@ -3880,18 +3951,46 @@ export default function Lyrics(): React.ReactElement {
                             if (paintColor !== undefined) return
                             void handlePushSlide(zeroBased)
                           }}
-                          onPreviewSlide={(zeroBased) => {
-                            setPreviewSlideIndex(zeroBased)
-                            setShowSlidePreview(true)
-                          }}
+                          slideDrag={slideDrag}
+                          onSlideDrag={setSlideDrag}
                         />
                       ))}
-                    </div>
+                    </MarqueeSelect>
                     <p className="pt-1 text-center text-[11px] text-slate-600">
                       {paintColor !== undefined
                         ? 'Click a lyric line to paint · Esc turns paint off'
-                        : 'Click a slide to go live · ← → previous / next · drag the handle to reorder'}
+                        : selectingSlides
+                          ? 'Click slides to select · Shift-click selects a range · Esc to cancel'
+                          : 'Click a slide to go live · ⌘-click or drag across empty space to select · ← → previous / next'}
                     </p>
+                    {(selectingSlides || pickedSlides.size > 0) && (
+                      <SelectionBar
+                        className="sticky bottom-0 -mx-1 mt-2"
+                        count={pickedSlides.size}
+                        noun="slide"
+                        hint="Click slides to select them"
+                        onClear={clearPicked}
+                      >
+                        <span className="text-[11px] text-slate-500">Label as</span>
+                        {SLIDE_LABEL_CHOICES.map((choice) => (
+                          <button
+                            key={choice.label}
+                            type="button"
+                            disabled={pickedSlides.size === 0 || reorderBusy}
+                            onClick={() => void handleLabelSlides(choice)}
+                            className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-[filter] hover:brightness-125 disabled:opacity-35"
+                            style={{
+                              color: sectionColor(choice.type),
+                              backgroundColor: sectionColor(choice.type, 0.12),
+                              borderColor: sectionColor(choice.type, 0.35),
+                            }}
+                          >
+                            <span className="size-1.5 rounded-full" style={{ backgroundColor: sectionColor(choice.type) }} aria-hidden="true" />
+                            {choice.label}
+                          </button>
+                        ))}
+                      </SelectionBar>
+                    )}
                   </>
                 )}
               </div>
@@ -3905,15 +4004,6 @@ export default function Lyrics(): React.ReactElement {
       {/* Modals */}
       {showImport && (
         <ImportModal onImported={handleImported} onClose={() => setShowImport(false)} />
-      )}
-
-      {showSlidePreview && selectedSong && (
-        <SlidePreviewModal
-          song={selectedSong}
-          glossColor={glossColor}
-          initialIndex={previewSlideIndex}
-          onClose={() => setShowSlidePreview(false)}
-        />
       )}
 
       {deleteTarget && (

@@ -257,6 +257,17 @@ export class ScriptureService {
     }))
   }
 
+  /** One chapter in every installed translation, for chapter-scoped quote matching. */
+  getLocalChapterVerses(book: string, chapter: number): QuoteCandidate[] {
+    const db = this.db
+    if (!db) return []
+    return db.getAllTranslations().flatMap(translation =>
+      db.getChapter(translation.id, book, chapter).map(verse => ({
+        book, chapter: verse.chapter, verse: verse.verse, text: verse.text,
+      })),
+    )
+  }
+
   // ─── Scripture lookup / search ────────────────────────────────────────────
 
   async search(query: string, translation = this.defaultTranslation, apiKey = ''): Promise<ScriptureResult[]> {

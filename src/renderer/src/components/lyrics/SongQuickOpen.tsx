@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Download, Globe, ListMusic, Loader2, Music2, Search, X } from '@/icons'
 import { cn } from '@/lib/utils'
 import { activeSetlist, runSetlistCommand, startSongDrag, useSetlistStore } from '@/stores/useSetlist'
+import { startLibraryItemDrag } from '@/stores/useLibraries'
 import { DEFAULT_SETLIST_NAME } from '@shared/setlist'
 import { formatOnlineLyricsError } from '@shared/lyrics-online-error'
 import type { LyricsOnlinePreview, LyricsOnlineResult, LyricsSong } from '@shared/ipc'
@@ -57,8 +58,13 @@ export function SongQuickOpen({ songs, onClose, onOpen }: SongQuickOpenProps): R
                   : 99
       return { song, score, matchedLyric }
     }).filter(({ score }) => score < 99)
-    ranked.sort((a, b) => a.score - b.score || b.song.updatedAt - a.song.updatedAt || a.song.title.localeCompare(b.song.title))
-    return ranked.slice(0, 10)
+    // With nothing typed this is the whole library, A–Z, so it can be scanned.
+    // With a query, best match first.
+    ranked.sort((a, b) =>
+      needle
+        ? a.score - b.score || a.song.title.localeCompare(b.song.title)
+        : a.song.title.localeCompare(b.song.title))
+    return ranked
   }, [query, songs])
 
   // ── The web tier, for when the library does not have it ──────────────────
@@ -191,6 +197,9 @@ export function SongQuickOpen({ songs, onClose, onOpen }: SongQuickOpenProps): R
       .catch(() => undefined)
   }
   const previewRef = useRef<HTMLDivElement>(null)
+  /** While a song is being dragged the finder steps aside, so the sidebar's
+   *  libraries and setlists underneath can take the drop. */
+  const [dragging, setDragging] = useState(false)
 
   useEffect(() => { inputRef.current?.focus() }, [])
   // Each song's preview starts at the top, not where the last one was left.
@@ -226,65 +235,81 @@ export function SongQuickOpen({ songs, onClose, onOpen }: SongQuickOpenProps): R
   }
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-start justify-center bg-black/50 px-4 pt-[12vh] animate-fade-in motion-reduce:animate-none"
+    <div className={cn(
+        'fixed inset-0 z-[100] flex items-start justify-center bg-black/50 px-4 pt-[10vh] animate-fade-in motion-reduce:animate-none transition-opacity duration-150',
+        // During a drag the dim lifts and the finder lets the pointer through
+        // to the sidebar, but stays visible so you can see what you picked up.
+        dragging && 'pointer-events-none bg-transparent [&_section]:opacity-60 [&_aside]:opacity-0',
+      )}
       role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
-      <div className="flex w-full max-w-4xl items-start justify-center gap-3" onKeyDown={handleKeyDown}>
+      <div className="flex w-full max-w-5xl items-start justify-center gap-3" onKeyDown={handleKeyDown}>
       <section role="dialog" aria-modal="true" aria-label="Search song library"
-        className="flex w-[24rem] shrink-0 flex-col overflow-hidden rounded-xl border border-white/10 bg-[#191919] shadow-[0_28px_90px_rgba(0,0,0,0.72)] ring-1 ring-black/60 animate-spring-in motion-reduce:animate-none">
-        <div className="flex h-14 shrink-0 items-center gap-3 border-b border-white/[0.08] px-4">
-          <Search size={21} className="shrink-0 text-zinc-400" aria-hidden="true" />
+        className="flex w-[30rem] shrink-0 flex-col overflow-hidden rounded-xl border border-white/10 bg-[#1c1c1e] shadow-[0_24px_70px_rgba(0,0,0,0.6)] animate-spring-in motion-reduce:animate-none">
+        <div className="flex h-12 shrink-0 items-center gap-2.5 border-b border-white/[0.08] px-3.5">
+          <Search size={17} className="shrink-0 text-zinc-500" aria-hidden="true" />
           <input ref={inputRef} value={query} onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search titles, artists, or lyrics…" aria-label="Search songs and lyrics"
-            className="min-w-0 flex-1 bg-transparent text-[17px] text-zinc-100 outline-none placeholder:text-zinc-600" />
-          <kbd className="rounded border border-white/10 bg-white/[0.04] px-1.5 py-0.5 text-[10px] text-zinc-500">ESC</kbd>
-          <button type="button" onClick={onClose} aria-label="Close song search" className="grid size-7 place-items-center rounded text-zinc-500 hover:bg-white/5 hover:text-zinc-200"><X size={14} /></button>
+            placeholder="Search titles, artists or lyrics" aria-label="Search songs and lyrics"
+            className="min-w-0 flex-1 bg-transparent text-[15px] text-zinc-100 outline-none placeholder:text-zinc-600" />
+          {query && (
+            <button type="button" onClick={() => { setQuery(''); inputRef.current?.focus() }} aria-label="Clear search"
+              className="grid size-6 place-items-center rounded text-zinc-500 hover:bg-white/5 hover:text-zinc-200"><X size={13} /></button>
+          )}
         </div>
 
-        <div className="flex min-h-0 h-[min(440px,60vh)] flex-col">
+        <div className="flex min-h-0 h-[min(560px,70vh)] flex-col">
+          <p className="shrink-0 px-3.5 pb-1 pt-2 text-[11px] text-zinc-500">
+            {query.trim()
+              ? `${results.length} ${results.length === 1 ? 'match' : 'matches'}`
+              : `${results.length} ${results.length === 1 ? 'song' : 'songs'}`}
+          </p>
           {/* Results. A click previews; opening is a deliberate second act —
               the wrong song going live is worse than one extra keystroke. */}
-          <div className="flex-1 overflow-y-auto p-2">
+          <div className="flex-1 overflow-y-auto px-1.5 pb-1.5">
             {rows.length ? rows.map((row, index) => {
               const isActive = index === activeIndex
               const first = row.kind === 'online' && rows[index - 1]?.kind !== 'online'
               return (
                 <div key={row.key}>
                   {first && (
-                    <p className="flex items-center gap-1.5 px-3 pb-1 pt-3 text-[10px] font-medium uppercase tracking-wider text-zinc-600">
+                    <p className="flex items-center gap-1.5 px-2 pb-1 pt-3 text-[10px] font-medium uppercase tracking-wider text-zinc-600">
                       <Globe size={10} aria-hidden="true" /> From the web
                     </p>
                   )}
                   <button ref={(element) => { rowRefs.current[index] = element }} type="button"
                     draggable={row.kind === 'local'}
                     onDragStart={(event) => {
-                      if (row.kind === 'local') startSongDrag(event, row.song.id, row.song.title)
+                      if (row.kind !== 'local') return
+                      startSongDrag(event, row.song.id, row.song.title)
+                      startLibraryItemDrag(event, row.song.id, row.song.title, 'songs')
+                      // After the drag image is captured, or the drag is cancelled.
+                      setTimeout(() => setDragging(true), 0)
                     }}
+                    onDragEnd={() => setDragging(false)}
                     onMouseMove={() => setActiveIndex(index)}
                     onClick={() => { setActiveIndex(index); setPreviewOpen(true) }}
                     onDoubleClick={() => openRow(row)}
                     aria-current={isActive}
-                    className={cn('group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors',
-                      isActive ? 'row-selected' : 'text-zinc-300 hover:bg-white/[0.04]')}>
-                    <span className={cn('grid size-8 shrink-0 place-items-center rounded-md',
-                      isActive ? 'chip-selected' : 'bg-white/[0.04] text-zinc-500')}>
-                      {row.kind === 'local'
-                        ? <Music2 size={15} weight={isActive ? 'fill' : 'regular'} aria-hidden="true" />
-                        : <Globe size={14} aria-hidden="true" />}
-                    </span>
+                    className={cn('group flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left',
+                      isActive ? 'row-selected' : 'text-zinc-300')}>
+                    {row.kind === 'local'
+                      ? <Music2 size={13} className="shrink-0 text-zinc-500" aria-hidden="true" />
+                      : <Globe size={13} className="shrink-0 text-zinc-500" aria-hidden="true" />}
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[13px] font-medium">
-                        {row.kind === 'local' ? row.song.title : row.result.title}
-                      </span>
-                      <span className="mt-0.5 block truncate text-[11px] text-zinc-500">
-                        {row.kind === 'local'
-                          ? row.song.artist || 'Unknown artist'
-                          : `${row.result.artist || 'Unknown artist'} · ${row.result.provider}`}
+                      <span className="flex min-w-0 items-baseline gap-1.5">
+                        <span className="truncate text-[13px] text-zinc-100">
+                          {row.kind === 'local' ? row.song.title : row.result.title}
+                        </span>
+                        <span className="shrink truncate text-[11px] text-zinc-500">
+                          {row.kind === 'local'
+                            ? row.song.artist
+                            : `${row.result.artist || 'Unknown artist'} · ${row.result.provider}`}
+                        </span>
                       </span>
                       {row.kind === 'local' && row.matchedLyric && (
-                        <span className="mt-1 block truncate text-[11px] text-teal-400/75">“{row.matchedLyric.trim()}”</span>
+                        <span className="block truncate text-[11px] text-zinc-400">“{row.matchedLyric.trim()}”</span>
                       )}
                       {row.kind === 'online' && row.result.snippet && (
-                        <span className="mt-1 block truncate text-[11px] text-teal-400/75">“{row.result.snippet.trim()}”</span>
+                        <span className="block truncate text-[11px] text-zinc-400">“{row.result.snippet.trim()}”</span>
                       )}
                     </span>
                     {row.kind === 'local' && setlist?.songIds.includes(row.song.id) && (
@@ -321,15 +346,12 @@ export function SongQuickOpen({ songs, onClose, onOpen }: SongQuickOpenProps): R
               <button
                 type="button"
                 onClick={searchWeb}
-                className="mt-1 flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-zinc-300 transition-colors hover:bg-white/[0.04]"
+                className="mt-1 flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-zinc-300 transition-colors hover:bg-white/[0.04]"
               >
-                <span className="grid size-8 shrink-0 place-items-center rounded-md bg-white/[0.04] text-zinc-500">
-                  <Globe size={14} aria-hidden="true" />
-                </span>
+                <Globe size={13} className="shrink-0 text-zinc-500" aria-hidden="true" />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13px] font-medium">Search the web</span>
-                  <span className="mt-0.5 block truncate text-[11px] text-zinc-500">
-                    for “{query.trim()}”
+                  <span className="block truncate text-[13px]">
+                    Search the web for “{query.trim()}”
                   </span>
                 </span>
                 <kbd className="shrink-0 rounded border border-white/10 bg-white/[0.04] px-1.5 py-0.5 text-[10px] text-zinc-500">⌘↵</kbd>
@@ -343,6 +365,12 @@ export function SongQuickOpen({ songs, onClose, onOpen }: SongQuickOpenProps): R
             )}
           </div>
 
+          <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-t border-white/[0.07] px-3.5 py-2 text-[11px] text-zinc-500">
+            <span><kbd className="font-sans text-zinc-400">↑↓</kbd> move</span>
+            <span><kbd className="font-sans text-zinc-400">↵</kbd> open</span>
+            <span><kbd className="font-sans text-zinc-400">⌘↵</kbd> add to setlist</span>
+            <span className="ml-auto">Drag a song onto a library or setlist</span>
+          </div>
         </div>
       </section>
 

@@ -35,6 +35,8 @@ interface AppShellProps {
   currentRoute: NavRoute
   onNavigate: (route: NavRoute) => void
   onOpenSettings: () => void
+  /** The ProPresenter status was clicked. */
+  onProPresenterStatus?: () => void
   /** Route-specific controls rendered inline in the top bar (see OperatorToolbar). */
   toolbar?: React.ReactNode
 }
@@ -48,11 +50,17 @@ function StatusItem({
   detail,
   state,
   icon: Icon,
+  onClick,
+  action,
 }: {
   label: string
   detail: string
   state: 'ready' | 'active' | 'offline' | 'warning'
   icon: typeof Radio
+  /** Makes the status a button (e.g. ProPresenter: connect). */
+  onClick?: () => void
+  /** What clicking does, shown in the tooltip. */
+  action?: string
 }): React.ReactElement {
   const dotClass = {
     ready: 'bg-emerald-500',
@@ -61,12 +69,8 @@ function StatusItem({
     warning: 'bg-amber-500',
   }[state]
 
-  return (
-    <div
-      className="header-status no-drag group relative flex h-7 shrink-0 items-center gap-1.5 rounded px-1.5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/30"
-      tabIndex={0}
-      aria-label={`${label}: ${detail}`}
-    >
+  const content = (
+    <>
       <Icon size={13} className="text-zinc-500" aria-hidden="true" />
       <span className={`h-1.5 w-1.5 rounded-full ${dotClass}`} aria-hidden="true" />
       <span className="header-status-label whitespace-nowrap text-[11px] font-medium text-zinc-500">
@@ -74,7 +78,25 @@ function StatusItem({
       </span>
       <span className="pointer-events-none absolute right-0 top-full z-50 mt-2 hidden w-max max-w-72 rounded-md border border-white/10 bg-surface-elevated px-3 py-2 text-xs text-zinc-200 shadow-xl group-hover:block group-focus-within:block">
         {label}: {detail}
+        {action ? <span className="block text-zinc-500">{action}</span> : null}
       </span>
+    </>
+  )
+  const className =
+    'header-status no-drag group relative flex h-7 shrink-0 items-center gap-1.5 rounded px-1.5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/30'
+
+  return onClick ? (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`${className} hover:bg-white/[0.06]`}
+      aria-label={`${label}: ${detail}${action ? `. ${action}` : ''}`}
+    >
+      {content}
+    </button>
+  ) : (
+    <div className={className} tabIndex={0} aria-label={`${label}: ${detail}`}>
+      {content}
     </div>
   )
 }
@@ -83,6 +105,7 @@ export default function AppShell({
   currentRoute,
   onNavigate,
   onOpenSettings,
+  onProPresenterStatus,
   toolbar,
 }: AppShellProps): React.ReactElement {
   const { ppState, audioCapturing, audioDeviceName, liveOutputLabel, isTranscribing } =
@@ -159,6 +182,8 @@ export default function AppShell({
           }
           state={ppState === 'connected' ? 'ready' : ppState === 'connecting' ? 'warning' : 'offline'}
           icon={Radio}
+          onClick={onProPresenterStatus}
+          action={ppState === 'connected' ? 'Open ProPresenter settings' : 'Click to connect'}
         />
         <StatusItem
           label="Account"

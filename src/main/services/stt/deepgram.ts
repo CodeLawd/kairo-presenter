@@ -82,6 +82,7 @@ export class DeepgramSTTService extends EventEmitter {
   private connectionGeneration = 0
   private apiKey   = ''
   private language = 'en'
+  private keyterms: string[] = []
   private client:  DeepgramClient | null = null
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -109,11 +110,16 @@ export class DeepgramSTTService extends EventEmitter {
 
   // ─── Configuration ─────────────────────────────────────────────────────────
 
-  configure(apiKey: string, language = 'en'): void {
+  /**
+   * `keyterms` are boosted vocabulary (Nova-3 keyterm prompting). They are
+   * fixed per connection, so a change applies from the next (re)connect.
+   */
+  configure(apiKey: string, language = 'en', keyterms: string[] = []): void {
     this.apiKey   = apiKey
     this.language = language
+    this.keyterms = [...keyterms]
     this.client   = new DeepgramClient({ apiKey })
-    log.info('[Deepgram] Configured', { language })
+    log.info('[Deepgram] Configured', { language, keyterms: keyterms.length })
   }
 
   // ─── Connect / Disconnect ──────────────────────────────────────────────────
@@ -224,7 +230,13 @@ export class DeepgramSTTService extends EventEmitter {
         punctuate:        'true',
         smart_format:     'true',
         // Avoid the smart formatter holding unfinished number entities for 3s.
-        queryParams:      { no_delay: true },
+        // Keyterms go through queryParams: the SDK JSON-encodes an array in its
+        // typed `keyterm` field, but Deepgram expects one `keyterm=` per term,
+        // which is how queryParams arrays are serialized.
+        queryParams: {
+          no_delay: true,
+          ...(this.keyterms.length > 0 ? { keyterm: this.keyterms } : {}),
+        },
         interim_results:  'true',
         utterance_end_ms: 1500,
         vad_events:       'true',

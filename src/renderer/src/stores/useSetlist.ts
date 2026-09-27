@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { create } from 'zustand'
+import { setDragPreview } from '@/lib/drag'
 import { emptySetlistState, type SetlistCommand, type SetlistState, type SongSetlist } from '@shared/setlist'
 
 /** MIME type carried by a song drag, so only song drops are accepted. */
@@ -41,6 +42,7 @@ export function startSongDrag(event: React.DragEvent, songId: string, title: str
   event.dataTransfer.setData(SONG_DRAG_TYPE, songId)
   event.dataTransfer.setData('text/plain', title)
   event.dataTransfer.effectAllowed = 'copyMove'
+  setDragPreview(event, title)
 }
 
 /**

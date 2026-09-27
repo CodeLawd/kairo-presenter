@@ -16,6 +16,12 @@ export function subscribeExplicitScriptureDetection(
   let recoveryStartedAt = 0;
   let recentFinalText = "";
   let recentFinalAt = 0;
+  // Every local resolution consumes the speech behind it, so neither the
+  // window pass nor the model re-reads a verse the operator already has.
+  const settle = (): void => {
+    recoveryText = "";
+    recentFinalText = "";
+  };
   const analyzeFinal = (result: TranscriptResult): void => {
     // Stamped here, at the edge, because this is the first moment Kairo holds
     // the transcript. Anything measured from later would flatter the parser.
@@ -25,18 +31,32 @@ export function subscribeExplicitScriptureDetection(
     // never announced. Interims stay citation-only — half-sentences would
     // retrigger the quote matcher on every partial update.
     if (detector.analyzeExplicit(result.text, true, false)) {
-      recoveryText = "";
-      recentFinalText = "";
+      settle();
+      return;
+    }
+    // Every final joins the model's context — including a chapter-only
+    // citation, which previously vanished here and took any quote spoken
+    // with it ("In John 3 Jesus says, for God so loved…").
+    const now = Date.now();
+    if (now - recentFinalAt > 12_000) recentFinalText = "";
+    recentFinalAt = now;
+    recentFinalText = `${recentFinalText} ${result.text}`.trim().slice(-1_200);
+
+    // A named chapter scopes a local quote match, which needs no model call.
+    if (detector.analyzeChapterQuote(result.text)) {
+      settle();
       return;
     }
     // Deepgram can finalize "Isaiah forty nine" just before "fourteen to
-    // twenty six". Keep the detector's local book/chapter context, but do not
-    // let the AI turn that incomplete citation into the schema placeholder
-    // Isaiah 49:1 while the range is still arriving.
+    // twenty six". Hold the model back for one segment so it cannot turn the
+    // incomplete citation into the schema placeholder Isaiah 49:1 while the
+    // range is still arriving; the next final carries this text with it.
     if (detector.isIncompleteExplicitCitation(result.text)) return;
-    if (detector.analyzePlanQuote(result.text)) return;
+    if (detector.analyzePlanQuote(result.text)) {
+      settle();
+      return;
+    }
     // Ask for contextual recovery on finals; never guess a split for damaged numbers.
-    const now = Date.now();
     if (now - recoveryStartedAt > 12_000) recoveryText = "";
     if (hasCorruptedScriptureCitation(result.text)) {
       recoveryText = result.text;
@@ -45,7 +65,7 @@ export function subscribeExplicitScriptureDetection(
       recoveryText = `${recoveryText} ${result.text}`.slice(-1200);
     }
     if (recoveryText && detector.analyzeQuoteRecovery(recoveryText)) {
-      recoveryText = "";
+      settle();
       return;
     }
     if (recoveryText) {
@@ -53,12 +73,14 @@ export function subscribeExplicitScriptureDetection(
       return;
     }
 
+    // A citation split across finals ("Paul writes in Romans" | "8, verse 28").
+    if (detector.analyzeWindowCitation(recentFinalText)) {
+      settle();
+      return;
+    }
     // Feed every final segment into the detector immediately. The detector
     // coalesces rapid updates and enforces its own short request interval, so
     // quote/paraphrase detection no longer waits for the buffer's 8-second tick.
-    if (now - recentFinalAt > 12_000) recentFinalText = "";
-    recentFinalAt = now;
-    recentFinalText = `${recentFinalText} ${result.text}`.trim().slice(-1_200);
     detector.analyze(recentFinalText);
   };
   const analyzeInterim = (result: InterimResult): void => {

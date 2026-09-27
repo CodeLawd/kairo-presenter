@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { Clock, ListMusic, Pencil, Plus, Star, Trash2, Upload } from '@/icons'
-import { exportKairo } from '@/stores/useTransfer'
+import { Check, Clock, ListMusic, Pencil, Plus, Star, Trash2, Upload } from '@/icons'
+import { exportKairo, useTransferStore } from '@/stores/useTransfer'
+import { leavesTarget } from '@/lib/drag'
 import { cn } from '@/lib/utils'
 import {
   runSetlistCommand,
@@ -49,6 +50,7 @@ export function LibraryRail({
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [draftName, setDraftName] = useState('')
   const [dropListId, setDropListId] = useState<string | null>(null)
+  const [landedListId, setLandedListId] = useState<string | null>(null)
   const [error, setError] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -63,6 +65,38 @@ export function LibraryRail({
     void runSetlistCommand(command).catch((err) =>
       setError(err instanceof Error ? err.message : String(err)),
     )
+  }
+
+  /** Adds a dropped song to a setlist, with a word of confirmation either way. */
+  const addDroppedSong = (list: SongSetlist, songId: string, title: string): void => {
+    const notify = useTransferStore.getState().notify
+    // Adding a song already on the list would move it to the end — a
+    // surprise mid-service. Say so and leave the order alone.
+    if (list.songIds.includes(songId)) {
+      notify({ tone: 'ok', text: `“${title}” is already on ${list.name}` })
+      return
+    }
+    setError('')
+    void runSetlistCommand({ action: 'add', songId, listId: list.id })
+      .then(() => {
+        setLandedListId(list.id)
+        setTimeout(() => setLandedListId((value) => (value === list.id ? null : value)), 1200)
+        notify({ tone: 'ok', text: `Added “${title}” to ${list.name}` })
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : String(err)))
+  }
+
+  /** A drop on the section but not on a row: the active setlist, or a new one. */
+  const [sectionDrop, setSectionDrop] = useState(false)
+  const activeList = lists.find((list) => list.id === (activeSetlistId ?? useSetlistStore.getState().activeId)) ?? lists[0] ?? null
+  const dropOnSection = (songId: string, title: string): void => {
+    if (activeList) { addDroppedSong(activeList, songId, title); return }
+    void runSetlistCommand({ action: 'create', name: DEFAULT_SETLIST_NAME })
+      .then(() => {
+        const created = useSetlistStore.getState().lists[0]
+        if (created) addDroppedSong(created, songId, title)
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : String(err)))
   }
 
   const createList = (): void => {
@@ -112,9 +146,31 @@ export function LibraryRail({
         ))}
       />
 
-      <div>
+      <div
+        // The whole section is a drop target: a row takes it into that list,
+        // anywhere else goes to the active setlist (or starts one).
+        className={cn('-mx-1 rounded-lg px-1 pb-1 transition-colors', sectionDrop && 'bg-white/[0.05]')}
+        onDragOver={(event) => {
+          if (!event.dataTransfer.types.includes(SONG_DRAG_TYPE)) return
+          event.preventDefault()
+          event.dataTransfer.dropEffect = 'copy'
+          setSectionDrop(true)
+        }}
+        onDragLeave={(event) => { if (leavesTarget(event)) setSectionDrop(false) }}
+        onDrop={(event) => {
+          event.preventDefault()
+          setSectionDrop(false)
+          const songId = songIdFromDrag(event.dataTransfer)
+          if (songId) dropOnSection(songId, event.dataTransfer.getData('text/plain') || 'Song')
+        }}
+      >
         <div className="flex items-center gap-1 px-2 pb-1">
           <p className="flex-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-600">Setlists</p>
+          {sectionDrop && !dropListId && (
+            <span className="text-[10px] text-zinc-300">
+              {activeList ? `Add to ${activeList.name}` : 'Start a setlist'}
+            </span>
+          )}
           <button
             type="button"
             aria-label="New setlist"
@@ -128,7 +184,7 @@ export function LibraryRail({
 
         {lists.length === 0 ? (
           <p className="px-2 py-2 text-[11px] leading-relaxed text-zinc-600">
-            Drag a song onto ＋ to start a service order.
+            Drag a song here to start a service order.
           </p>
         ) : (
           lists.map((list) => {
@@ -153,20 +209,34 @@ export function LibraryRail({
                 key={list.id}
                 // Dropping a song straight onto a setlist adds it there without
                 // first making that list the one on screen.
+                onDragEnter={(event) => {
+                  if (!event.dataTransfer.types.includes(SONG_DRAG_TYPE)) return
+                  event.preventDefault()
+                  setDropListId(list.id)
+                }}
                 onDragOver={(event) => {
                   if (!event.dataTransfer.types.includes(SONG_DRAG_TYPE)) return
                   event.preventDefault()
+                  event.stopPropagation()
                   event.dataTransfer.dropEffect = 'copy'
                   setDropListId(list.id)
                 }}
-                onDragLeave={() => setDropListId((value) => (value === list.id ? null : value))}
+                onDragLeave={(event) => {
+                  if (leavesTarget(event)) setDropListId((value) => (value === list.id ? null : value))
+                }}
                 onDrop={(event) => {
                   event.preventDefault()
+                  event.stopPropagation()
                   setDropListId(null)
+                  setSectionDrop(false)
                   const songId = songIdFromDrag(event.dataTransfer)
-                  if (songId) run({ action: 'add', songId, listId: list.id })
+                  if (songId) addDroppedSong(list, songId, event.dataTransfer.getData('text/plain') || 'Song')
                 }}
-                className={cn(rowClass(selected), dropListId === list.id && 'ring-1 ring-teal-400/70')}
+                className={cn(
+                  rowClass(selected),
+                  dropListId === list.id && 'bg-white/[0.14] text-white',
+                  landedListId === list.id && dropListId !== list.id && 'bg-white/[0.08] text-white',
+                )}
               >
                 <ListMusic size={13} className="shrink-0" aria-hidden />
                 <button
@@ -177,10 +247,16 @@ export function LibraryRail({
                 >
                   {list.name}
                 </button>
-                <span className="shrink-0 text-[10px] tabular-nums text-zinc-600 group-hover:hidden">
-                  {list.songIds.length}
-                </span>
-                <span className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
+                {dropListId === list.id ? (
+                  <span className="shrink-0 text-[10px] font-medium text-zinc-300">Add here</span>
+                ) : landedListId === list.id ? (
+                  <Check size={12} className="shrink-0 text-zinc-200" aria-label="Added" />
+                ) : (
+                  <span className="shrink-0 text-[10px] tabular-nums text-zinc-600 group-hover:hidden">
+                    {list.songIds.length}
+                  </span>
+                )}
+                <span className={cn('hidden shrink-0 items-center gap-0.5', !dropListId && !landedListId && 'group-hover:flex')}>
                   <button
                     type="button"
                     aria-label={`Rename ${list.name}`}

@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
-import { Library as LibraryIcon, Pencil, Plus, Trash2 } from '@/icons'
+import { Check, Library as LibraryIcon, Pencil, Plus, Trash2 } from '@/icons'
 import { cn } from '@/lib/utils'
+import { leavesTarget } from '@/lib/drag'
+import { useTransferStore } from '@/stores/useTransfer'
 import {
+  acceptsLibraryDrag,
   itemIdFromDrag,
   runLibrariesCommand,
   useLibrary,
-  LIBRARY_ITEM_DRAG_TYPE,
 } from '@/stores/useLibraries'
 import {
   DEFAULT_LIBRARY_ID,
@@ -40,6 +42,8 @@ export function LibrarySection({
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [draftName, setDraftName] = useState('')
   const [dropId, setDropId] = useState<string | null>(null)
+  /** The row that just took a drop, briefly marked so the drop is seen. */
+  const [landedId, setLandedId] = useState<string | null>(null)
   const [error, setError] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -75,26 +79,62 @@ export function LibrarySection({
     setRenamingId(null)
   }
 
-  const rowClass = (selected: boolean, dropping: boolean): string =>
+  const rowClass = (selected: boolean, dropping: boolean, landed = false): string =>
     cn(
-      'group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] transition-colors',
-      selected ? 'row-selected' : 'text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-200',
-      dropping && 'ring-1 ring-teal-400/70',
+      'group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] transition-colors duration-150',
+      dropping
+        ? 'bg-white/[0.14] text-white'
+        : landed
+          ? 'bg-white/[0.08] text-white'
+          : selected ? 'row-selected' : 'text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-200',
     )
+
+  const nameOf = (libraryId: string): string =>
+    libraryId === DEFAULT_LIBRARY_ID
+      ? DEFAULT_LIBRARY_NAME[kind]
+      : library.libraries.find((entry) => entry.id === libraryId)?.name ?? 'library'
+
+  /** Right-hand slot: the count normally, a cue while hovering with a drag. */
+  const trailing = (libraryId: string): React.ReactNode =>
+    dropId === libraryId ? (
+      <span className="shrink-0 text-[10px] font-medium text-zinc-300">Move here</span>
+    ) : landedId === libraryId ? (
+      <Check size={12} className="shrink-0 text-zinc-200" aria-label="Added" />
+    ) : null
 
   const dropHandlers = (libraryId: string): React.HTMLAttributes<HTMLElement> => ({
     onDragOver: (event) => {
-      if (!event.dataTransfer.types.includes(LIBRARY_ITEM_DRAG_TYPE)) return
+      if (!acceptsLibraryDrag(event.dataTransfer.types, kind)) return
       event.preventDefault()
       event.dataTransfer.dropEffect = 'move'
       setDropId(libraryId)
     },
-    onDragLeave: () => setDropId((value) => (value === libraryId ? null : value)),
+    onDragEnter: (event) => {
+      if (!acceptsLibraryDrag(event.dataTransfer.types, kind)) return
+      event.preventDefault()
+      setDropId(libraryId)
+    },
+    onDragLeave: (event) => {
+      if (leavesTarget(event)) setDropId((value) => (value === libraryId ? null : value))
+    },
     onDrop: (event) => {
       event.preventDefault()
       setDropId(null)
       const itemId = itemIdFromDrag(event.dataTransfer)
-      if (itemId) run({ action: 'assign', kind, itemIds: [itemId], libraryId })
+      if (!itemId) return
+      const label = event.dataTransfer.getData('text/plain')
+      if (library.assignments[itemId] === libraryId || (libraryId === DEFAULT_LIBRARY_ID && !library.assignments[itemId])) {
+        useTransferStore.getState().notify({ tone: 'ok', text: `“${label || 'It'}” is already in ${nameOf(libraryId)}` })
+        return
+      }
+      setError('')
+      void runLibrariesCommand({ action: 'assign', kind, itemIds: [itemId], libraryId })
+        .then(() => {
+          setLandedId(libraryId)
+          setTimeout(() => setLandedId((value) => (value === libraryId ? null : value)), 1200)
+          useTransferStore.getState().notify({ tone: 'ok', text: `Moved “${label || 'item'}” to ${nameOf(libraryId)}` })
+        })
+        .catch((err) => setError(err instanceof Error ? err.message : String(err)))
     },
   })
 
@@ -116,13 +156,15 @@ export function LibrarySection({
       <button
         type="button"
         aria-current={activeLibraryId === DEFAULT_LIBRARY_ID}
-        className={rowClass(activeLibraryId === DEFAULT_LIBRARY_ID, dropId === DEFAULT_LIBRARY_ID)}
+        className={rowClass(activeLibraryId === DEFAULT_LIBRARY_ID, dropId === DEFAULT_LIBRARY_ID, landedId === DEFAULT_LIBRARY_ID)}
         onClick={() => onSelect(DEFAULT_LIBRARY_ID)}
         {...dropHandlers(DEFAULT_LIBRARY_ID)}
       >
         <LibraryIcon size={13} className="shrink-0" aria-hidden />
         <span className="min-w-0 flex-1 truncate">{DEFAULT_LIBRARY_NAME[kind]}</span>
-        <span className="shrink-0 text-[10px] tabular-nums text-zinc-600">{counts[DEFAULT_LIBRARY_ID] ?? 0}</span>
+        {trailing(DEFAULT_LIBRARY_ID) ?? (
+          <span className="shrink-0 text-[10px] tabular-nums text-zinc-600">{counts[DEFAULT_LIBRARY_ID] ?? 0}</span>
+        )}
       </button>
 
       {library.libraries.map((entry) =>
@@ -144,7 +186,7 @@ export function LibrarySection({
         ) : (
           <div
             key={entry.id}
-            className={rowClass(activeLibraryId === entry.id, dropId === entry.id)}
+            className={rowClass(activeLibraryId === entry.id, dropId === entry.id, landedId === entry.id)}
             {...dropHandlers(entry.id)}
           >
             <LibraryIcon size={13} className="shrink-0" aria-hidden />
@@ -156,10 +198,12 @@ export function LibrarySection({
             >
               {entry.name}
             </button>
-            <span className="shrink-0 text-[10px] tabular-nums text-zinc-600 group-hover:hidden">
-              {counts[entry.id] ?? 0}
-            </span>
-            <span className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
+            {trailing(entry.id) ?? (
+              <span className="shrink-0 text-[10px] tabular-nums text-zinc-600 group-hover:hidden">
+                {counts[entry.id] ?? 0}
+              </span>
+            )}
+            <span className={cn('hidden shrink-0 items-center gap-0.5', !dropId && !landedId && 'group-hover:flex')}>
               <button
                 type="button"
                 aria-label={`Rename ${entry.name}`}

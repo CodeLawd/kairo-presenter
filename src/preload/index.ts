@@ -160,6 +160,9 @@ const appApi: ProAutomateAPI['app'] = {
   bootstrap(): Promise<AppBootstrapSnapshot> {
     return ipcRenderer.invoke(IPC.APP.BOOTSTRAP)
   },
+  claimPpConnectPrompt(): Promise<boolean> {
+    return ipcRenderer.invoke(IPC.APP.CLAIM_PP_CONNECT_PROMPT)
+  },
 
   onBootstrapProgress(callback: (progress: BootstrapProgress) => void): Unsubscribe {
     return subscribe<BootstrapProgress>(IPC.APP.BOOTSTRAP_PROGRESS, callback)

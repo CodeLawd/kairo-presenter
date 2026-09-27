@@ -1,4 +1,6 @@
 import { VerseThemePreview } from "./VerseThemePreview";
+import { MarqueeSelect } from "@/components/shared/MarqueeSelect";
+import { selectGesture, type SelectGesture } from "@/hooks/useMultiSelect";
 import type { OverlayTheme } from "@shared/ipc";
 import type { ResultRow } from "./types";
 import { locateFlatCard } from "./types";
@@ -22,6 +24,11 @@ export interface VerseCardGridProps {
   cardRefs: React.MutableRefObject<Array<HTMLButtonElement | null>>;
   rowRefs: React.MutableRefObject<Map<string, HTMLElement>>;
   onSelectCard: (index: number) => void;
+  /** Cards picked for a bulk action — ⌘/Shift-click or rubber band. */
+  pickedCards: ReadonlySet<number>;
+  onPickCard: (index: number, gesture: SelectGesture) => void;
+  onMarqueeBegin: (additive: boolean) => void;
+  onMarqueeChange: (indexes: number[]) => void;
 }
 
 export function VerseCardGrid({
@@ -39,11 +46,19 @@ export function VerseCardGrid({
   cardRefs,
   rowRefs,
   onSelectCard,
+  pickedCards,
+  onPickCard,
+  onMarqueeBegin,
+  onMarqueeChange,
 }: VerseCardGridProps): React.ReactElement {
   let flatIndex = 0;
   const activeLocation = locateFlatCard(rows, activeCardIndex);
 
   return (
+    <MarqueeSelect
+      onBegin={onMarqueeBegin}
+      onChange={(ids) => onMarqueeChange(ids.map(Number))}
+    >
     <div
       ref={gridRef as React.Ref<HTMLDivElement>}
       className="flex w-full flex-col gap-5"
@@ -70,7 +85,14 @@ export function VerseCardGrid({
               sendStatus={card.sendStatus}
               // A playlist is hundreds of cards; only draw the ones on screen.
               lazy
-              onSelect={() => onSelectCard(idx)}
+              isPicked={pickedCards.has(idx)}
+              selectId={String(idx)}
+              onSelect={(event) => {
+                // A plain click still sends the verse; ⌘/Shift only select.
+                const gesture = selectGesture(event);
+                if (gesture) onPickCard(idx, gesture);
+                else onSelectCard(idx);
+              }}
               cardRef={(element) => {
                 cardRefs.current[idx] = element;
               }}
@@ -123,5 +145,6 @@ export function VerseCardGrid({
         );
       })}
     </div>
+    </MarqueeSelect>
   );
 }

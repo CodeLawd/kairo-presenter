@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { reorderLyricSlide } from '../src/lib/lyrics-reorder'
+import { labelLyricSlides, moveLyricSlide, reorderLyricSlide } from '../src/lib/lyrics-reorder'
 import { buildSlides } from '../src/lib/lyrics-slides'
 import type { LyricsSong, LyricsSongSection } from '../src/lib/ipc'
 const sections: LyricsSongSection[] = [
@@ -25,4 +25,50 @@ test('invalid and unchanged moves leave sections untouched', () => {
   assert.equal(reorderLyricSlide(sections, 1, 1), sections)
   assert.equal(reorderLyricSlide(sections, -1, 0), sections)
   assert.equal(reorderLyricSlide(sections, 0, 10), sections)
+})
+
+test('labelling slides splits a section and keeps order and colours', () => {
+  const long: LyricsSongSection[] = [
+    { type: 'verse', label: 'Verse 1', lines: ['A', '', 'B', '', 'C', '', 'D'], lineColors: [null, null, '#FF0000', null, null, null, null] },
+  ]
+  const result = labelLyricSlides(long, [1, 2], { type: 'chorus', label: 'Chorus' })
+  assert.deepEqual(result.map(section => section.label), ['Verse 1', 'Chorus', 'Verse 1'])
+  assert.deepEqual(result[1].lines, ['B', '', 'C'])
+  assert.equal(result[1].type, 'chorus')
+  assert.equal(result[1].lineColors?.[0], '#FF0000')
+  assert.deepEqual(slideTexts(result), ['A', 'B', 'C', 'D'])
+})
+test('labelled slides merge into a neighbouring section with the same label', () => {
+  const result = labelLyricSlides(sections, [1], { type: 'chorus', label: 'Chorus' })
+  assert.deepEqual(result.map(section => section.label), ['Verse 1', 'Chorus'])
+  assert.deepEqual(result[1].lines, ['Second', '', 'Third'])
+})
+test('labelling nothing valid leaves sections untouched', () => {
+  assert.equal(labelLyricSlides(sections, [9], { type: 'bridge', label: 'Bridge' }), sections)
+})
+
+test('a slide moved into another section joins it, with no fragments left behind', () => {
+  const song: LyricsSongSection[] = [
+    { type: 'chorus', label: 'Chorus', lines: ['C1', '', 'C2'] },
+    { type: 'verse', label: 'Verse 2', lines: ['V1', '', 'V2', '', 'V3'] },
+  ]
+  // V1 dropped after C2: it becomes chorus, and Verse 2 stays one section.
+  const result = moveLyricSlide(song, 2, 1, 'after')
+  assert.deepEqual(result.map(section => section.label), ['Chorus', 'Verse 2'])
+  assert.deepEqual(result[0].lines, ['C1', '', 'C2', '', 'V1'])
+  assert.deepEqual(result[1].lines, ['V2', '', 'V3'])
+})
+test('moving heals sections already split into same-label fragments', () => {
+  const fragmented: LyricsSongSection[] = [
+    { type: 'verse', label: 'Verse 2', lines: ['A'] },
+    { type: 'verse', label: 'Verse 2', lines: ['B'] },
+    { type: 'verse', label: 'Verse 2', lines: ['C'] },
+  ]
+  const result = moveLyricSlide(fragmented, 0, 2, 'after')
+  assert.equal(result.length, 1)
+  assert.deepEqual(result[0].lines, ['B', '', 'C', '', 'A'])
+})
+test('dropping a slide beside itself in the same section changes nothing', () => {
+  assert.equal(moveLyricSlide(sections, 0, 0, 'after'), sections)
+  assert.equal(moveLyricSlide(sections, 0, 9, 'after'), sections)
 })
