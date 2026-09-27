@@ -1,6 +1,6 @@
 import { useImportRequest } from '@/hooks/useImportRequest'
 import { useState, useRef, useCallback, useEffect } from "react";
-import { AlertCircle, BookOpen, Loader, Upload } from '@/icons';
+import { AlertCircle, BookOpen, Loader, Settings as SettingsIcon, Upload } from '@/icons';
 import { Button } from "@/components/ui/button";
 import { useAppStore } from "@/stores/useAppStore";
 import {
@@ -1267,6 +1267,15 @@ export default function Scripture(): React.ReactElement {
                   <Upload data-icon="inline-start" />
                 )}
                 {importing ? "Extracting…" : "Import sermon notes"}
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => useAppStore.getState().openSettings("scripture")}
+                aria-label="Scripture settings"
+                title="Scripture settings — translations, Bible downloads, auto-detection"
+              >
+                <SettingsIcon />
               </Button>
             </div>
           </div>

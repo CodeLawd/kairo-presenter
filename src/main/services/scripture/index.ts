@@ -45,7 +45,7 @@ export class ScriptureService {
   private readonly sessionStartedAt = Date.now()
   private defaultTranslation: ScriptureTranslation = DEFAULT_TRANSLATION_ID
   private apiBibleIds = new Map<string, string>()
-  /** Display names for the authorized API.Bible ids (covers dynamic ids too). */
+  /** Display names for authorized API.Bible ids that match the product catalog. */
   private apiBibleNames = new Map<string, string>()
   /** Which API key `apiBibleIds` was loaded for; ids never outlive their key. */
   private apiBibleIdsKey: string | null = null
@@ -474,7 +474,6 @@ export class ScriptureService {
     const catalog = TRANSLATION_CATALOG
     const localRows = this.db?.getAllTranslations() ?? []
     const local = new Set(localRows.map((item) => item.id.toUpperCase()))
-    const localNames = new Map(localRows.map((item) => [item.id.toUpperCase(), item.name]))
     if (apiKey) {
       try {
         await this.loadApiBibleIds(apiKey)
@@ -500,16 +499,11 @@ export class ScriptureService {
       })
     }
     // Registry first (stable order), then any locally installed translation
-    // the registry never heard of (custom packs, BBE seed, …), then any
-    // API.Bible-authorized translation outside the registry.
+    // the registry never heard of (a file-imported pack). Extra English
+    // editions the API key authorizes do not appear here.
     for (const [id, name, access] of catalog) push(id, name, access)
     for (const row of localRows) {
       if (!seen.has(row.id.toUpperCase())) push(row.id.toUpperCase(), row.name || row.id, 'local')
-    }
-    for (const [id] of this.apiBibleIds) {
-      if (!seen.has(id.toUpperCase())) {
-        push(id.toUpperCase(), this.apiBibleNames.get(id.toUpperCase()) ?? localNames.get(id.toUpperCase()) ?? id, 'api')
-      }
     }
     return options
   }
@@ -558,9 +552,9 @@ export class ScriptureService {
     await this.loadApiBibleIds(apiKey)
     return [...this.apiBibleIds.entries()].flatMap(([id, bibleId]) => {
       const definition = getTranslationDefinition(id)
-      // Known entries participate only when their text comes from the API;
-      // dynamically discovered ids (no registry entry) always participate.
-      if (definition && definition.access !== 'api') return []
+      // Only catalog API editions. Bundled locals already ship offline;
+      // unknown API.Bible texts stay off the cache list too.
+      if (!definition || definition.access !== 'api') return []
       return [{
         bibleId,
         translation: id,

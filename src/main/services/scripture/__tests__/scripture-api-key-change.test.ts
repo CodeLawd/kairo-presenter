@@ -73,11 +73,21 @@ test('an empty key clears everything the previous key authorized', async () => {
   assert.equal(scripture.isAuthorizedBibleId('nkjv-under-key-one'), false)
 })
 
-test('the offline-cache list skips bundled locals but keeps API and discovered texts', async () => {
+test('the offline-cache list skips bundled locals and unknown API.Bible texts', async () => {
   const scripture = service()
   const list = await scripture.listAuthorizedTranslations('key-mixed')
   const ids = list.map((entry) => entry.translation)
   assert.ok(!ids.includes('KJV'), 'bundled KJV already ships offline')
   assert.ok(ids.includes('NIV'))
-  assert.ok(ids.includes('XYZ'), 'discovered translations stay downloadable for offline cache')
+  assert.ok(!ids.includes('XYZ'), 'editions outside the product catalog stay off the cache list')
+})
+
+test('the Scripture picker lists the product catalog, not extra API.Bible texts', async () => {
+  const scripture = service()
+  const options = await scripture.getTranslationOptions('key-mixed')
+  const ids = options.map((option) => option.id)
+  assert.ok(ids.includes('NIV'))
+  assert.ok(ids.includes('KJV'))
+  assert.ok(!ids.includes('XYZ'))
+  assert.equal(options.find((option) => option.id === 'NIV')?.available, true)
 })

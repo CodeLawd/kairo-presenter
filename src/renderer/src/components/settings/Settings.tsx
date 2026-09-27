@@ -19,6 +19,7 @@ import {
   MoreVertical,
   ExternalLink,
   FolderOpen,
+  Cloud,
   type Icon,
 } from '@/icons'
 import { cn } from '@/lib/utils'
@@ -34,7 +35,7 @@ import PasswordInput from '@/components/ui/password-input'
 import { useSecretDraft } from '@/components/ui/secret-key-field'
 import { Switch } from '@/components/ui/switch'
 import { Slider } from '@/components/ui/slider'
-import { useAppStore } from '@/stores/useAppStore'
+import { useAppStore, type SettingsSectionId } from '@/stores/useAppStore'
 import { listAudioInputDevices, resolveCaptureDeviceId } from '@/audio/devices'
 import { applyAppTheme } from '@/lib/appTheme'
 import { parseProPresenterPort } from '@/lib/propresenter-port'
@@ -49,7 +50,6 @@ import type {
   ScriptureTranslation,
   SettingsSecretClearKey,
 } from '@shared/ipc'
-import { OfflineBibleManager } from './OfflineBibleManager'
 import { LocalBiblePackManager } from './LocalBiblePackManager'
 import { ScriptureLatencyPanel } from './ScriptureLatencyPanel'
 import { DEFAULT_SETTINGS } from '@/lib/defaultSettings'
@@ -62,7 +62,7 @@ import ResourceCatalogue from '@/components/propresenter/ResourceCatalogue'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Section = 'propresenter' | 'audio' | 'apikeys' | 'scripture' | 'overlay' | 'general' | 'account' | 'shortcuts'
+type Section = SettingsSectionId
 type TestStatus = 'idle' | 'testing' | 'ok' | 'fail'
 
 type UpdateFn = <K extends keyof AppSettings>(section: K, partial: Partial<AppSettings[K]>) => void
@@ -103,17 +103,24 @@ function accountInitials(name: string | undefined): string {
 
 function PrefGroup({
   title,
+  description,
   children,
   plain = false,
 }: {
   title?: string
+  description?: string
   children: React.ReactNode
   plain?: boolean
 }): React.ReactElement {
   return (
     <section className="space-y-2">
       {title ? (
-        <h3 className="px-0.5 text-xs font-semibold tracking-tight text-white/60">{title}</h3>
+        <div className="px-0.5">
+          <h3 className="text-xs font-semibold tracking-tight text-white/60">{title}</h3>
+          {description ? (
+            <p className="mt-0.5 text-[11px] leading-snug text-white/35">{description}</p>
+          ) : null}
+        </div>
       ) : null}
       <div className={cn(
         'divide-y divide-white/[0.07] overflow-hidden',
@@ -378,169 +385,207 @@ const AUTO_PRESENT_DELAYS = [
   { value: 3, label: '3s' },
 ] as const satisfies readonly { value: AutoPresentDelaySec; label: string }[]
 
-function KeyCategory({
-  title,
+type SecretDraft = ReturnType<typeof useSecretDraft>
+
+/** Where each key is used, in the operator's words rather than the vendor's. */
+const PROVIDER_PURPOSE: Record<ProviderId, string> = {
+  deepgram: 'Live speech-to-text',
+  anthropic: 'Scripture detection',
+  deepseek: 'Scripture detection',
+  bible: 'Online Bible translations',
+  brave: 'Web search for song lyrics',
+  google: 'Lyric translation',
+}
+
+function KeyStatus({
+  tone,
   children,
 }: {
-  title: string
+  tone: 'ok' | 'fail' | 'pending' | 'idle' | 'warn'
   children: React.ReactNode
 }): React.ReactElement {
+  const dot: Record<typeof tone, string> = {
+    ok: 'bg-[#30D158]',
+    fail: 'bg-[#FF453A]',
+    pending: 'bg-[#0A84FF]',
+    warn: 'bg-[#FFD60A]',
+    idle: 'bg-white/20',
+  }
   return (
-    <section className="space-y-2">
-      <h3 className="px-0.5 text-xs font-semibold tracking-tight text-white/60">{title}</h3>
-      <div className="space-y-4 rounded-xl border border-white/[0.06] bg-[#292929] px-3.5 py-3">{children}</div>
-    </section>
+    <span className="inline-flex items-center gap-1.5 text-[11px] text-white/50">
+      <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', dot[tone])} aria-hidden="true" />
+      {children}
+    </span>
   )
 }
+
+const KEY_ACTION =
+  'inline-flex h-7 items-center gap-1.5 rounded-[6px] bg-white/[0.08] px-2.5 text-[12px] font-medium text-white transition-colors hover:bg-white/[0.13] disabled:opacity-40'
 
 function ProviderKeyRow({
   provider,
   name,
   docsUrl,
   configured,
-  draft,
-  onDraftChange,
-  replacing,
-  onReplace,
-  onCancelReplace,
+  pendingRemoval,
+  secret,
   onRemove,
+  onUndoRemove,
   placeholder,
   fieldName,
   'aria-label': ariaLabel,
-  badge,
   test,
-  extraMenu,
 }: {
   provider: ProviderId
   name: string
   docsUrl: string
+  /** A key is saved and not marked for removal. */
   configured: boolean
-  draft: string
-  onDraftChange: (value: string) => void
-  replacing: boolean
-  onReplace: () => void
-  onCancelReplace: () => void
+  pendingRemoval: boolean
+  secret: SecretDraft
   onRemove: () => void
+  onUndoRemove: () => void
   placeholder: string
   fieldName: string
   'aria-label': string
-  badge?: string
-  test?: { status: TestStatus; message: string; onClick: () => void; label: string }
-  extraMenu?: { label: string; onSelect: () => void }
+  test?: { status: TestStatus; message: string; onClick: () => void }
 }): React.ReactElement {
-  const showInput = replacing
-  const testTone =
-    test?.status === 'ok' ? 'text-[#30D158]' : test?.status === 'fail' ? 'text-[#FF453A]' : 'text-white/35'
+  const editing = secret.replacing
+  const hasDraft = secret.draft.trim().length > 0
+  const canTest = Boolean(test) && (hasDraft || (configured && !editing))
+
+  const status = (() => {
+    if (pendingRemoval) return <KeyStatus tone="warn">Removed on save</KeyStatus>
+    if (test?.status === 'testing') return <KeyStatus tone="pending">Testing…</KeyStatus>
+    if (test?.status === 'ok') return <KeyStatus tone="ok">Verified</KeyStatus>
+    if (test?.status === 'fail') return <KeyStatus tone="fail">Key rejected</KeyStatus>
+    if (hasDraft) return <KeyStatus tone="pending">Unsaved</KeyStatus>
+    if (configured) return <KeyStatus tone="ok">Connected</KeyStatus>
+    return <KeyStatus tone="idle">Not set</KeyStatus>
+  })()
 
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-3">
+    <div className="px-3.5 py-3">
+      <div className="flex items-center gap-3">
         <ProviderLogo id={provider} />
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1">
-            <p className="truncate text-[13px] text-white">{name}</p>
-            <button
-              type="button"
-              className="shrink-0 text-white/30 hover:text-white/70"
-              aria-label={`Open ${name} dashboard`}
-              onClick={() => openProviderDocs(docsUrl)}
-            >
-              <ExternalLink size={12} aria-hidden="true" />
-            </button>
+          <div className="flex items-center gap-2">
+            <p className="truncate text-[13px] font-medium leading-tight text-white">{name}</p>
+            {status}
           </div>
-          <p className="mt-1 text-[11px] text-white/50">{configured ? 'Configured' : 'Not set'}{badge ? ` · ${badge}` : ''}</p>
+          <p className="mt-0.5 truncate text-[11px] leading-snug text-white/40">{PROVIDER_PURPOSE[provider]}</p>
         </div>
 
-        <div className="order-last flex h-10 w-full min-w-0 items-center gap-3 rounded-lg bg-[#323232] px-3">
-          <span className="shrink-0 text-[10px] font-medium tracking-[0.14em] text-white/35">API KEY</span>
-          {showInput ? (
+        <div className="flex shrink-0 items-center gap-1">
+          {pendingRemoval ? (
+            <button type="button" className={KEY_ACTION} onClick={onUndoRemove}>
+              Undo
+            </button>
+          ) : (
+            <>
+              {test && canTest && !editing ? (
+                <button
+                  type="button"
+                  className={KEY_ACTION}
+                  disabled={test.status === 'testing'}
+                  onClick={test.onClick}
+                >
+                  {test.status === 'testing' ? <Loader size={12} className="animate-spin" aria-hidden="true" /> : null}
+                  Test
+                </button>
+              ) : null}
+              {!editing ? (
+                <button type="button" className={KEY_ACTION} onClick={secret.beginReplace}>
+                  {configured ? 'Change' : 'Add key'}
+                </button>
+              ) : null}
+            </>
+          )}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="grid h-7 w-7 shrink-0 place-items-center rounded-[6px] text-white/35 hover:bg-white/[0.07] hover:text-white"
+                aria-label={`${name} actions`}
+              >
+                <MoreVertical size={15} aria-hidden="true" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-[168px] border-white/10 bg-[#2c2c2c] text-white">
+              <DropdownMenuItem onSelect={() => openProviderDocs(docsUrl)}>
+                <ExternalLink size={13} aria-hidden="true" />
+                Get a {name} key
+              </DropdownMenuItem>
+              <DropdownMenuSeparator className="bg-white/10" />
+              <DropdownMenuItem
+                variant="destructive"
+                disabled={!configured && !editing}
+                onSelect={onRemove}
+              >
+                <Trash2 size={13} aria-hidden="true" />
+                Remove key
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
+
+      {editing ? (
+        <div className="ml-11 mt-2.5 space-y-1.5">
+          <div className="flex items-center gap-1.5">
             <input
               type="password"
-              value={draft}
-              onChange={(e) => onDraftChange(e.target.value)}
+              value={secret.draft}
+              onChange={(e) => secret.setDraft(e.target.value)}
               onCopy={(e) => e.preventDefault()}
               onCut={(e) => e.preventDefault()}
               placeholder={placeholder}
-              className="h-full min-w-0 flex-1 bg-transparent font-mono text-[13px] text-white outline-none placeholder:text-white/25"
+              className="input h-8 min-w-0 flex-1 py-0 font-mono text-[12px]"
               autoComplete="off"
               spellCheck={false}
               aria-label={ariaLabel}
               name={fieldName}
+              autoFocus
             />
-          ) : configured ? (
-            <span
-              className="min-w-0 flex-1 truncate select-none font-mono text-[13px] tracking-wide text-white/55"
-              aria-label={`${ariaLabel} saved`}
-            >
-              ****************
-            </span>
-          ) : (
-            <span className="min-w-0 flex-1 text-[13px] text-white/30">Not set</span>
-          )}
-          {showInput ? (
+            {test ? (
+              <button
+                type="button"
+                className={KEY_ACTION}
+                disabled={!hasDraft || test.status === 'testing'}
+                onClick={test.onClick}
+              >
+                {test.status === 'testing' ? <Loader size={12} className="animate-spin" aria-hidden="true" /> : null}
+                Test
+              </button>
+            ) : null}
             <button
               type="button"
-              className="shrink-0 text-[13px] text-white/45 hover:text-white"
-              onClick={onCancelReplace}
+              className="h-7 px-2 text-[12px] text-white/50 hover:text-white"
+              onClick={secret.cancelReplace}
             >
               Cancel
             </button>
-          ) : (
+          </div>
+          <p className="text-[11px] text-white/35">
+            {configured ? 'Replaces the saved key when you press Save. ' : 'Saved when you press Save. '}
             <button
               type="button"
-              className="shrink-0 text-[13px] text-[#0A84FF] hover:text-[#409CFF]"
-              onClick={onReplace}
+              className="text-[#0A84FF] hover:text-[#409CFF]"
+              onClick={() => openProviderDocs(docsUrl)}
             >
-              {configured ? 'Change' : 'Add'}
+              Get a key ↗
             </button>
-          )}
+          </p>
         </div>
+      ) : null}
 
-        {test && <button type="button" disabled={test.status === 'testing' || (!configured && !draft.trim())} onClick={test.onClick} className="rounded-md border border-white/10 px-2.5 py-1.5 text-xs text-white/65 hover:bg-white/5 disabled:opacity-35">{test.status === 'testing' ? 'Testing…' : 'Test key'}</button>}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              className="grid h-8 w-8 shrink-0 place-items-center rounded-[7px] text-white/30 hover:bg-white/[0.06] hover:text-white"
-              aria-label={`${name} actions`}
-            >
-              <MoreVertical size={16} aria-hidden="true" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            align="end"
-            className="min-w-[148px] border-white/10 bg-[#2c2c2c] text-white"
-          >
-            {test ? (
-              <DropdownMenuItem
-                disabled={test.status === 'testing'}
-                onSelect={() => test.onClick()}
-              >
-                {test.status === 'testing'
-                  ? 'Testing…'
-                  : test.status === 'ok'
-                    ? 'Tested — OK'
-                    : test.status === 'fail'
-                      ? 'Test failed — retry'
-                      : 'Test connection'}
-              </DropdownMenuItem>
-            ) : null}
-            {extraMenu ? (
-              <DropdownMenuItem onSelect={extraMenu.onSelect}>{extraMenu.label}</DropdownMenuItem>
-            ) : null}
-            {test || extraMenu ? <DropdownMenuSeparator className="bg-white/10" /> : null}
-            <DropdownMenuItem
-              variant="destructive"
-              disabled={!configured && !replacing}
-              onSelect={onRemove}
-            >
-              Remove key
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-      {test && test.status !== 'idle' && test.message ? (
-        <p className={cn('text-xs leading-relaxed', testTone)}>
+      {test && test.status !== 'idle' && test.status !== 'testing' && test.message ? (
+        <p
+          className={cn(
+            'ml-11 mt-1.5 text-[11px] leading-relaxed',
+            test.status === 'ok' ? 'text-[#30D158]' : 'text-[#FF453A]',
+          )}
+        >
           {test.message}
         </p>
       ) : null}
@@ -552,19 +597,22 @@ function SaveBar({
   sectionId,
   savedSection,
   onSave,
+  disabled = false,
 }: {
   sectionId: string
   savedSection: string | null
   onSave: () => void
+  disabled?: boolean
 }) {
   const saved = savedSection === sectionId
   return (
     <div className="flex justify-end pt-1">
       <button
         className={cn(
-          'inline-flex items-center gap-1.5 rounded-[7px] bg-[#3a3a3a] px-3.5 py-1.5 text-[13px] font-medium text-white transition-colors hover:bg-[#454545]',
-          saved && 'bg-[#2f6b3a] hover:bg-[#2f6b3a]',
+          'inline-flex items-center gap-1.5 rounded-[7px] bg-[#3a3a3a] px-3.5 py-1.5 text-[13px] font-medium text-white transition-colors hover:bg-[#454545] disabled:opacity-40 disabled:hover:bg-[#3a3a3a]',
+          saved && 'bg-[#2f6b3a] hover:bg-[#2f6b3a] disabled:opacity-100 disabled:hover:bg-[#2f6b3a]',
         )}
+        disabled={disabled && !saved}
         onClick={onSave}
       >
         {saved ? <CheckCircle size={13} aria-hidden="true" /> : <Save size={13} aria-hidden="true" />}
@@ -928,6 +976,7 @@ function ApiKeysSection({
 }) {
   const configured = useBootstrapStore((s) => s.settings.secretsConfigured)
   const setBootstrapSettings = useBootstrapStore((s) => s.setSettings)
+  const storedStt = useBootstrapStore((s) => s.settings.stt)
   const signedIn = useAccountStore((s) => s.session.state === 'active' || s.session.state === 'stale')
   const syncHint = signedIn
     ? 'Saved on this Mac · synced to your church account'
@@ -1022,6 +1071,11 @@ function ApiKeysSection({
     else setClearLyrics((prev) => (prev.includes(key) ? prev : [...prev, key]))
   }
 
+  const unmarkClear = (key: SettingsSecretClearKey, section: 'stt' | 'lyrics') => {
+    if (section === 'stt') setClearStt((prev) => prev.filter((k) => k !== key))
+    else setClearLyrics((prev) => prev.filter((k) => k !== key))
+  }
+
   const handleSave = async () => {
     const deepgramValue = deepgram.takeSaveValue()
     const anthropicValue = anthropic.takeSaveValue()
@@ -1070,181 +1124,158 @@ function ApiKeysSection({
     onSaveComplete()
   }
 
-  const deepgramSaved = configured.deepgram && !clearStt.includes('apiKey')
-  const anthropicSaved = configured.anthropic && !clearStt.includes('anthropicApiKey')
-  const deepseekSaved = configured.deepseek && !clearStt.includes('deepseekApiKey')
-  const bibleSaved = configured.bible && !clearStt.includes('bibleApiKey')
-  const braveSaved = configured.brave && !clearLyrics.includes('braveApiKey')
-  const translateSaved = configured.googleTranslate && !clearLyrics.includes('googleTranslateApiKey')
+  const secrets = [deepgram, anthropic, deepseek, bible, brave, googleTranslate]
+  const dirty =
+    clearStt.length > 0 ||
+    clearLyrics.length > 0 ||
+    secrets.some((secret) => secret.draft.trim().length > 0) ||
+    settings.stt.llmProvider !== storedStt.llmProvider ||
+    (settings.stt.llmModel ?? '') !== (storedStt.llmModel ?? '')
+
+  /** Row props shared by every provider: saved state, draft, remove/undo. */
+  const keyRow = (
+    secret: SecretDraft,
+    isConfigured: boolean,
+    clearKey: SettingsSecretClearKey,
+    section: 'stt' | 'lyrics',
+  ) => {
+    const pendingRemoval = isConfigured && (section === 'stt' ? clearStt : clearLyrics).includes(clearKey)
+    return {
+      secret,
+      configured: isConfigured && !pendingRemoval,
+      pendingRemoval,
+      onRemove: () => {
+        secret.cancelReplace()
+        if (isConfigured) markClear(clearKey, section)
+      },
+      onUndoRemove: () => unmarkClear(clearKey, section),
+    }
+  }
+
+  const configuredCount = [
+    configured.deepgram && !clearStt.includes('apiKey'),
+    configured.anthropic && !clearStt.includes('anthropicApiKey'),
+    configured.deepseek && !clearStt.includes('deepseekApiKey'),
+    configured.bible && !clearStt.includes('bibleApiKey'),
+    configured.brave && !clearLyrics.includes('braveApiKey'),
+    configured.googleTranslate && !clearLyrics.includes('googleTranslateApiKey'),
+  ].filter(Boolean).length
+
+  const llmProvider = settings.stt.llmProvider
 
   return (
     <div className="space-y-5">
-      <KeyCategory title="Speech">
+      <div className="flex items-center gap-2.5 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3.5 py-2.5">
+        <Cloud size={15} className="shrink-0 text-white/40" aria-hidden="true" />
+        <p className="min-w-0 flex-1 text-[11px] leading-snug text-white/50">{syncHint}</p>
+        <span className="shrink-0 text-[11px] tabular-nums text-white/35">{configuredCount} of 6 set</span>
+      </div>
+
+      <PrefGroup title="Speech" description="Turns the sermon audio into text.">
         <ProviderKeyRow
           provider="deepgram"
           name="Deepgram"
           docsUrl="https://console.deepgram.com/"
-          configured={deepgramSaved}
-          draft={deepgram.draft}
-          onDraftChange={deepgram.setDraft}
-          replacing={deepgram.replacing}
-          onReplace={deepgram.beginReplace}
-          onCancelReplace={deepgram.cancelReplace}
-          onRemove={() => {
-            markClear('apiKey', 'stt')
-            deepgram.cancelReplace()
-            deepgram.setDraft('')
-          }}
+          {...keyRow(deepgram, configured.deepgram, 'apiKey', 'stt')}
           placeholder="Paste token"
           fieldName="deepgram-key"
           aria-label="Deepgram API Token"
-          test={{
-            status: deepgramStatus,
-            message: deepgramMsg,
-            onClick: () => void testDeepgram(),
-            label: 'Test Deepgram API Key',
-          }}
+          test={{ status: deepgramStatus, message: deepgramMsg, onClick: () => void testDeepgram() }}
         />
-      </KeyCategory>
+      </PrefGroup>
 
-      <KeyCategory title="Detection">
-        <ProviderKeyRow
-          provider="anthropic"
-          name="Anthropic"
-          docsUrl="https://console.anthropic.com/settings/keys"
-          configured={anthropicSaved}
-          draft={anthropic.draft}
-          onDraftChange={anthropic.setDraft}
-          replacing={anthropic.replacing}
-          onReplace={anthropic.beginReplace}
-          onCancelReplace={anthropic.cancelReplace}
-          onRemove={() => {
-            markClear('anthropicApiKey', 'stt')
-            anthropic.cancelReplace()
-            anthropic.setDraft('')
-          }}
-          placeholder="sk-ant-…"
-          fieldName="anthropic-key"
-          aria-label="Anthropic API Key"
-          badge={settings.stt.llmProvider === 'anthropic' ? 'Using' : undefined}
-          extraMenu={
-            settings.stt.llmProvider === 'anthropic'
-              ? undefined
-              : { label: 'Use for detection', onSelect: () => update('stt', { llmProvider: 'anthropic' }) }
-          }
-          test={{
-            status: anthropicStatus,
-            message: anthropicMsg,
-            onClick: () => void testAnthropic(),
-            label: 'Test Anthropic API Key',
-          }}
-        />
-        <ProviderKeyRow
-          provider="deepseek"
-          name="DeepSeek"
-          docsUrl="https://platform.deepseek.com/api_keys"
-          configured={deepseekSaved}
-          draft={deepseek.draft}
-          onDraftChange={deepseek.setDraft}
-          replacing={deepseek.replacing}
-          onReplace={deepseek.beginReplace}
-          onCancelReplace={deepseek.cancelReplace}
-          onRemove={() => {
-            markClear('deepseekApiKey', 'stt')
-            deepseek.cancelReplace()
-            deepseek.setDraft('')
-          }}
-          placeholder="sk-…"
-          fieldName="deepseek-key"
-          aria-label="DeepSeek API Key"
-          badge={settings.stt.llmProvider === 'deepseek' ? 'Using' : undefined}
-          extraMenu={
-            settings.stt.llmProvider === 'deepseek'
-              ? undefined
-              : { label: 'Use for detection', onSelect: () => update('stt', { llmProvider: 'deepseek' }) }
-          }
-        />
-        <DetectionModelRow
-          provider={settings.stt.llmProvider}
-          value={settings.stt.llmModel ?? ''}
-          onSave={model => update('stt', { llmModel: model })}
-        />
-      </KeyCategory>
+      <PrefGroup title="Scripture detection" description="Reads the transcript and suggests verses. Only one provider is used at a time.">
+        <PrefRow label="Provider">
+          <div className="flex items-center gap-0.5 rounded-[7px] bg-white/[0.05] p-0.5" role="radiogroup" aria-label="Detection provider">
+            {(['anthropic', 'deepseek'] as const).map((id) => {
+              const active = llmProvider === id
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => update('stt', { llmProvider: id })}
+                  className={cn(
+                    'rounded-[5px] px-3 py-1 text-[12px] font-medium transition-colors',
+                    active ? 'bg-white/[0.14] text-white shadow-sm' : 'text-white/45 hover:text-white/75',
+                  )}
+                >
+                  {id === 'anthropic' ? 'Anthropic' : 'DeepSeek'}
+                </button>
+              )
+            })}
+          </div>
+        </PrefRow>
+        {llmProvider === 'anthropic' ? (
+          <ProviderKeyRow
+            provider="anthropic"
+            name="Anthropic"
+            docsUrl="https://console.anthropic.com/settings/keys"
+            {...keyRow(anthropic, configured.anthropic, 'anthropicApiKey', 'stt')}
+            placeholder="sk-ant-…"
+            fieldName="anthropic-key"
+            aria-label="Anthropic API Key"
+            test={{ status: anthropicStatus, message: anthropicMsg, onClick: () => void testAnthropic() }}
+          />
+        ) : (
+          <ProviderKeyRow
+            provider="deepseek"
+            name="DeepSeek"
+            docsUrl="https://platform.deepseek.com/api_keys"
+            {...keyRow(deepseek, configured.deepseek, 'deepseekApiKey', 'stt')}
+            placeholder="sk-…"
+            fieldName="deepseek-key"
+            aria-label="DeepSeek API Key"
+          />
+        )}
+        <PrefPad>
+          <DetectionModelRow
+            provider={llmProvider}
+            value={settings.stt.llmModel ?? ''}
+            onSave={model => update('stt', { llmModel: model })}
+          />
+        </PrefPad>
+      </PrefGroup>
 
-      <KeyCategory title="Lookups">
+      <PrefGroup title="Lookups" description="Optional. Each unlocks an extra feature.">
         <ProviderKeyRow
           provider="bible"
           name="API.Bible"
           docsUrl="https://scripture.api.bible/"
-          configured={bibleSaved}
-          draft={bible.draft}
-          onDraftChange={bible.setDraft}
-          replacing={bible.replacing}
-          onReplace={bible.beginReplace}
-          onCancelReplace={bible.cancelReplace}
-          onRemove={() => {
-            markClear('bibleApiKey', 'stt')
-            bible.cancelReplace()
-            bible.setDraft('')
-          }}
+          {...keyRow(bible, configured.bible, 'bibleApiKey', 'stt')}
           placeholder="Paste key"
           fieldName="bible-key"
           aria-label="Bible API Key"
-          test={{
-            status: bibleStatus,
-            message: bibleMsg,
-            onClick: () => void testBible(),
-            label: 'Test Bible API Key',
-          }}
+          test={{ status: bibleStatus, message: bibleMsg, onClick: () => void testBible() }}
         />
         <ProviderKeyRow
           provider="brave"
-          name="Brave"
+          name="Brave Search"
           docsUrl="https://api.search.brave.com/app/keys"
-          configured={braveSaved}
-          draft={brave.draft}
-          onDraftChange={brave.setDraft}
-          replacing={brave.replacing}
-          onReplace={brave.beginReplace}
-          onCancelReplace={brave.cancelReplace}
-          onRemove={() => {
-            markClear('braveApiKey', 'lyrics')
-            brave.cancelReplace()
-            brave.setDraft('')
-          }}
+          {...keyRow(brave, configured.brave, 'braveApiKey', 'lyrics')}
           placeholder="Paste key"
           fieldName="brave-key"
           aria-label="Brave Search API Key"
-          test={{
-            status: braveStatus,
-            message: braveMsg,
-            onClick: () => void testBrave(),
-            label: 'Test Brave Key',
-          }}
+          test={{ status: braveStatus, message: braveMsg, onClick: () => void testBrave() }}
         />
         <ProviderKeyRow
           provider="google"
-          name="Google"
+          name="Google Translate"
           docsUrl="https://console.cloud.google.com/apis/credentials"
-          configured={translateSaved}
-          draft={googleTranslate.draft}
-          onDraftChange={googleTranslate.setDraft}
-          replacing={googleTranslate.replacing}
-          onReplace={googleTranslate.beginReplace}
-          onCancelReplace={googleTranslate.cancelReplace}
-          onRemove={() => {
-            markClear('googleTranslateApiKey', 'lyrics')
-            googleTranslate.cancelReplace()
-            googleTranslate.setDraft('')
-          }}
+          {...keyRow(googleTranslate, configured.googleTranslate, 'googleTranslateApiKey', 'lyrics')}
           placeholder="Paste key"
           fieldName="google-translate-key"
           aria-label="Google Translate API Key"
         />
-      </KeyCategory>
+      </PrefGroup>
 
-      <p className="text-[11px] leading-snug text-white/35">{syncHint}</p>
-      <SaveBar sectionId="apikeys" savedSection={savedSection} onSave={() => void handleSave()} />
+      <SaveBar
+        sectionId="apikeys"
+        savedSection={savedSection}
+        disabled={!dirty}
+        onSave={() => void handleSave()}
+      />
     </div>
   )
 }
@@ -1293,10 +1324,18 @@ function ScriptureSection({
     update('scripture', { defaultTranslation: translation })
   }
 
+  // Grouped by what selecting the option does, not by source: a downloaded
+  // pack keeps its API-capable registry entry, so `access` can't say "on disk".
+  const translationGroups = [
+    { label: 'Ready to use', items: translations.filter((t) => t.available) },
+    { label: 'Download to use offline', items: translations.filter((t) => !t.available && t.downloadable) },
+    { label: 'Unavailable', items: translations.filter((t) => !t.available && !t.downloadable) },
+  ]
+
   return (
     <div className="space-y-5">
-      <PrefGroup title="Bible">
-        <PrefRow label="Translation" hint={translationsLoading ? 'Checking available Bibles…' : undefined}>
+      <PrefGroup title="Default Bible">
+        <PrefRow label="Translation" hint={translationsLoading ? 'Checking available Bibles…' : 'Used for new searches and auto-detection'}>
           <select
             className={PREF_SELECT}
             value={sc.defaultTranslation}
@@ -1304,16 +1343,21 @@ function ScriptureSection({
             onChange={(e) => { void selectTranslation(e.target.value as ScriptureTranslation) }}
             aria-label="Default bible translation"
           >
-            {translations.map((translation) => (
-              <option
-                key={translation.id}
-                value={translation.id}
-                disabled={!translation.available && !translation.downloadable}
-              >
-                {translation.id}
-                {translation.available ? '' : translation.downloadable ? ' (download)' : ' (offline)'}
-              </option>
-            ))}
+            {translationGroups.map((group) =>
+              group.items.length === 0 ? null : (
+                <optgroup key={group.label} label={group.label}>
+                  {group.items.map((translation) => (
+                    <option
+                      key={translation.id}
+                      value={translation.id}
+                      disabled={!translation.available && !translation.downloadable}
+                    >
+                      {translation.id} — {translation.name}
+                    </option>
+                  ))}
+                </optgroup>
+              ),
+            )}
           </select>
         </PrefRow>
         <PrefRow label="Verse numbers" hint="Include numbers on slides">
@@ -1324,16 +1368,11 @@ function ScriptureSection({
         </PrefRow>
       </PrefGroup>
 
-      <PrefGroup title="Offline">
-        <PrefPad>
-          <OfflineBibleManager />
-        </PrefPad>
-      </PrefGroup>
-
-      <PrefGroup title="Local Bible packs">
-        <PrefPad>
-          <LocalBiblePackManager />
-        </PrefPad>
+      <PrefGroup
+        title="Bible library"
+        description="Installed Bibles work offline and need no API key."
+      >
+        <LocalBiblePackManager />
       </PrefGroup>
 
       <PrefGroup title="Auto-detection">
@@ -1427,14 +1466,11 @@ function ScriptureSection({
         </div>
       </PrefGroup>
 
-      <PrefGroup title="Projection latency">
-        <div className="px-1 pb-1">
-          <p className="mb-3 text-[11px] leading-relaxed text-white/40">
-            Where the time went for each verse this session. The safety delay is
-            deliberate and is excluded from “slowest stage”.
-          </p>
-          <ScriptureLatencyPanel />
-        </div>
+      <PrefGroup
+        title="Verse timing"
+        description="How long each detected verse took to appear in Kairo this session, excluding the safety delay. Open a verse to see which step was slow."
+      >
+        <ScriptureLatencyPanel />
       </PrefGroup>
 
       <SaveBar sectionId="scripture" savedSection={savedSection} onSave={onSave} />
@@ -1958,15 +1994,18 @@ function GeneralSection({
 
 // ─── Main Settings export ─────────────────────────────────────────────────────
 
-export default function Settings({ onClose }: { onClose?: () => void } = {}): React.ReactElement {
+export default function Settings({
+  onClose,
+  initialSection = 'propresenter',
+}: { onClose?: () => void; initialSection?: Section } = {}): React.ReactElement {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS)
   const [loading, setLoading] = useState(true)
-  const [activeSection, setActiveSection] = useState<Section>('propresenter')
+  const [activeSection, setActiveSection] = useState<Section>(initialSection)
   const [savedSection, setSavedSection] = useState<string | null>(null)
   const [navQuery, setNavQuery] = useState('')
   const [, setAudioLevel] = useState<AudioLevel | null>(null)
   const [histIndex, setHistIndex] = useState(0)
-  const historyRef = useRef<Section[]>(['propresenter'])
+  const historyRef = useRef<Section[]>([initialSection])
   const session = useAccountStore((s) => s.session)
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 

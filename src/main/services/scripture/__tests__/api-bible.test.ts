@@ -92,12 +92,12 @@ test('a Bible that matches the registry by name gains no duplicate dynamic entry
   assert.equal(ids.has('ENGKJV'), false)
 })
 
-test('an unknown English Bible is discovered under its own abbreviation', () => {
+test('an unknown English Bible is not mapped onto the product catalog', () => {
   const ids = buildApiBibleIdMap([
     { id: 'xyz-01', abbreviationLocal: 'XYZ', name: 'Xyz Simple Translation' },
   ])
 
-  assert.equal(ids.get('XYZ'), 'xyz-01')
+  assert.equal(ids.has('XYZ'), false)
 })
 
 test('splits structured API.Bible passage content into individual verses', () => {

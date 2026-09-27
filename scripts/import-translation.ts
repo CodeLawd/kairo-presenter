@@ -3,8 +3,9 @@
  *
  * Takes a translation JSON in any common shape, fixes the problems that
  * usually stop a pack from validating, builds the SQLite pack, and reports
- * every change it made. The result installs through Settings → Scripture →
- * Local Bible packs → "Install from file…" — no code change or app release.
+ * every change it made. Host the compressed pack and add a `downloadablePack`
+ * entry (url + sha256) to src/lib/bible-translations.ts; it then shows up in
+ * Settings → Scripture → Bible library with a one-click Install button.
  *
  * Run (better-sqlite3 is built for Electron, so run under Electron-as-Node):
  *   npm run import:translation -- --input ~/Downloads/esv.json --translation ESV
@@ -556,7 +557,7 @@ export async function importTranslation(argv: string[], out: (line: string) => v
   out(report)
   out('')
   out(`Report saved: ${reportPath}`)
-  out('Install: Settings → Scripture → Local Bible packs → Install from file… → pick the .db file above.')
+  out('Publish: host the .gz above and add a downloadablePack entry (sha256 above) to src/lib/bible-translations.ts.')
 
   return { packPath: options.output, gzipPath, reportPath, sha256, verseCount: validated.verseCount, changes }
 }

@@ -15,7 +15,7 @@ import { SongQuickOpen } from '@/components/lyrics/SongQuickOpen'
 import Operator from '@/components/operator/Operator'
 import ThemeEditor from '@/components/theme/ThemeEditor'
 import Settings from '@/components/settings/Settings'
-import { useAppStore } from '@/stores/useAppStore'
+import { useAppStore, type SettingsSectionId } from '@/stores/useAppStore'
 import { useSetlistSync } from '@/stores/useSetlist'
 import { useLibrariesSync } from '@/stores/useLibraries'
 import { usePassagesSync } from '@/stores/usePassages'
@@ -197,7 +197,13 @@ function clampSettingsOffset(x: number, y: number): { x: number; y: number } {
   }
 }
 
-function DraggableSettingsFrame({ onClose }: { onClose: () => void }): React.ReactElement {
+function DraggableSettingsFrame({
+  onClose,
+  initialSection,
+}: {
+  onClose: () => void
+  initialSection: SettingsSectionId
+}): React.ReactElement {
   const [offset, setOffset] = useState({ x: 0, y: 0 })
   const [dragging, setDragging] = useState(false)
   const drag = useRef<{
@@ -256,7 +262,7 @@ function DraggableSettingsFrame({ onClose }: { onClose: () => void }): React.Rea
       onClick={(event) => event.stopPropagation()}
     >
       <div className="h-[700px] w-[780px] overflow-hidden rounded-[10px] shadow-[0_24px_80px_rgba(0,0,0,0.72)] ring-1 ring-white/10 animate-spring-in">
-        <Settings onClose={onClose} />
+        <Settings onClose={onClose} initialSection={initialSection} />
       </div>
     </div>
   )
@@ -268,6 +274,14 @@ export default function App(): React.ReactElement {
   useLibrariesSync()
   usePassagesSync()
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsSection, setSettingsSection] = useState<SettingsSectionId>('propresenter')
+  const settingsRequest = useAppStore((s) => s.settingsRequest)
+  useEffect(() => {
+    if (!settingsRequest) return
+    setSettingsSection(settingsRequest)
+    setSettingsOpen(true)
+    useAppStore.getState().clearSettingsRequest()
+  }, [settingsRequest])
   const [songSearchOpen, setSongSearchOpen] = useState(false)
   useEffect(() => window.api.app.onImportRequested((kind) => {
     if (!isImportKind(kind)) return
@@ -435,7 +449,10 @@ export default function App(): React.ReactElement {
       <AppShell
         currentRoute={route}
         onNavigate={setRoute}
-        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenSettings={() => {
+          setSettingsSection('propresenter')
+          setSettingsOpen(true)
+        }}
         toolbar={route === 'operator' ? <OperatorToolbar /> : undefined}
       />
       <main className="relative flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-transparent">
@@ -526,7 +543,10 @@ export default function App(): React.ReactElement {
             className="absolute inset-0"
             onClick={() => setSettingsOpen(false)}
           />
-          <DraggableSettingsFrame onClose={() => setSettingsOpen(false)} />
+          <DraggableSettingsFrame
+            initialSection={settingsSection}
+            onClose={() => setSettingsOpen(false)}
+          />
         </div>
       )}
     </div>

@@ -1,30 +1,24 @@
 import { useCallback, useEffect, useState } from 'react'
-import { AlertTriangle, Download, Trash2, Upload } from '@/icons'
+import { AlertTriangle, Check, Download, Loader, Trash2 } from '@/icons'
 import type { InstalledLocalBiblePack, LocalBiblePackStatus } from '@shared/ipc'
 import { useBootstrapStore } from '@/bootstrap/useBootstrapStore'
+import { cn } from '@/lib/utils'
 
 /**
- * Optional local Bible packs, driven by the bible-translations registry.
+ * Offline Bible library, driven by the bible-translations registry.
  *
- * Which ids appear here is data, not code: any registry entry with a
- * `downloadablePack` shows up (flagged `downloadable` on the translation
- * option). Adding a new downloadable translation needs no change here.
+ * Which ids appear here is data, not code: bundled translations show as
+ * built-in, any registry entry with a `downloadablePack` offers a one-click
+ * download, and every other installed pack gets its own row so it can still be
+ * removed even when the registry has never heard of its id.
  *
  * Download, verification, and install all run in the main process — this
- * panel only sees the typed install status. The translation picker above
- * offers the same one-click download when a downloadable id is selected.
- * The single "Install from file" button below the list accepts a pack for
- * ANY translation — that is how new translations land without an app release.
- * Every installed, non-bundled pack gets its own row (and Remove button), even
- * when the registry has never heard of its id.
+ * panel only sees the typed install status.
  */
 export function LocalBiblePackManager(): JSX.Element {
   const translations = useBootstrapStore((state) => state.translations)
-  const downloadable = translations.filter((option) => option.downloadable)
   const [epoch, setEpoch] = useState(0)
   const [installed, setInstalled] = useState<InstalledLocalBiblePack[]>([])
-  const [installing, setInstalling] = useState(false)
-  const [installError, setInstallError] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
@@ -37,95 +31,119 @@ export function LocalBiblePackManager(): JSX.Element {
 
   const refreshAll = useCallback(() => setEpoch((value) => value + 1), [])
 
+  const bundled = translations.filter(
+    (option) => option.access === 'local' && option.available && !option.downloadable,
+  )
+  const downloadable = translations.filter((option) => option.downloadable)
+
   // Downloadable registry packs first (installed or not), then every other
   // installed pack. Before the first snapshot loads, the registry default
   // keeps the panel useful.
-  const packs: Array<{ id: string; name: string; downloadable: boolean }> = (
+  const packs: Array<{ id: string; name: string; downloadable: boolean; size?: string }> = (
     downloadable.length > 0
-      ? downloadable.map((option) => ({ id: option.id, name: option.name, downloadable: true }))
+      ? downloadable.map((option) => ({
+          id: option.id,
+          name: option.name,
+          downloadable: true,
+          size: option.downloadApprox,
+        }))
       : [{ id: 'NKJV', name: 'New King James Version', downloadable: true }]
   )
   for (const pack of installed) {
-    if (!packs.some((row) => row.id.toUpperCase() === pack.translation.toUpperCase())) {
-      packs.push({ id: pack.translation, name: pack.name, downloadable: false })
-    }
+    const id = pack.translation.toUpperCase()
+    if (packs.some((row) => row.id.toUpperCase() === id)) continue
+    if (bundled.some((option) => option.id.toUpperCase() === id)) continue
+    packs.push({ id: pack.translation, name: pack.name, downloadable: false })
   }
 
-  const installFromFile = useCallback(async () => {
-    setInstalling(true)
-    setInstallError(null)
-    try {
-      // Native picker runs in main; no path ever crosses the bridge. Returns
-      // null when the operator cancels.
-      const installed = await window.api.scripture.installLocalBiblePack()
-      if (installed) {
-        try {
-          const refreshed = await window.api.scripture.getTranslations()
-          useBootstrapStore.getState().setTranslations(refreshed)
-        } catch {
-          // Availability refresh is best-effort; the row statuses reload below.
-        }
-        refreshAll()
-      }
-    } catch (err) {
-      setInstallError((err as Error).message)
-    } finally {
-      setInstalling(false)
-    }
-  }, [refreshAll])
-
   return (
-    <div className="space-y-4">
+    <ul className="divide-y divide-white/[0.07]">
+      {bundled.map((option) => (
+        <BibleRowShell key={option.id} id={option.id} name={option.name} detail="Included with Kairo · works offline">
+          <span className="inline-flex items-center gap-1 text-[11px] text-white/40">
+            <Check size={12} aria-hidden="true" />
+            Built in
+          </span>
+        </BibleRowShell>
+      ))}
       {packs.map((pack) => (
         <LocalBiblePackRow
           key={pack.id}
           translationId={pack.id}
           translationName={pack.name || pack.id}
           downloadable={pack.downloadable}
+          size={pack.size}
           epoch={epoch}
           onChanged={refreshAll}
         />
       ))}
-
-      {installError && (
-        <p className="flex items-start gap-1.5 text-[11px] text-amber-400" role="alert">
-          <AlertTriangle size={11} className="mt-px shrink-0" />
-          {installError}
-        </p>
-      )}
-
-      <div className="flex gap-1.5">
-        <button
-          type="button"
-          className="btn-secondary px-2 py-1 text-[11px]"
-          disabled={installing}
-          onClick={() => { void installFromFile() }}
-          title="Install a Bible pack file for any translation"
-        >
-          <Upload size={11} className="mr-1 inline" />
-          {installing ? 'Installing…' : 'Install from file…'}
-        </button>
-      </div>
-    </div>
+    </ul>
   )
 }
+
+/** Shared list row (`<li>`): abbreviation tile, name + detail line, trailing actions. */
+function BibleRowShell({
+  id,
+  name,
+  detail,
+  detailTone = 'muted',
+  children,
+  footer,
+}: {
+  id: string
+  name: string
+  detail: React.ReactNode
+  detailTone?: 'muted' | 'warn'
+  children?: React.ReactNode
+  footer?: React.ReactNode
+}): JSX.Element {
+  return (
+    <li className="px-3.5 py-2.5">
+      <div className="flex items-center gap-3">
+        <span className="grid h-8 min-w-[40px] shrink-0 place-items-center rounded-[7px] bg-white/[0.06] px-1.5 font-mono text-[10px] font-semibold tracking-wide text-white/75">
+          {id}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[13px] leading-tight text-white">{name}</p>
+          <p
+            className={cn(
+              'mt-0.5 truncate text-[11px] leading-snug',
+              detailTone === 'warn' ? 'text-amber-400' : 'text-white/40',
+            )}
+          >
+            {detail}
+          </p>
+        </div>
+        {children ? <div className="flex shrink-0 items-center gap-1">{children}</div> : null}
+      </div>
+      {footer}
+    </li>
+  )
+}
+
+const ROW_ACTION =
+  'inline-flex h-7 items-center gap-1.5 rounded-[6px] bg-white/[0.08] px-2.5 text-[12px] font-medium text-white transition-colors hover:bg-white/[0.13] disabled:opacity-40'
+const ROW_ICON_ACTION =
+  'grid h-7 w-7 place-items-center rounded-[6px] text-white/35 transition-colors hover:bg-white/[0.07] hover:text-[#FF453A] disabled:opacity-40'
 
 function LocalBiblePackRow({
   translationId,
   translationName,
   downloadable,
+  size,
   epoch,
   onChanged,
 }: {
   translationId: string
   translationName: string
   downloadable: boolean
+  size?: string
   epoch: number
   onChanged: () => void
-}): JSX.Element {
+}): JSX.Element | null {
   const [status, setStatus] = useState<LocalBiblePackStatus | null>(null)
   const [loading, setLoading] = useState(true)
-  const [busy, setBusy] = useState(false)
+  const [busy, setBusy] = useState<'download' | 'remove' | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const reload = useCallback(async () => {
@@ -155,7 +173,7 @@ function LocalBiblePackRow({
   }, [])
 
   const download = useCallback(async () => {
-    setBusy(true)
+    setBusy('download')
     setError(null)
     try {
       const next = await window.api.scripture.downloadLocalBibleTranslation(translationId)
@@ -163,23 +181,22 @@ function LocalBiblePackRow({
       await refreshTranslations()
       onChanged()
     } catch (err) {
-      const message = (err as Error).message
-      setError(message)
+      setError((err as Error).message)
       await reload().catch(() => {})
     } finally {
-      setBusy(false)
+      setBusy(null)
     }
   }, [onChanged, refreshTranslations, reload, translationId])
 
   const remove = useCallback(async () => {
     const confirmed = window.confirm(
-      `Remove the local copy of ${translationName}?\n\n` +
+      `Remove ${translationName} from this computer?\n\n` +
         (downloadable
-          ? 'Its verses are deleted from this computer. You can download it again, or search it online with an API.Bible key.'
-          : 'Its verses are deleted from this computer. To use it offline again, install its pack file again.'),
+          ? 'You can download it again at any time, or search it online with an API.Bible key.'
+          : 'This translation is no longer offered for download, so it cannot be reinstalled from here.'),
     )
     if (!confirmed) return
-    setBusy(true)
+    setBusy('remove')
     setError(null)
     try {
       const next = await window.api.scripture.removeLocalBibleTranslation(translationId)
@@ -190,58 +207,76 @@ function LocalBiblePackRow({
       setError((err as Error).message)
       await reload().catch(() => {})
     } finally {
-      setBusy(false)
+      setBusy(null)
     }
   }, [downloadable, onChanged, refreshTranslations, reload, translationId, translationName])
 
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-[13px] text-white">{translationName}</p>
-        <p className="text-[11px] text-white/40">
-          {loading ? 'Checking…' : status?.installed ? 'Installed' : 'Not installed'}
-        </p>
-      </div>
-
-      <p className="text-[11px] leading-snug text-white/40">
-        {status?.installed
-          ? `${status.verseCount.toLocaleString()} verses available offline — no API key needed.`
+  const isInstalled = Boolean(status?.installed)
+  const detail = error
+    ? error
+    : loading
+      ? 'Checking…'
+      : busy === 'download'
+        ? 'Downloading and verifying…'
+        : isInstalled
+          ? `Installed · ${status!.verseCount.toLocaleString()} verses · works offline`
           : downloadable
-            ? `Download once to use ${translationId} entirely offline. Without it, ${translationId} searches use your API.Bible key.`
-            : `Not installed. Use "Install from file…" to add ${translationId} again.`}
-      </p>
+            ? `${size ? `${size.replace(/^about /, '~')} · ` : ''}Download once to use offline`
+            : 'Not installed'
 
-      {error && (
-        <p className="flex items-start gap-1.5 text-[11px] text-amber-400" role="alert">
-          <AlertTriangle size={11} className="mt-px shrink-0" />
-          {error}
-        </p>
-      )}
+  // Nothing to offer on a non-downloadable pack that is already gone.
+  if (!loading && !isInstalled && !downloadable && !error) return null
 
-      <div className="flex gap-1.5">
-        {downloadable && !status?.installed && (
+  return (
+    <BibleRowShell
+      id={translationId}
+      name={translationName}
+      detail={
+        error ? (
+          <span className="inline-flex items-center gap-1">
+            <AlertTriangle size={11} className="shrink-0" aria-hidden="true" />
+            {detail}
+          </span>
+        ) : detail
+      }
+      detailTone={error ? 'warn' : 'muted'}
+    >
+      {isInstalled ? (
+        <>
+          <span className="inline-flex items-center gap-1 pr-1 text-[11px] text-[#30D158]">
+            <Check size={12} aria-hidden="true" />
+            Installed
+          </span>
           <button
             type="button"
-            className="btn-secondary px-2 py-1 text-[11px]"
-            disabled={busy || loading}
-            onClick={() => { void download() }}
-          >
-            <Download size={11} className="mr-1 inline" />
-            {busy ? 'Downloading…' : `Download ${translationId}`}
-          </button>
-        )}
-        {status?.installed && (
-          <button
-            type="button"
-            className="btn-secondary px-2 py-1 text-[11px]"
-            disabled={busy || loading}
+            className={ROW_ICON_ACTION}
+            disabled={busy !== null || loading}
             onClick={() => { void remove() }}
+            aria-label={`Remove ${translationName}`}
+            title="Remove from this computer"
           >
-            <Trash2 size={11} className="mr-1 inline" />
-            Remove local copy
+            {busy === 'remove' ? (
+              <Loader size={13} className="animate-spin" aria-hidden="true" />
+            ) : (
+              <Trash2 size={13} aria-hidden="true" />
+            )}
           </button>
-        )}
-      </div>
-    </div>
+        </>
+      ) : downloadable ? (
+        <button
+          type="button"
+          className={ROW_ACTION}
+          disabled={busy !== null || loading}
+          onClick={() => { void download() }}
+        >
+          {busy === 'download' ? (
+            <Loader size={12} className="animate-spin" aria-hidden="true" />
+          ) : (
+            <Download size={12} aria-hidden="true" />
+          )}
+          {busy === 'download' ? 'Installing…' : 'Install'}
+        </button>
+      ) : null}
+    </BibleRowShell>
   )
 }

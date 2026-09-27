@@ -92,48 +92,20 @@ export function buildApiBibleIdMap(bibles: ApiBibleSummary[]): Map<string, strin
   for (const bible of bibles) {
     if (bible.type && bible.type !== 'text') continue
 
-    // Whether this Bible matched a registry entry by any signal. Dynamic
-    // discovery below only fires when nothing matched, so one Bible never
-    // appears twice (e.g. KJV by name AND ENGKJV by abbreviation).
-    let known = false
-
     const preferred = PREFERRED_BIBLE_IDS[bible.id]
-    if (preferred) { consider(preferred, bible.id, 85); known = true }
+    if (preferred) consider(preferred, bible.id, 85)
 
     const local = catalogIdFromAbbreviation(bible.abbreviationLocal)
-    if (local) { consider(local.id, bible.id, local.exact ? 100 : 80); known = true }
+    if (local) consider(local.id, bible.id, local.exact ? 100 : 80)
 
     const fallback = catalogIdFromAbbreviation(bible.abbreviation)
-    if (fallback) { consider(fallback.id, bible.id, fallback.exact ? 90 : 70); known = true }
+    if (fallback) consider(fallback.id, bible.id, fallback.exact ? 90 : 70)
 
     const named = catalogIdFromName(bible.nameLocal) ?? catalogIdFromName(bible.name)
-    if (named) { consider(named, bible.id, 40); known = true }
-
-    // Dynamic discovery: an API.Bible text the registry never heard of still
-    // maps to its own normalized abbreviation, so a newly authorized Bible
-    // shows up without a code change or app release.
-    if (!known) {
-      const dynamic = normalizeAbbreviation(bible.abbreviationLocal ?? bible.abbreviation)
-      if (dynamic && !CATALOG_IDS.has(dynamic) && !(dynamic in ABBREVIATION_ALIASES)) {
-        consider(dynamic, bible.id, 10)
-      }
-    }
+    if (named) consider(named, bible.id, 40)
   }
 
   return new Map([...best.entries()].map(([id, value]) => [id, value.bibleId]))
-}
-
-/**
- * Display names for API.Bible ids that have no registry entry (dynamic
- * discovery above). Known ids resolve through the registry instead.
- */
-export function displayNameForDynamicTranslation(id: string, bibles: ApiBibleSummary[]): string {
-  const normalized = id.toUpperCase()
-  const match = bibles.find(
-    (bible) =>
-      normalizeAbbreviation(bible.abbreviationLocal ?? bible.abbreviation) === normalized,
-  )
-  return match?.nameLocal ?? match?.name ?? normalized
 }
 
 function normalizeVerseId(value: string | undefined): string | null {

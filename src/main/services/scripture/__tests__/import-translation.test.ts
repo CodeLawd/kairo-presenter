@@ -220,7 +220,7 @@ test('import writes a pack that installs, plus a gzip and a change report', asyn
     assert.match(result.sha256, /^[0-9a-f]{64}$/)
     assert.ok(fs.existsSync(result.gzipPath))
     assert.match(fs.readFileSync(result.reportPath, 'utf8'), /3 John 1: merged verses 14–15/)
-    assert.ok(lines.some((line) => line.includes('Install from file')))
+    assert.ok(lines.some((line) => line.includes('downloadablePack')))
 
     const pack = validatePackFile(output, 'ZZT')
     assert.equal(pack.translationId, 'ZZT')

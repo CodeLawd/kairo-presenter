@@ -99,7 +99,17 @@ export const BIBLE_TRANSLATIONS: readonly BibleTranslationDefinition[] = [
     namePatterns: ['new international'],
     preferredBibleId: '78a9f6124f344018-01',
   },
-  { id: 'NLT', name: 'New Living Translation', access: 'api', namePatterns: ['new living'] },
+  {
+    id: 'NLT',
+    name: 'New Living Translation',
+    access: 'api',
+    namePatterns: ['new living'],
+    downloadablePack: {
+      url: 'https://github.com/CodeLawd/kairo-bible-packs/releases/download/bible-packs-v1/nlt-pack.db.gz',
+      sha256: 'ea57d70425083de77ad1aca16193bb2f8bd6629ec640200c88937aefd6f45528',
+      approxLabel: 'about 5 MB',
+    },
+  },
   {
     id: 'NASB',
     name: 'New American Standard Bible',

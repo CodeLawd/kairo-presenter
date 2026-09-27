@@ -279,7 +279,6 @@ test('the main process handles every local-pack invoke channel', () => {
   assert.ok(!handlers.includes('filePath?: string'), 'install handler must not accept a renderer path')
   assert.ok(handlers.includes('if (result.canceled || !result.filePaths[0]) return null'))
   const settingsUi = read('src/renderer/src/components/settings/LocalBiblePackManager.tsx')
-  assert.ok(settingsUi.includes('installLocalBiblePack()'), 'renderer installs without passing a path')
   assert.ok(!settingsUi.includes('showOpenDialog'), 'renderer must not touch the file dialog')
 })
 

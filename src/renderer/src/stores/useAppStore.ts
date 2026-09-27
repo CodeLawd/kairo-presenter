@@ -15,6 +15,17 @@ function readStoredRailWidth(): number {
   )
 }
 
+/** Panes of the Settings modal. */
+export type SettingsSectionId =
+  | 'propresenter'
+  | 'audio'
+  | 'apikeys'
+  | 'scripture'
+  | 'overlay'
+  | 'general'
+  | 'account'
+  | 'shortcuts'
+
 // ─── State shape ──────────────────────────────────────────────────────────────
 
 interface AppState {
@@ -76,6 +87,9 @@ interface AppState {
   // ── Session ───────────────────────────────────────────────────────────────
   sessionStartTime: number
 
+  /** Settings pane some screen asked App to open; App clears it once shown. */
+  settingsRequest: SettingsSectionId | null
+
   // ── Legacy (kept for backward compat) ────────────────────────────────────
   proPresenterConnected: boolean
   currentSlide: string | null
@@ -117,6 +131,9 @@ interface AppState {
     selectedId?: string | null
     selectedName?: string
   }) => void
+
+  openSettings: (section: SettingsSectionId) => void
+  clearSettingsRequest: () => void
 
   // ── Legacy setters ────────────────────────────────────────────────────────
   setProPresenterConnected: (connected: boolean) => void
@@ -171,6 +188,7 @@ export const useAppStore = create<AppState>((set) => ({
 
   // ── Session ───────────────────────────────────────────────────────────────
   sessionStartTime: Date.now(),
+  settingsRequest: null,
 
   // ── Legacy ────────────────────────────────────────────────────────────────
   proPresenterConnected: false,
@@ -302,6 +320,9 @@ export const useAppStore = create<AppState>((set) => ({
       themeSelectedName:
         state.selectedName !== undefined ? state.selectedName : current.themeSelectedName,
     })),
+
+  openSettings: (section) => set({ settingsRequest: section }),
+  clearSettingsRequest: () => set({ settingsRequest: null }),
 
   // ── Legacy ────────────────────────────────────────────────────────────────
 
