@@ -64,7 +64,6 @@ import {
 import type { PassageFollowState } from "@shared/scripture-live-progress";
 import type {
   AppSettings,
-  MediaLibrary,
   ScriptureResult,
   ScriptureSuggestion,
   SermonScriptureItem,
@@ -74,12 +73,12 @@ import type {
   ResilienceStatus,
   ScriptureTraceRecord,
 } from "@shared/ipc";
-import { normalizeMediaPlayback } from "@shared/media-playback";
 import { useBootstrapStore } from "@/bootstrap/useBootstrapStore";
 import { OperatorQueueSearch } from "@/components/operator/OperatorQueueSearch";
 import { displayPlanTitle } from "@/components/operator/OperatorToolbar";
 import { useBoothToolboxStore } from "@/stores/useBoothToolboxStore";
 import { clearLiveText } from "@/lib/clear-live-output";
+import { propresenterEnabled } from "@shared/pp-connect-gate";
 
 // ─── Constants for Live Highlight Parsing ─────────────────────────────────────
 
@@ -104,7 +103,7 @@ function detectionCaption(
 ): string | null {
   if (suggestion.planMatch) {
     const origin = suggestion.planMatch === "quote" ? "From sermon · matched reading" : "From sermon";
-    return flags.isLive ? `${origin} · Live` : flags.isReading ? `${origin} · Reading` : flags.isUpNext ? `${origin} · Up next` : origin;
+    return flags.isLive ? origin : flags.isReading ? `${origin} · Reading` : flags.isUpNext ? `${origin} · Up next` : origin;
   }
   if (flags.isLive) return null;
   if (flags.isReading) return "Reading";
@@ -252,7 +251,7 @@ function HighlightedText({
         if (run.type === "scripture") {
           return (
             <span key={idx} className="relative inline">
-              <mark className="bg-teal-500/10 text-teal-200 border-b border-teal-500/30 pb-0.5 not-italic">
+              <mark className="bg-tint-teal text-teal-200 border-b border-teal-500/30 pb-0.5 not-italic">
                 {run.text}
               </mark>
               <span className="ml-1 inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-zinc-800 text-[10px] text-zinc-300 border border-zinc-700 align-middle leading-none">
@@ -435,7 +434,6 @@ export default function Operator(): React.ReactElement {
   const [overlay, setOverlay] = useState<AppSettings["overlay"]>(
     DEFAULT_OVERLAY_SETTINGS,
   );
-  const [mediaLibrary, setMediaLibrary] = useState<MediaLibrary | null>(null);
   const [defaultTranslation, setDefaultTranslation] =
     useState<AppSettings["scripture"]["defaultTranslation"]>(DEFAULT_TRANSLATION_ID);
   const [pendingAuto, setPendingAuto] = useState<PendingAutoPresent[]>([]);
@@ -598,46 +596,6 @@ export default function Operator(): React.ReactElement {
     },
     [referenceHeight],
   );
-  const livePreviewResult = useMemo(() => {
-    if (!activeProjection) return null;
-    const detected = suggestions.find(
-      (item) => item.reference === activeProjection.reference,
-    );
-    if (detected) {
-      return {
-        reference: detected.reference,
-        translation: detected.translation,
-        verses: detected.verses,
-      };
-    }
-    const parsed = activeProjection.reference.match(/^(.+?)\s+(\d+):(\d+)/);
-    return {
-      reference: activeProjection.reference,
-      translation: defaultTranslation,
-      verses: [
-        {
-          book: parsed?.[1] ?? "",
-          chapter: Number(parsed?.[2] ?? 0),
-          verse: Number(parsed?.[3] ?? 0),
-          text: activeProjection.text,
-        },
-      ],
-    };
-  }, [activeProjection, defaultTranslation, suggestions]);
-
-  const liveMedia = useMemo(() => {
-    if (!mediaLibrary?.liveItemId) return null;
-    const item = mediaLibrary.items.find(
-      (candidate) => candidate.id === mediaLibrary.liveItemId,
-    );
-    if (!item) return null;
-    return {
-      item,
-      playback: normalizeMediaPlayback(mediaLibrary.playback[item.id]),
-      paused: mediaLibrary.livePaused,
-    };
-  }, [mediaLibrary]);
-
   useEffect(() => {
     suggestionsRef.current = suggestions;
   }, [suggestions]);
@@ -648,21 +606,6 @@ export default function Operator(): React.ReactElement {
     setOverlay(normalizeOverlaySettings(bootstrapSettings.overlay));
     setDefaultTranslation(bootstrapSettings.scripture.defaultTranslation);
   }, [bootstrapSettings]);
-
-  useEffect(() => {
-    let cancelled = false;
-    window.api.media
-      .getLibrary()
-      .then((library) => {
-        if (!cancelled) setMediaLibrary(library);
-      })
-      .catch(() => undefined);
-    const off = window.api.media.onLibraryChange(setMediaLibrary);
-    return () => {
-      cancelled = true;
-      off();
-    };
-  }, []);
 
   const advanceAutoFollowFromText = useCallback((text: string): void => {
     const current = followStateRef.current;
@@ -1466,12 +1409,17 @@ export default function Operator(): React.ReactElement {
         : "ok"
     : getServiceStatus("propresenter");
 
+  // Did the last push reach the screens — separate from whether PP is up (D8).
+  const outputHealth = getServiceStatus("output");
+  // ProPresenter status only appears once the integration is switched on.
+  const usesPropresenter = useBootstrapStore((s) => propresenterEnabled(s.settings));
+
   const sttHealth = resilienceStatus?.health.find((h) => h.service === "stt");
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-surface">
       {resilienceStatus?.recoverySessionAvailable && (
-        <div className="bg-teal-950/40 border-b border-teal-500/30 px-6 py-3 flex items-center justify-between text-xs text-teal-300">
+        <div className="bg-tint-teal border-b border-teal-500/30 px-6 py-3 flex items-center justify-between text-xs text-teal-300">
           <div className="flex items-center gap-2.5">
             <AlertTriangle size={15} className="text-teal-400 animate-pulse" />
             <div>
@@ -1512,13 +1460,13 @@ export default function Operator(): React.ReactElement {
         </div>
       )}
 
-      {resilienceStatus && ppReconnectCountdown > 0 && (
-        <div className="bg-rose-950/20 border-b border-rose-500/30 px-6 py-2.5 flex items-center justify-between text-xs font-bold text-rose-400 animate-fade-in">
+      {usesPropresenter && resilienceStatus && ppReconnectCountdown > 0 && (
+        <div className="bg-tint-rose border-b border-rose-500/30 px-6 py-2.5 flex items-center justify-between text-xs font-bold text-rose-400 animate-fade-in">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
-            <span>PP DISCONNECTED — RETRYING IN {ppReconnectCountdown}s</span>
+            <span>ProPresenter disconnected — retrying in {ppReconnectCountdown}s</span>
             {resilienceStatus.ppQueueSize > 0 && (
-              <span className="bg-rose-500/10 border border-rose-500/20 px-1.5 py-0.5 rounded text-[10px]">
+              <span className="bg-tint-rose border border-rose-500/20 px-1.5 py-0.5 rounded text-[10px]">
                 {resilienceStatus.ppQueueSize} projection(s) queued
               </span>
             )}
@@ -1541,9 +1489,19 @@ export default function Operator(): React.ReactElement {
           {lastLatency.metrics.slowestStage && (
             <span>Slowest: {lastLatency.metrics.slowestStage.name}</span>
           )}
-          <span className={ppStatus === "ok" ? "text-emerald-400" : "text-amber-400"}>
-            PP: {ppStatus === "ok" ? "Connected" : "Unavailable"}
-          </span>
+          {usesPropresenter && (
+            <span className={ppStatus === "ok" ? "text-emerald-400" : "text-amber-400"}>
+              ProPresenter: {ppStatus === "ok" ? "Connected" : "Unavailable"}
+            </span>
+          )}
+          {outputHealth && outputHealth !== "unknown" && (
+            <span
+              className={outputHealth === "ok" ? "text-emerald-400" : "text-amber-400"}
+              title={health.find((h) => h.service === "output")?.lastError}
+            >
+              Output: {outputHealth === "ok" ? "All on screen" : outputHealth === "degraded" ? "Partial" : "Not shown"}
+            </span>
+          )}
         </div>
       )}
 
@@ -1551,15 +1509,12 @@ export default function Operator(): React.ReactElement {
         rail={
           <LiveOutputRail
             width={liveRail.width}
-            overlay={overlay}
-            liveMedia={liveMedia}
-            result={livePreviewResult}
             onResizeStart={liveRail.onResizeStart}
             onResizeKeyDown={liveRail.onResizeKeyDown}
             search={
               <div className="flex h-full min-h-0 flex-col overflow-hidden bg-transparent">
-                <div className="flex shrink-0 items-center justify-between gap-3 px-3 py-1.5">
-                  <label className="text-[11px] font-medium text-zinc-400">
+                <div className="flex shrink-0 items-center justify-between gap-3 px-3 pb-1 pt-3">
+                  <label className="text-[10px] font-semibold uppercase tracking-[0.08em] text-zinc-500">
                     Queue
                   </label>
                   {queue.length > 0 && (
@@ -1586,7 +1541,7 @@ export default function Operator(): React.ReactElement {
                     <p className="px-2 py-6 text-center text-[10px] leading-relaxed text-slate-600">
                       Stage verses here with{" "}
                       <span className="text-slate-500">+</span> on a detection,
-                      or search above. Click a row to send it to ProPresenter.
+                      or search above. Click a row to put it on screen.
                     </p>
                   ) : (
                     <ul className="space-y-1">
@@ -1599,7 +1554,7 @@ export default function Operator(): React.ReactElement {
                               className={cn(
                                 "group flex items-start gap-2 rounded-md border px-2.5 py-2 transition-colors",
                                 isLive
-                                  ? "border-teal-500/40 bg-teal-500/10"
+                                  ? "border-teal-500/40 bg-tint-teal"
                                   : "border-transparent hover:border-surface-border hover:bg-surface",
                               )}
                             >
@@ -1608,7 +1563,7 @@ export default function Operator(): React.ReactElement {
                                 onClick={() => void handlePresentQueued(entry)}
                                 disabled={queueBusyId === entry.id}
                                 className="min-w-0 flex-1 text-left focus-visible:outline-none"
-                                title={`Send ${entry.reference} to ProPresenter`}
+                                title={`Show ${entry.reference}`}
                               >
                                 <p
                                   className={cn(
@@ -1635,7 +1590,7 @@ export default function Operator(): React.ReactElement {
                               <button
                                 type="button"
                                 onClick={() => removeFromQueue(entry.id)}
-                                className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded text-slate-700 transition-colors hover:bg-rose-500/10 hover:text-rose-400 focus-visible:outline-none focus-visible:text-rose-400"
+                                className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded text-slate-700 transition-colors hover:bg-tint-rose hover:text-rose-400 focus-visible:outline-none focus-visible:text-rose-400"
                                 title={`Remove ${entry.reference} from the queue`}
                                 aria-label={`Remove ${entry.reference} from the queue`}
                               >
@@ -1666,7 +1621,7 @@ export default function Operator(): React.ReactElement {
               type="button"
               aria-label="Resize live transcript panel"
               title="Drag to resize live transcript"
-              className="absolute inset-y-0 -right-1 z-10 w-2 cursor-col-resize bg-transparent outline-none hover:bg-teal-500/15 focus-visible:bg-teal-500/20"
+              className="absolute inset-y-0 -right-1 z-10 w-2 cursor-col-resize bg-transparent outline-none hover:bg-tint-teal focus-visible:bg-tint-teal"
               onPointerDown={(event) => startPanelResize("left", event)}
               onKeyDown={(event) => {
                 if (event.key === "ArrowLeft")
@@ -1706,8 +1661,8 @@ export default function Operator(): React.ReactElement {
                   className={cn(
                     "flex h-7 items-center gap-1 rounded-md px-1.5 text-[10px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/60",
                     nuggetsOpen
-                      ? "bg-amber-500/15 text-amber-300"
-                      : "text-zinc-500 hover:bg-white/5 hover:text-zinc-200",
+                      ? "bg-tint-amber text-amber-300"
+                      : "text-zinc-500 hover:bg-surface-tertiary hover:text-zinc-200",
                   )}
                   aria-expanded={nuggetsOpen}
                   aria-label={`Saved message nuggets: ${nuggets.length}`}
@@ -1774,7 +1729,7 @@ export default function Operator(): React.ReactElement {
                       nuggets.map((nugget) => (
                         <div
                           key={nugget.id}
-                          className="group/nugget flex gap-2 rounded-md px-2 py-2 hover:bg-white/[0.04]"
+                          className="group/nugget flex gap-2 rounded-md px-2 py-2 hover:bg-surface-tertiary"
                         >
                           <div className="min-w-0 flex-1">
                             <p className="text-[11px] leading-relaxed text-zinc-300">
@@ -1822,9 +1777,9 @@ export default function Operator(): React.ReactElement {
             {resilienceStatus &&
               (sttHealth?.status === "degraded" ||
                 sttHealth?.status === "error") && (
-                <div className="border-b border-amber-500/10 bg-amber-500/[0.04] px-3 py-2 text-[11px] text-amber-300 flex flex-wrap items-center gap-1.5 shrink-0">
+                <div className="border-b border-amber-500/10 bg-tint-amber px-3 py-2 text-[11px] text-amber-300 flex flex-wrap items-center gap-1.5 shrink-0">
                   <span>Reconnecting…</span>
-                  <span className="bg-amber-500/10 px-1.5 py-0.5 rounded text-[9px]">
+                  <span className="bg-tint-amber px-1.5 py-0.5 rounded text-[9px]">
                     Audio is buffered
                   </span>
                 </div>
@@ -1849,7 +1804,7 @@ export default function Operator(): React.ReactElement {
                     key={seg.id}
                     className={cn(
                       "group/segment relative rounded-md py-1 pr-5",
-                      saved && "bg-amber-500/[0.04]",
+                      saved && "bg-tint-amber",
                       segmentIndex === segments.length - 1 && "text-zinc-100",
                     )}
                   >
@@ -1863,7 +1818,7 @@ export default function Operator(): React.ReactElement {
                       type="button"
                       onClick={() => toggleNugget(seg)}
                       className={cn(
-                        "absolute -right-1 top-1.5 grid size-6 place-items-center rounded opacity-0 transition-opacity hover:bg-amber-500/10 hover:text-amber-300 group-hover/segment:opacity-100 focus-visible:opacity-100",
+                        "absolute -right-1 top-1.5 grid size-6 place-items-center rounded opacity-0 transition-opacity hover:bg-tint-amber hover:text-amber-300 group-hover/segment:opacity-100 focus-visible:opacity-100",
                         saved && "text-amber-400 opacity-100",
                       )}
                       disabled={saved || !activeService}
@@ -1911,7 +1866,7 @@ export default function Operator(): React.ReactElement {
               </div>
 
               {/* Vertical audio level rail — same height as the transcript */}
-              <div className="flex w-7 shrink-0 flex-col items-center gap-2 border-l border-white/[0.06] bg-black/20 py-2.5">
+              <div className="flex w-7 shrink-0 flex-col items-center gap-2 border-l border-white/[0.06] bg-surface py-2.5">
                 <Volume2
                   size={12}
                   className={isTranscribing ? "text-teal-400" : "text-zinc-600"}
@@ -1920,7 +1875,7 @@ export default function Operator(): React.ReactElement {
                 <span
                   className={cn(
                     "size-1.5 rounded-full",
-                    (audioLevel?.clipping ?? false) ? "bg-[#FF453A]" : "bg-white/15",
+                    (audioLevel?.clipping ?? false) ? "bg-[#FF453A]" : "bg-surface-border",
                   )}
                   title={(audioLevel?.clipping ?? false) ? "Clipping" : "No clipping"}
                 />
@@ -1941,14 +1896,14 @@ export default function Operator(): React.ReactElement {
                       <div
                         key={i}
                         className={cn(
-                          "min-h-0 w-full flex-1 rounded-[1px]",
+                          "min-h-0 w-full flex-1 rounded-none",
                           lit
                             ? clip
                               ? "bg-[#FF453A]"
                               : warn
                                 ? "bg-[#FFD60A]"
                                 : "bg-[#30D158]"
-                            : "bg-white/[0.08]",
+                            : "bg-surface-elevated",
                         )}
                       />
                     )
@@ -1972,7 +1927,7 @@ export default function Operator(): React.ReactElement {
               </p>
             )}
             {resilienceStatus && resilienceStatus.claudeFallbackActive && (
-              <div className="flex shrink-0 items-center justify-between gap-4 bg-amber-950/10 px-5 py-2 text-[11px] text-amber-400/90">
+              <div className="flex shrink-0 items-center justify-between gap-4 bg-tint-amber px-5 py-2 text-[11px] text-amber-400/90">
                 <span className="min-w-0 truncate">
                   {resilienceStatus.detectorFallbackReason?.message
                     ?? 'AI detection unavailable — local matching active.'}
@@ -2146,7 +2101,7 @@ export default function Operator(): React.ReactElement {
                                 <button
                                   type="button"
                                   onClick={() => addToQueue(s)}
-                                  className="grid size-6 place-items-center rounded-md bg-black/55 text-zinc-200 hover:bg-black/75 hover:text-white"
+                                  className="grid size-6 place-items-center rounded-md bg-black text-zinc-200 hover:bg-black hover:text-white"
                                   title={`Add ${s.reference} to queue`}
                                   aria-label={`Add ${s.reference} to queue`}
                                 >
@@ -2157,7 +2112,7 @@ export default function Operator(): React.ReactElement {
                                   onClick={() =>
                                     void handleDismissSuggestion(s.id)
                                   }
-                                  className="grid size-6 place-items-center rounded-md bg-black/55 text-zinc-200 hover:bg-black/75 hover:text-rose-300"
+                                  className="grid size-6 place-items-center rounded-md bg-black text-zinc-200 hover:bg-black hover:text-rose-300"
                                   title={`Dismiss ${s.reference}`}
                                   aria-label={`Dismiss ${s.reference}`}
                                 >
@@ -2209,7 +2164,7 @@ export default function Operator(): React.ReactElement {
                 type="button"
                 aria-label="Resize reference panel"
                 title="Drag to resize reference panel"
-                className="absolute inset-x-0 -top-1 z-10 h-2 cursor-row-resize bg-transparent outline-none hover:bg-teal-500/15 focus-visible:bg-teal-500/20"
+                className="absolute inset-x-0 -top-1 z-10 h-2 cursor-row-resize bg-transparent outline-none hover:bg-tint-teal focus-visible:bg-tint-teal"
                 onPointerDown={startReferenceResize}
                 onKeyDown={(event) => {
                   if (event.key === "ArrowUp") resizeReferenceByKeyboard(-16);
@@ -2220,7 +2175,7 @@ export default function Operator(): React.ReactElement {
                 <button
                   type="button"
                   onClick={() => setReferenceCollapsed(false)}
-                  className="flex h-9 w-full items-center justify-between px-4 text-[11px] font-medium text-zinc-500 transition-colors hover:bg-white/[0.025] hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-teal-400/60"
+                  className="flex h-9 w-full items-center justify-between px-4 text-[11px] font-medium text-zinc-500 transition-colors hover:bg-surface-secondary hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-teal-400/60"
                   aria-label="Expand passage library"
                   title="Expand passage library"
                 >

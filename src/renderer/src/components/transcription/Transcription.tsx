@@ -168,10 +168,10 @@ function HighlightedText({
         if (run.type === 'scripture') {
           return (
             <span key={idx} className="relative inline">
-              <mark className="bg-teal-500/20 text-teal-200 rounded px-0.5 not-italic">
+              <mark className="bg-tint-teal text-teal-200 rounded px-0.5 not-italic">
                 {run.text}
               </mark>
-              <span className="ml-1 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-teal-600/30 text-teal-300 border border-teal-500/30 align-middle leading-none">
+              <span className="ml-1 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-tint-teal text-teal-300 border border-teal-500/30 align-middle leading-none">
                 <BookOpen size={9} />
                 {run.reference}
               </span>
@@ -194,7 +194,7 @@ function AudioLevelBar({ level }: { level: AudioLevel | null }): React.ReactElem
   const color = clip
     ? 'bg-red-500'
     : percent < 8
-    ? 'bg-yellow-500/60'
+    ? 'bg-yellow-700'
     : 'bg-teal-500'
 
   return (
@@ -428,7 +428,7 @@ function ControlsBar({
         className={cn(
           'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-40',
           isTranscribing
-            ? 'bg-red-600/20 border border-red-500/40 text-red-400 hover:bg-red-600/30'
+            ? 'bg-tint-red border border-red-500/40 text-red-400 hover:bg-tint-red'
             : 'btn-primary'
         )}
       >
@@ -603,7 +603,7 @@ function ScrollLockButton({
       className={cn(
         'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors border',
         locked
-          ? 'bg-yellow-500/15 border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/25'
+          ? 'bg-tint-yellow border-yellow-500/30 text-yellow-400 hover:bg-tint-yellow'
           : 'bg-surface-elevated border-surface-border text-slate-400 hover:text-white hover:border-slate-500'
       )}
     >
@@ -972,7 +972,7 @@ export default function Transcription(): React.ReactElement {
           <p className="page-subtitle">Live speech-to-text · powered by Deepgram Nova-3</p>
         </div>
         {isTranscribing && (
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-teal-500/15 border border-teal-500/30">
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-tint-teal border border-teal-500/30">
             <Circle size={8} className="text-teal-500 fill-teal-500 animate-pulse" />
             <span className="text-xs font-semibold text-teal-400 uppercase tracking-wide">Live</span>
           </div>
@@ -997,7 +997,7 @@ export default function Transcription(): React.ReactElement {
 
       {/* ── Error banner ─────────────────────────────────────────────────────── */}
       {audioError && (
-        <div className="flex-shrink-0 flex items-start gap-2 px-4 py-3 rounded-lg bg-red-600/15 border border-red-500/30 text-red-400 text-sm">
+        <div className="flex-shrink-0 flex items-start gap-2 px-4 py-3 rounded-lg bg-tint-red border border-red-500/30 text-red-400 text-sm">
           <AlertTriangle size={15} className="flex-shrink-0 mt-0.5" />
           <span>{audioError}</span>
         </div>

@@ -57,6 +57,8 @@ interface Step {
 }
 
 interface SetupChecklistProps {
+  /** The ProPresenter integration is switched on — only then are its steps shown. */
+  ppEnabled: boolean
   ppConnected: boolean
   ndiStatus: NdiStatus
   outputs: OverlayOutput[]
@@ -67,6 +69,7 @@ interface SetupChecklistProps {
 }
 
 export default function SetupChecklist({
+  ppEnabled,
   ppConnected,
   ndiStatus,
   outputs,
@@ -85,74 +88,81 @@ export default function SetupChecklist({
 
   const manual = (id: string): StepState => (acks[id] ? 'ok' : 'manual')
 
+  const rendered = enabled.filter((o) => o.kind === 'screen' || o.kind === 'ndi')
+  const readiness = (id: string) => ndiStatus.outputs.find((o) => o.id === id)
+
+  // Kairo's own screens first — they are the product. ProPresenter steps only
+  // appear once the integration is switched on in Settings.
   const steps: Step[] = [
     {
+      id: 'outputs',
+      label: 'A screen is on',
+      hint: 'Add a Kairo screen (or an NDI feed) in the Screens list and turn it on.',
+      state: rendered.length > 0 ? 'ok' : 'todo',
+    },
+  ]
+
+  for (const screen of enabled.filter((o) => o.kind === 'screen')) {
+    const state = readiness(screen.id)
+    steps.push({
+      id: `screen-${screen.id}`,
+      label: `${screen.name} is on its display`,
+      hint: state?.reason ? `${state.reason}. Pick a connected display for it.` : 'Pick a connected display for it.',
+      state: state?.ready ? 'ok' : 'todo',
+    })
+  }
+
+  if (ndiEnabled) {
+    steps.push({
+      id: 'ndi-sender',
+      label: 'NDI sender running',
+      hint: 'The NDI runtime failed to load or the sender could not start — check the logs. Other screens still work.',
+      state: ndiStatus.available && ndiStatus.sending ? 'ok' : 'blocked',
+    })
+  }
+
+  if (ppEnabled) {
+    steps.push({
       id: 'pp',
       label: 'ProPresenter connected',
       hint: 'Check the host and port in Settings → ProPresenter.',
       state: ppConnected ? 'ok' : 'blocked',
-    },
-    {
-      id: 'screens',
-      label: 'Screens configured in ProPresenter',
-      hint: 'Screens → Screen Configuration: add an Audience screen for the main output, and a Stage screen for the pastor. ProPresenter owns this — the app cannot see it.',
-      state: manual('screens'),
-      manual: true,
-    },
-    {
-      id: 'outputs',
-      label: 'At least one output enabled',
-      hint: 'Turn on a destination in the list below.',
-      state: enabled.length > 0 ? 'ok' : 'todo',
-    },
-  ]
-
-  // NDI steps only matter to someone actually using the rendered slide.
-  if (ndiEnabled) {
-    steps.push(
-      {
-        id: 'ndi-sender',
-        label: 'NDI sender running',
-        hint: 'The NDI runtime failed to load or the sender could not start — check the logs. Other outputs still work.',
-        state: ndiStatus.available && ndiStatus.sending ? 'ok' : 'blocked',
-      },
-      {
+    })
+    if (ndiEnabled) {
+      steps.push({
         id: 'ndi-input',
-        label: 'ProPresenter video input bound',
-        hint: 'Add a Video Input in ProPresenter pointed at the “Kairo Scripture” NDI source, then pick it below. ProPresenter labels inputs “Input 1”, “Input 2” — it never shows the NDI source name, so you have to know which one you made.',
-        state: ndiStatus.ppInputConfigured ? 'ok' : 'todo',
-      },
-    )
+        label: 'ProPresenter video input bound (optional)',
+        hint: 'To have ProPresenter show the NDI feed, add a Video Input there for the “Kairo Scripture” source and pick it on the NDI feed.',
+        state: ndiStatus.ppInputConfigured ? 'ok' : 'skipped',
+      })
+    }
+    if (stageEnabled) {
+      steps.push({
+        id: 'stage-layout',
+        label: 'ProPresenter stage layout has a Message field',
+        hint: 'In ProPresenter, edit the stage screen’s layout and add a Message field. Without it the stage text has nowhere to appear.',
+        state: manual('stage-layout'),
+        manual: true,
+      })
+    }
+    if (messageEnabled) {
+      steps.push({
+        id: 'message-look',
+        label: 'Messages layer visible on the right screens',
+        hint: 'A Look in ProPresenter controls which screens show the Messages layer.',
+        state: manual('message-look'),
+        manual: true,
+      })
+    }
+    if (looks.length > 0) {
+      steps.push({
+        id: 'look',
+        label: 'Look triggered on push (optional)',
+        hint: 'Set “Trigger Look” on a ProPresenter output to switch Looks automatically.',
+        state: enabled.some((o) => o.lookId) ? 'ok' : 'skipped',
+      })
+    }
   }
-
-  if (stageEnabled) {
-    steps.push({
-      id: 'stage-layout',
-      label: 'Stage layout has a Message field',
-      hint: 'In ProPresenter, edit the stage screen’s layout and add a Message field. Without it the stage text has nowhere to appear, and nothing reports an error.',
-      state: manual('stage-layout'),
-      manual: true,
-    })
-  }
-
-  if (messageEnabled) {
-    steps.push({
-      id: 'message-look',
-      label: 'Messages layer visible on the right screens',
-      hint: 'A Look controls which screens show the Messages layer. Set one up in ProPresenter so the lower third lands where you want it — and not on the main screen if that is showing the full-screen slide.',
-      state: manual('message-look'),
-      manual: true,
-    })
-  }
-
-  steps.push({
-    id: 'look',
-    label: 'Look triggered on push (optional)',
-    hint: looks.length > 0
-      ? 'Optional. Set “Trigger Look” on an output to have ProPresenter switch Looks automatically when a verse goes out.'
-      : 'Optional, and ProPresenter is reporting no Looks yet. Create one there to control which layers each screen shows.',
-    state: enabled.some((o) => o.lookId) ? 'ok' : 'skipped',
-  })
 
   const blocking = steps.filter((s) => s.state === 'blocked' || s.state === 'todo').length
   const pendingManual = steps.filter((s) => s.state === 'manual').length
@@ -164,7 +174,7 @@ export default function SetupChecklist({
         <span
           className={cn(
             'rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider',
-            ready ? 'bg-teal-500/15 text-teal-300' : 'bg-amber-500/15 text-amber-300',
+            ready ? 'bg-tint-teal text-teal-300' : 'bg-tint-amber text-amber-300',
           )}
         >
           {ready ? 'Ready to send' : `${blocking} to fix`}
@@ -191,7 +201,7 @@ export default function SetupChecklist({
           type="button"
           className="btn-secondary px-3 py-1.5 text-[11px] disabled:opacity-40"
           onClick={onSendTest}
-          disabled={!ppConnected || testStatus === 'testing'}
+          disabled={testStatus === 'testing'}
         >
           {testStatus === 'testing' ? 'Sending…' : 'Send test verse'}
         </button>
@@ -258,7 +268,7 @@ function StepRow({
           type="button"
           onClick={() => onToggle(step.state !== 'ok')}
           aria-pressed={done}
-          className="flex w-full items-start gap-2 rounded-lg p-1 text-left transition-colors hover:bg-surface-secondary/50"
+          className="flex w-full items-start gap-2 rounded-lg p-1 text-left transition-colors hover:bg-surface-secondary"
         >
           {body}
         </button>

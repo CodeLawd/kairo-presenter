@@ -21,6 +21,13 @@ export type STTProvider = 'deepgram' | 'whisper' | 'none'
 
 export interface AppSettings {
   propresenter: {
+    /**
+     * The operator turned the ProPresenter integration on in Settings. Off by
+     * default and absent on older stores (read as off): Kairo is standalone,
+     * and ProPresenter is never probed, prompted for or reported on until
+     * someone opts in.
+     */
+    enabled?: boolean
     host: string
     port: number
     password: string
@@ -120,8 +127,10 @@ export interface AppSettings {
   /** House-audio folder. Empty until derived from the media sibling or picked. */
   tracks: TracksSettings
   church: ChurchProfile
-  /** Stable ProPresenter UUIDs selected for ProAutomate roles. */
+  /** Stable ProPresenter UUIDs selected for Kairo roles (optional integration). */
   propresenterResources: PPResourceBindings
+  /** Transitions, messages, props, logo, stage displays, program audio. */
+  presentation: import('./program').PresentationSettings
 }
 
 // ─── Workspace ────────────────────────────────────────────────────────────────
@@ -251,7 +260,7 @@ export interface MediaSettings {
   /** Absolute path of the watched backgrounds folder. '' until the user picks one. */
   folder: string
   /**
-   * @deprecated Playlists now live in `<folder>/.proautomate/playlists.json` so
+   * @deprecated Playlists now live in `<folder>/.kairo/playlists.json` so
    * they travel with the media. Read once on first scan to migrate, then empty.
    */
   playlists: MediaPlaylist[]
@@ -447,7 +456,7 @@ export interface OverlayTheme {
     paddingPx: number      // 0–200
     backdropBox: boolean   // rounded box behind the text block
     backdropColor: string  // rgba recommended
-    backdropRadiusPx: number // 0–64
+    backdropRadiusPx: number // retired — always 0, corners are square
     /** Auto-size verse text to the box: shrink long passages, keep short lines a natural size. */
     autoFitText: boolean
   }
@@ -459,7 +468,7 @@ export interface OverlayTheme {
 // a (PP layer, content, styling) triple. Defaults, normalizer and the layer map
 // live in src/lib/overlay-outputs.ts.
 
-export type OverlayOutputKind = 'ndi' | 'library' | 'message' | 'stage'
+export type OverlayOutputKind = 'ndi' | 'library' | 'message' | 'stage' | 'screen'
 
 /**
  * What is being pushed. Scripture and lyrics land on the same outputs but rarely
@@ -482,7 +491,10 @@ export interface OverlayOutputVariant {
   template: string
 }
 
-/** The ProPresenter layer an output writes to. Two outputs on the same layer compete. */
+/**
+ * A ProPresenter layer an output writes to. Outputs on one layer compete;
+ * Kairo's own screens and extra NDI feeds are not on any layer.
+ */
 export type OverlayLayer = 'presentation' | 'messages' | 'stage'
 
 export interface OverlayOutput {
@@ -518,6 +530,30 @@ export interface OverlayOutput {
    * override off anywhere always falls back to one configured look.
    */
   lyrics: OverlayOutputVariant | null
+  // — kind: 'screen' (null/'' on every other kind) —
+  /** Electron `Display.id` last bound; null = not chosen yet. */
+  displayId: number | null
+  /** `Display.label` at bind time — for re-matching after an id change and for the UI. */
+  displayLabel: string
+  /** Display size (DIP) at bind time — pairs with `displayLabel` for re-matching. */
+  displaySize: { width: number; height: number } | null
+  /**
+   * `screen` only. `letterbox` keeps the 16:9 frame the Theme preview shows;
+   * `fill` renders at the display's own shape so boxes reach its edges.
+   */
+  aspect: 'letterbox' | 'fill'
+  /** `ndi` / `screen`: which kinds of content this output shows. All on by default. */
+  show: import('./program').OutputShowFilter
+  /**
+   * `screen` only. `program` follows the service (every push lands here);
+   * `playlist` makes it an independent screen — a lobby or foyer display —
+   * cycling a media-dock playlist and ignoring pushes and Clear.
+   */
+  source: 'program' | 'playlist'
+  /** `playlist` source: the media-dock playlist to cycle. '' = none chosen. */
+  playlistId: string
+  /** `playlist` source: seconds each image stays up. Videos play to their end. 3–600. */
+  slideSec: number
 }
 
 /** Per-output result of one fan-out push. */
@@ -525,7 +561,8 @@ export interface OverlayDispatchResult {
   outputId: string
   name: string
   kind: OverlayOutputKind
-  layer: OverlayLayer
+  /** The ProPresenter layer it competed for; null for Kairo's own screens and extra NDI feeds. */
+  layer: OverlayLayer | null
   ok: boolean
   /** Why it failed, when `ok` is false. */
   reason?: string
@@ -1133,12 +1170,6 @@ export interface ProPresenterAPI {
   clearAll: () => Promise<void>
   getLibrary: () => Promise<ProPresenterLibrary>
   getPlaylists: () => Promise<ProPresenterPlaylist[]>
-  /** Pushes a sample verse (John 3:16 KJV) through the scripture overlay path using current overlay settings. */
-  testOverlay: () => Promise<boolean>
-  /** Clears verse/lyric text and leaves the dock background running. */
-  clearText: () => Promise<boolean>
-  /** Clears text, dock background, and every layer this app most recently pushed to. */
-  clearOverlay: () => Promise<boolean>
   /** PP Looks — a Look defines which layers are visible on which screens. */
   getLooks: () => Promise<PPLook[]>
   getResourceCatalogue: (options?: { refresh?: boolean }) => Promise<PPResourceCatalogue>
@@ -1190,7 +1221,6 @@ export interface ScriptureAPI {
   presentDirectly: (suggestion: ScriptureSuggestion) => Promise<void>
   search: (query: string, translation?: ScriptureTranslation) => Promise<ScriptureResult[]>
   getTranslations: (apiKey?: string) => Promise<ScriptureTranslationOption[]>
-  setTranslation: (translation: ScriptureTranslation) => Promise<void>
   importSermonNotes: () => Promise<SermonPlanDraft | null>
   scanSermonNotes: (text: string) => Promise<SermonNotesAnalysis>
   listSermonPlans: () => Promise<SermonPlan[]>
@@ -1412,7 +1442,30 @@ export interface ResilienceAPI {
   onStatusChange: (callback: (status: ResilienceStatus) => void) => Unsubscribe
 }
 
-export type ServiceName = 'audio' | 'stt' | 'detector' | 'propresenter'
+/** `output` is dispatch health (did the slide reach the screens); `propresenter` is the PP link. */
+// ─── Displays (Kairo screen outputs) ───────────────────────────────────────────
+
+/** One physical display as the main process sees it. */
+export interface DisplayInfo {
+  /** Electron `Display.id`. Not stable across replugs on every OS — see `resolveDisplay`. */
+  id: number
+  label: string
+  bounds: { x: number; y: number; width: number; height: number }
+  size: { width: number; height: number }
+  scaleFactor: number
+  primary: boolean
+  /** Kairo's own controls are on this display — a screen output here covers them. */
+  hostsMainWindow: boolean
+}
+
+export interface DisplaysAPI {
+  list: () => Promise<DisplayInfo[]>
+  /** Flashes a numbered label on every display for a few seconds. */
+  identify: () => Promise<void>
+  onChanged: (callback: (displays: DisplayInfo[]) => void) => Unsubscribe
+}
+
+export type ServiceName = 'audio' | 'stt' | 'detector' | 'propresenter' | 'output'
 
 export interface ServiceHealth {
   service: ServiceName
@@ -1453,12 +1506,6 @@ export interface AppAPI {
   bootstrap: () => Promise<AppBootstrapSnapshot>
   /** Returns cleanup fn. Fires as each bootstrap resource settles. */
   onBootstrapProgress: (callback: (progress: BootstrapProgress) => void) => Unsubscribe
-  /**
-   * True the first time it is asked in this app launch, false after — so the
-   * "Connect to ProPresenter" prompt shows once per launch, not on every
-   * reload of the interface or reopened window.
-   */
-  claimPpConnectPrompt: () => Promise<boolean>
 }
 
 export interface OnboardingAPI {
@@ -1528,7 +1575,7 @@ export interface UpdatesAPI {
   onStatus: (callback: (status: UpdateStatus) => void) => Unsubscribe
 }
 
-export interface ProAutomateAPI {
+export interface KairoAPI {
   services: import('./service-records').ServicesAPI
   app: AppAPI
   propresenter: ProPresenterAPI
@@ -1541,6 +1588,13 @@ export interface ProAutomateAPI {
   orchestrator: OrchestratorAPI
   resilience: ResilienceAPI
   ndi: NdiAPI
+  displays: DisplaysAPI
+  /** Kairo's own outputs as a whole: every screen, NDI feed and enabled integration. */
+  output: OutputAPI
+  /** Program layers and show controls: messages, logo, props, camera, timer. */
+  program: import('./program').ProgramAPI
+  /** Which songs were shown, for CCLI reporting. */
+  songUsage: import('./song-usage').SongUsageAPI
   documents: import('./documents').DocumentsAPI
   /** The service setlist: which songs, in which order. */
   setlist: import('./setlist').SetlistAPI
@@ -1557,6 +1611,19 @@ export interface ProAutomateAPI {
   updates: UpdatesAPI
 }
 
+/**
+ * Program-wide actions. They reach Kairo's screens and NDI feeds, and
+ * ProPresenter too when that integration is on and a PP output is enabled.
+ */
+export interface OutputAPI {
+  /** Pushes a sample verse (John 3:16 KJV) to every enabled output. */
+  sendTest: () => Promise<boolean>
+  /** Clears verse / lyric text and leaves the dock background running. */
+  clearText: () => Promise<boolean>
+  /** Clears text, the dock background, messages, props, logo and camera. */
+  clearAll: () => Promise<boolean>
+}
+
 export interface MediaAPI {
   importFiles: (kind: 'image' | 'video') => Promise<MediaLibrary>
   getLibrary: () => Promise<MediaLibrary>
@@ -1569,7 +1636,11 @@ export interface MediaAPI {
    * Puts a background on screen and cuts ProPresenter to the NDI video input.
    * `applied` is false when the overlay could not be sent.
    */
-  push: (itemId: string) => Promise<{ applied: boolean }>
+  /**
+   * `reason` says why when nothing took it — "Projector: Display not
+   * connected", "No screen is on" — so the dock can say what to fix.
+   */
+  push: (itemId: string) => Promise<{ applied: boolean; reason?: string }>
   clear: () => Promise<MediaLibrary>
   createPlaylist: (name: string) => Promise<MediaLibrary>
   renamePlaylist: (id: string, name: string) => Promise<MediaLibrary>
@@ -1622,9 +1693,6 @@ export const IPC = {
     CLEAR_ALL:      'propresenter:clearAll',        // invoke
     GET_LIBRARY:    'propresenter:getLibrary',      // invoke
     GET_PLAYLISTS:  'propresenter:getPlaylists',    // invoke
-    TEST_OVERLAY:   'propresenter:testOverlay',     // invoke
-    CLEAR_TEXT:     'propresenter:clearText',       // invoke
-    CLEAR_OVERLAY:  'propresenter:clearOverlay',    // invoke
     GET_LOOKS:      'propresenter:getLooks',        // invoke — PPLook[]
     GET_RESOURCE_CATALOGUE: 'propresenter:getResourceCatalogue',
     GET_RESOURCE_DETAILS:   'propresenter:getResourceDetails',
@@ -1643,7 +1711,6 @@ export const IPC = {
     IMPORT_READY: 'app:importReady',
     BOOTSTRAP:          'app:bootstrap',          // invoke
     BOOTSTRAP_PROGRESS: 'app:bootstrapProgress',  // push
-    CLAIM_PP_CONNECT_PROMPT: 'app:claimPpConnectPrompt', // invoke
   },
   SCRIPTURE: {
     APPROVE:                'scripture:approve',                 // invoke
@@ -1652,7 +1719,6 @@ export const IPC = {
     PRESENT_DIRECTLY:       'scripture:presentDirectly',         // invoke
     SEARCH:                 'scripture:search',                  // invoke
     GET_TRANSLATIONS:       'scripture:getTranslations',         // invoke
-    SET_TRANSLATION:        'scripture:setTranslation',         // invoke
     IMPORT_SERMON_NOTES:    'scripture:importSermonNotes',       // invoke
     SCAN_SERMON_NOTES:      'scripture:scanSermonNotes',         // invoke
     LIST_SERMON_PLANS:      'scripture:listSermonPlans',         // invoke
@@ -1781,6 +1847,16 @@ export const IPC = {
     GET_STATUS:         'ndi:getStatus',         // invoke — { available, sending, ppInputConfigured, outputs }
     GET_VIDEO_INPUTS:   'ndi:getVideoInputs',    // invoke — PPVideoInputInfo[]
     PICK_OVERLAY_MEDIA: 'ndi:pickOverlayMedia',  // invoke — native file dialog → absolute path | null
+  },
+  OUTPUT: {
+    SEND_TEST:  'output:sendTest',   // invoke
+    CLEAR_TEXT: 'output:clearText',  // invoke
+    CLEAR_ALL:  'output:clearAll',   // invoke
+  },
+  DISPLAYS: {
+    LIST:     'displays:list',      // invoke — DisplayInfo[]
+    IDENTIFY: 'displays:identify',  // invoke
+    CHANGED:  'displays:changed',   // push (DisplayInfo[])
   },
   ACCOUNT: {
     GET_SESSION:            'account:getSession',            // invoke — SessionSnapshot

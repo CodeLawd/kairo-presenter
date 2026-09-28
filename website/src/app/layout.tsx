@@ -35,9 +35,9 @@ const inter = Inter({
   display: 'swap',
 })
 
-const title = 'Kairo — Your pastor says the verse. It’s already on screen.'
+const title = 'Kairo — Presentation software for your church'
 const description =
-  'Kairo listens to your service, finds the passage, and hands it to you ready to send — including verses that are quoted without a reference. Approve the match, send it to ProPresenter or NDI. A desktop app for church tech teams.'
+  'Plan the service, run lyrics, Scripture, slides and media on your own screens, and find verses that come up during the sermon. ProPresenter is optional.'
 
 export const metadata: Metadata = {
   title,

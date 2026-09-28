@@ -1,7 +1,7 @@
-import { Loader, Search, X } from '@/icons';
+import { useEffect, useState } from "react";
+import { BookOpen, Loader, Search, X } from '@/icons';
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -22,46 +22,162 @@ export interface ScriptureSearchBarProps {
   translation: ScriptureTranslation;
   translations: ScriptureTranslationOption[];
   loading: boolean;
-  bookCompletion: BookCompletion | null;
   bookCompletions: BookCompletion[];
   searchSuggestions: ScriptureResult[];
+  /** Whether the live verse matches are current (closed after a search). */
   suggestionsOpen: boolean;
-  activeSuggestion: number;
   inputRef: React.Ref<HTMLInputElement>;
   onQueryChange: (value: string) => void;
   onTranslationChange: (value: ScriptureTranslation) => void;
-  onSearch: () => void;
   onClearQuery: () => void;
-  onBookCompletionSelect: (value: string) => void;
+  /** Fill in a book name ("jn 3" → "John 3") and keep typing. */
+  onBookComplete: (value: string) => void;
+  /** Keys the suggestion list does not use — Enter submits the query. */
   onKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void;
   onFocus: () => void;
-  onActiveSuggestionChange: (index: number) => void;
+  /** Load just this verse. */
   onPreviewSuggestion: (result: ScriptureResult) => void;
+  /** Load the verse's whole chapter, with the verse picked. */
+  onOpenChapter: (result: ScriptureResult) => void;
 }
 
+/** "John 3:16" or "John 3:16-18" — something smaller than its chapter. */
+const isWithinChapter = (result: ScriptureResult): boolean => result.reference.includes(":");
+
+type Item =
+  | { kind: "book"; completion: BookCompletion }
+  | { kind: "verse"; result: ScriptureResult };
+
+/**
+ * One field, like ProPresenter's lookup: search · clear · translation.
+ *
+ * Under it, one list: book completions, then live verse matches. Enter
+ * searches what was typed; ↑/↓ pick a row and Enter opens it (Shift+Enter opens
+ * a verse's whole chapter); Tab fills in the book; Esc or clicking away closes
+ * the list.
+ */
 export function ScriptureSearchBar({
   query,
   translation,
   translations,
   loading,
-  bookCompletion,
   bookCompletions,
   searchSuggestions,
   suggestionsOpen,
-  activeSuggestion,
   inputRef,
   onQueryChange,
   onTranslationChange,
-  onSearch,
   onClearQuery,
-  onBookCompletionSelect,
+  onBookComplete,
   onKeyDown,
   onFocus,
-  onActiveSuggestionChange,
   onPreviewSuggestion,
+  onOpenChapter,
 }: ScriptureSearchBarProps): React.ReactElement {
+  // Only translations Kairo can actually load; the rest are noise here.
+  const available = translations.filter((option) => option.available);
+
+  const [focused, setFocused] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+  /** -1 = nothing picked, so Enter searches what was typed. */
+  const [active, setActive] = useState(-1);
+
+  const items: Item[] = [
+    ...bookCompletions.slice(0, 4).map((completion) => ({ kind: "book" as const, completion })),
+    ...(suggestionsOpen
+      ? searchSuggestions.map((result) => ({ kind: "verse" as const, result }))
+      : []),
+  ];
+  const open = focused && !dismissed && items.length > 0;
+
+  // New text, new list: reopen it and drop the pick.
+  useEffect(() => {
+    setDismissed(false);
+    setActive(-1);
+  }, [query]);
+  useEffect(() => setActive(-1), [searchSuggestions]);
+
+  const choose = (item: Item, wholeChapter = false): void => {
+    if (item.kind === "book") onBookComplete(item.completion.value);
+    else if (wholeChapter && isWithinChapter(item.result)) onOpenChapter(item.result);
+    else onPreviewSuggestion(item.result);
+  };
+
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>): void => {
+    if (open) {
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        // Cycle through "nothing picked" (-1) and every row.
+        const step = event.key === "ArrowDown" ? 1 : -1;
+        const slots = items.length + 1;
+        setActive((current) => ((current + 1 + step + slots) % slots) - 1);
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setDismissed(true);
+        return;
+      }
+      if (event.key === "Tab" && !event.shiftKey) {
+        const picked = items[active];
+        const book = picked?.kind === "book" ? picked : items.find((item) => item.kind === "book");
+        if (book) {
+          event.preventDefault();
+          choose(book);
+          return;
+        }
+      }
+      if (event.key === "Enter" && items[active]) {
+        event.preventDefault();
+        choose(items[active], event.shiftKey);
+        return;
+      }
+    }
+    onKeyDown(event);
+  };
+
   return (
-    <div className="flex gap-3">
+    <div className="no-drag relative flex h-7 min-w-0 items-center rounded-md border border-surface-border bg-surface-secondary transition-colors focus-within:border-teal-500">
+      {loading ? (
+        <Loader size={13} className="ml-2.5 shrink-0 animate-spin text-slate-400" aria-hidden="true" />
+      ) : (
+        <Search size={13} className="ml-2.5 shrink-0 text-slate-500" aria-hidden="true" />
+      )}
+      <input
+        ref={inputRef as React.Ref<HTMLInputElement>}
+        className="h-full min-w-0 flex-1 bg-transparent px-2 text-xs text-slate-100 outline-none placeholder:text-slate-500"
+        placeholder='Scripture lookup · “jos 1 5 9” or a phrase'
+        value={query}
+        onChange={(e) => onQueryChange(e.target.value)}
+        onKeyDown={handleKeyDown}
+        onFocus={() => {
+          setFocused(true);
+          onFocus();
+        }}
+        onBlur={() => setFocused(false)}
+        autoComplete="off"
+        spellCheck={false}
+        aria-label="Search scripture reference"
+        aria-autocomplete="list"
+        aria-controls="scripture-search-suggestions"
+        aria-expanded={open}
+        aria-activedescendant={open && active >= 0 ? `scripture-suggestion-${active}` : undefined}
+        role="combobox"
+        name="scripture-query"
+      />
+      {query && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          className="mr-1 shrink-0"
+          onClick={onClearQuery}
+          aria-label="Clear search input"
+        >
+          <X aria-hidden="true" />
+        </Button>
+      )}
+      <span className="h-4 w-px shrink-0 bg-surface-border" aria-hidden="true" />
       <Select
         value={translation}
         disabled={loading}
@@ -70,162 +186,120 @@ export function ScriptureSearchBar({
         }
       >
         <SelectTrigger
-          className="h-10 w-56 shrink-0"
+          size="sm"
+          className="h-full shrink-0 gap-1 rounded-l-none rounded-r-md border-0 bg-transparent pl-2 pr-1.5 text-xs font-semibold text-slate-300 hover:text-white dark:bg-transparent dark:hover:bg-surface-tertiary"
           aria-label="Scripture translation"
+          title={translations.find((option) => option.id === translation)?.name}
         >
-          <SelectValue />
+          <SelectValue>{translation || "NKJV"}</SelectValue>
         </SelectTrigger>
-        <SelectContent>
+        {/* Popper, not item-aligned: aligning the checked item over a trigger
+            that lives in the header pushed the list off the top of the window. */}
+        <SelectContent
+          position="popper"
+          align="end"
+          sideOffset={4}
+          className="max-h-[min(26rem,var(--radix-select-content-available-height))] min-w-0"
+        >
           <SelectGroup>
-            {translations.map((option) => (
-              <SelectItem
-                key={option.id}
-                value={option.id}
-                disabled={!option.available}
-                className={cn(
-                  !option.available && "text-slate-500 opacity-45",
-                )}
-              >
-                <span className={cn(!option.available && "text-slate-500")}>
-                  {option.id} · {option.name}
-                  {option.available ? "" : " — unavailable"}
-                </span>
+            {available.map((option) => (
+              <SelectItem key={option.id} value={option.id} className="text-xs">
+                <span className="inline-block w-11 font-semibold text-slate-200">{option.id}</span>
+                <span className="text-slate-400">{option.name}</span>
               </SelectItem>
             ))}
-            {translations.length === 0 && (
-              <SelectItem value={translation || "NKJV"}>
+            {available.length === 0 && (
+              <SelectItem value={translation || "NKJV"} className="text-xs">
                 {translation || "NKJV"} · Loading translations…
               </SelectItem>
             )}
           </SelectGroup>
         </SelectContent>
       </Select>
-      <div className="relative flex-1">
-        <Search
-          size={15}
-          className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none"
-          aria-hidden="true"
-        />
-        <Input
-          ref={inputRef as React.Ref<HTMLInputElement>}
-          className="h-10 pl-10 pr-10 text-base"
-          placeholder='Reference or remembered words · try “jos 1 5 9”'
-          value={query}
-          onChange={(e) => onQueryChange(e.target.value)}
-          onKeyDown={onKeyDown}
-          onFocus={onFocus}
-          autoComplete="off"
-          spellCheck={false}
-          aria-label="Search scripture reference"
-          aria-autocomplete="list"
-          aria-controls="scripture-search-suggestions"
-          aria-expanded={suggestionsOpen}
-          aria-activedescendant={
-            suggestionsOpen
-              ? `scripture-suggestion-${activeSuggestion}`
-              : undefined
-          }
-          role="combobox"
-          name="scripture-query"
-        />
-        {query && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            className="absolute right-2 top-1/2 -translate-y-1/2"
-            onClick={onClearQuery}
-            aria-label="Clear search input"
-          >
-            <X aria-hidden="true" />
-          </Button>
-        )}
-        {bookCompletion && !suggestionsOpen && (
-          <div className="absolute left-0 right-0 top-[calc(100%+0.4rem)] z-30 flex items-center justify-between rounded-lg border border-surface-border bg-surface-elevated px-3.5 py-2 text-xs shadow-xl">
-            <span className="text-slate-400">
-              Complete{" "}
-              <span className="font-semibold text-slate-200">
-                {bookCompletion.book}
-              </span>
-            </span>
-            <kbd className="rounded border border-surface-border bg-surface-tertiary px-1.5 py-0.5 font-mono text-[10px] text-teal-300">
-              Tab
-            </kbd>
-          </div>
-        )}
-        {bookCompletions.length > 1 && !suggestionsOpen && (
-          <div className="absolute left-0 right-0 top-[calc(100%+0.4rem)] z-40 overflow-hidden rounded-xl border border-surface-border bg-surface-elevated shadow-2xl">
-            <div className="border-b border-surface-border/70 px-3.5 py-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-              Choose a Bible book
-            </div>
-            {bookCompletions.map((completion) => (
+
+      {open && (
+        <div
+          id="scripture-search-suggestions"
+          role="listbox"
+          className="absolute left-0 right-0 top-[calc(100%+4px)] z-40 max-h-80 overflow-y-auto rounded-lg border border-surface-border bg-surface-elevated p-1"
+          // Keep focus in the field so a click lands before blur closes the list.
+          onMouseDown={(event) => event.preventDefault()}
+        >
+          {items.map((item, index) => (
+            <div
+              key={item.kind === "book" ? `book-${item.completion.book}` : `verse-${item.result.reference}-${item.result.translation}`}
+              id={`scripture-suggestion-${index}`}
+              role="option"
+              aria-selected={index === active}
+              className={cn(
+                "flex items-center rounded-md text-xs",
+                index === active ? "bg-surface-tertiary" : "hover:bg-surface-tertiary",
+              )}
+              onMouseEnter={() => setActive(index)}
+            >
               <button
-                key={completion.book}
                 type="button"
-                className="flex w-full items-center justify-between border-b border-surface-border/40 px-3.5 py-2.5 text-left text-xs last:border-b-0 hover:bg-surface-tertiary/70"
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => onBookCompletionSelect(completion.value)}
+                tabIndex={-1}
+                className="flex min-w-0 flex-1 items-center gap-2.5 px-2 py-1.5 text-left"
+                onClick={() => choose(item)}
               >
-                <span className="font-semibold text-teal-300">{completion.book}</span>
-                <span className="text-slate-500">{completion.value}</span>
-              </button>
-            ))}
-          </div>
-        )}
-        {suggestionsOpen && searchSuggestions.length > 0 && (
-          <div
-            id="scripture-search-suggestions"
-            role="listbox"
-            className="absolute left-0 right-0 top-[calc(100%+0.4rem)] z-40 overflow-hidden rounded-xl border border-surface-border bg-surface-elevated shadow-2xl"
-          >
-            <div className="flex items-center justify-between border-b border-surface-border/70 px-3.5 py-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-              <span>Likely scripture matches</span>
-              <span>Enter to preview</span>
-            </div>
-            {searchSuggestions.map((result, index) => (
-              <button
-                key={`${result.reference}-${result.translation}`}
-                id={`scripture-suggestion-${index}`}
-                type="button"
-                role="option"
-                aria-selected={index === activeSuggestion}
-                className={cn(
-                  "flex w-full items-start gap-3 border-b border-surface-border/40 px-3.5 py-3 text-left last:border-b-0",
-                  index === activeSuggestion
-                    ? "row-selected"
-                    : "hover:bg-surface-tertiary/70",
+                {item.kind === "book" ? (
+                  <>
+                    <BookOpen size={12} className="shrink-0 text-slate-500" aria-hidden="true" />
+                    <span className="min-w-0 flex-1 truncate font-medium text-slate-200">
+                      {item.completion.value.trim()}
+                    </span>
+                    {index === 0 && (
+                      <kbd className="shrink-0 rounded border border-surface-border px-1 font-mono text-[10px] text-slate-500">
+                        Tab
+                      </kbd>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <span className="w-20 shrink-0 truncate font-semibold text-teal-300">
+                      {item.result.reference}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-slate-400">
+                      {item.result.verses.map((verse) => verse.text).join(" ")}
+                    </span>
+                  </>
                 )}
-                onMouseEnter={() => onActiveSuggestionChange(index)}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => onPreviewSuggestion(result)}
-              >
-                <span className="w-28 shrink-0 text-xs font-semibold text-teal-300">
-                  {result.reference}
-                </span>
-                <span className="line-clamp-2 text-xs leading-relaxed text-slate-400">
-                  {result.verses.map((verse) => verse.text).join(" ")}
-                </span>
               </button>
-            ))}
-          </div>
-        )}
-      </div>
-      <Button
-        className="h-10 shrink-0 px-5"
-        onClick={onSearch}
-        disabled={loading || !query.trim()}
-      >
-        {loading ? (
-          <Loader
-            data-icon="inline-start"
-            className="animate-spin"
-            aria-hidden="true"
-          />
-        ) : (
-          <Search data-icon="inline-start" aria-hidden="true" />
-        )}
-        {loading ? "Searching…" : "Search"}
-      </Button>
+              {/* Two explicit choices, always shown: the found verse on its own, or
+                  the chapter it sits in. Clicking the row itself adds the verse. */}
+              {item.kind === "verse" && isWithinChapter(item.result) && (
+                <div className="mr-1 flex shrink-0 items-center gap-1">
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    className="rounded border border-surface-border px-1.5 py-0.5 text-[11px] font-medium text-slate-300 hover:border-teal-500 hover:text-white"
+                    onClick={() => choose(item)}
+                    title={`Add ${item.result.reference} only (Enter)`}
+                  >
+                    Verse
+                  </button>
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    className="rounded border border-surface-border px-1.5 py-0.5 text-[11px] font-medium text-slate-300 hover:border-teal-500 hover:text-white"
+                    onClick={() => choose(item, true)}
+                    title={`Add all of ${item.result.reference.split(":")[0]} (Shift+Enter)`}
+                  >
+                    Chapter
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+          {items.some((item) => item.kind === "verse" && isWithinChapter(item.result)) && (
+            <p className="mt-1 border-t border-surface-border px-2 pb-0.5 pt-1.5 text-[10px] text-slate-500">
+              <kbd className="font-mono text-slate-400">↵</kbd> adds the verse ·{" "}
+              <kbd className="font-mono text-slate-400">⇧↵</kbd> adds the whole chapter
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

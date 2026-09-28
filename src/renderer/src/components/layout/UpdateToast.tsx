@@ -64,7 +64,7 @@ export default function UpdateToast(): React.ReactElement | null {
           <button
             type="button"
             onClick={() => void install()}
-            className="rounded border border-teal-800/60 px-2 py-1 text-[11px] font-semibold text-teal-300 transition-colors hover:border-teal-600 hover:bg-teal-950/40"
+            className="rounded border border-teal-800/60 px-2 py-1 text-[11px] font-semibold text-teal-300 transition-colors hover:border-teal-600 hover:bg-tint-teal"
           >
             Restart now
           </button>
@@ -80,7 +80,7 @@ export default function UpdateToast(): React.ReactElement | null {
       <button
         type="button"
         onClick={() => setVisible(false)}
-        className="shrink-0 rounded p-0.5 text-zinc-500 transition-colors hover:bg-white/10 hover:text-zinc-200"
+        className="shrink-0 rounded p-0.5 text-zinc-500 transition-colors hover:bg-surface-elevated hover:text-zinc-200"
         aria-label="Dismiss update notice"
       >
         <X size={13} aria-hidden="true" />

@@ -44,7 +44,7 @@ export function SecretKeyField({
     return (
       <div className={cn('space-y-1.5', className)}>
         <div
-          className="flex items-center gap-2 rounded-lg border border-surface-border/60 bg-surface-secondary/40 px-3 py-2"
+          className="flex items-center gap-2 rounded-lg border border-surface-border/60 bg-surface-secondary px-3 py-2"
         >
           <p
             className="min-w-0 flex-1 select-none font-mono text-sm tracking-wider text-slate-300"

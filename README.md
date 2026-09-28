@@ -1,7 +1,12 @@
 # Kairo
 
-Electron desktop app for ProPresenter church tech automation: live transcription,
-scripture detection and lookup, lyrics, and an NDI overlay.
+Electron desktop app for church presentation: live transcription, scripture
+detection and lookup, lyrics, documents and backgrounds — drawn full screen on a
+projector connected to the computer, no other software required.
+
+ProPresenter and NDI are integrations: Kairo can push to ProPresenter's library,
+messages and stage layers, and send its rendered slide as an NDI source, alongside
+(or instead of) its own screens.
 
 ## Development
 
@@ -81,7 +86,7 @@ the publisher has not. Approved Bible ids are provisioned one of two ways:
 - **Per install** — the `scripture.offlineDownloadBibleIds` array in the
   electron-store settings file (its path is logged at startup as
   `electron-store initialized`). Add the API.Bible ids and restart.
-- **Per build or deployment** — set `PROAUTOMATE_OFFLINE_BIBLE_IDS` to a
+- **Per build or deployment** — set `KAIRO_OFFLINE_BIBLE_IDS` to a
   comma-separated list of API.Bible ids before launching the app. Use this when
   a build ships with rights already confirmed.
 

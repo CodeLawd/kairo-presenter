@@ -244,7 +244,7 @@ export function SongQuickOpen({ songs, onClose, onOpen }: SongQuickOpenProps): R
       role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
       <div className="flex w-full max-w-5xl items-start justify-center gap-3" onKeyDown={handleKeyDown}>
       <section role="dialog" aria-modal="true" aria-label="Search song library"
-        className="flex w-[30rem] shrink-0 flex-col overflow-hidden rounded-xl border border-white/10 bg-[#1c1c1e] shadow-[0_24px_70px_rgba(0,0,0,0.6)] animate-spring-in motion-reduce:animate-none">
+        className="flex w-[30rem] shrink-0 flex-col overflow-hidden rounded-xl border border-white/10 bg-[#1c1c1e] animate-spring-in motion-reduce:animate-none">
         <div className="flex h-12 shrink-0 items-center gap-2.5 border-b border-white/[0.08] px-3.5">
           <Search size={17} className="shrink-0 text-zinc-500" aria-hidden="true" />
           <input ref={inputRef} value={query} onChange={(event) => setQuery(event.target.value)}
@@ -252,7 +252,7 @@ export function SongQuickOpen({ songs, onClose, onOpen }: SongQuickOpenProps): R
             className="min-w-0 flex-1 bg-transparent text-[15px] text-zinc-100 outline-none placeholder:text-zinc-600" />
           {query && (
             <button type="button" onClick={() => { setQuery(''); inputRef.current?.focus() }} aria-label="Clear search"
-              className="grid size-6 place-items-center rounded text-zinc-500 hover:bg-white/5 hover:text-zinc-200"><X size={13} /></button>
+              className="grid size-6 place-items-center rounded text-zinc-500 hover:bg-surface-tertiary hover:text-zinc-200"><X size={13} /></button>
           )}
         </div>
 
@@ -346,7 +346,7 @@ export function SongQuickOpen({ songs, onClose, onOpen }: SongQuickOpenProps): R
               <button
                 type="button"
                 onClick={searchWeb}
-                className="mt-1 flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-zinc-300 transition-colors hover:bg-white/[0.04]"
+                className="mt-1 flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-zinc-300 transition-colors hover:bg-surface-tertiary"
               >
                 <Globe size={13} className="shrink-0 text-zinc-500" aria-hidden="true" />
                 <span className="min-w-0 flex-1">
@@ -354,7 +354,7 @@ export function SongQuickOpen({ songs, onClose, onOpen }: SongQuickOpenProps): R
                     Search the web for “{query.trim()}”
                   </span>
                 </span>
-                <kbd className="shrink-0 rounded border border-white/10 bg-white/[0.04] px-1.5 py-0.5 text-[10px] text-zinc-500">⌘↵</kbd>
+                <kbd className="shrink-0 rounded border border-white/10 bg-surface-tertiary px-1.5 py-0.5 text-[10px] text-zinc-500">⌘↵</kbd>
               </button>
             )}
 
@@ -380,7 +380,7 @@ export function SongQuickOpen({ songs, onClose, onOpen }: SongQuickOpenProps): R
       {previewOpen && activeRow && (
         <aside
           aria-label="Song preview"
-          className="flex h-[min(520px,68vh)] w-[28rem] shrink-0 flex-col overflow-hidden rounded-xl border border-white/10 bg-[#1d1d1d] shadow-[0_28px_90px_rgba(0,0,0,0.72)] ring-1 ring-black/60 animate-spring-in motion-reduce:animate-none"
+          className="flex h-[min(520px,68vh)] w-[28rem] shrink-0 flex-col overflow-hidden rounded-xl border border-white/10 bg-[#1d1d1d] ring-1 ring-black/60 animate-spring-in motion-reduce:animate-none"
         >
               <div ref={previewRef} className="min-h-0 flex-1 overflow-y-auto px-5 py-4 select-text" aria-live="polite">
                 {activeRow?.kind === 'online' ? (
@@ -452,7 +452,7 @@ export function SongQuickOpen({ songs, onClose, onOpen }: SongQuickOpenProps): R
                 disabled={!active}
                 title={activeRow?.kind === 'online' ? 'Import the song first' : undefined}
                 onClick={() => active && addToSetlist(active)}
-                className="inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium text-zinc-400 transition-colors hover:bg-white/5 hover:text-zinc-100 disabled:opacity-40"
+                className="inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium text-zinc-400 transition-colors hover:bg-surface-tertiary hover:text-zinc-100 disabled:opacity-40"
               >
                 {active && added === active.id ? 'Added' : setlist ? `Add to ${setlist.name}` : 'Add to setlist'}
                 <kbd className="font-sans text-[10px] opacity-60">⌘↵</kbd>

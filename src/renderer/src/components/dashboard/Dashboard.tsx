@@ -74,10 +74,10 @@ function StatusDot({ state }: { state: PPState | 'capturing' | 'idle' | 'ready' 
 
 function PPBadge({ state }: { state: PPState }): React.ReactElement {
   const map: Record<PPState, { label: string; cls: string }> = {
-    connected:    { label: 'Connected',    cls: 'text-teal-400 bg-teal-500/10 border-teal-500/20 shadow-glow-teal/10' },
-    connecting:   { label: 'Connecting…',  cls: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/20' },
-    disconnected: { label: 'Disconnected', cls: 'text-slate-400 bg-slate-800/40 border-slate-700/30' },
-    error:        { label: 'Error',        cls: 'text-red-400 bg-red-500/10 border-red-500/20 shadow-glow-red/10' },
+    connected:    { label: 'Connected',    cls: 'text-teal-400 bg-tint-teal border-teal-500/20 shadow-glow-teal/10' },
+    connecting:   { label: 'Connecting…',  cls: 'text-yellow-400 bg-tint-yellow border-yellow-500/20' },
+    disconnected: { label: 'Disconnected', cls: 'text-slate-400 bg-slate-800 border-slate-700/30' },
+    error:        { label: 'Error',        cls: 'text-red-400 bg-tint-red border-red-500/20 shadow-glow-red/10' },
   }
   const { label, cls } = map[state]
   return (
@@ -102,7 +102,7 @@ function CardHeader({
   return (
     <div className="flex items-center justify-between mb-4 pb-2 border-b border-surface-border/20">
       <div className="flex items-center gap-2">
-        <div className="w-8 h-8 rounded-lg bg-surface-tertiary/60 border border-surface-border/40 flex items-center justify-center">
+        <div className="w-8 h-8 rounded-lg bg-surface-tertiary border border-surface-border/40 flex items-center justify-center">
           <Icon size={14} className="text-teal-400" aria-hidden="true" />
         </div>
         <h2 className="text-sm font-semibold text-white font-sans">{title}</h2>
@@ -124,7 +124,7 @@ function LevelBar({ level, clipping }: { level: number; clipping: boolean }): Re
 
   return (
     <div className="flex items-center gap-2">
-      <div className="flex-1 h-2 rounded-full bg-surface-tertiary/60 overflow-hidden border border-surface-border/30 p-0.5 animate-pulse-slow">
+      <div className="flex-1 h-2 rounded-full bg-surface-tertiary overflow-hidden border border-surface-border/30 p-0.5 animate-pulse-slow">
         <div
           className={cn('h-full rounded-full transition-all duration-75', color)}
           style={{ width: `${pct}%` }}
@@ -154,7 +154,7 @@ function StatTile({
 }): React.ReactElement {
   return (
     <div className={cn('double-bezel-outer flex-1', accent && 'border-teal-500/30')}>
-      <div className={cn('double-bezel-inner flex flex-col justify-between gap-1 min-h-[105px]', accent && 'bg-teal-950/10')}>
+      <div className={cn('double-bezel-inner flex flex-col justify-between gap-1 min-h-[105px]', accent && 'bg-tint-teal')}>
         <div className="flex items-center gap-1.5 text-slate-500">
           <Icon size={12} aria-hidden="true" />
           <span className="text-[10px] uppercase tracking-widest font-bold">{label}</span>
@@ -195,7 +195,7 @@ function PPConnectionCard({
 
           <div className="grid grid-cols-3 gap-3">
             {/* Version */}
-            <div className="bg-surface-tertiary/60 rounded-lg px-3 py-2.5">
+            <div className="bg-surface-tertiary rounded-lg px-3 py-2.5">
               <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1 font-sans">Version</p>
               <p className="text-sm font-medium text-white font-sans">
                 {ppVersion ?? <span className="text-slate-600 italic">—</span>}
@@ -203,7 +203,7 @@ function PPConnectionCard({
             </div>
 
             {/* Active presentation */}
-            <div className="bg-surface-tertiary/60 rounded-lg px-3 py-2.5">
+            <div className="bg-surface-tertiary rounded-lg px-3 py-2.5">
               <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1 font-sans">Presentation</p>
               <p className="text-sm font-medium text-white truncate font-sans" title={ppActivePresentationName ?? undefined}>
                 {ppActivePresentationName
@@ -211,7 +211,7 @@ function PPConnectionCard({
                     <span className="flex items-center gap-1.5">
                       {ppActivePresentationName}
                       {ppActiveSlideIndex !== null && (
-                        <span className="text-[10px] text-teal-400 font-mono bg-teal-500/10 border border-teal-500/20 px-1.5 py-0.5 rounded font-semibold">
+                        <span className="text-[10px] text-teal-400 font-mono bg-tint-teal border border-teal-500/20 px-1.5 py-0.5 rounded font-semibold">
                           #{ppActiveSlideIndex + 1}
                         </span>
                       )}
@@ -223,7 +223,7 @@ function PPConnectionCard({
             </div>
 
             {/* Active playlist */}
-            <div className="bg-surface-tertiary/60 rounded-lg px-3 py-2.5">
+            <div className="bg-surface-tertiary rounded-lg px-3 py-2.5">
               <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1 font-sans">Playlist</p>
               <p className="text-sm font-medium text-white truncate font-sans" title={ppActivePlaylistName ?? undefined}>
                 {ppActivePlaylistName ?? <span className="text-slate-600 italic">None active</span>}
@@ -246,7 +246,7 @@ function PPConnectionCard({
               'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 ease-out-expo border border-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50',
               ppState === 'connecting'
                 ? 'text-slate-600 cursor-not-allowed'
-                : 'text-slate-300 hover:text-white hover:bg-surface-tertiary/80 hover:border-surface-border/50'
+                : 'text-slate-300 hover:text-white hover:bg-surface-tertiary hover:border-surface-border/50'
             )}
           >
             <RefreshCw size={12} className={ppState === 'connecting' ? 'animate-spin' : ''} aria-hidden="true" />
@@ -311,7 +311,7 @@ function AudioStatusCard({
 
           {/* Error message */}
           {audioError && (
-            <div className="mb-2 flex items-center gap-1.5 text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-2.5 py-1.5">
+            <div className="mb-2 flex items-center gap-1.5 text-xs text-red-400 bg-tint-red border border-red-500/20 rounded-lg px-2.5 py-1.5">
               <AlertCircle size={12} className="shrink-0" aria-hidden="true" />
               {audioError}
             </div>
@@ -324,8 +324,8 @@ function AudioStatusCard({
             'w-full flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-semibold transition-all duration-200 ease-out-expo border',
             'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50',
             audioCapturing
-              ? 'bg-red-500/10 text-red-400 hover:bg-red-500/20 border-red-500/20 shadow-glow-red/10'
-              : 'bg-teal-500/10 text-teal-300 hover:bg-teal-500/20 border-teal-500/20 shadow-glow-teal/10'
+              ? 'bg-tint-red text-red-400 hover:bg-tint-red border-red-500/20 shadow-glow-red/10'
+              : 'bg-tint-teal text-teal-300 hover:bg-tint-teal border-teal-500/20 shadow-glow-teal/10'
           )}
         >
           {audioCapturing ? <Square size={12} aria-hidden="true" /> : <Play size={12} aria-hidden="true" />}
@@ -370,11 +370,11 @@ function TranscriptionCard({
 
           {/* Metrics row */}
           <div className="grid grid-cols-2 gap-2 mb-3">
-            <div className="bg-surface-tertiary/60 rounded-lg px-3 py-2">
+            <div className="bg-surface-tertiary rounded-lg px-3 py-2">
               <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-0.5 font-sans">Words</p>
               <p className="text-lg font-bold text-white tabular-nums font-sans">{transcriptWordCount.toLocaleString()}</p>
             </div>
-            <div className="bg-surface-tertiary/60 rounded-lg px-3 py-2">
+            <div className="bg-surface-tertiary rounded-lg px-3 py-2">
               <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-0.5 font-sans">Latency</p>
               <p className="text-lg font-bold text-white tabular-nums font-sans">
                 {transcriptLatencyMs !== null
@@ -388,7 +388,7 @@ function TranscriptionCard({
           {/* Recent transcript lines */}
           <div className="mb-2">
             <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-2 font-sans">Recent</p>
-            <div className="space-y-1.5 min-h-[3.5rem] bg-surface-secondary/40 rounded-lg p-2.5">
+            <div className="space-y-1.5 min-h-[3.5rem] bg-surface-secondary rounded-lg p-2.5">
               {transcriptRecentLines.length === 0 ? (
                 <p className="text-xs text-slate-600 italic font-sans">
                   {isTranscribing ? 'Waiting for speech…' : 'No transcript yet'}
@@ -418,8 +418,8 @@ function TranscriptionCard({
             'w-full flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-semibold transition-all duration-200 ease-out-expo border',
             'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50',
             isTranscribing
-              ? 'bg-red-500/10 text-red-400 hover:bg-red-500/20 border-red-500/20 shadow-glow-red/10'
-              : 'bg-teal-500/10 text-teal-300 hover:bg-teal-500/20 border-teal-500/20 shadow-glow-teal/10'
+              ? 'bg-tint-red text-red-400 hover:bg-tint-red border-red-500/20 shadow-glow-red/10'
+              : 'bg-tint-teal text-teal-300 hover:bg-tint-teal border-teal-500/20 shadow-glow-teal/10'
           )}
         >
           {isTranscribing ? <Square size={12} aria-hidden="true" /> : <Mic size={12} aria-hidden="true" />}
@@ -470,7 +470,7 @@ function ScriptureCard(): React.ReactElement {
           />
 
           {/* Auto-mode indicator */}
-          <div className="flex items-center justify-between mb-3 bg-surface-tertiary/60 rounded-lg px-3 py-2 font-sans">
+          <div className="flex items-center justify-between mb-3 bg-surface-tertiary rounded-lg px-3 py-2 font-sans">
             <div className="flex items-center gap-2">
               <Zap size={13} className={autoModeEnabled ? 'text-teal-400 shadow-glow-teal' : 'text-slate-600'} aria-hidden="true" />
               <span className="text-xs font-semibold text-slate-300">Auto-Mode</span>
@@ -480,12 +480,12 @@ function ScriptureCard(): React.ReactElement {
                 <span className="text-[10px] text-slate-500">
                   {Math.round(confidenceThreshold * 100)}% confidence
                 </span>
-                <span className="text-[10px] font-bold text-teal-400 bg-teal-500/10 border border-teal-500/20 px-1.5 py-0.5 rounded shadow-glow-teal/10">
+                <span className="text-[10px] font-bold text-teal-400 bg-tint-teal border border-teal-500/20 px-1.5 py-0.5 rounded shadow-glow-teal/10">
                   ON
                 </span>
               </div>
             ) : (
-              <span className="text-[10px] font-bold text-slate-600 bg-slate-800/40 border border-slate-700/30 px-1.5 py-0.5 rounded">
+              <span className="text-[10px] font-bold text-slate-600 bg-slate-800 border border-slate-700/30 px-1.5 py-0.5 rounded">
                 OFF
               </span>
             )}
@@ -493,11 +493,11 @@ function ScriptureCard(): React.ReactElement {
 
           {/* Counters */}
           <div className="grid grid-cols-2 gap-2 mb-3">
-            <div className="bg-surface-tertiary/60 rounded-lg px-3 py-2">
+            <div className="bg-surface-tertiary rounded-lg px-3 py-2">
               <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-0.5 font-sans">Detected</p>
               <p className="text-lg font-bold text-white tabular-nums font-sans">{scriptureDetectionCount}</p>
             </div>
-            <div className="bg-surface-tertiary/60 rounded-lg px-3 py-2 bg-teal-950/10">
+            <div className="bg-surface-tertiary rounded-lg px-3 py-2 bg-tint-teal">
               <p className="text-[10px] uppercase tracking-wider text-teal-500/60 font-bold mb-0.5 font-sans">Projected</p>
               <p className="text-lg font-bold text-teal-300 tabular-nums font-sans">{scriptureProjectedCount}</p>
             </div>
@@ -507,7 +507,7 @@ function ScriptureCard(): React.ReactElement {
           <div>
             <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1.5 font-sans">Last Detected</p>
             {lastDetectedScripture ? (
-              <div className="flex items-center gap-2 bg-teal-500/5 rounded-lg px-3 py-2">
+              <div className="flex items-center gap-2 bg-tint-teal rounded-lg px-3 py-2">
                 <BookOpen size={13} className="text-teal-400 shrink-0" aria-hidden="true" />
                 <span className="text-sm font-semibold text-teal-300 font-serif truncate">{lastDetectedScripture}</span>
               </div>
@@ -688,7 +688,7 @@ export default function Dashboard(): React.ReactElement {
           <h1 className="page-header">Dashboard</h1>
           <p className="page-subtitle">Real-time system status & telemetry</p>
         </div>
-        <div className="flex items-center gap-2 text-xs font-semibold text-slate-400 bg-surface-tertiary/60 border border-surface-border/40 rounded-lg px-3.5 py-2 font-sans shadow-sm">
+        <div className="flex items-center gap-2 text-xs font-semibold text-slate-400 bg-surface-tertiary border border-surface-border/40 rounded-lg px-3.5 py-2 font-sans shadow-sm">
           <Activity size={12} className={ppState === 'connected' ? 'text-teal-400 animate-pulse' : 'text-slate-600'} aria-hidden="true" />
           {ppState === 'connected' ? 'Live Connection' : 'Offline Mode'}
         </div>

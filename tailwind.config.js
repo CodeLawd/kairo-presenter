@@ -37,6 +37,15 @@ module.exports = {
           DEFAULT: '#ef4444',
           foreground: '#ffffff',
         },
+        // Solid accent washes — what a 12% accent over the panel used to look
+        // like, but opaque, per theme (see --tint-* in index.css).
+        tint: {
+          teal: 'rgb(var(--tint-teal) / <alpha-value>)',
+          red: 'rgb(var(--tint-red) / <alpha-value>)',
+          amber: 'rgb(var(--tint-amber) / <alpha-value>)',
+          yellow: 'rgb(var(--tint-yellow) / <alpha-value>)',
+          rose: 'rgb(var(--tint-rose) / <alpha-value>)',
+        },
         surface: {
           DEFAULT: 'rgb(var(--surface) / <alpha-value>)',
           secondary: 'rgb(var(--surface-secondary) / <alpha-value>)',
@@ -93,10 +102,18 @@ module.exports = {
         serif: ['Source Sans 3', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
         mono: ['SF Mono', 'Menlo', 'Consolas', 'monospace'],
       },
+      // A restrained radius scale for controls, rows and scripture cards.
+      // Lyrics slide cards still opt into square corners in their view.
       borderRadius: {
-        lg: 'var(--radius)',
-        md: 'var(--radius-md)',
-        sm: 'var(--radius-sm)',
+        none: '0',
+        sm: '4px',
+        DEFAULT: '6px',
+        md: '8px',
+        lg: '10px',
+        xl: '12px',
+        '2xl': '16px',
+        '3xl': '20px',
+        '4xl': '24px',
       },
       fontSize: {
         xs: ['0.75rem', { lineHeight: '1rem' }],
@@ -109,9 +126,17 @@ module.exports = {
       },
       transitionTimingFunction: {
         'out-expo': 'cubic-bezier(0.16, 1, 0.3, 1)',
-        'spring': 'cubic-bezier(0.34, 1.56, 0.64, 1)',
       },
+      // Flat UI: nothing floats. Depth comes from solid surface steps and
+      // 1px borders, not drop shadows. (Focus rings are separate utilities.)
       boxShadow: {
+        sm: 'none',
+        DEFAULT: 'none',
+        md: 'none',
+        lg: 'none',
+        xl: 'none',
+        '2xl': 'none',
+        inner: 'none',
         'glow-teal': 'none',
         'glow-red': 'none',
         'glow-yellow': 'none',

@@ -85,7 +85,7 @@ export function ExportSongsModal({ preselect }: { preselect: string[] }): React.
             type="button"
             onClick={close}
             aria-label="Close"
-            className="grid h-7 w-7 place-items-center rounded-md text-white/40 hover:bg-white/[0.06] hover:text-white"
+            className="grid h-7 w-7 place-items-center rounded-md text-white/40 hover:bg-surface-tertiary hover:text-white"
           >
             <X size={14} aria-hidden="true" />
           </button>
@@ -121,7 +121,7 @@ export function ExportSongsModal({ preselect }: { preselect: string[] }): React.
           ) : (
             visible.map((song) => (
               <li key={song.id}>
-                <label className="flex cursor-pointer items-center gap-2.5 rounded-md px-3 py-1.5 hover:bg-white/[0.04]">
+                <label className="flex cursor-pointer items-center gap-2.5 rounded-md px-3 py-1.5 hover:bg-surface-tertiary">
                   <input
                     type="checkbox"
                     checked={selected.has(song.id)}

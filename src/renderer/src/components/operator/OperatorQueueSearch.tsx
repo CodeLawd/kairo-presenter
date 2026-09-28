@@ -250,7 +250,7 @@ export function OperatorQueueSearch({
             <button
               key={completion.book}
               type="button"
-              className="flex w-full items-center justify-between border-b border-surface-border/40 px-2.5 py-2 text-left text-[10px] last:border-b-0 hover:bg-surface-tertiary/70"
+              className="flex w-full items-center justify-between border-b border-surface-border/40 px-2.5 py-2 text-left text-[10px] last:border-b-0 hover:bg-surface-tertiary"
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => {
                 const submitted = resolveSubmittedScriptureQuery(completion.value)
@@ -296,7 +296,7 @@ export function OperatorQueueSearch({
                 'flex w-full items-start gap-2 border-b border-surface-border/40 px-2.5 py-2 text-left last:border-b-0',
                 index === activeSuggestion
                   ? 'row-selected'
-                  : 'hover:bg-surface-tertiary/70'
+                  : 'hover:bg-surface-tertiary'
               )}
               onMouseEnter={() => setActiveSuggestion(index)}
               onMouseDown={(event) => event.preventDefault()}

@@ -47,7 +47,7 @@ test('the app shell does not mount until bootstrap is ready', () => {
   const guard = app.indexOf('if (!ready)')
   assert.ok(guard > 0, 'App must short-circuit on the loading screen')
   assert.ok(guard < app.indexOf('<AppShell'), 'AppShell renders only after the guard')
-  assert.match(app, /const ready = bootstrapped && minDurationElapsed/)
+  assert.match(app, /const ready = bootstrapped && splashHeld/)
 })
 
 test('every hook runs before the loading-screen return', () => {
@@ -113,7 +113,7 @@ test('screens publish their mutations back to the shared snapshot', () => {
   assert.match(read('src/renderer/src/components/settings/Settings.tsx'), /publish\('scripture', settings\.scripture\)/)
 })
 
-test('integration hydration runs after the interface opens, never before', () => {
+test('integration hydration starts behind the splash without gating it', () => {
   const store = read('src/renderer/src/bootstrap/useBootstrapStore.ts')
   assert.match(store, /export async function hydrateIntegrations/)
   // Devices are enumerated in the renderer now: getUserMedia needs a real
@@ -122,9 +122,11 @@ test('integration hydration runs after the interface opens, never before', () =>
     assert.ok(store.slice(store.indexOf('hydrateIntegrations')).includes(call), `${call} must hydrate in the background`)
   }
   const app = read('src/renderer/src/App.tsx')
-  // Gated on ready AND the account gate: hydration will not pull secrets for
-  // a ticketed service when the signed-in operator has not been admitted yet.
+  // Gated on bootstrap AND sign-in: hydration will not pull secrets for a
+  // ticketed service when the operator has not been admitted yet. It is fired,
+  // never awaited, so it cannot hold the splash up.
   assert.match(app, /hydrateIntegrations/)
   // \r? tolerates CRLF checkouts on Windows, where every line ends with \r\n.
-  assert.match(app, /if \(!ready.*\) return\r?\n\s*void hydrateIntegrations\(\)/)
+  assert.match(app, /if \(!bootstrapped \|\| needsSignIn\) return\r?\n\s*void hydrateIntegrations\(\)/)
+  assert.doesNotMatch(app, /const ready = [^\n]*hydrat/i, 'the splash must never wait on integrations')
 })

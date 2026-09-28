@@ -24,7 +24,7 @@ const FETCH_TIMEOUT_MS = 20_000
 const MAX_RESULTS = 8
 
 /** LRCLIB asks clients to identify themselves rather than spoof a browser. */
-const USER_AGENT = 'Kairo (https://github.com/proautomate/proautomate)'
+const USER_AGENT = 'Kairo (https://github.com/CodeLawd/kairo-presenter)'
 
 const SEARCH_CACHE_TTL_MS = 5 * 60_000
 /** Keep search-inline lyrics around so preview/import skip a second round trip. */

@@ -42,7 +42,7 @@ export default function UpdatePill(): React.ReactElement | null {
       <button
         type="button"
         onClick={() => void download()}
-        className={`${base} text-teal-400 hover:bg-teal-500/10 focus-visible:ring-teal-400`}
+        className={`${base} text-teal-400 hover:bg-tint-teal focus-visible:ring-teal-400`}
         title={`Kairo ${status.version} is available — download it now, install whenever you like`}
       >
         <Download size={13} aria-hidden="true" />
@@ -59,8 +59,8 @@ export default function UpdatePill(): React.ReactElement | null {
       onBlur={() => setConfirming(false)}
       className={`${base} ${
         confirming
-          ? 'bg-amber-950/40 text-amber-200 focus-visible:ring-amber-400'
-          : 'text-teal-400 hover:bg-teal-500/10 focus-visible:ring-teal-400'
+          ? 'bg-tint-amber text-amber-200 focus-visible:ring-amber-400'
+          : 'text-teal-400 hover:bg-tint-teal focus-visible:ring-teal-400'
       }`}
       title={
         confirming

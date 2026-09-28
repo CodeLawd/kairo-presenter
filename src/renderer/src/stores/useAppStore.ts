@@ -64,7 +64,7 @@ interface AppState {
   scriptureActiveCardInRow: number
   /** How the item was highlighted when leaving. */
   scriptureHighlightMode: 'none' | 'focus' | 'live'
-  /** Reference currently on ProAutomate output — drives the header LIVE badge. */
+  /** Reference currently on Kairo's output — drives the header LIVE badge. */
   liveOutputLabel: string | null
   /** Last text sent to ProPresenter, shared by the Operator, Scripture and Lyrics tabs. */
   liveOutputPreview: LiveOutputPayload | null
@@ -91,6 +91,11 @@ interface AppState {
 
   /** Settings pane some screen asked App to open; App clears it once shown. */
   settingsRequest: SettingsSectionId | null
+  /**
+   * The Screens window (screen configuration) is open. Holds the item to
+   * select on open — an output id, `stage:<id>`, or null for the first one.
+   */
+  screensWindow: { select: string | null } | null
 
   // ── Legacy (kept for backward compat) ────────────────────────────────────
   proPresenterConnected: boolean
@@ -137,6 +142,8 @@ interface AppState {
 
   openSettings: (section: SettingsSectionId) => void
   clearSettingsRequest: () => void
+  openScreens: (select?: string | null) => void
+  closeScreens: () => void
 
   // ── Legacy setters ────────────────────────────────────────────────────────
   setProPresenterConnected: (connected: boolean) => void
@@ -193,6 +200,7 @@ export const useAppStore = create<AppState>((set) => ({
   // ── Session ───────────────────────────────────────────────────────────────
   sessionStartTime: Date.now(),
   settingsRequest: null,
+  screensWindow: null,
 
   // ── Legacy ────────────────────────────────────────────────────────────────
   proPresenterConnected: false,
@@ -328,6 +336,8 @@ export const useAppStore = create<AppState>((set) => ({
 
   openSettings: (section) => set({ settingsRequest: section }),
   clearSettingsRequest: () => set({ settingsRequest: null }),
+  openScreens: (select = null) => set({ screensWindow: { select } }),
+  closeScreens: () => set({ screensWindow: null }),
 
   // ── Legacy ────────────────────────────────────────────────────────────────
 

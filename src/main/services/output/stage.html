@@ -1,0 +1,174 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Kairo Stage</title>
+    <style>
+      html {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        background: #000;
+        overflow: hidden;
+        cursor: none;
+      }
+      body {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 1920px;
+        height: 1080px;
+        margin: 0;
+        transform-origin: 0 0;
+        background: #000;
+        color: #fff;
+        font-family: 'Source Sans 3', 'Helvetica Neue', Arial, sans-serif;
+        -webkit-font-smoothing: antialiased;
+        overflow: hidden;
+      }
+      * { box-sizing: border-box; }
+      #top {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 120px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 56px;
+        border-bottom: 2px solid #1f2937;
+        font-variant-numeric: tabular-nums;
+      }
+      #clock { font-size: 76px; font-weight: 600; color: #e5e7eb; }
+      #timer { font-size: 76px; font-weight: 700; color: #5eead4; }
+      #timer.overrun { color: #f87171; }
+      #timer.paused { opacity: 0.55; }
+      #message {
+        position: absolute;
+        top: 132px;
+        left: 40px;
+        right: 40px;
+        padding: 18px 28px;
+        border-radius: 14px;
+        background: #b91c1c;
+        font-size: 60px;
+        font-weight: 700;
+        line-height: 1.15;
+        text-align: center;
+        display: none;
+        z-index: 2;
+      }
+      #current {
+        position: absolute;
+        top: 140px;
+        left: 56px;
+        right: 56px;
+        bottom: 300px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        overflow: hidden;
+      }
+      #current-ref { font-size: 40px; color: #9ca3af; margin-bottom: 12px; }
+      #current-text {
+        font-size: 84px;
+        font-weight: 600;
+        line-height: 1.18;
+        white-space: pre-wrap;
+        overflow-wrap: break-word;
+      }
+      #next {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: 280px;
+        padding: 24px 56px;
+        border-top: 2px solid #1f2937;
+        background: #0b0f14;
+        overflow: hidden;
+      }
+      #next-label { font-size: 32px; color: #fbbf24; font-weight: 700; letter-spacing: 0.06em; }
+      #next-text {
+        margin-top: 8px;
+        font-size: 52px;
+        line-height: 1.2;
+        color: #d1d5db;
+        white-space: pre-wrap;
+        overflow-wrap: break-word;
+      }
+      .hidden { display: none !important; }
+      #current.full { bottom: 40px; }
+    </style>
+  </head>
+  <body>
+    <div id="top"><div id="clock"></div><div id="timer"></div></div>
+    <div id="message"></div>
+    <div id="current"><div id="current-ref"></div><div id="current-text"></div></div>
+    <div id="next"><div id="next-label">NEXT</div><div id="next-text"></div></div>
+    <script>
+      // Letterboxed at 1920×1080 like the program windows.
+      function fit() {
+        var scale = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+        document.body.style.transform = 'scale(' + scale + ') translate(-50%, -50%)';
+      }
+      fit();
+      window.addEventListener('resize', fit);
+
+      var state = null;
+      var el = function (id) { return document.getElementById(id); };
+
+      function pad(n) { return (n < 10 ? '0' : '') + n; }
+      function formatTimer(seconds) {
+        var sign = seconds < 0 ? '-' : '';
+        var total = Math.abs(Math.trunc(seconds));
+        var h = Math.floor(total / 3600);
+        var m = Math.floor((total % 3600) / 60);
+        var s = total % 60;
+        return h > 0 ? sign + h + ':' + pad(m) + ':' + pad(s) : sign + m + ':' + pad(s);
+      }
+      function remaining(timer) {
+        if (timer.endsAt === null) return timer.remainingSec;
+        return Math.ceil((timer.endsAt - Date.now()) / 1000);
+      }
+
+      // Only touch the DOM when the text changes — this runs four times a second.
+      function setText(node, text) {
+        if (node.textContent !== text) node.textContent = text;
+      }
+
+      function tick() {
+        var now = new Date();
+        var hours = now.getHours();
+        setText(el('clock'), (hours % 12 || 12) + ':' + pad(now.getMinutes()) + (hours < 12 ? ' AM' : ' PM'));
+        if (!state) return;
+        var t = el('timer');
+        var left = remaining(state.timer);
+        setText(t, formatTimer(left));
+        t.classList.toggle('overrun', left < 0);
+        t.classList.toggle('paused', state.timer.endsAt === null && left !== state.timer.durationSec);
+      }
+
+      // Every value arrives as data and is written with textContent — nothing
+      // the operator types can become markup here.
+      window.__setStage = function (next) {
+        state = next;
+        el('clock').classList.toggle('hidden', !next.showClock);
+        el('timer').classList.toggle('hidden', !next.showTimer);
+        el('next').classList.toggle('hidden', !next.showNext);
+        el('current').classList.toggle('full', !next.showNext);
+        el('current-ref').textContent = next.current ? next.current.reference : '';
+        el('current-text').textContent = next.current ? next.current.text : '';
+        el('next-text').textContent = next.next ? (next.next.text || next.next.reference) : '—';
+        var message = el('message');
+        message.textContent = next.stageMessage || '';
+        message.style.display = next.stageMessage ? 'block' : 'none';
+        tick();
+      };
+
+      tick();
+      setInterval(tick, 250);
+    </script>
+  </body>
+</html>

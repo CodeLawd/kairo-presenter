@@ -19,8 +19,23 @@ export interface NdiVideoFrame {
   fourCC: number
 }
 
+/** 32-bit float planar audio (NDI FourCC 'FLTp'): every channel's samples back to back. */
+export interface NdiAudioFrame {
+  sampleRate: number
+  channels: number
+  samples: number
+  /** `samples * 4` for tightly packed planar floats. */
+  channelStrideBytes: number
+  data: Buffer
+}
+
+/** NDI FourCC for float planar audio ('FLTp'). */
+export const FOURCC_AUDIO_FLTP = 1884572742
+
 export interface NdiSender {
   sendVideo(frame: NdiVideoFrame): Promise<void>
+  /** Absent when the native binding cannot send audio (grandiose-mac 0.0.6). */
+  sendAudio?(frame: NdiAudioFrame): Promise<void>
   /** Optional explicit teardown; grandiose-mac 0.0.6 relies on GC finalizers. */
   destroy?(): Promise<void> | void
 }
@@ -87,6 +102,7 @@ interface GrandiLikeModule {
   find?: (...args: unknown[]) => Promise<unknown>
   send?: (opts: { name: string; clockVideo?: boolean; clockAudio?: boolean }) => Promise<{
     video: (frame: NdiVideoFrame) => Promise<void>
+    audio?: (frame: NdiAudioFrame & { fourCC: number }) => Promise<void>
   }>
 }
 
@@ -109,7 +125,12 @@ export function createGrandiProvider(nativeRaw: GrandiLikeModule): NdiProvider {
       // grandiose-compatible `send()` if present (some forks expose it).
       if (typeof native.send === 'function') {
         const sender = await native.send({ name: opts.name, clockVideo: opts.clockVideo })
-        return { sendVideo: (frame) => sender.video(frame) }
+        const audio = typeof sender.audio === 'function' ? sender.audio.bind(sender) : null
+        return {
+          sendVideo: (frame) => sender.video(frame),
+          // Video is the clocked stream; audio frames go out as they arrive.
+          ...(audio ? { sendAudio: (frame: NdiAudioFrame) => audio({ ...frame, fourCC: FOURCC_AUDIO_FLTP }) } : {}),
+        }
       }
       throw new Error('grandi adapter: sender creation not supported by installed version')
     },

@@ -1,0 +1,642 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Kairo Program</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: transparent;
+      }
+      #root {
+        position: relative;
+        width: 100%;
+        height: 100%;
+      }
+      #root * {
+        box-sizing: border-box;
+        -webkit-font-smoothing: antialiased;
+      }
+      /* Program layers, bottom to top. Each one is replaced on its own, so a
+         background keeps playing while the text above it changes. */
+      .pa-slot {
+        position: absolute;
+        inset: 0;
+        overflow: hidden;
+        pointer-events: none;
+      }
+      .pa-slot > * {
+        position: absolute;
+        inset: 0;
+      }
+      .pa-verse-box,
+      .pa-verse {
+        min-height: 0;
+        min-width: 0;
+      }
+      .pa-verse,
+      .pa-verse-text {
+        overflow-wrap: break-word;
+      }
+      @keyframes pa-ticker {
+        from { transform: translateX(0); }
+        to { transform: translateX(-100%); }
+      }
+      /* ?fit=display — a visible window on a physical display. Theme values
+         are authored in 1920-wide pixel space, so the body stays that size and
+         is scaled to fit, letterboxed on black (see fitToWindow below). */
+      html.fit-display {
+        width: 100%;
+        height: 100%;
+        background: #000;
+        cursor: none;
+      }
+      html.fit-display body {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        background: #000;
+        transform-origin: 0 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <div class="pa-overlay-root" id="pa-program" style="position:absolute;inset:0;overflow:hidden;">
+        <div class="pa-slot" id="pa-bg-layer"></div>
+        <div class="pa-slot" id="pa-camera-layer"></div>
+        <div class="pa-slot" id="pa-text-layer"></div>
+        <div class="pa-slot" id="pa-props-layer"></div>
+        <div class="pa-slot" id="pa-message-layer"></div>
+        <div class="pa-slot" id="pa-logo-layer"></div>
+      </div>
+    </div>
+    <script>
+      var params = new URLSearchParams(location.search);
+      // Frame size in theme pixel space. 1920×1080 unless a screen output asked
+      // to fill a display of another shape (native aspect).
+      var FRAME_W = 1920;
+      var FRAME_H = Math.max(360, Math.min(4320, parseInt(params.get('h') || '1080', 10) || 1080));
+      document.documentElement.style.height = FRAME_H + 'px';
+      document.body.style.height = FRAME_H + 'px';
+
+      if (params.get('fit') === 'display') {
+        document.documentElement.classList.add('fit-display');
+        document.documentElement.style.height = '';
+        var fitToWindow = function () {
+          var scale = Math.min(window.innerWidth / FRAME_W, window.innerHeight / FRAME_H);
+          document.body.style.transform =
+            'scale(' + scale + ') translate(-50%, -50%)';
+        };
+        fitToWindow();
+        window.addEventListener('resize', fitToWindow);
+      }
+
+      var program = document.getElementById('pa-program');
+      var layers = {
+        bg: document.getElementById('pa-bg-layer'),
+        camera: document.getElementById('pa-camera-layer'),
+        text: document.getElementById('pa-text-layer'),
+        props: document.getElementById('pa-props-layer'),
+        message: document.getElementById('pa-message-layer'),
+        logo: document.getElementById('pa-logo-layer'),
+      };
+
+      // Set by the main process (window.__configure). `transitionMs` 0 = cut.
+      // `audio.enabled`: this window plays background-video sound (only the one
+      // audio surface does). `ndiAudio`: this window feeds its NDI sender sound.
+      var config = { transitionMs: 0, audio: { enabled: false, volume: 1, outputLabel: '' }, ndiAudio: false };
+      // Whether this window plays the camera's sound — also only the audio surface.
+      var cameraAudible = false;
+
+      // ─── Layer helpers ────────────────────────────────────────────────────
+      // A node on its way out keeps `data-leaving` until it is removed, and
+      // every lookup below skips it — a fading slide is never "the" slide.
+
+      function live(layer, selector) {
+        var nodes = layer.querySelectorAll(selector);
+        for (var i = nodes.length - 1; i >= 0; i--) {
+          var owner = nodes[i].closest('[data-pa-node]');
+          if (!owner || !owner.hasAttribute('data-leaving')) return nodes[i];
+        }
+        return null;
+      }
+
+      function currentNode(layer) {
+        var nodes = layer.children;
+        for (var i = nodes.length - 1; i >= 0; i--) {
+          if (!nodes[i].hasAttribute('data-leaving')) return nodes[i];
+        }
+        return null;
+      }
+
+      function retire(node, ms) {
+        if (!node) return;
+        node.setAttribute('data-leaving', '1');
+        if (!ms) {
+          stopMedia(node);
+          node.remove();
+          return;
+        }
+        node.style.transition = 'opacity ' + ms + 'ms linear';
+        node.style.opacity = '0';
+        setTimeout(function () {
+          stopMedia(node);
+          node.remove();
+        }, ms + 50);
+      }
+
+      function stopMedia(node) {
+        var videos = node.querySelectorAll('video');
+        for (var i = 0; i < videos.length; i++) {
+          var stream = videos[i].srcObject;
+          if (stream && stream.getTracks) stream.getTracks().forEach(function (t) { t.stop(); });
+          var routing = routed.get(videos[i]);
+          if (routing && routing.streamSource) routing.streamSource.disconnect();
+          videos[i].pause();
+          videos[i].removeAttribute('src');
+          videos[i].srcObject = null;
+        }
+      }
+
+      function enter(layer, node, ms) {
+        node.setAttribute('data-pa-node', '1');
+        if (ms) {
+          node.style.opacity = '0';
+          layer.appendChild(node);
+          // Force a style flush so the transition runs from 0.
+          void node.offsetWidth;
+          node.style.transition = 'opacity ' + ms + 'ms linear';
+          node.style.opacity = '1';
+        } else {
+          layer.appendChild(node);
+        }
+      }
+
+      /** Replaces a layer's content. Empty html clears the layer. */
+      function swapLayer(layer, html, ms) {
+        var old = currentNode(layer);
+        if (!html) {
+          retire(old, ms);
+          return null;
+        }
+        var wrapper = document.createElement('div');
+        wrapper.innerHTML = html;
+        var node = wrapper.firstElementChild;
+        if (!node) {
+          retire(old, ms);
+          return null;
+        }
+        wrapper.removeChild(node);
+        enter(layer, node, ms);
+        retire(old, ms);
+        return node;
+      }
+
+      // ─── Background ───────────────────────────────────────────────────────
+
+      /** What makes two backgrounds "the same": the media file, else the markup. */
+      function backgroundKey(bg) {
+        var media = bg.querySelector('video, img');
+        return media ? media.tagName + ':' + media.getAttribute('src') : bg.outerHTML;
+      }
+
+      // ─── Sound ────────────────────────────────────────────────────────────
+      // Without NDI audio, each <video> plays (or stays muted) on its own. With
+      // it, every source runs through one Web Audio graph: a per-source gain
+      // decides what this window plays out loud, and a shared bus feeds an
+      // AudioWorklet tap whose blocks go to the NDI sender (kairoProgram, the
+      // program preload). Once an element is routed it stays routed — Web Audio
+      // cannot hand an element back — so the graph is kept for the window's life.
+
+      var routed = new WeakMap();
+      var graph = null;
+
+      var TAP_SOURCE = [
+        'class KairoTap extends AudioWorkletProcessor {',
+        '  constructor() { super(); this.size = 1024; this.l = new Float32Array(1024); this.r = new Float32Array(1024); this.n = 0; this.on = true; this.port.onmessage = (e) => { this.on = !!e.data; }; }',
+        '  process(inputs) {',
+        '    var input = inputs[0];',
+        '    if (!this.on || !input || input.length === 0) return true;',
+        '    var left = input[0], right = input[1] || input[0];',
+        '    for (var i = 0; i < left.length; i++) {',
+        '      this.l[this.n] = left[i]; this.r[this.n] = right[i]; this.n++;',
+        '      if (this.n === this.size) {',
+        '        var out = new Float32Array(this.size * 2);',
+        '        out.set(this.l, 0); out.set(this.r, this.size);',
+        '        this.port.postMessage(out, [out.buffer]);',
+        '        this.n = 0;',
+        '      }',
+        '    }',
+        '    return true;',
+        '  }',
+        '}',
+        "registerProcessor('kairo-tap', KairoTap);",
+      ].join('\n');
+
+      function volume() {
+        return Math.max(0, Math.min(1, Number(config.audio.volume)));
+      }
+
+      function ensureGraph() {
+        if (graph) return graph;
+        if (!config.ndiAudio || !window.kairoProgram || !window.AudioContext) return null;
+        var ctx = new AudioContext({ sampleRate: 48000 });
+        var bus = ctx.createGain();
+        graph = { ctx: ctx, bus: bus };
+        var url = URL.createObjectURL(new Blob([TAP_SOURCE], { type: 'application/javascript' }));
+        ctx.audioWorklet.addModule(url).then(function () {
+          var tap = new AudioWorkletNode(ctx, 'kairo-tap', {
+            numberOfInputs: 1,
+            numberOfOutputs: 1,
+            outputChannelCount: [2],
+            channelCount: 2,
+            channelCountMode: 'explicit',
+          });
+          graph.tap = tap;
+          tap.port.postMessage(config.ndiAudio);
+          tap.port.onmessage = function (event) {
+            var data = event.data;
+            window.kairoProgram.sendAudio({ sampleRate: ctx.sampleRate, channels: 2, samples: data.length / 2, data: data });
+          };
+          // The tap has to be pulled by the destination to run; it adds nothing audible.
+          var silent = ctx.createGain();
+          silent.gain.value = 0;
+          bus.connect(tap);
+          tap.connect(silent);
+          silent.connect(ctx.destination);
+        }).catch(function () {});
+        ctx.resume().catch(function () {});
+        applySink();
+        return graph;
+      }
+
+      function applySink() {
+        var label = config.audio.outputLabel;
+        if (!label) return;
+        sinkIdFor(label).then(function (id) {
+          if (id === null) return;
+          if (graph && graph.ctx.setSinkId) graph.ctx.setSinkId(id).catch(function () {});
+          var videos = document.querySelectorAll('video');
+          for (var i = 0; i < videos.length; i++) {
+            if (videos[i].setSinkId && !routed.get(videos[i])) videos[i].setSinkId(id).catch(function () {});
+          }
+        });
+      }
+
+      /** Background video: audible here when this is the audio surface and video sound is on. */
+      function applyAudio(video) {
+        var audible = !!config.audio.enabled;
+        var g = ensureGraph();
+        var routing = routed.get(video);
+        if (!g && !routing) {
+          video.muted = !audible;
+          video.volume = volume();
+          return;
+        }
+        if (!routing) {
+          var source = g.ctx.createMediaElementSource(video);
+          var speaker = g.ctx.createGain();
+          source.connect(speaker);
+          speaker.connect(g.ctx.destination);
+          source.connect(g.bus);
+          routing = { speaker: speaker };
+          routed.set(video, routing);
+        }
+        // Routed audio is silent when muted — the element must play, the gain decides.
+        video.muted = false;
+        routing.speaker.gain.value = audible ? volume() : 0;
+      }
+
+      /** Camera sound: its stream, not the <video>, carries it into the graph. */
+      function applyCameraAudio(video) {
+        var stream = video.srcObject;
+        var hasAudio = !!(stream && stream.getAudioTracks && stream.getAudioTracks().length);
+        var g = hasAudio ? ensureGraph() : null;
+        if (!g) {
+          video.muted = !(hasAudio && cameraAudible);
+          video.volume = volume();
+          return;
+        }
+        video.muted = true;
+        var routing = routed.get(video);
+        if (!routing) {
+          var source = g.ctx.createMediaStreamSource(stream);
+          var speaker = g.ctx.createGain();
+          source.connect(speaker);
+          speaker.connect(g.ctx.destination);
+          source.connect(g.bus);
+          routing = { speaker: speaker, streamSource: source };
+          routed.set(video, routing);
+        }
+        routing.speaker.gain.value = cameraAudible ? volume() : 0;
+      }
+
+      function applyAllAudio() {
+        var videos = layers.bg.querySelectorAll('video');
+        for (var i = 0; i < videos.length; i++) applyAudio(videos[i]);
+        var cams = layers.camera.querySelectorAll('video');
+        for (var j = 0; j < cams.length; j++) applyCameraAudio(cams[j]);
+        applySink();
+      }
+
+      function sinkIdFor(label) {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
+          return Promise.resolve(null);
+        }
+        return navigator.mediaDevices.enumerateDevices().then(function (devices) {
+          for (var i = 0; i < devices.length; i++) {
+            if (devices[i].kind === 'audiooutput' && devices[i].label === label) return devices[i].deviceId;
+          }
+          return null;
+        }).catch(function () { return null; });
+      }
+
+      function startVideos(root) {
+        var videos = root.querySelectorAll('video');
+        for (var i = 0; i < videos.length; i++) {
+          if (videos[i].srcObject) continue;
+          applyAudio(videos[i]);
+          videos[i].playsInline = true;
+          var play = function (video) {
+            return function () {
+              if (video.dataset.paPaused === '1') return;
+              video.play().catch(function () {});
+            };
+          }(videos[i]);
+          if (videos[i].readyState >= 2) play();
+          else videos[i].addEventListener('canplay', play, { once: true });
+        }
+      }
+
+      function setBackground(nextBg, ms) {
+        var current = currentNode(layers.bg);
+        if (!nextBg) {
+          retire(current, ms);
+          return;
+        }
+        if (current && backgroundKey(current) === backgroundKey(nextBg)) {
+          // Same file: keep the element (a video keeps playing), take the new
+          // opacity / filter / fit / loop.
+          current.setAttribute('style', nextBg.getAttribute('style') || '');
+          var nextMedia = nextBg.querySelector('video, img');
+          var media = current.querySelector('video, img');
+          if (nextMedia && media) {
+            media.setAttribute('style', nextMedia.getAttribute('style') || '');
+            if (media.tagName === 'VIDEO') media.loop = nextMedia.hasAttribute('loop');
+          }
+          return;
+        }
+        enter(layers.bg, nextBg, ms);
+        retire(current, ms);
+        startVideos(nextBg);
+      }
+
+      // ─── Slide text ───────────────────────────────────────────────────────
+
+      function fitVerse(scope) {
+        var box = scope.querySelector('.pa-verse-box');
+        var verse = scope.querySelector('.pa-verse');
+        if (!box || !verse || box.getAttribute('data-auto-fit') !== 'true') return;
+        var text = verse.querySelector('.pa-verse-text') || verse;
+        var min = 12;
+        var max = parseFloat(box.getAttribute('data-max-font-px') || '240') || 240;
+        var lo = min;
+        var hi = max;
+        var best = min;
+        function overflows(px) {
+          verse.style.fontSize = px + 'px';
+          var h = Math.max(1, Math.min(verse.clientHeight, box.clientHeight));
+          var w = Math.max(1, Math.min(verse.clientWidth, box.clientWidth));
+          return text.scrollHeight > h + 1 || text.scrollWidth > w + 1;
+        }
+        if (overflows(min)) {
+          verse.style.fontSize = min + 'px';
+          return;
+        }
+        while (lo <= hi) {
+          var mid = Math.floor((lo + hi) / 2);
+          if (!overflows(mid)) {
+            best = mid;
+            lo = mid + 1;
+          } else {
+            hi = mid - 1;
+          }
+        }
+        verse.style.fontSize = best + 'px';
+      }
+
+      // ─── Main-process API ─────────────────────────────────────────────────
+
+      window.__configure = function (next) {
+        config = {
+          transitionMs: Math.max(0, Math.min(5000, Number(next.transitionMs) || 0)),
+          audio: {
+            enabled: !!(next.audio && next.audio.enabled),
+            volume: next.audio && isFinite(next.audio.volume) ? next.audio.volume : 1,
+            outputLabel: (next.audio && next.audio.outputLabel) || '',
+          },
+          ndiAudio: !!next.ndiAudio,
+        };
+        cameraAudible = !!next.cameraAudible;
+        if (graph) {
+          graph.bus.gain.value = config.ndiAudio ? 1 : 0;
+          // A tap with sound off would still allocate and post ~47 blocks a second.
+          if (graph.tap) graph.tap.port.postMessage(config.ndiAudio);
+        }
+        applyAllAudio();
+      };
+
+      // Lobby playlists advance when a video finishes. No video counts as done.
+      window.__videoEnded = function () {
+        var video = live(layers.bg, 'video');
+        return !video || video.ended || !!video.error;
+      };
+
+      // Resolves once whatever was just changed has been composited — the
+      // display sink's equivalent of the NDI sink waiting for a captured frame.
+      window.__nextFrame = function () {
+        return new Promise(function (resolve) {
+          requestAnimationFrame(function () {
+            requestAnimationFrame(function () { resolve(true); });
+          });
+        });
+      };
+
+      // Takes the output of renderOverlayHTML() (src/lib/overlay-template.ts)
+      // and splits it: `.pa-bg` goes to the background layer (kept when it is
+      // the same file), `.pa-layer` to the text layer. `instant` skips the
+      // transition — documents turn pages, they do not dissolve.
+      window.__setContent = function (html, instant) {
+        var ms = instant ? 0 : config.transitionMs;
+        program.style.background = '';
+        var holder = document.createElement('div');
+        holder.innerHTML = html || '';
+        var bg = holder.querySelector('.pa-bg');
+        var text = holder.querySelector('.pa-layer');
+        if (bg) bg.remove();
+        if (text) text.remove();
+        setBackground(bg, ms);
+        var node = swapLayer(layers.text, text ? text.outerHTML : '', ms);
+        if (node) fitVerse(node);
+      };
+
+      // A document page: opaque black behind a contain-fit page image, and
+      // resolve only once the page is decoded.
+      window.__markDocument = function () {
+        program.style.background = '#000';
+        var image = live(layers.bg, 'img');
+        if (!image) return Promise.reject(new Error('Document output image is missing.'));
+        return image.decode ? image.decode() : Promise.resolve();
+      };
+
+      // Color / loop tweaks must not rebuild the slide — that restarts the video.
+      window.__patchBackground = function (filter, loop) {
+        var bg = currentNode(layers.bg);
+        if (bg) {
+          if (filter) bg.style.filter = filter;
+          else bg.style.removeProperty('filter');
+        }
+        var video = live(layers.bg, 'video');
+        if (video) {
+          video.loop = !!loop;
+          if (loop && video.ended && video.dataset.paPaused !== '1') video.play();
+        }
+      };
+      window.__setVideoPaused = function (paused) {
+        var video = live(layers.bg, 'video');
+        if (!video) return;
+        video.dataset.paPaused = paused ? '1' : '';
+        if (paused) {
+          video.pause();
+          return;
+        }
+        if (video.ended) video.currentTime = 0;
+        video.play().catch(function () {});
+      };
+      // Document decks swap one <img> instead of rebuilding the slide: a full
+      // __setContent re-parses the DOM and re-lays out, which is the difference
+      // between a clicker feeling instant and feeling laggy. Resolves only once
+      // the new pixels are decoded AND painted, so the NDI sender never grabs a
+      // frame of the previous page.
+      window.__swapDocumentPage = function (src) {
+        var image = live(layers.bg, 'img');
+        if (!image) return Promise.resolve(false);
+        image.src = src;
+        var decoded = image.decode ? image.decode() : Promise.resolve();
+        // One frame is enough to commit the new pixels; the main process then
+        // waits for the offscreen capture that carries them.
+        return decoded.catch(function () {}).then(function () {
+          return new Promise(function (resolve) {
+            requestAnimationFrame(function () { resolve(true); });
+          });
+        });
+      };
+      // Decode the page after the current one while the room is still reading
+      // this slide, so the next click swaps an image that is already in memory.
+      window.__preloadDocumentPage = function (src) {
+        var image = new Image();
+        image.src = src;
+        if (image.decode) image.decode().catch(function () {});
+      };
+      window.__clearText = function () {
+        swapLayer(layers.text, '', config.transitionMs);
+      };
+      window.__seekVideo = function (seconds) {
+        var video = live(layers.bg, 'video');
+        if (!video || !isFinite(seconds)) return;
+        var duration = video.duration;
+        var time = seconds < 0 ? 0 : seconds;
+        if (isFinite(duration) && duration > 0 && time > duration) time = duration;
+        video.currentTime = time;
+      };
+
+      // ─── Program layers (markup from src/lib/program.ts, already escaped) ──
+
+      window.__setMessage = function (html) {
+        swapLayer(layers.message, html || '', config.transitionMs);
+      };
+      window.__setProps = function (html) {
+        swapLayer(layers.props, html || '', config.transitionMs);
+      };
+      window.__setLogo = function (html) {
+        swapLayer(layers.logo, html || '', config.transitionMs);
+      };
+
+      // Live camera / capture card, matched by label: device ids are salted
+      // per origin, so the id the operator's window saw means nothing here.
+      var cameraLabel = null;
+      window.__setCamera = function (label, audioLabel) {
+        cameraLabel = label || null;
+        var wantedAudio = audioLabel || null;
+        if (!cameraLabel) {
+          swapLayer(layers.camera, '', config.transitionMs);
+          return Promise.resolve(true);
+        }
+        var wanted = cameraLabel;
+        var media = navigator.mediaDevices;
+        if (!media || !media.getUserMedia) return Promise.resolve(false);
+        // Labels are only exposed once capture has been allowed.
+        return media.getUserMedia({ video: true, audio: !!wantedAudio })
+          .then(function (probe) {
+            probe.getTracks().forEach(function (t) { t.stop(); });
+            return media.enumerateDevices();
+          })
+          .then(function (devices) {
+            var device = null;
+            var mic = null;
+            for (var i = 0; i < devices.length; i++) {
+              if (devices[i].kind === 'videoinput' && devices[i].label === wanted) device = devices[i];
+              if (wantedAudio && devices[i].kind === 'audioinput' && devices[i].label === wantedAudio) mic = devices[i];
+            }
+            if (!device) throw new Error('Camera not found: ' + wanted);
+            return media.getUserMedia({
+              // Program sound, not a call: no echo cancelling, gating or levelling.
+              audio: mic
+                ? {
+                    deviceId: { exact: mic.deviceId },
+                    echoCancellation: false,
+                    noiseSuppression: false,
+                    autoGainControl: false,
+                  }
+                : false,
+              video: {
+                deviceId: { exact: device.deviceId },
+                width: { ideal: 1920 },
+                height: { ideal: 1080 },
+                frameRate: { ideal: 30 },
+              },
+            });
+          })
+          .then(function (stream) {
+            if (cameraLabel !== wanted) {
+              stream.getTracks().forEach(function (t) { t.stop(); });
+              return false;
+            }
+            var node = document.createElement('div');
+            node.style.background = '#000';
+            var video = document.createElement('video');
+            video.muted = true;
+            video.playsInline = true;
+            video.autoplay = true;
+            video.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;';
+            video.srcObject = stream;
+            node.appendChild(video);
+            applyCameraAudio(video);
+            enter(layers.camera, node, config.transitionMs);
+            var old = layers.camera.children;
+            for (var i = old.length - 1; i >= 0; i--) {
+              if (old[i] !== node && !old[i].hasAttribute('data-leaving')) retire(old[i], config.transitionMs);
+            }
+            return video.play().then(function () { return true; }, function () { return true; });
+          })
+          .catch(function () { return false; });
+      };
+    </script>
+  </body>
+</html>

@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   BookOpen,
   FileText,
   CircleGauge,
   Eraser,
   MediaLibrary,
+  MonitorPlay,
   Music2,
   Palette,
   Pause,
@@ -21,7 +22,10 @@ import { useMediaDockStore } from '@/stores/useMediaDockStore'
 import { describeSessionState } from '@shared/cloud/auth-state'
 import { useTracksPlaybackStore } from '@/stores/useTracksPlaybackStore'
 import { clearLiveAll } from '@/lib/clear-live-output'
+import { useBootstrapStore } from '@/bootstrap/useBootstrapStore'
+import { propresenterEnabled } from '@shared/pp-connect-gate'
 import UpdatePill from './UpdatePill'
+import { HEADER_TOOLBAR_SLOT_ID } from './header-toolbar'
 
 const workspaces: Array<{ id: NavRoute; label: string; icon: typeof CircleGauge }> = [
   { id: 'operator', label: 'Operator', icon: CircleGauge },
@@ -31,10 +35,60 @@ const workspaces: Array<{ id: NavRoute; label: string; icon: typeof CircleGauge 
   { id: 'theme', label: 'Theme', icon: Palette },
 ]
 
-interface AppShellProps {
+interface WorkspaceRailProps {
   currentRoute: NavRoute
   onNavigate: (route: NavRoute) => void
   onOpenSettings: () => void
+}
+
+export function WorkspaceRail({
+  currentRoute,
+  onNavigate,
+  onOpenSettings,
+}: WorkspaceRailProps): React.ReactElement {
+  return (
+    <nav className="workspace-rail flex shrink-0 flex-col items-center" aria-label="Workspaces">
+      <div className="flex w-full flex-1 flex-col items-center gap-1 px-1.5 py-3">
+        {workspaces.map(({ id, label, icon: Icon }) => {
+          const active = currentRoute === id
+          return (
+            <button
+              key={id}
+              type="button"
+              onClick={() => onNavigate(id)}
+              aria-label={label}
+              aria-current={active ? 'page' : undefined}
+              data-tooltip={label}
+              data-tooltip-side="right"
+              className={[
+                'flex size-10 items-center justify-center rounded-md transition-colors duration-150',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500',
+                active
+                  ? 'bg-surface-elevated text-zinc-50 shadow-sm'
+                  : 'text-zinc-500 hover:bg-surface-tertiary hover:text-zinc-200',
+              ].join(' ')}
+            >
+              <Icon size={19} weight={active ? 'fill' : 'regular'} aria-hidden="true" />
+            </button>
+          )
+        })}
+      </div>
+      <button
+        type="button"
+        onClick={onOpenSettings}
+        className="mb-3 flex size-10 items-center justify-center rounded-md text-zinc-500 hover:bg-surface-tertiary hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+        aria-label="Open Settings"
+        data-tooltip="Settings"
+        data-tooltip-side="right"
+      >
+        <Settings size={19} aria-hidden="true" />
+      </button>
+    </nav>
+  )
+}
+
+interface AppShellProps {
+  currentRoute: NavRoute
   /** The ProPresenter status was clicked. */
   onProPresenterStatus?: () => void
   /** Route-specific controls rendered inline in the top bar (see OperatorToolbar). */
@@ -89,7 +143,7 @@ function StatusItem({
     <button
       type="button"
       onClick={onClick}
-      className={`${className} hover:bg-white/[0.06]`}
+      className={`${className} hover:bg-surface-tertiary`}
       aria-label={`${label}: ${detail}${action ? `. ${action}` : ''}`}
     >
       {content}
@@ -101,10 +155,50 @@ function StatusItem({
   )
 }
 
+/**
+ * One line for the header: are Kairo's own outputs (screens, NDI) on the air.
+ * Polls the same readiness the Screens window shows, and shares it through the
+ * bootstrap store so nothing else has to poll.
+ */
+function useScreensStatus(): { detail: string; state: 'ready' | 'warning' | 'offline' } {
+  const outputs = useBootstrapStore((s) => s.settings.overlay.outputs)
+  const status = useBootstrapStore((s) => s.ndiStatus)
+  useEffect(() => {
+    let cancelled = false
+    const poll = (): void => {
+      window.api.ndi
+        .getStatus()
+        .then((next) => {
+          if (cancelled) return
+          const store = useBootstrapStore.getState()
+          if (JSON.stringify(store.ndiStatus) !== JSON.stringify(next)) store.setNdiStatus(next)
+        })
+        .catch(() => undefined)
+    }
+    poll()
+    const id = setInterval(poll, 3000)
+    return () => {
+      cancelled = true
+      clearInterval(id)
+    }
+  }, [])
+
+  const rendered = outputs.filter((o) => o.enabled && (o.kind === 'screen' || o.kind === 'ndi'))
+  if (rendered.length === 0) return { detail: 'No screens set up — click to add one', state: 'offline' }
+  const problems = rendered.filter((o) => {
+    const s = status?.outputs.find((x) => x.id === o.id)
+    return !s || !s.ready
+  })
+  if (problems.length === 0) {
+    return { detail: rendered.length === 1 ? `${rendered[0].name} is live` : `${rendered.length} live`, state: 'ready' }
+  }
+  const first = problems[0]
+  const reason = status?.outputs.find((x) => x.id === first.id)?.reason ?? 'checking'
+  return { detail: `${first.name}: ${reason}`, state: 'warning' }
+}
+
 export default function AppShell({
   currentRoute,
-  onNavigate,
-  onOpenSettings,
   onProPresenterStatus,
   toolbar,
 }: AppShellProps): React.ReactElement {
@@ -116,6 +210,10 @@ export default function AppShell({
     return { name: live.name, paused: state.library.livePaused || state.ended }
   })
   const [clearing, setClearing] = useState(false)
+  // ProPresenter is an opt-in integration: its status only appears in the
+  // header once it is switched on in Settings.
+  const showPp = useBootstrapStore((s) => propresenterEnabled(s.settings))
+  const screens = useScreensStatus()
   const cloud = useCloudStatus()
   const mediaOpen = useMediaDockStore((s) => s.open)
   const toggleMedia = useMediaDockStore((s) => s.toggle)
@@ -136,42 +234,25 @@ export default function AppShell({
   }
 
   return (
-    <header className="app-header drag-region shrink-0 bg-surface pane-edge-b">
-      <div
-        className="header-navigation flex min-w-0 items-center"
-        role="tablist"
-        aria-label="Workspaces"
-      >
-        <div className="no-drag flex items-center rounded-md bg-white/[0.05] p-0.5">
-          {workspaces.map(({ id, label, icon: Icon }) => {
-            const active = currentRoute === id
-            return (
-              <button
-                key={id}
-                type="button"
-                role="tab"
-                aria-selected={active}
-                onClick={() => onNavigate(id)}
-                className={[
-                  'flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[5px] px-2.5 text-[11px] font-medium transition-colors duration-150',
-                  'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/30',
-                  active
-                    ? 'bg-white/[0.1] text-zinc-50 shadow-sm'
-                    : 'text-zinc-500 hover:text-zinc-200',
-                ].join(' ')}
-              >
-                <Icon size={13} aria-hidden="true" />
-                {label}
-              </button>
-            )
-          })}
-        </div>
+    <header className="app-header drag-region shrink-0">
+      <div className="header-context flex min-w-0 items-center gap-2 pl-[68px]">
+        <span className="truncate text-[13px] font-semibold text-zinc-200">
+          {workspaces.find((workspace) => workspace.id === currentRoute)?.label}
+        </span>
       </div>
 
-      <div className="header-toolbar min-w-0">{toolbar}</div>
+      <div id={HEADER_TOOLBAR_SLOT_ID} className="header-toolbar min-w-0">{toolbar}</div>
 
       <div className="header-statuses flex items-center gap-0.5" aria-label="Service statuses">
         <StatusItem
+          label="Screens"
+          detail={screens.detail}
+          state={screens.state}
+          icon={MonitorPlay}
+          onClick={() => useAppStore.getState().openScreens()}
+          action="Open Screens (⌥⌘1)"
+        />
+        {showPp && <StatusItem
           label="ProPresenter"
           detail={
             ppState === 'connected'
@@ -184,7 +265,7 @@ export default function AppShell({
           icon={Radio}
           onClick={onProPresenterStatus}
           action={ppState === 'connected' ? 'Open ProPresenter settings' : 'Click to connect'}
-        />
+        />}
         <StatusItem
           label="Account"
           detail={cloud.detail}
@@ -207,8 +288,8 @@ export default function AppShell({
             'relative flex h-7 shrink-0 items-center gap-1.5 rounded px-2 text-[11px] font-medium transition-colors duration-150',
             'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/30',
             mediaOpen || mediaLiveId
-              ? 'text-teal-400 hover:bg-teal-500/10'
-              : 'text-zinc-500 hover:bg-white/5 hover:text-zinc-200',
+              ? 'text-teal-400 hover:bg-tint-teal'
+              : 'text-zinc-500 hover:bg-surface-tertiary hover:text-zinc-200',
           ].join(' ')}
           aria-label={mediaOpen ? 'Close media' : 'Open media'}
           aria-pressed={mediaOpen}
@@ -236,7 +317,7 @@ export default function AppShell({
             type="button"
             onClick={() => void window.api.tracks.setPaused(!houseTrack.paused)}
             title={houseTrack.paused ? `Play ${houseTrack.name}` : `Pause ${houseTrack.name}`}
-            className="flex h-7 max-w-[9rem] items-center gap-1.5 rounded px-2 text-[11px] font-medium text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
+            className="flex h-7 max-w-[9rem] items-center gap-1.5 rounded px-2 text-[11px] font-medium text-zinc-400 hover:bg-surface-tertiary hover:text-zinc-200"
           >
             {houseTrack.paused ? (
               <Play size={11} fill="currentColor" aria-hidden="true" />
@@ -277,30 +358,17 @@ export default function AppShell({
             'flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded px-2 text-[11px] font-medium transition-colors duration-150',
             'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-rose-400',
             isLive || ppState === 'connected'
-              ? 'text-zinc-400 hover:bg-rose-950/40 hover:text-rose-300'
-              : 'text-zinc-600 hover:bg-white/5 hover:text-zinc-400',
+              ? 'text-zinc-400 hover:bg-tint-rose hover:text-rose-300'
+              : 'text-zinc-600 hover:bg-surface-tertiary hover:text-zinc-400',
             'disabled:cursor-not-allowed disabled:opacity-40',
           ].join(' ')}
           aria-label="Clear text and background"
-          title={
-            ppState === 'connected'
-              ? 'Clear text and the dock background'
-              : 'Clear local LIVE state (connect ProPresenter to clear the booth output)'
-          }
+          title="Clear text and the dock background"
         >
           <Eraser size={13} aria-hidden="true" />
           {clearing ? 'Clearing' : 'Clear'}
         </button>
         <UpdatePill />
-        <button
-          type="button"
-          onClick={onOpenSettings}
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-zinc-500 transition-colors duration-150 hover:bg-white/5 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/30"
-          aria-label="Open Settings"
-          title="Settings"
-        >
-          <Settings size={14} aria-hidden="true" />
-        </button>
       </div>
     </header>
   )

@@ -25,7 +25,7 @@ function PreviewPlaceholder({ resource, className }: { resource: PPResourceSumma
 
   return (
     <div
-      className={cn('flex h-full min-h-16 w-full items-center justify-center rounded-lg bg-surface-secondary/70 text-slate-600', className)}
+      className={cn('flex h-full min-h-16 w-full items-center justify-center rounded-lg bg-surface-secondary text-slate-600', className)}
       aria-label={`${resource.name} preview unavailable`}
     >
       <Icon size={18} aria-hidden="true" />
@@ -38,7 +38,7 @@ function PreviewPlaceholder({ resource, className }: { resource: PPResourceSumma
 
 function MessagePreview({ text }: { text: string }): React.ReactElement {
   return (
-    <div className="flex h-full min-h-16 w-full items-center justify-center rounded-lg border border-surface-border/50 bg-surface-secondary/80 px-3 py-2 text-center">
+    <div className="flex h-full min-h-16 w-full items-center justify-center rounded-lg border border-surface-border/50 bg-surface-secondary px-3 py-2 text-center">
       <span className="line-clamp-3 text-[11px] font-medium leading-snug text-slate-300">{text}</span>
     </div>
   )
@@ -48,7 +48,7 @@ function DetailPreview({ resource, details }: { resource: PPResourceSummary; det
   const detailCount = details ? Object.keys(details).length : 0
   return (
     <div
-      className="flex h-full min-h-16 w-full flex-col justify-center rounded-lg border border-surface-border/50 bg-surface-secondary/80 px-3 py-2"
+      className="flex h-full min-h-16 w-full flex-col justify-center rounded-lg border border-surface-border/50 bg-surface-secondary px-3 py-2"
       aria-label={`${resource.name} routing preview`}
     >
       <div className="flex items-center gap-2 text-slate-300">
@@ -145,7 +145,7 @@ export default function ResourceThumbnail({
 
   if (loading) {
     return (
-      <div className={cn('flex h-full min-h-16 w-full items-center justify-center rounded-lg bg-surface-secondary/70 text-slate-600', className)}>
+      <div className={cn('flex h-full min-h-16 w-full items-center justify-center rounded-lg bg-surface-secondary text-slate-600', className)}>
         <Loader size={16} className="animate-spin" aria-label={`Loading ${resource.name} preview`} />
       </div>
     )
@@ -153,7 +153,7 @@ export default function ResourceThumbnail({
 
   if (error || !preview) {
     return (
-      <div className={cn('flex h-full min-h-16 w-full flex-col items-center justify-center gap-1 rounded-lg border border-rose-500/20 bg-rose-500/5 px-2 text-center', className)}>
+      <div className={cn('flex h-full min-h-16 w-full flex-col items-center justify-center gap-1 rounded-lg border border-rose-500/20 bg-tint-rose px-2 text-center', className)}>
         <AlertCircle size={15} className="text-rose-400" aria-hidden="true" />
         <span className="text-[10px] text-slate-500">Preview unavailable</span>
         {showRetry && (

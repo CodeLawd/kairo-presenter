@@ -19,6 +19,15 @@ export default defineConfig({
         '@shared': resolve('src/lib'),
       },
     },
+    build: {
+      rollupOptions: {
+        // `program` is the NDI program window's audio bridge — see src/preload/program.ts.
+        input: {
+          index: resolve('src/preload/index.ts'),
+          program: resolve('src/preload/program.ts'),
+        },
+      },
+    },
   },
   renderer: {
     resolve: {

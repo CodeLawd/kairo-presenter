@@ -32,6 +32,7 @@ import { DEFAULT_LIBRARY_ID, itemsInLibrary, libraryCounts } from "@shared/libra
 import { type SavedPassage } from "@shared/passages";
 
 export interface PlaylistSidebarProps {
+  width: number;
   plans: SermonPlan[];
   selectedPlanId: string | null;
   openPlanItems: SermonScriptureItem[];
@@ -71,6 +72,7 @@ export interface PlaylistSidebarProps {
 }
 
 export function PlaylistSidebar({
+  width,
   plans,
   selectedPlanId,
   openPlanItems,
@@ -159,18 +161,18 @@ export function PlaylistSidebar({
   return (
     <aside
       data-playlist-sidebar=""
-      className="flex h-full min-h-0 w-64 shrink-0 flex-col overflow-hidden border-r border-surface-border bg-surface-secondary xl:w-72"
+      className="flex h-full min-h-0 shrink-0 flex-col overflow-hidden bg-surface-secondary"
+      style={{ width }}
     >
       {/* Library first, playlists under it — the same two-section rail the
           Lyrics page uses, so "where does this list come from" reads the same
-          on both pages. */}
-      {/* Library first, playlists under it — the same two-section rail the
-          Lyrics page uses, so "where does this list come from" reads the same
           on both pages. A library owns kept passages; a playlist orders them. */}
-      <div className="shrink-0 border-b border-surface-border px-1 py-1.5">
+      <div className="shrink-0 px-1 py-1.5">
         <LibrarySection
           kind="scripture"
-          activeLibraryId={activeLibraryId}
+          // One thing lit at a time: while search results fill the page, the
+          // library filter is not what is on screen.
+          activeLibraryId={viewingSearch ? "" : activeLibraryId}
           counts={libraryCounts(passageLibrary, passages)}
           onSelect={setActiveLibraryId}
           extraRows={
@@ -183,7 +185,7 @@ export function PlaylistSidebar({
                 "group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] transition-colors disabled:opacity-40",
                 viewingSearch
                   ? "row-selected"
-                  : "text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-200",
+                  : "text-zinc-400 hover:bg-surface-tertiary hover:text-zinc-200",
               )}
             >
               <Search size={13} className="shrink-0" aria-hidden />
@@ -212,7 +214,7 @@ export function PlaylistSidebar({
                   "group flex items-center gap-2 rounded-md px-2 py-1.5 text-[12px] transition-colors",
                   passageSelect.isSelected(passage.id)
                     ? PICKED_ROW
-                    : "text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-200",
+                    : "text-zinc-400 hover:bg-surface-tertiary hover:text-zinc-200",
                 )}
               >
                 <button
@@ -250,13 +252,13 @@ export function PlaylistSidebar({
         )}
       </div>
 
-      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-surface-border bg-surface-tertiary px-3 py-2">
+      <div className="flex shrink-0 items-center justify-between gap-2 border-t border-surface-border px-3 py-2">
         <h2 className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">
           Playlists
         </h2>
         <button
           type="button"
-          className="ml-auto grid h-7 w-7 place-items-center rounded-md text-slate-400 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400"
+          className="ml-auto grid h-7 w-7 place-items-center rounded-md text-slate-400 hover:bg-surface-elevated hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400"
           onClick={() => void importKairo()}
           aria-label="Import playlist"
           title="Import a .kairo playlist"
@@ -265,7 +267,7 @@ export function PlaylistSidebar({
         </button>
         <button
           type="button"
-          className="flex h-7 items-center justify-center gap-1 rounded-md bg-white/5 px-2 text-[11px] font-medium text-slate-300 hover:bg-white/10 hover:text-white disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400"
+          className="flex h-7 items-center justify-center gap-1 rounded-md bg-surface-tertiary px-2 text-[11px] font-medium text-slate-300 hover:bg-surface-elevated hover:text-white disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400"
           onClick={onCreate}
           disabled={creatingPlaylist}
           aria-label="New playlist"
@@ -324,7 +326,7 @@ export function PlaylistSidebar({
                   <div className="flex items-center gap-1.5">
                     <button
                       type="button"
-                      className="flex flex-1 items-center justify-center gap-1 rounded-md border border-teal-500/30 bg-teal-500/10 px-2 py-1.5 text-[11px] font-semibold text-teal-300 hover:bg-teal-500/15"
+                      className="flex flex-1 items-center justify-center gap-1 rounded-md border border-teal-500/30 bg-tint-teal px-2 py-1.5 text-[11px] font-semibold text-teal-300 hover:bg-tint-teal"
                       onClick={onSaveRename}
                     >
                       <Check size={12} />
@@ -352,7 +354,7 @@ export function PlaylistSidebar({
                     Cancel
                   </button>
                   <button
-                    className="flex-1 rounded-md border border-red-500/25 bg-red-500/10 px-2 py-1.5 text-[11px] font-semibold text-red-300 hover:bg-red-500/20"
+                    className="flex-1 rounded-md border border-red-500/25 bg-tint-red px-2 py-1.5 text-[11px] font-semibold text-red-300 hover:bg-tint-red"
                     onClick={() => onConfirmDelete(plan.id)}
                   >
                     Delete
@@ -366,7 +368,7 @@ export function PlaylistSidebar({
                       "flex min-w-0 flex-1 items-center gap-2.5 rounded-md px-1.5 py-2 text-left",
                       selectedPlanId === plan.id
                         ? "text-white"
-                        : "text-slate-300 hover:bg-surface-tertiary/60",
+                        : "text-slate-300 hover:bg-surface-tertiary",
                     )}
                     onClick={() => onOpenPlan(plan)}
                   >
@@ -503,13 +505,13 @@ export function PlaylistSidebar({
                     type="button"
                     draggable={canReorder}
                     className={cn(
-                      "group relative flex w-full items-center gap-1 px-2 py-1.5 text-left",
+                      "group relative flex w-full items-center gap-1 rounded-md px-2 py-1.5 text-left",
                       !item.available && "opacity-55",
                       itemSelect.isSelected(item.id)
                         ? PICKED_ROW
                         : activeItemId === item.id
                           ? "row-selected"
-                          : "text-slate-300 hover:bg-surface-tertiary/50",
+                          : "text-slate-300 hover:bg-surface-tertiary",
                       draggingItemId === item.id && "opacity-40",
                       dragOverItemId === item.id &&
                         (dropPosition === "before"
@@ -641,12 +643,12 @@ function PickedBar({
       <button
         type="button"
         onClick={onRemove}
-        className="rounded px-1.5 py-0.5 font-medium text-rose-300 hover:bg-rose-500/15"
+        className="rounded px-1.5 py-0.5 font-medium text-rose-300 hover:bg-tint-rose"
         title="Remove (Delete)"
       >
         Remove
       </button>
-      <button type="button" onClick={onClear} className="rounded px-1.5 py-0.5 text-zinc-400 hover:bg-white/5 hover:text-white" title="Clear (Esc)">
+      <button type="button" onClick={onClear} className="rounded px-1.5 py-0.5 text-zinc-400 hover:bg-surface-tertiary hover:text-white" title="Clear (Esc)">
         Clear
       </button>
     </div>

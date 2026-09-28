@@ -1,8 +1,8 @@
 {
-  "name": "proautomate",
+  "name": "kairo-presenter",
   "productName": "Kairo",
   "version": "1.0.0",
-  "description": "Kairo — scripture, lyrics, and presentation for ProPresenter",
+  "description": "Kairo — scripture, lyrics, and presentation for churches",
   "author": {
     "name": "Alexander Joshua",
     "email": "alexander.joshua2018@gmail.com"
@@ -226,6 +226,7 @@
       ],
       "extendInfo": {
         "NSMicrophoneUsageDescription": "Kairo listens to the service audio so it can transcribe the sermon in real time.",
+        "NSCameraUsageDescription": "Kairo shows a camera or capture card on the screens it drives when you put one live.",
         "NSLocalNetworkUsageDescription": "Kairo connects to ProPresenter and NDI receivers on your local network.",
         "NSBonjourServices": [
           "_ndi._tcp",
@@ -318,7 +319,7 @@
     "linux": {
       "icon": "build/icons",
       "category": "AudioVideo",
-      "description": "Kairo — scripture, lyrics, and presentation for ProPresenter",
+      "description": "Kairo — scripture, lyrics, and presentation for churches",
       "syncDesktopName": true,
       "target": [
         {

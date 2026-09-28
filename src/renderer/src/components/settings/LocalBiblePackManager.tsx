@@ -100,7 +100,7 @@ function BibleRowShell({
   return (
     <li className="px-3.5 py-2.5">
       <div className="flex items-center gap-3">
-        <span className="grid h-8 min-w-[40px] shrink-0 place-items-center rounded-[7px] bg-white/[0.06] px-1.5 font-mono text-[10px] font-semibold tracking-wide text-white/75">
+        <span className="grid h-8 min-w-[40px] shrink-0 place-items-center rounded-md bg-surface-tertiary px-1.5 font-mono text-[10px] font-semibold tracking-wide text-white/75">
           {id}
         </span>
         <div className="min-w-0 flex-1">
@@ -122,9 +122,9 @@ function BibleRowShell({
 }
 
 const ROW_ACTION =
-  'inline-flex h-7 items-center gap-1.5 rounded-[6px] bg-white/[0.08] px-2.5 text-[12px] font-medium text-white transition-colors hover:bg-white/[0.13] disabled:opacity-40'
+  'inline-flex h-7 items-center gap-1.5 rounded-md bg-surface-elevated px-2.5 text-[12px] font-medium text-white transition-colors hover:bg-surface-border disabled:opacity-40'
 const ROW_ICON_ACTION =
-  'grid h-7 w-7 place-items-center rounded-[6px] text-white/35 transition-colors hover:bg-white/[0.07] hover:text-[#FF453A] disabled:opacity-40'
+  'grid h-7 w-7 place-items-center rounded-md text-white/35 transition-colors hover:bg-surface-tertiary hover:text-[#FF453A] disabled:opacity-40'
 
 function LocalBiblePackRow({
   translationId,

@@ -1,31 +1,24 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { memo, useState, useEffect, useRef, useCallback, useDeferredValue, useMemo } from 'react'
 import {
   Layers,
-  Radio,
-  Send,
   Trash2,
   Loader,
   CheckCircle,
-  XCircle,
-  AlertCircle,
   MonitorPlay,
   Plus,
   Copy,
   Save,
   RotateCcw,
   MoreHorizontal,
-  ListChecks,
   type Icon,
 } from '@/icons'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
-import OutputsPanel from './OutputsPanel'
-import SetupChecklist from './SetupChecklist'
 import {
   contentKindLabel,
-  findNdiOutput,
   overlayLayerLabel,
+  primaryRenderedOutput,
   hasContentOverride,
   liveOverlayTheme,
   OVERLAY_CONTENT_KINDS,
@@ -47,7 +40,7 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/componen
 import { useAppStore } from '@/stores/useAppStore'
 import { renderOverlayHTML } from '@shared/overlay-template'
 import { DEFAULT_OVERLAY_SETTINGS, DEFAULT_OVERLAY_THEME, normalizeOverlaySettings, normalizeOverlayTheme } from '@shared/overlay-defaults'
-import type { AppSettings, CustomOverlayTheme, OverlayBox, OverlayContentKind, OverlayTextStyle, OverlayTheme, NdiStatus, PPLook, PPVideoInputInfo } from '@shared/ipc'
+import type { AppSettings, CustomOverlayTheme, OverlayBox, OverlayContentKind, OverlayTextStyle, OverlayTheme } from '@shared/ipc'
 import { createCustomTheme, nextUntitledThemeName, themesForKind, updateLibraryTheme } from '@shared/theme-library'
 import { applyLayoutPreset, placeReferenceAgainstVerse, clampOverlayBox } from '@shared/overlay-boxes'
 import { clampPaneWidth } from '@/lib/paneSizing'
@@ -88,8 +81,7 @@ const SAMPLES: Record<OverlayContentKind, SampleContent> = {
   },
 }
 
-type TestStatus = 'idle' | 'testing' | 'ok' | 'fail'
-type InspectorTab = 'style' | 'type' | 'layout' | 'output'
+type InspectorTab = 'style' | 'type' | 'layout'
 const LIBRARY_MIN = 160
 const LIBRARY_MAX = 280
 const INSPECTOR_MIN = 300
@@ -221,7 +213,7 @@ function SegmentedControl<T extends string>({
           <ToggleGroupItem
             key={opt.value}
             value={opt.value}
-            className="min-h-8 w-full px-2 py-1.5 text-xs font-semibold leading-tight data-[state=on]:border-primary/50 data-[state=on]:bg-primary/15 data-[state=on]:text-orange-300"
+            className="min-h-8 w-full px-2 py-1.5 text-xs font-semibold leading-tight data-[state=on]:border-primary/50 data-[state=on]:bg-primary data-[state=on]:text-orange-300"
           >
             {opt.label}
           </ToggleGroupItem>
@@ -241,7 +233,7 @@ function SectionCard({
   children: React.ReactNode
 }): React.ReactElement {
   return (
-    <section className="space-y-4 rounded-xl bg-surface-secondary/35 p-4">
+    <section className="space-y-4 rounded-xl bg-surface-secondary p-4">
       <div className="flex items-center gap-2">
         <Icon size={14} className="shrink-0 text-orange-400" aria-hidden="true" />
         <h2 className="text-sm font-semibold tracking-tight text-white">{title}</h2>
@@ -389,13 +381,8 @@ export default function ThemeEditor(): React.ReactElement {
   const [sampleLength, setSampleLength] = useState<'short' | 'long'>('short')
   const [loading, setLoading] = useState(true)
   const [saved, setSaved] = useState(false)
-  const [ndiStatus, setNdiStatus] = useState<NdiStatus>({ available: false, sending: false, ppInputConfigured: false, outputs: [] })
-  const [testStatus, setTestStatus] = useState<TestStatus>('idle')
-  const [testMsg, setTestMsg] = useState('')
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const ppState = useAppStore((s) => s.ppState)
-  const ppConnected = ppState === 'connected'
 
   // Reload from disk on mount so HMR / a stale bootstrap snapshot cannot wipe
   // the My themes list. Also restore the last selected custom/builtin theme.
@@ -479,30 +466,6 @@ export default function ThemeEditor(): React.ReactElement {
 
   // Preview paints a real 1920×1080 frame scaled into the panel. OverlayCanvas
   // sits on the same aspect-video slot so box handles line up with the pixels.
-
-  // Poll NDI status (availability + sender + PP video-input binding).
-  useEffect(() => {
-    let cancelled = false
-    const poll = (): void => {
-      window.api.ndi
-        .getStatus()
-        .then((next) => {
-          // Bail when nothing changed: this fires every 4s, and storing a fresh
-          // object re-renders the preview and every theme tile — each one a full
-          // renderOverlayHTML that recreates the DOM and restarts background video.
-          if (!cancelled) {
-            setNdiStatus((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next))
-          }
-        })
-        .catch(() => {})
-    }
-    poll()
-    const id = setInterval(poll, 4000)
-    return () => {
-      cancelled = true
-      clearInterval(id)
-    }
-  }, [])
 
   const flashSaved = useCallback(() => {
     if (savedTimerRef.current) clearTimeout(savedTimerRef.current)
@@ -756,71 +719,26 @@ export default function ThemeEditor(): React.ReactElement {
   }
 
   const applyToOutput = (): void => {
-    const target = findNdiOutput(overlay.outputs)
+    // The same output the preview shows — an enabled screen, else NDI.
+    const target = primaryRenderedOutput(overlay.outputs)
     if (!target) {
-      window.alert('No rendered (NDI) output exists yet — add one on the Output tab first.')
+      window.alert('No Kairo screen or NDI output exists yet — add one in Screens first.')
       return
     }
     applyDraftThemeToOutput(target.id)
   }
 
-  // PP video inputs for the manual NDI binding picker. PP names inputs
-  // "Input N" and never exposes the NDI source name, so auto-discovery can't
-  // identify ours — the user picks it once and we persist the uuid.
-  const [videoInputs, setVideoInputs] = useState<PPVideoInputInfo[]>([])
-  const refreshVideoInputs = useCallback((): void => {
-    window.api.ndi
-      .getVideoInputs()
-      .then(setVideoInputs)
-      .catch(() => setVideoInputs([]))
-  }, [])
-  useEffect(() => {
-    refreshVideoInputs()
-  }, [refreshVideoInputs])
-
-  // PP Looks — a Look is what decides which layers each screen shows, so it is
-  // the only lever this app has over per-screen routing.
-  const [looks, setLooks] = useState<PPLook[]>([])
-  const refreshLooks = useCallback((): void => {
-    window.api.propresenter
-      .getLooks()
-      .then(setLooks)
-      .catch(() => setLooks([]))
-  }, [])
-  useEffect(() => {
-    refreshLooks()
-  }, [refreshLooks])
-
-  const handleSendTest = async (): Promise<void> => {
-    setTestStatus('testing')
-    setTestMsg('Sending…')
-    try {
-      const ok = await window.api.propresenter.testOverlay()
-      setTestStatus(ok ? 'ok' : 'fail')
-      setTestMsg(ok ? 'Sent to ProPresenter' : 'Push failed — check logs')
-    } catch (err) {
-      setTestStatus('fail')
-      setTestMsg(err instanceof Error ? err.message : 'Unknown error')
-    }
-  }
-
-  const handleClear = async (): Promise<void> => {
-    setTestStatus('testing')
-    setTestMsg('Clearing…')
-    try {
-      const ok = await window.api.propresenter.clearOverlay()
-      setTestStatus(ok ? 'ok' : 'fail')
-      setTestMsg(ok ? 'Cleared' : 'Clear failed — check logs')
-    } catch (err) {
-      setTestStatus('fail')
-      setTestMsg(err instanceof Error ? err.message : 'Unknown error')
-    }
-  }
-
   const theme = draftTheme
+  // The 1920×1080 previews (canvas slide + the selected tile) rebuild their DOM
+  // and re-run auto-fit on every change. Let them trail the controls so a
+  // slider drag stays smooth; the canvas handles themselves use `theme`.
+  const previewTheme = useDeferredValue(draftTheme)
   const sample = SAMPLES[contentKind]
   const previewText = sampleLength === 'long' ? sample.long : sample.short
-  const previewHtml = renderOverlayHTML(theme, sample.reference, previewText)
+  const previewHtml = useMemo(
+    () => renderOverlayHTML(previewTheme, sample.reference, previewText),
+    [previewTheme, sample.reference, previewText],
+  )
 
   if (loading) {
     return (
@@ -837,8 +755,8 @@ export default function ThemeEditor(): React.ReactElement {
   // configure — so the tab is absent rather than empty for lyrics.
   const inspectorTabs = (
     contentKind === 'lyrics'
-      ? ([['type', 'Type'], ['layout', 'Layout'], ['output', 'Output']] as const)
-      : ([['style', 'Style'], ['type', 'Type'], ['layout', 'Layout'], ['output', 'Output']] as const)
+      ? ([['type', 'Type'], ['layout', 'Layout']] as const)
+      : ([['style', 'Style'], ['type', 'Type'], ['layout', 'Layout']] as const)
   ) as ReadonlyArray<readonly [InspectorTab, string]>
 
   const liveTheme = liveOverlayTheme(overlay, contentKind)
@@ -904,7 +822,7 @@ export default function ThemeEditor(): React.ReactElement {
                         name={item.name}
                         theme={
                           kind === contentKind && selectedThemeId === `builtin:${item.id}`
-                            ? draftTheme
+                            ? previewTheme
                             : item.theme
                         }
                         kind={kind}
@@ -924,7 +842,7 @@ export default function ThemeEditor(): React.ReactElement {
                         name={item.name}
                         theme={
                           kind === contentKind && selectedThemeId === item.id
-                            ? draftTheme
+                            ? previewTheme
                             : item.theme
                         }
                         kind={kind}
@@ -986,7 +904,7 @@ export default function ThemeEditor(): React.ReactElement {
             </div>
 
             {contentKind !== 'scripture' && (
-              <div className="flex items-start justify-between gap-3 rounded-lg bg-surface-secondary/35 px-3 py-2">
+              <div className="flex items-start justify-between gap-3 rounded-lg bg-surface-secondary px-3 py-2">
                 <div className="min-w-0">
                   <p className="text-[11px] font-semibold text-slate-200">Separate {contentKindLabel(contentKind).toLowerCase()} theme</p>
                   <p className="mt-0.5 text-[10px] leading-relaxed text-slate-500">
@@ -1095,41 +1013,11 @@ export default function ThemeEditor(): React.ReactElement {
           </Tabs>
 
           {contentKind === 'lyrics' && (
-            <p className="rounded-lg bg-surface-secondary/40 px-3 py-2 text-[10px] leading-relaxed text-slate-400">
+            <p className="rounded-lg bg-surface-secondary px-3 py-2 text-[10px] leading-relaxed text-slate-400">
               A song theme sets type and placement only. Backgrounds change every song, so they are
               pushed live from the Media section instead of being saved into the theme.
             </p>
           )}
-
-          {/* ── Setup checklist ──────────────────────────────────────────────── */}
-          {inspectorTab === 'output' && <SectionCard icon={ListChecks} title="Setup">
-            <SetupChecklist
-              ppConnected={ppConnected}
-              ndiStatus={ndiStatus}
-              outputs={overlay.outputs}
-              looks={looks}
-              onSendTest={handleSendTest}
-              testStatus={testStatus}
-              testMsg={testMsg}
-            />
-          </SectionCard>}
-
-          {/* ── Outputs ──────────────────────────────────────────────────────── */}
-          {inspectorTab === 'output' && <SectionCard icon={Radio} title="Outputs">
-            <OutputsPanel
-              outputs={overlay.outputs}
-              onChange={(outputs) => persist({ ...overlay, outputs })}
-              contentKind={contentKind}
-              videoInputs={videoInputs}
-              onRefreshVideoInputs={refreshVideoInputs}
-              looks={looks}
-              onRefreshLooks={refreshLooks}
-              themeLibrary={themeLibrary}
-              status={ndiStatus.outputs}
-              onApplyDraftTheme={applyDraftThemeToOutput}
-              hasDraftChanges={hasDraftChanges}
-            />
-          </SectionCard>}
 
           {/* ── Background ───────────────────────────────────────────────────── */}
           {inspectorTab === 'style' && <SectionCard icon={Layers} title="Background">
@@ -1292,33 +1180,6 @@ export default function ThemeEditor(): React.ReactElement {
       <ResizablePanel id="theme-preview" minSize={PREVIEW_MIN}>
       <div className="h-full overflow-y-auto bg-transparent">
         <div className="flex min-h-full flex-col gap-5 p-5">
-          {/* NDI / PP status line */}
-          <div className="double-bezel-outer order-3">
-            <div className="double-bezel-inner p-4 space-y-3">
-              <div className="flex items-center gap-2">
-                <MonitorPlay size={14} className="text-teal-400 shrink-0" aria-hidden="true" />
-                <p className="text-xs font-bold text-white tracking-tight uppercase tracking-wider">NDI status</p>
-              </div>
-              <div className="space-y-2 text-xs">
-                <StatusRow label="Sender available" ok={ndiStatus.available} />
-                <StatusRow label="Sending frames" ok={ndiStatus.sending} />
-                <StatusRow label="PP video input bound" ok={ndiStatus.ppInputConfigured} />
-              </div>
-              {!ndiStatus.available && (
-                <p className="text-[10px] text-yellow-400 flex items-start gap-1.5 leading-relaxed">
-                  <AlertCircle size={11} className="shrink-0 mt-0.5" aria-hidden="true" />
-                  NDI sender unavailable — the rendered output cannot push. Other enabled outputs are unaffected.
-                </p>
-              )}
-              {ndiStatus.available && !ndiStatus.ppInputConfigured && (
-                <p className="text-[10px] text-yellow-400 flex items-start gap-1.5 leading-relaxed">
-                  <AlertCircle size={11} className="shrink-0 mt-0.5" aria-hidden="true" />
-                  In ProPresenter: add a Video Input for the "Kairo Scripture" NDI source, then bind it on the Output tab.
-                </p>
-              )}
-            </div>
-          </div>
-
           {/* WYSIWYG preview */}
           <div className="order-1">
             <div className="flex items-center justify-between mb-2">
@@ -1342,13 +1203,14 @@ export default function ThemeEditor(): React.ReactElement {
                     </button>
                   ))}
                 </div>
-                {hasDraftChanges && <span className="text-[10px] font-semibold text-orange-300 bg-orange-400/10 px-2 py-1 rounded-md">Unapplied changes</span>}
+                {hasDraftChanges && <span className="text-[10px] font-semibold text-orange-300 bg-tint-amber px-2 py-1 rounded-md">Unapplied changes</span>}
               </div>
             </div>
             <div className="relative isolate overflow-hidden rounded-xl border border-surface-border/50">
               <ScaledOverlayPreview
                 html={previewHtml}
                 autoFit={theme.layout.autoFitText}
+                motion
               />
               <OverlayCanvas
                 theme={theme}
@@ -1401,46 +1263,18 @@ export default function ThemeEditor(): React.ReactElement {
             </p>
           </div>
 
-          {/* Test / clear */}
-          <div className="order-4 space-y-2">
-            <div className="flex items-center gap-2">
-              <button
-                className="btn-primary flex items-center gap-2 flex-1 justify-center"
-                onClick={handleSendTest}
-                disabled={!ppConnected || testStatus === 'testing'}
-              >
-                <Send size={13} aria-hidden="true" />
-                Send test verse
-              </button>
-              <button
-                className="btn-secondary flex items-center gap-2 justify-center"
-                onClick={handleClear}
-                disabled={!ppConnected || testStatus === 'testing'}
-              >
-                <Trash2 size={13} aria-hidden="true" />
-                Clear
-              </button>
-            </div>
-            {testStatus !== 'idle' && (
-              <div
-                className={cn(
-                  'flex items-center gap-1.5 text-xs font-semibold',
-                  testStatus === 'testing' && 'text-yellow-400',
-                  testStatus === 'ok' && 'text-teal-400',
-                  testStatus === 'fail' && 'text-red-400'
-                )}
-              >
-                {testStatus === 'testing' && <Loader size={11} className="animate-spin" aria-hidden="true" />}
-                {testStatus === 'ok' && <CheckCircle size={11} aria-hidden="true" />}
-                {testStatus === 'fail' && <XCircle size={11} aria-hidden="true" />}
-                <span>{testMsg}</span>
-              </div>
-            )}
-            {!ppConnected && (
-              <p className="text-[10px] text-slate-500 leading-relaxed">
-                Connect to ProPresenter (Settings → ProPresenter) to test live.
-              </p>
-            )}
+          {/* Where this theme is used is set in the Screens window. */}
+          <div className="order-4 flex items-center justify-between gap-3 border-t border-surface-border pt-4">
+            <p className="text-[11px] leading-relaxed text-slate-500">
+              Which screen uses which theme, displays, NDI and ProPresenter are set up in Screens.
+            </p>
+            <button
+              type="button"
+              className="btn-secondary flex shrink-0 items-center gap-1.5 text-[11px]"
+              onClick={() => useAppStore.getState().openScreens(primaryRenderedOutput(overlay.outputs)?.id ?? null)}
+            >
+              <MonitorPlay size={13} aria-hidden="true" /> Open Screens
+            </button>
           </div>
         </div>
       </div>
@@ -1451,17 +1285,13 @@ export default function ThemeEditor(): React.ReactElement {
   )
 }
 
-function StatusRow({ label, ok }: { label: string; ok: boolean }): React.ReactElement {
-  return (
-    <div className="flex items-center justify-between">
-      <span className="text-slate-400">{label}</span>
-      <span className={cn('flex items-center gap-1.5 font-semibold', ok ? 'text-teal-400' : 'text-slate-500')}>
-        <span className={cn('w-1.5 h-1.5 rounded-full', ok ? 'bg-teal-400 shadow-glow-teal/40' : 'bg-slate-600')} />
-        {ok ? 'Ready' : 'Not ready'}
-      </span>
-    </div>
-  )
-}
+/**
+ * The tile's slide, memoised on its html: only the selected tile follows the
+ * draft, so the rest never rebuild their 1920×1080 frame while editing.
+ */
+const TileSlide = memo(function TileSlide({ html, autoFit }: { html: string; autoFit: boolean }) {
+  return <ScaledOverlayPreview html={html} autoFit={autoFit} />
+})
 
 function ThemeTile({
   name,
@@ -1478,15 +1308,18 @@ function ThemeTile({
   onClick: () => void
   onDelete?: () => void
 }): React.ReactElement {
-  const previewTheme = normalizeOverlayTheme(theme)
+  const previewTheme = useMemo(() => normalizeOverlayTheme(theme), [theme])
   const sample = SAMPLES[kind]
-  const html = renderOverlayHTML(previewTheme, sample.reference, sample.short)
+  const html = useMemo(
+    () => renderOverlayHTML(previewTheme, sample.reference, sample.short),
+    [previewTheme, sample.reference, sample.short],
+  )
   return (
     <div
       className={cn(
         'group relative w-full rounded-lg border p-1 text-left transition-all duration-200',
         selected
-          ? 'border-teal-500/50 bg-teal-500/10 shadow-[0_0_0_1px_rgb(var(--control-accent)/0.12)]'
+          ? 'border-teal-500/50 bg-tint-teal'
           : 'border-surface-border/60 bg-surface hover:border-slate-500'
       )}
     >
@@ -1497,10 +1330,7 @@ function ThemeTile({
         className="w-full text-left"
       >
         <div className="overflow-hidden rounded-md">
-          <ScaledOverlayPreview
-            html={html}
-            autoFit={previewTheme.layout.autoFitText}
-          />
+          <TileSlide html={html} autoFit={previewTheme.layout.autoFitText} />
         </div>
         <span className={cn('block truncate px-1.5 pb-1 pt-1.5 text-[11px] font-semibold', selected ? 'text-orange-300' : 'text-slate-300')}>
           {name}
@@ -1514,7 +1344,7 @@ function ThemeTile({
             onDelete()
           }}
           className={cn(
-            'absolute right-1.5 top-1.5 rounded-md bg-black/70 p-1 text-zinc-300 opacity-0 transition-opacity hover:bg-rose-950/80 hover:text-rose-300 group-hover:opacity-100 focus-visible:opacity-100',
+            'absolute right-1.5 top-1.5 rounded-md bg-black p-1 text-zinc-300 opacity-0 transition-opacity hover:bg-tint-rose hover:text-rose-300 group-hover:opacity-100 focus-visible:opacity-100',
             selected && 'opacity-100'
           )}
           aria-label={`Delete ${name}`}

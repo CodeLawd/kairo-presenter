@@ -1,37 +1,19 @@
 'use client'
 
-import Link from 'next/link'
-import { btnPrimary, btnSecondary } from '@/components/auth/styles'
-import { IconApple, IconWindows } from '@/components/landing/icons'
+import { btnPrimary } from '@/components/auth/styles'
 
 /**
- * The handoff out of the browser and into the booth.
- *
- * There are no build artifacts yet, so both platform buttons point at the
- * landing page's early-access section rather than a download that does not
- * exist — the same story the marketing page tells.
+ * The account is ready, but desktop builds are not available yet.
  */
 export function StepGetKairo({ onFinish }: { onFinish: () => void }): React.ReactElement {
   return (
     <div className="flex flex-col gap-5">
-      <div className="grid gap-2.5 sm:grid-cols-2">
-        <Link className={btnSecondary} href="/#get">
-          <IconApple /> macOS
-        </Link>
-        <Link className={btnSecondary} href="/#get">
-          <IconWindows /> Windows
-        </Link>
-      </div>
-      <p className="m-0 font-mono text-[10.5px] uppercase tracking-[0.16em] text-faint">
-        Early access
-      </p>
-
       <p className="m-0 text-[13.5px] leading-relaxed text-mute">
-        Install Kairo on the booth machine, then sign in with the same account you use here.
+        There isn&rsquo;t a desktop build to install yet. Your account is set up while we prepare early access for macOS and Windows.
       </p>
 
       <button className={btnPrimary} type="button" onClick={onFinish}>
-        Finish
+        Go to your account
       </button>
     </div>
   )

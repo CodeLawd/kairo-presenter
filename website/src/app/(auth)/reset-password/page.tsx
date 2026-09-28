@@ -10,7 +10,7 @@ import { api, ApiError } from '@/lib/api'
 const BRAND = {
   kind: 'quote',
   quote: <>A reset signs out every device. Sign in again on each one.</>,
-  attribution: 'Kairo for ProPresenter',
+  attribution: 'Kairo presentation software',
 } as const
 
 function ResetPasswordPageContent(): React.ReactElement {

@@ -38,7 +38,7 @@ const STAGES: { key: keyof ScriptureLatencyMetrics; label: string; deliberate?: 
   { key: 'suggestionPublishMs', label: 'Suggestion publish' },
   { key: 'suggestionRenderMs', label: 'On-screen render' },
   { key: 'countdownMs', label: 'Safety delay', deliberate: true },
-  { key: 'presenterRequestMs', label: 'ProPresenter request' },
+  { key: 'presenterRequestMs', label: 'Output request' },
   { key: 'presenterConfirmationMs', label: 'Output confirmation' },
 ]
 
@@ -85,7 +85,7 @@ function TraceRow({ record }: { record: ScriptureTraceRecord }): React.JSX.Eleme
         type="button"
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
-        className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left hover:bg-white/[0.03]"
+        className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left hover:bg-surface-secondary"
       >
         <ChevronRight
           size={11}
@@ -115,11 +115,11 @@ function TraceRow({ record }: { record: ScriptureTraceRecord }): React.JSX.Eleme
                   <span className={cn('truncate text-[11px]', slowest ? 'text-amber-400' : 'text-white/45')}>
                     {stage.label}
                   </span>
-                  <span className="h-1.5 overflow-hidden rounded-full bg-white/[0.05]">
+                  <span className="h-1.5 overflow-hidden rounded-full bg-surface-tertiary">
                     <span
                       className={cn(
                         'block h-full rounded-full',
-                        stage.deliberate ? 'bg-white/20' : slowest ? 'bg-amber-400' : 'bg-[#0A84FF]',
+                        stage.deliberate ? 'bg-surface-border' : slowest ? 'bg-amber-400' : 'bg-[#0A84FF]',
                       )}
                       style={{ width: `${Math.max(2, (stage.value / longest) * 100)}%` }}
                     />
@@ -193,7 +193,7 @@ export function ScriptureLatencyPanel(): React.JSX.Element {
       </div>
 
       <div className="flex items-center justify-between gap-3 px-3.5 py-2">
-        <div className="flex items-center gap-0.5 rounded-[7px] bg-white/[0.05] p-0.5" role="radiogroup" aria-label="Filter verses">
+        <div className="flex items-center gap-0.5 rounded-md bg-surface-tertiary p-0.5" role="radiogroup" aria-label="Filter verses">
           {FILTERS.map((option) => (
             <button
               key={option.id}
@@ -202,8 +202,8 @@ export function ScriptureLatencyPanel(): React.JSX.Element {
               aria-checked={filter === option.id}
               onClick={() => setFilter(option.id)}
               className={cn(
-                'rounded-[5px] px-2.5 py-0.5 text-[11px] font-medium transition-colors',
-                filter === option.id ? 'bg-white/[0.14] text-white' : 'text-white/45 hover:text-white/75',
+                'rounded-md px-2.5 py-0.5 text-[11px] font-medium transition-colors',
+                filter === option.id ? 'bg-surface-border text-white' : 'text-white/45 hover:text-white/75',
               )}
             >
               {option.label}
@@ -213,7 +213,7 @@ export function ScriptureLatencyPanel(): React.JSX.Element {
         <button
           type="button"
           onClick={() => void load()}
-          className="grid h-6 w-6 place-items-center rounded-[5px] text-white/35 hover:bg-white/[0.06] hover:text-white"
+          className="grid h-6 w-6 place-items-center rounded-md text-white/35 hover:bg-surface-tertiary hover:text-white"
           aria-label="Refresh timings"
           title="Refresh"
         >

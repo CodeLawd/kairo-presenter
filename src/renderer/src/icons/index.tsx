@@ -67,6 +67,8 @@ import {
   MicrophoneSlash as PhMicrophoneSlash,
   Minus as PhMinus,
   Monitor as PhMonitor,
+  Images as PhImages,
+  Queue as PhQueue,
   MonitorPlay as PhMonitorPlay,
   Moon as PhMoon,
   DotsThree as PhDotsThree,
@@ -188,6 +190,10 @@ export const Mic = wrap(PhMicrophone)
 export const MicOff = wrap(PhMicrophoneSlash)
 export const Minus = wrap(PhMinus)
 export const MonitorOff = wrap(PhMonitor)
+/** A set of pictures — the whole media library. */
+export const Images = wrap(PhImages)
+/** An ordered run of items — a media playlist (not a music note). */
+export const Queue = wrap(PhQueue)
 export const MonitorPlay = wrap(PhMonitorPlay)
 export const Moon = wrap(PhMoon)
 export const MoreHorizontal = wrap(PhDotsThree)

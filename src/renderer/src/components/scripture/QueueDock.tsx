@@ -37,6 +37,11 @@ export interface QueueDockProps {
   /** Keeps the selected verse in a library, with its text, for later. */
   onSaveToLibrary: (libraryId: string) => void;
   onClear: () => void;
+  /** Whether the selected card is shown on its own or with its chapter. */
+  scope: "verse" | "chapter" | null;
+  onShowVerse: () => void;
+  onShowChapter: () => void;
+  openingChapter?: boolean;
 }
 
 export function QueueDock({
@@ -57,6 +62,10 @@ export function QueueDock({
   onAddAll,
   onSaveToLibrary,
   onClear,
+  scope,
+  onShowVerse,
+  onShowChapter,
+  openingChapter = false,
 }: QueueDockProps): React.ReactElement {
   const libraries = useLibrary("scripture").libraries;
   const activeRef =
@@ -83,10 +92,42 @@ export function QueueDock({
             onChange={onCardZoomChange}
           />
 
-          <div className="flex items-center overflow-hidden rounded-md border border-white/10 bg-black/20">
+          {scope && (
+            <div
+              role="radiogroup"
+              aria-label="Show the verse or its whole chapter"
+              className="flex items-center rounded-md border border-white/10 bg-surface p-0.5"
+            >
+              {(["verse", "chapter"] as const).map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  role="radio"
+                  aria-checked={scope === option}
+                  disabled={openingChapter}
+                  onClick={() => {
+                    if (scope === option) return;
+                    if (option === "verse") onShowVerse();
+                    else onShowChapter();
+                  }}
+                  title={option === "verse" ? "Only the selected verse" : "The whole chapter around it"}
+                  className={
+                    scope === option
+                      ? "flex items-center gap-1 rounded bg-surface-elevated px-2.5 py-1 text-[11px] font-semibold text-white"
+                      : "flex items-center gap-1 rounded px-2.5 py-1 text-[11px] font-medium text-zinc-500 hover:text-zinc-200 disabled:cursor-wait"
+                  }
+                >
+                  {option === "chapter" && openingChapter && <Loader size={11} className="animate-spin" />}
+                  {option === "verse" ? "Verse" : "Chapter"}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className="flex items-center overflow-hidden rounded-md border border-white/10 bg-surface">
             <button
               type="button"
-              className="flex items-center gap-1 border-r border-white/10 px-2.5 py-1.5 text-[11px] font-semibold text-zinc-300 hover:bg-white/5 hover:text-white disabled:cursor-wait disabled:opacity-50"
+              className="flex items-center gap-1 border-r border-white/10 px-2.5 py-1.5 text-[11px] font-semibold text-zinc-300 hover:bg-surface-tertiary hover:text-white disabled:cursor-wait disabled:opacity-50"
               onClick={onPrevious}
               disabled={navigating !== null}
               aria-label="Previous verse"
@@ -100,7 +141,7 @@ export function QueueDock({
             </button>
             <button
               type="button"
-              className="flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-semibold text-zinc-300 hover:bg-white/5 hover:text-white disabled:cursor-wait disabled:opacity-50"
+              className="flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-semibold text-zinc-300 hover:bg-surface-tertiary hover:text-white disabled:cursor-wait disabled:opacity-50"
               onClick={onNext}
               disabled={navigating !== null}
               aria-label="Next verse"
@@ -134,7 +175,7 @@ export function QueueDock({
                 <button
                   type="button"
                   disabled={creatingPlaylist}
-                  className="flex items-center gap-1 rounded-md px-2 py-1.5 text-[11px] text-zinc-400 hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400 disabled:opacity-50"
+                  className="flex items-center gap-1 rounded-md px-2 py-1.5 text-[11px] text-zinc-400 hover:bg-surface-tertiary hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400 disabled:opacity-50"
                 >
                   Save <ChevronDown size={11} />
                 </button>
@@ -182,7 +223,7 @@ export function QueueDock({
 
           <button
             type="button"
-            className="px-2 py-1.5 text-[11px] font-medium text-zinc-500 hover:text-zinc-200"
+            className="rounded-md px-2 py-1.5 text-[11px] font-medium text-zinc-500 hover:bg-surface-tertiary hover:text-zinc-200"
             onClick={onClear}
           >
             Clear

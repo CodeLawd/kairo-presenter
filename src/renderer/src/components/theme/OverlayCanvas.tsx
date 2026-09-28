@@ -252,7 +252,7 @@ function LayerFrame({
       aria-label={`Move ${label}`}
       aria-pressed={selected}
       className={cn(
-        'absolute cursor-grab touch-none select-none rounded-[2px] bg-transparent ring-2 active:cursor-grabbing',
+        'absolute cursor-grab touch-none select-none rounded-none bg-transparent ring-2 active:cursor-grabbing',
         selected ? ring : dash
       )}
       style={{

@@ -12,6 +12,8 @@ import { labelLyricSlides, moveLyricSlide } from '@shared/lyrics-reorder'
 import { useLibraryWidth } from './useLibraryWidth'
 import { useImportRequest } from '@/hooks/useImportRequest'
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { createPortal } from 'react-dom'
+import { useHeaderToolbarSlot } from '@/components/layout/header-toolbar'
 import {
   Search,
   Music2,
@@ -41,10 +43,11 @@ import {
   Scissors,
   Languages,
   RotateCcw,
+  ListMusic,
 } from '@/icons'
+import { SongUsageModal } from './SongUsageModal'
 import { cn, downloadFile } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -438,10 +441,10 @@ function SectionSlideGrid({
                 overflow: 'visible',
               }}
               className={cn(
-                'group relative w-full aspect-video rounded-lg overflow-hidden',
+                'group relative w-full aspect-video rounded-none overflow-hidden',
                 'bg-black border-2 text-left cursor-default',
-                isLive && 'border-teal-400 ring-2 ring-teal-400/30',
-                isPicked && !isLive && 'border-white ring-2 ring-white/25',
+                isLive && 'border-teal-400',
+                isPicked && !isLive && 'border-white',
                 !isLive && !isPicked && 'hover:brightness-125',
                 isPushing && 'opacity-70',
                 // The card being carried stays in place, faded, so the gap it
@@ -451,7 +454,7 @@ function SectionSlideGrid({
                 'transition-[border-color,box-shadow,filter,opacity,transform] duration-150'
               )}
               aria-pressed={selecting ? isPicked : undefined}
-              aria-label={selecting ? `Select slide ${slideNo}` : `Push slide ${slideNo} to ProPresenter`}
+              aria-label={selecting ? `Select slide ${slideNo}` : `Show slide ${slideNo}`}
               title={selecting ? 'Select this slide' : 'Click to go live · drag to move · ⌘-click to select'}
             >
               {slideDrag && slideDrag.from !== zeroBased && slideDrag.over?.index === zeroBased && (
@@ -469,13 +472,8 @@ function SectionSlideGrid({
                   <Check size={10} weight="bold" />
                 </span>
               )}
-              {isLive && (
-                <span className="absolute top-1.5 left-1.5 z-10 px-1.5 py-px rounded text-[8px] font-bold tracking-wider uppercase bg-teal-500/20 text-teal-300 border border-teal-500/30">
-                  Live
-                </span>
-              )}
 
-              <div className="absolute inset-0 overflow-hidden rounded-[6px] flex flex-col items-center justify-center px-3.5 gap-0.5">
+              <div className="absolute inset-0 overflow-hidden rounded-none flex flex-col items-center justify-center px-3.5 gap-0.5">
                 {lineCount > 0 ? (
                   lines.map((line, j) => (
                     <p
@@ -596,7 +594,7 @@ function SongListItem({
       className={cn(
         // One line per song so a setlist or library shows many at once.
         'group relative flex h-8 items-center gap-2 rounded-md px-2 cursor-pointer select-none',
-        picked ? PICKED_ROW : isSelected ? 'row-selected' : 'hover:bg-white/[0.04]',
+        picked ? PICKED_ROW : isSelected ? 'row-selected' : 'hover:bg-surface-tertiary',
       )}
       style={dropping ? {
         boxShadow: dropping === 'before' ? 'inset 0 2px 0 rgb(255 255 255 / 0.85)' : 'inset 0 -2px 0 rgb(255 255 255 / 0.85)',
@@ -699,7 +697,7 @@ function FloatingContextMenu({
       className={cn(
         'w-full flex items-center gap-2.5 px-3.5 py-2 text-[13px] text-left transition-colors',
         danger
-          ? 'text-red-400 hover:bg-red-500/10 hover:text-red-300'
+          ? 'text-red-400 hover:bg-tint-red hover:text-red-300'
           : 'text-slate-300 hover:bg-surface-tertiary hover:text-white'
       )}
       onClick={() => { action(); onClose() }}
@@ -774,10 +772,10 @@ function SectionEditBlock({
         boxShadow: `inset 3px 0 0 ${sectionColor(section.type)}`,
       }}
       className={cn(
-        'overflow-hidden rounded-xl border transition-colors duration-150',
+        'overflow-hidden rounded-none border transition-colors duration-150',
         isDragTarget
-          ? 'border-white/40 bg-white/[0.04]'
-          : 'bg-white/[0.02]'
+          ? 'border-white/40 bg-surface-tertiary'
+          : 'bg-surface-secondary'
       )}
     >
       {/* Section header row */}
@@ -793,7 +791,7 @@ function SectionEditBlock({
             onDragStart(index)
           }}
           onDragEnd={() => onDrop(index)}
-          className="text-slate-600 cursor-grab active:cursor-grabbing shrink-0 p-0.5 -ml-0.5 rounded hover:text-slate-400 hover:bg-white/5"
+          className="text-slate-600 cursor-grab active:cursor-grabbing shrink-0 p-0.5 -ml-0.5 rounded hover:text-slate-400 hover:bg-surface-tertiary"
           title="Drag to reorder"
           aria-label="Drag to reorder section"
         >
@@ -840,7 +838,7 @@ function SectionEditBlock({
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              className="shrink-0 rounded p-1 text-slate-500 transition-colors hover:bg-white/5 hover:text-slate-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-teal-400"
+              className="shrink-0 rounded p-1 text-slate-500 transition-colors hover:bg-surface-tertiary hover:text-slate-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-teal-400"
               title="Section tools"
               aria-label={`Tools for ${section.label || `section ${index + 1}`}`}
             >
@@ -889,7 +887,7 @@ function SectionEditBlock({
         <button
           type="button"
           onClick={() => onDelete(section._key)}
-          className="shrink-0 rounded p-1 text-slate-600 transition-colors hover:bg-red-500/10 hover:text-red-400 focus-visible:outline-none"
+          className="shrink-0 rounded p-1 text-slate-600 transition-colors hover:bg-tint-red hover:text-red-400 focus-visible:outline-none"
           title="Delete this section"
           aria-label={`Delete section ${section.label || index + 1}`}
         >
@@ -965,7 +963,7 @@ function OnlineResultRow({
         'group flex items-start gap-2.5 px-3 py-2.5 rounded-lg border transition-all duration-150 cursor-pointer',
         selected
           ? 'row-selected border-transparent'
-          : 'border-transparent hover:bg-white/[0.04]'
+          : 'border-transparent hover:bg-surface-tertiary'
       )}
     >
       <div className="w-7 h-7 rounded-lg bg-surface-elevated border border-surface-border/50 flex items-center justify-center shrink-0 mt-0.5">
@@ -987,7 +985,7 @@ function OnlineResultRow({
       {inLibrary ? (
         <button
           type="button"
-          className="shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold text-teal-400 bg-teal-500/10 border border-teal-500/25 hover:bg-teal-500/20 transition-colors focus-visible:outline-none"
+          className="shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold text-teal-400 bg-tint-teal border border-teal-500/25 hover:bg-tint-teal transition-colors focus-visible:outline-none"
           onClick={(e) => {
             e.stopPropagation()
             onOpenExisting(result.existingSongId as string)
@@ -999,7 +997,7 @@ function OnlineResultRow({
         <button
           type="button"
           disabled={disabled}
-          className="shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold text-slate-400 border border-surface-border/60 hover:text-white hover:border-teal-500/40 hover:bg-teal-500/10 disabled:opacity-40 transition-colors focus-visible:outline-none"
+          className="shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold text-slate-400 border border-surface-border/60 hover:text-white hover:border-teal-500/40 hover:bg-tint-teal disabled:opacity-40 transition-colors focus-visible:outline-none"
           onClick={(e) => {
             e.stopPropagation()
             onImport(result)
@@ -1037,7 +1035,7 @@ function OnlinePreviewPane({
   if (!result) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center px-6 py-10">
-        <div className="w-11 h-11 rounded-xl bg-surface-secondary/50 border border-surface-border/40 flex items-center justify-center">
+        <div className="w-11 h-11 rounded-xl bg-surface-secondary border border-surface-border/40 flex items-center justify-center">
           <Eye size={16} className="text-slate-600" />
         </div>
         <p className="text-sm font-medium text-slate-400">{emptyHint}</p>
@@ -1065,7 +1063,7 @@ function OnlinePreviewPane({
         )}
         {!loading && error && (
           <div className="flex flex-col items-center gap-3 py-12 text-center px-6">
-            <div className="w-10 h-10 rounded-xl bg-surface-secondary/60 flex items-center justify-center">
+            <div className="w-10 h-10 rounded-xl bg-surface-secondary flex items-center justify-center">
               <AlertCircle size={16} className="text-slate-400" />
             </div>
             <div className="space-y-1.5 max-w-xs">
@@ -1245,7 +1243,7 @@ function FileDropZone({
       className={cn(
         'border-2 border-dashed rounded-xl flex flex-col items-center gap-2 cursor-pointer transition-all text-center',
         compact ? 'px-3 py-3' : 'px-6 py-12 gap-3',
-        dragOver ? 'border-teal-500/60 bg-teal-500/5' : 'border-surface-border/40 hover:border-surface-border'
+        dragOver ? 'border-teal-500/60 bg-tint-teal' : 'border-surface-border/40 hover:border-surface-border'
       )}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
@@ -1324,7 +1322,7 @@ function QueuedFileRow({
         'group flex items-center gap-2 rounded-lg border px-2 py-2 transition-colors cursor-pointer',
         selected
           ? 'row-selected border-transparent'
-          : 'bg-transparent border-transparent hover:bg-white/[0.04]',
+          : 'bg-transparent border-transparent hover:bg-surface-tertiary',
         !include && 'opacity-60'
       )}
       onClick={onSelect}
@@ -1333,8 +1331,8 @@ function QueuedFileRow({
         className={cn(
           'w-7 h-7 rounded-md border flex items-center justify-center shrink-0',
           duplicate
-            ? 'bg-amber-500/15 border-amber-500/30'
-            : 'bg-teal-500/15 border-teal-500/25'
+            ? 'bg-tint-amber border-amber-500/30'
+            : 'bg-tint-teal border-teal-500/25'
         )}
       >
         {duplicate
@@ -1366,8 +1364,8 @@ function QueuedFileRow({
           className={cn(
             'shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium',
             action === 'skip' && 'text-slate-500',
-            action === 'new' && 'bg-teal-500/20 text-teal-300',
-            action === 'replace' && 'bg-amber-500/20 text-amber-300'
+            action === 'new' && 'bg-tint-teal text-teal-300',
+            action === 'replace' && 'bg-tint-amber text-amber-300'
           )}
         >
           {ACTION_LABEL[action]}
@@ -1423,7 +1421,7 @@ function QueuedLyricsEditor({
     <div className="flex-1 min-h-0 flex flex-col px-4 py-3 gap-2">
       <textarea
         className={cn(
-          'flex-1 min-h-0 w-full resize-none rounded-lg border bg-black/20 px-3 py-2.5',
+          'flex-1 min-h-0 w-full resize-none rounded-lg border bg-surface px-3 py-2.5',
           'text-[13px] leading-relaxed text-slate-200 select-text',
           'border-surface-border/40 hover:border-surface-border',
           'focus:border-teal-500/50 focus:outline-none transition-colors'
@@ -1478,7 +1476,7 @@ function QueuedFilePreview({
     <div className="flex-1 min-w-0 flex flex-col">
       <div className="px-4 py-3 border-b border-surface-border/40 shrink-0">
         {entry.duplicate && (
-          <div className="mb-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-2">
+          <div className="mb-2 rounded-lg border border-amber-500/30 bg-tint-amber px-2.5 py-2">
             <div className="flex items-start gap-2 text-[11px] text-amber-300">
               <AlertCircle size={12} className="mt-0.5 shrink-0" />
               <span>
@@ -1500,8 +1498,8 @@ function QueuedFilePreview({
                     className={cn(
                       'rounded-md px-2 py-1 text-[11px] font-medium transition-colors focus-visible:outline-none',
                       active
-                        ? 'bg-amber-500/25 text-amber-200 border border-amber-400/40'
-                        : 'border border-transparent text-slate-400 hover:text-slate-200 hover:bg-white/5'
+                        ? 'bg-tint-amber text-amber-200 border border-amber-400/40'
+                        : 'border border-transparent text-slate-400 hover:text-slate-200 hover:bg-surface-tertiary'
                     )}
                   >
                     {choice === 'skip' ? "Don't add" : choice === 'new' ? 'Save a new copy' : 'Replace the old one'}
@@ -1514,7 +1512,7 @@ function QueuedFilePreview({
         {/* A file with no heading is named after itself, so the title is the
             one field that regularly needs fixing before the song is saved. */}
         <input
-          className="w-full bg-transparent text-base font-semibold text-white rounded px-1 -mx-1 border border-transparent hover:border-surface-border/60 focus:border-teal-500/50 focus:bg-black/20 focus:outline-none transition-colors"
+          className="w-full bg-transparent text-base font-semibold text-white rounded px-1 -mx-1 border border-transparent hover:border-surface-border/60 focus:border-teal-500/50 focus:bg-surface focus:outline-none transition-colors"
           value={song.title}
           onChange={(e) => onRename({ title: e.target.value })}
           placeholder="Song title"
@@ -1522,7 +1520,7 @@ function QueuedFilePreview({
         />
         <div className="flex items-center gap-1 mt-0.5 text-[11px] text-slate-500 min-w-0">
           <input
-            className="min-w-0 flex-1 bg-transparent rounded px-1 -mx-1 border border-transparent hover:border-surface-border/60 focus:border-teal-500/50 focus:bg-black/20 focus:outline-none focus:text-slate-300 transition-colors"
+            className="min-w-0 flex-1 bg-transparent rounded px-1 -mx-1 border border-transparent hover:border-surface-border/60 focus:border-teal-500/50 focus:bg-surface focus:outline-none focus:text-slate-300 transition-colors"
             value={song.artist ?? ''}
             onChange={(e) => onRename({ artist: e.target.value })}
             placeholder="Unknown artist"
@@ -2070,7 +2068,7 @@ function ImportModal({
             </div>
           ) : (
             <div className="flex-1 flex flex-col min-h-0 px-5 py-4 gap-3">
-              <div className="flex-1 min-h-0 flex rounded-xl border border-surface-border/50 overflow-hidden bg-surface-secondary/30">
+              <div className="flex-1 min-h-0 flex rounded-xl border border-surface-border/50 overflow-hidden bg-surface-secondary">
                 {/* Left: the queue */}
                 <div className="w-[42%] min-w-[240px] max-w-[380px] flex flex-col border-r border-surface-border/40">
                   <div className="p-2 shrink-0">
@@ -2159,13 +2157,13 @@ function ImportModal({
             </div>
 
             {error && (
-              <div className="shrink-0 flex items-start gap-2 px-3 py-2.5 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-xs">
+              <div className="shrink-0 flex items-start gap-2 px-3 py-2.5 rounded-lg bg-tint-red border border-red-500/30 text-red-400 text-xs">
                 <AlertCircle size={13} className="shrink-0 mt-0.5" />
                 <span>{error}</span>
               </div>
             )}
 
-            <div className="flex-1 min-h-0 flex gap-0 rounded-xl border border-surface-border/50 overflow-hidden bg-surface-secondary/30">
+            <div className="flex-1 min-h-0 flex gap-0 rounded-xl border border-surface-border/50 overflow-hidden bg-surface-secondary">
               <div className="w-[42%] min-w-[220px] max-w-[360px] overflow-y-auto border-r border-surface-border/40 p-2 space-y-1">
                 {onlineResults.length > 0 &&
                   onlineResults.map((result) => (
@@ -2211,7 +2209,7 @@ function ImportModal({
         <div className="flex-1 overflow-y-auto px-2 py-5 space-y-5 min-h-0">
           {tab === 'paste' && (
             <div className="space-y-3">
-              <div className="flex items-center justify-between gap-3 p-3 rounded-xl bg-surface-secondary/40 border border-surface-border/40">
+              <div className="flex items-center justify-between gap-3 p-3 rounded-xl bg-surface-secondary border border-surface-border/40">
                 <div className="min-w-0">
                   <p className="text-[13px] font-medium text-slate-300">Import from clipboard</p>
                   <p className="text-[11px] text-slate-600 mt-0.5">
@@ -2283,7 +2281,7 @@ function ImportModal({
           )}
 
           {error && (
-            <div className="flex items-start gap-2 px-3.5 py-3 rounded-lg bg-red-500/10 border border-red-500/25 text-red-400 text-sm">
+            <div className="flex items-start gap-2 px-3.5 py-3 rounded-lg bg-tint-red border border-red-500/25 text-red-400 text-sm">
               <AlertCircle size={14} className="shrink-0 mt-0.5" />
               <span>{error}</span>
             </div>
@@ -2348,7 +2346,7 @@ function DeleteConfirmModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start gap-3 mb-4">
-          <div className="w-9 h-9 rounded-xl bg-red-500/15 border border-red-500/25 flex items-center justify-center shrink-0">
+          <div className="w-9 h-9 rounded-xl bg-tint-red border border-red-500/25 flex items-center justify-center shrink-0">
             <Trash2 size={15} className="text-red-400" />
           </div>
           <div>
@@ -2362,7 +2360,7 @@ function DeleteConfirmModal({
         <div className="flex items-center justify-end gap-2">
           <button className="btn-secondary text-sm py-1.5 px-3.5" onClick={onCancel}>Cancel</button>
           <button
-            className="px-3.5 py-1.5 rounded-lg bg-red-600/20 hover:bg-red-600/30 text-red-400 border border-red-500/30 text-sm font-medium transition-colors focus-visible:outline-none"
+            className="px-3.5 py-1.5 rounded-lg bg-tint-red hover:bg-tint-red text-red-400 border border-red-500/30 text-sm font-medium transition-colors focus-visible:outline-none"
             onClick={onConfirm}
           >
             Delete
@@ -2376,6 +2374,7 @@ function DeleteConfirmModal({
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function Lyrics(): React.ReactElement {
+  const toolbarSlot = useHeaderToolbarSlot()
   const liveRail = useLiveRailWidth()
 
   // ── Library ──────────────────────────────────────────────────────────────────
@@ -2521,6 +2520,7 @@ export default function Lyrics(): React.ReactElement {
   const [playlistOpen, setPlaylistOpen] = useState(false)
   const [, setPlaylistStatus] = useState<'idle' | 'adding' | 'added'>('idle')
   const [exportOpen, setExportOpen] = useState(false)
+  const [usageOpen, setUsageOpen] = useState(false)
   const [copiedLyrics, setCopiedLyrics] = useState(false)
   const playlistRef = useRef<HTMLDivElement>(null)
   const exportRef = useRef<HTMLDivElement>(null)
@@ -3370,35 +3370,13 @@ export default function Lyrics(): React.ReactElement {
       }
     >
       <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-surface">
-      {/* Main split layout */}
-      <div ref={libraryWidth.containerRef} className="flex-1 flex min-h-0 min-w-0 overflow-hidden">
-
-        {/* ── Left panel: the library, on its own surface ───────────────────── */}
-        {/* A sidebar rather than a card: it runs the full height of the page and
-            carries the page title with it, so the library and the song being
-            edited read as two rooms instead of one long page. */}
-        <div
-          style={{ width: libraryWidth.width }}
-          className={cn(
-            "flex shrink-0 flex-col gap-2.5 min-h-0 min-w-0 bg-surface-secondary border-r border-surface-border/40 px-4 pt-6 pb-5",
-          )}
-        >
-          <div className="flex shrink-0 items-center gap-1.5">
-            <h1 className="page-header mr-auto">Lyrics</h1>
-            <Button variant="ghost" size="icon-sm" onClick={() => setShowImport(true)} aria-label="Import songs" title="Import songs">
-              <Upload />
-            </Button>
-            <Button size="sm" onClick={handleNewSong} title="New song">
-              <Plus data-icon="inline-start" /> New
-            </Button>
-          </div>
-
-          {/* Search */}
-          <div className="relative">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
-            <Input
+      {toolbarSlot && createPortal(
+        <div className="flex h-7 min-w-0 items-center gap-1.5">
+          <div className="no-drag flex h-7 w-[26rem] min-w-0 shrink items-center rounded-md border border-surface-border bg-surface-secondary transition-colors focus-within:border-teal-500">
+            <Search size={13} className="ml-2.5 shrink-0 text-slate-500" aria-hidden="true" />
+            <input
               type="text"
-              className="pl-9 pr-9"
+              className="h-full min-w-0 flex-1 bg-transparent px-2 text-xs text-slate-100 outline-none placeholder:text-slate-500"
               placeholder="Search your library or the web…"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -3407,8 +3385,8 @@ export default function Lyrics(): React.ReactElement {
             {query && (
               <Button
                 variant="ghost"
-                size="icon-sm"
-                className="absolute right-2 top-1/2 -translate-y-1/2"
+                size="icon-xs"
+                className="mr-1 shrink-0"
                 onClick={() => setQuery('')}
                 aria-label="Clear search"
               >
@@ -3416,7 +3394,28 @@ export default function Lyrics(): React.ReactElement {
               </Button>
             )}
           </div>
+          <Button variant="ghost" size="icon-sm" onClick={() => setShowImport(true)} aria-label="Import songs" title="Import songs">
+            <Upload />
+          </Button>
+          <Button size="sm" onClick={handleNewSong} title="New song">
+            <Plus data-icon="inline-start" /> New
+          </Button>
+        </div>,
+        toolbarSlot,
+      )}
+      {/* Main split layout */}
+      <div ref={libraryWidth.containerRef} className="flex-1 flex min-h-0 min-w-0 overflow-hidden">
 
+        {/* ── Left panel: the library, on its own surface ───────────────────── */}
+        {/* A sidebar rather than a card: it runs the full height of the page, so
+            the library and the song being edited read as two rooms. Search,
+            Import and New live in the app header's toolbar row. */}
+        <div
+          style={{ width: libraryWidth.width }}
+          className={cn(
+            "flex shrink-0 flex-col gap-2.5 min-h-0 min-w-0 bg-surface-secondary px-4 pt-3 pb-5",
+          )}
+        >
           <LibraryRail
             source={filter}
             activeLibraryId={activeLibraryId}
@@ -3489,6 +3488,11 @@ export default function Lyrics(): React.ReactElement {
                     <Download size={13} />
                     Import .kairo file…
                   </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={() => setUsageOpen(true)}>
+                    <ListMusic size={13} />
+                    Song usage report…
+                  </DropdownMenuItem>
                 </DropdownMenuGroup>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -3499,10 +3503,10 @@ export default function Lyrics(): React.ReactElement {
               <span className="min-w-0 flex-1 truncate text-zinc-300">
                 {setlistSelect.selected.size} song{setlistSelect.selected.size === 1 ? '' : 's'} selected
               </span>
-              <button type="button" onClick={removePickedFromSetlist} className="rounded px-1.5 py-0.5 font-medium text-rose-300 hover:bg-rose-500/15" title="Remove from setlist (Delete)">
+              <button type="button" onClick={removePickedFromSetlist} className="rounded px-1.5 py-0.5 font-medium text-rose-300 hover:bg-tint-rose" title="Remove from setlist (Delete)">
                 Remove
               </button>
-              <button type="button" onClick={setlistSelect.clear} className="rounded px-1.5 py-0.5 text-zinc-400 hover:bg-white/5 hover:text-white" title="Clear (Esc)">
+              <button type="button" onClick={setlistSelect.clear} className="rounded px-1.5 py-0.5 text-zinc-400 hover:bg-surface-tertiary hover:text-white" title="Clear (Esc)">
                 Clear
               </button>
             </div>
@@ -3510,7 +3514,7 @@ export default function Lyrics(): React.ReactElement {
           {/* Song list. In a setlist, the whole area takes a drop: anywhere
               below the last song adds to the end. */}
           <div
-            className={cn('flex-1 overflow-y-auto space-y-px min-h-0 rounded-md transition-colors', setlistDropEnd && 'bg-white/[0.04]')}
+            className={cn('flex-1 overflow-y-auto space-y-px min-h-0 rounded-md transition-colors', setlistDropEnd && 'bg-surface-tertiary')}
             onDragOver={(event) => {
               if (!viewingSetlist || !event.dataTransfer.types.includes(SONG_DRAG_TYPE)) return
               event.preventDefault()
@@ -3540,7 +3544,7 @@ export default function Lyrics(): React.ReactElement {
               <>
                 {filteredSongs.length === 0 && !query && (
                   <div className="flex flex-col items-center justify-center py-16 gap-3 text-center px-4">
-                    <div className="w-12 h-12 rounded-xl bg-surface-secondary/50 border border-surface-border/40 flex items-center justify-center">
+                    <div className="w-12 h-12 rounded-xl bg-surface-secondary border border-surface-border/40 flex items-center justify-center">
                       <Music2 size={18} className="text-slate-600" />
                     </div>
                     <div>
@@ -3671,7 +3675,7 @@ export default function Lyrics(): React.ReactElement {
           {...libraryWidth.separatorProps}
           title="Drag to resize library · double-click to reset"
           className="group flex w-2 shrink-0 cursor-col-resize touch-none items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50"
-        ><span className="h-12 w-px bg-white/10 transition-colors group-hover:bg-teal-400/70 group-active:bg-teal-400" /></button>
+        ><span className="h-12 w-px bg-surface-elevated transition-colors group-hover:bg-teal-400 group-active:bg-teal-400" /></button>
         <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
           {webPreviewResult && !editMode ? (
             <OnlinePreviewPane
@@ -3687,7 +3691,7 @@ export default function Lyrics(): React.ReactElement {
           ) : !selectedSong && !editMode ? (
             /* Empty state */
             <div className="flex-1 flex flex-col items-center justify-center gap-4 text-center p-8">
-              <div className="w-16 h-16 rounded-2xl bg-surface-secondary/50 border border-surface-border/30 flex items-center justify-center">
+              <div className="w-16 h-16 rounded-2xl bg-surface-secondary border border-surface-border/30 flex items-center justify-center">
                 <Music2 size={24} className="text-slate-600" />
               </div>
               <div>
@@ -3710,7 +3714,7 @@ export default function Lyrics(): React.ReactElement {
                 <div className="flex-1 min-w-0">
                   {editMode ? (
                     <div className="flex min-w-0 items-center gap-2.5">
-                      <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-amber-400/25 bg-amber-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-300">
+                      <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-amber-400/25 bg-tint-amber px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-300">
                         <Edit2 size={10} aria-hidden="true" />
                         {isNewSong ? 'New song' : 'Editing'}
                       </span>
@@ -3839,7 +3843,7 @@ export default function Lyrics(): React.ReactElement {
 
               {sendError && <p role="alert" className="px-4 py-2 text-xs text-red-400">{sendError}</p>}
               {translateError && (
-                <div className="mx-4 mt-3 flex items-start gap-2 px-3.5 py-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs">
+                <div className="mx-4 mt-3 flex items-start gap-2 px-3.5 py-2.5 rounded-lg bg-tint-red border border-red-500/20 text-red-400 text-xs">
                   <AlertCircle size={12} className="shrink-0 mt-0.5" />
                   <span>{translateError}</span>
                 </div>
@@ -3882,7 +3886,7 @@ export default function Lyrics(): React.ReactElement {
                     </div>
 
                     {saveError && (
-                      <div className="flex items-start gap-2 px-3.5 py-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs">
+                      <div className="flex items-start gap-2 px-3.5 py-2.5 rounded-lg bg-tint-red border border-red-500/20 text-red-400 text-xs">
                         <AlertCircle size={12} className="shrink-0 mt-0.5" />
                         <span>{saveError}</span>
                       </div>
@@ -4036,6 +4040,7 @@ export default function Lyrics(): React.ReactElement {
           onClose={() => setContextMenu(null)}
         />
       )}
+      {usageOpen && <SongUsageModal onClose={() => setUsageOpen(false)} />}
     </>
   )
 }

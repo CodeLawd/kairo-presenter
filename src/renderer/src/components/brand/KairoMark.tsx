@@ -34,7 +34,7 @@ export function KairoMark({
         alt=""
         width={dim.img}
         height={dim.img}
-        className={cn('relative h-full w-full object-contain drop-shadow-sm', dim.box)}
+        className={cn('relative h-full w-full object-contain', dim.box)}
         draggable={false}
       />
     </span>

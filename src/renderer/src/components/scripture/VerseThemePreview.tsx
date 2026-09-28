@@ -34,12 +34,14 @@ export interface VerseThemePreviewProps {
   selectId?: string;
   cardRef: (element: HTMLButtonElement | null) => void;
   /**
-   * Card chrome (translation + Live) sits under the 16:9 frame so the slide
-   * itself matches NDI. Hide it on the operator live-output monitor.
+   * Card chrome (border + Sending tag) around the 16:9 slide, which itself
+   * matches NDI. Hide it on the operator live-output monitor.
    */
   chrome?: boolean;
   /** Pause a live video background without rebuilding the slide. */
   paused?: boolean;
+  /** Play a video background — the live monitor only; cards show a still. */
+  motion?: boolean;
   seekTo?: { token: number; seconds: number } | null;
   onTime?: (time: OverlayVideoTime) => void;
   /**
@@ -107,6 +109,7 @@ export function VerseThemePreview({
   cardRef,
   chrome = true,
   paused = false,
+  motion = false,
   seekTo = null,
   onTime,
   lazy = false,
@@ -131,15 +134,11 @@ export function VerseThemePreview({
     return renderOverlayHTML(theme, reference, text);
   }, [theme, reference, text, drawSlide]);
 
-  const showLiveBadge = isLive || sendStatus === "sent";
-  const status =
-    sendStatus === "sending"
-      ? "Sending"
-      : sendStatus === "error"
-        ? "Failed"
-        : showLiveBadge
-          ? "Live"
-          : null;
+  // Only transient states get a label; "on screen" is said by the frame.
+  // Only the in-flight state gets a label. A push that reached no screen is
+  // still live in Kairo; why the screen missed it belongs to Screens, not to
+  // a red badge on every card.
+  const status = sendStatus === "sending" ? "Sending" : null;
 
   return (
     <button
@@ -152,12 +151,12 @@ export function VerseThemePreview({
         "group relative flex shrink-0 flex-col overflow-hidden text-left transition-all focus-visible:outline-none",
         chrome
           ? cn(
-              "rounded-xl border shadow-sm",
+              "rounded-md border",
               isPicked
-                ? "border-white ring-2 ring-white/30"
+                ? "border-white"
                 : isActive
-                  ? "border-teal-400 ring-2 ring-teal-400/70"
-                  : "border-surface-border/70 hover:border-slate-500 focus-visible:ring-1 focus-visible:ring-surface-border",
+                  ? "border-teal-400"
+                  : "border-surface-border hover:border-slate-500 focus-visible:border-slate-400",
             )
           : "rounded-none border-0 shadow-none",
       )}
@@ -178,6 +177,7 @@ export function VerseThemePreview({
             html={html}
             autoFit={theme.layout.autoFitText}
             fill
+            motion={motion}
             paused={paused}
             seekTo={seekTo}
             onTime={onTime}
@@ -193,25 +193,9 @@ export function VerseThemePreview({
         )}
       </div>
 
-      {chrome && (
-        <span className="flex min-h-[18px] items-center justify-between gap-2 px-1.5 py-1">
-          <span className="font-sans text-[9px] font-bold uppercase tracking-wider text-slate-500">
-            {result.translation}
-          </span>
-          {status && (
-            <span
-              className={cn(
-                "rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider",
-                sendStatus === "error"
-                  ? "bg-red-600/90 text-white"
-                  : sendStatus === "sending"
-                    ? "bg-slate-800 text-slate-100"
-                    : "bg-teal-500/95 text-white",
-              )}
-            >
-              {status}
-            </span>
-          )}
+      {chrome && status && (
+        <span className="absolute right-1.5 top-1.5 bg-slate-800 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-slate-100">
+          {status}
         </span>
       )}
     </button>

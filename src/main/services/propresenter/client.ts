@@ -951,7 +951,7 @@ export class ProPresenterClient extends EventEmitter {
    * video_input; presentation, background and all are rejected.
    *
    * `video_input` is cleared by default for a full PP reset. Callers clearing
-   * ProAutomate's own output can pass `{ clearVideoInput: false }` to preserve
+   * Kairo's own output can pass `{ clearVideoInput: false }` to preserve
    * the operator's selected input while the NDI frame is blanked separately.
    */
   async clearAll(options: { clearVideoInput?: boolean } = {}): Promise<boolean> {

@@ -7,6 +7,10 @@ import { app, BrowserWindow } from 'electron'
 import log from 'electron-log/main'
 import type { ResilienceStatus, ScriptureSuggestion, ServiceHealth, ServiceName } from '@shared/ipc'
 import { proPresenterService } from './propresenter'
+import { normalizeOverlaySettings } from '@shared/overlay-defaults'
+import { propresenterEnabled, setupUsesPropresenter } from '@shared/pp-connect-gate'
+import { normalizeResourceBindings } from '@shared/propresenter-resources'
+import { store } from '../db'
 import { sttService } from './stt'
 import { transitionDetectorRecovery } from '@shared/detector-recovery'
 
@@ -342,9 +346,15 @@ class ResilienceManager extends EventEmitter {
   private evaluateOverallHealth(): void {
     const healths = Array.from(this.healthMap.values())
     
-    // Critical: ProPresenter or Audio disconnected
+    // Critical: Audio disconnected, or ProPresenter disconnected on a setup
+    // that pushes through it. A Kairo-screens-only booth does not need PP.
+    const ppMatters = propresenterEnabled({ propresenter: store.get('propresenter') }) && setupUsesPropresenter(
+      normalizeOverlaySettings(store.get('overlay')),
+      normalizeResourceBindings(store.get('propresenterResources')).ndiVideoInputId,
+    )
     const isCritical = healths.some(
-      (h) => (h.service === 'propresenter' || h.service === 'audio') && h.status === 'error'
+      (h) =>
+        ((h.service === 'propresenter' && ppMatters) || h.service === 'audio') && h.status === 'error'
     )
     
     // Degraded: offline, STT reconnecting/error, or Claude in fallback/error

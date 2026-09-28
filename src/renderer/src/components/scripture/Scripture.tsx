@@ -1,4 +1,6 @@
 import { useImportRequest } from '@/hooks/useImportRequest'
+import { createPortal } from "react-dom";
+import { useHeaderToolbarSlot } from "@/components/layout/header-toolbar";
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { AlertCircle, BookOpen, Loader, Plus, Settings as SettingsIcon, Upload } from '@/icons';
 import { useMultiSelect } from "@/hooks/useMultiSelect";
@@ -32,7 +34,6 @@ import {
   combineScriptureResults,
   expandScriptureResult,
   getAdjacentVerseQueries,
-  getBookCompletion,
   getBookCompletions,
   normalizeScriptureQuery,
   reloadPassagesInTranslation,
@@ -48,6 +49,7 @@ import { SermonNotesReviewModal } from "./SermonNotesReviewModal";
 import { LiveOutputRail } from "@/components/operator/LiveOutputRail";
 import { BoothWorkspace } from "@/components/layout/BoothWorkspace";
 import { useLiveRailWidth } from "@/components/operator/useLiveRailWidth";
+import { useSidebarWidth } from "@/components/layout/useSidebarWidth";
 import { VerseCardGrid } from "./VerseCardGrid";
 import {
   CARD_BASE_HEIGHT,
@@ -75,9 +77,7 @@ import type { AppSettings } from "@shared/ipc";
 import { useBootstrapStore } from "@/bootstrap/useBootstrapStore";
 import { shouldShowApiBibleWarning } from "@/bootstrap/bootstrap-state";
 import {
-  API_BIBLE_ATTRIBUTION,
   getScriptureCacheNotice,
-  shouldShowApiBibleAttribution,
 } from "@shared/scripture-offline-state";
 
 function mapCardStatus(
@@ -96,8 +96,25 @@ function mapCardStatus(
   }));
 }
 
+/**
+ * The translation picked on this tab, kept across tab switches (the page
+ * unmounts) but never written to settings. Dropped once the default changes in
+ * Settings, so a new default takes effect on the next visit.
+ */
+let tabTranslation: {
+  value: ScriptureTranslation;
+  defaultWhenPicked: ScriptureTranslation;
+} | null = null;
+
+function initialTabTranslation(defaultTranslation: ScriptureTranslation): ScriptureTranslation {
+  return tabTranslation?.defaultWhenPicked === defaultTranslation
+    ? tabTranslation.value
+    : defaultTranslation;
+}
+
 export default function Scripture(): React.ReactElement {
   const liveRail = useLiveRailWidth();
+  const sidebar = useSidebarWidth('kairo.scripture-sidebar-width', 288);
   const [query, setQuery] = useState("");
   const [rows, setRows] = useState<ResultRow[]>([]);
   /**
@@ -119,8 +136,8 @@ export default function Scripture(): React.ReactElement {
   const apiBibleAuth = useBootstrapStore((s) => s.apiBibleAuth);
   const bootstrapPhase = useBootstrapStore((s) => s.phase);
 
-  const [translation, setTranslation] = useState<ScriptureTranslation>(
-    bootstrapSettings.scripture.defaultTranslation,
+  const [translation, setTranslation] = useState<ScriptureTranslation>(() =>
+    initialTabTranslation(bootstrapSettings.scripture.defaultTranslation),
   );
   const [translations, setTranslations] =
     useState<ScriptureTranslationOption[]>(bootstrapTranslations);
@@ -153,7 +170,6 @@ export default function Scripture(): React.ReactElement {
   const [importDraft, setImportDraft] = useState<SermonPlanDraft | null>(null);
   const [searchSuggestions, setSearchSuggestions] = useState<ScriptureResult[]>([]);
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
-  const [activeSuggestion, setActiveSuggestion] = useState(0);
   const [navigating, setNavigating] = useState<"previous" | "next" | null>(null);
   const [addedAllToPlan, setAddedAllToPlan] = useState<string | null>(null);
   const [activeCardIndex, setActiveCardIndex] = useState(0);
@@ -176,6 +192,7 @@ export default function Scripture(): React.ReactElement {
     mode: "none" | "focus" | "live";
   } | null>(null);
 
+  const toolbarSlot = useHeaderToolbarSlot();
   const inputRef = useRef<HTMLInputElement>(null);
   const suggestionRequestRef = useRef(0);
   const suppressSuggestionsQueryRef = useRef<string | null>(null);
@@ -187,7 +204,6 @@ export default function Scripture(): React.ReactElement {
   const cardRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const rowRefs = useRef<Map<string, HTMLElement>>(new Map());
 
-  const bookCompletion = getBookCompletion(query);
   const bookCompletions = getBookCompletions(query);
   const cardMinWidth = Math.round(CARD_BASE_WIDTH * (cardZoom / 100));
   const cardHeight = Math.round(CARD_BASE_HEIGHT * (cardZoom / 100));
@@ -314,7 +330,6 @@ export default function Scripture(): React.ReactElement {
         .then((results) => {
           if (suggestionRequestRef.current !== requestId) return;
           setSearchSuggestions(results.slice(0, 5));
-          setActiveSuggestion(0);
           setSuggestionsOpen(results.length > 0);
         })
         .catch(() => {
@@ -415,16 +430,82 @@ export default function Scripture(): React.ReactElement {
     setActiveCardIndex(0);
   }, []);
 
+  // A quote search finds one verse; the preacher often reads around it. Load
+  // the whole chapter with that verse picked, ready to send.
+  const [openingChapter, setOpeningChapter] = useState(false);
+  const openChapter = useCallback(
+    async (result: ScriptureResult): Promise<void> => {
+      const verse = result.verses[0];
+      if (!verse?.book || !verse.chapter || openingChapter) return;
+      const chapterQuery = `${verse.book} ${verse.chapter}`;
+      suppressSuggestionsQueryRef.current = chapterQuery;
+      suggestionRequestRef.current += 1;
+      setSuggestionsOpen(false);
+      setSearchSuggestions([]);
+      setQuery(chapterQuery);
+      setOpeningChapter(true);
+      setError(null);
+      try {
+        const [chapter] = await window.api.scripture.search(
+          chapterQuery,
+          result.translation as ScriptureTranslation,
+        );
+        if (!chapter) {
+          setError(`Could not load ${chapterQuery} in ${result.translation}.`);
+          return;
+        }
+        const row = createResultRow(chapter, { id: `chapter-${chapterQuery}` });
+        setRows([row]);
+        setSearchRows([row]);
+        setCardsSource("search");
+        setAddedAllToPlan(null);
+        const index = Math.max(
+          0,
+          row.cards.findIndex((card) => card.result.verses[0]?.verse === verse.verse),
+        );
+        setActiveCardIndex(index);
+        // Once the chapter's cards are in the DOM, bring the found verse up.
+        requestAnimationFrame(() =>
+          cardRefs.current[index]?.scrollIntoView({ behavior: "smooth", block: "center" }),
+        );
+      } catch (err) {
+        setError((err as Error).message || `Could not load ${chapterQuery}.`);
+      } finally {
+        setOpeningChapter(false);
+      }
+    },
+    [openingChapter],
+  );
+
+  // Verse | Chapter in the queue bar: which one the selected card sits in.
+  const activeRow = activeLocation ? rows[activeLocation.rowIndex] : undefined;
+  const searchScope: "verse" | "chapter" | null =
+    cardsSource !== "search" || !activeRow
+      ? null
+      : activeRow.id.startsWith("chapter-") ||
+          (!activeRow.reference.includes(":") && activeRow.cards.length > 1)
+        ? "chapter"
+        : "verse";
+
+  const showVerseOnly = useCallback((): void => {
+    const card = cards[activeCardIndex];
+    if (!card) return;
+    const row = createResultRow(card.result, { id: `verse-${card.result.reference}` });
+    setRows([row]);
+    setSearchRows([row]);
+    setQuery(card.result.reference);
+    setActiveCardIndex(0);
+  }, [cards, activeCardIndex]);
+
   const handleTranslationChange = useCallback(
     async (next: ScriptureTranslation): Promise<void> => {
+      // A working choice for this tab only; the default lives in Settings.
       translationRef.current = next;
       setTranslation(next);
-      await window.api.scripture.setTranslation(next);
-      const store = useBootstrapStore.getState();
-      store.patchSettings('scripture', {
-        ...store.settings.scripture,
-        defaultTranslation: next,
-      });
+      tabTranslation = {
+        value: next,
+        defaultWhenPicked: useBootstrapStore.getState().settings.scripture.defaultTranslation,
+      };
 
       // Playlist items keep the translation they were saved with.
       if (cardsSource !== "search" || rows.length === 0) return;
@@ -954,58 +1035,21 @@ export default function Scripture(): React.ReactElement {
     [cardsSource, plans, selectedPlanId],
   );
 
+  // The search bar handles its suggestion list (arrows, Tab, Escape, Enter on a
+  // picked row); anything it passes on lands here.
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>): void => {
-      if (e.key === "Tab" && bookCompletion) {
-        e.preventDefault();
-        setQuery(bookCompletion.value);
-        return;
-      }
-      if (e.key === "Escape" && suggestionsOpen) {
-        e.preventDefault();
-        setSuggestionsOpen(false);
-        return;
-      }
-      if (suggestionsOpen && searchSuggestions.length > 0) {
-        if (e.key === "ArrowDown") {
-          e.preventDefault();
-          setActiveSuggestion((current) => (current + 1) % searchSuggestions.length);
-          return;
-        }
-        if (e.key === "ArrowUp") {
-          e.preventDefault();
-          setActiveSuggestion(
-            (current) =>
-              (current - 1 + searchSuggestions.length) % searchSuggestions.length,
-          );
-          return;
-        }
-        if (e.key === "Enter") {
-          e.preventDefault();
-          previewSuggestion(searchSuggestions[activeSuggestion]);
-          return;
-        }
-      }
-      if (e.key === "Enter") {
-        e.preventDefault();
-        const submittedQuery = resolveSubmittedScriptureQuery(query);
-        suppressSuggestionsQueryRef.current = submittedQuery;
-        suggestionRequestRef.current += 1;
-        setSuggestionsOpen(false);
-        setSearchSuggestions([]);
-        setQuery(submittedQuery);
-        void handleSearch(submittedQuery);
-      }
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+      const submittedQuery = resolveSubmittedScriptureQuery(query);
+      suppressSuggestionsQueryRef.current = submittedQuery;
+      suggestionRequestRef.current += 1;
+      setSuggestionsOpen(false);
+      setSearchSuggestions([]);
+      setQuery(submittedQuery);
+      void handleSearch(submittedQuery);
     },
-    [
-      activeSuggestion,
-      bookCompletion,
-      handleSearch,
-      previewSuggestion,
-      query,
-      searchSuggestions,
-      suggestionsOpen,
-    ],
+    [handleSearch, query],
   );
 
   const loadAdjacentVerse = useCallback(
@@ -1308,8 +1352,9 @@ export default function Scripture(): React.ReactElement {
         />
       }
     >
-    <div className="flex h-full min-h-0 w-full flex-1 overflow-hidden bg-surface">
+    <div ref={sidebar.containerRef} className="flex h-full min-h-0 w-full flex-1 overflow-hidden bg-surface">
       <PlaylistSidebar
+        width={sidebar.width}
         plans={plans}
         selectedPlanId={selectedPlanId}
         openPlanItems={openPlanItems}
@@ -1344,13 +1389,55 @@ export default function Scripture(): React.ReactElement {
         }}
       />
 
+      <button
+        type="button"
+        {...sidebar.separatorProps}
+        aria-label="Resize scripture library"
+        title="Drag to resize scripture library · double-click to reset"
+        className="z-10 w-1.5 shrink-0 cursor-col-resize bg-surface-secondary hover:bg-surface-elevated focus-visible:bg-surface-elevated focus-visible:outline-none"
+      />
+
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <div className="shrink-0 space-y-2 border-b border-surface-border bg-surface px-3 py-2">
-          <div className="flex items-start justify-between gap-4">
-            <h1 className="self-center text-xs font-medium text-slate-400">Scripture</h1>
-            <div className="flex flex-wrap items-center justify-end gap-2">
+        {toolbarSlot &&
+          createPortal(
+            <div className="flex h-7 min-w-0 items-center gap-1.5">
+              {/* Fixed, not flex-1: a lookup field, not a page-wide bar. */}
+              <div className="w-[26rem] min-w-0 shrink pr-1">
+                <ScriptureSearchBar
+                  query={query}
+                  translation={translation}
+                  translations={translations}
+                  loading={loading}
+                  bookCompletions={bookCompletions}
+                  searchSuggestions={searchSuggestions}
+                  suggestionsOpen={suggestionsOpen}
+                  inputRef={inputRef}
+                  onQueryChange={(value) => {
+                    if (value !== query) suppressSuggestionsQueryRef.current = null;
+                    setQuery(value);
+                    if (shouldLiveSuggestScriptureQuery(value)) setSuggestionsOpen(true);
+                  }}
+                  onTranslationChange={(value) => void handleTranslationChange(value)}
+                  onClearQuery={() => {
+                    setQuery("");
+                    inputRef.current?.focus();
+                  }}
+                  onBookComplete={(value) => {
+                    setQuery(value);
+                    inputRef.current?.focus();
+                  }}
+                  onKeyDown={handleKeyDown}
+                  onFocus={() => {
+                    if (suppressSuggestionsQueryRef.current === query.trim()) return;
+                    if (searchSuggestions.length > 0) setSuggestionsOpen(true);
+                  }}
+                  onPreviewSuggestion={previewSuggestion}
+                  onOpenChapter={(result) => void openChapter(result)}
+                />
+              </div>
               {selectedPlan && (
                 <Button
+                  size="sm"
                   variant={livePlan?.planId === selectedPlan.id ? "secondary" : "default"}
                   onClick={() => void useSelectedPlanForService()}
                   disabled={livePlan?.planId === selectedPlan.id}
@@ -1360,62 +1447,30 @@ export default function Scripture(): React.ReactElement {
                   {livePlan?.planId === selectedPlan.id ? "In use for this service" : "Use for this service"}
                 </Button>
               )}
-              <Button variant="outline" onClick={() => void handleImport()} disabled={importing}>
-                {importing ? (
-                  <Loader data-icon="inline-start" className="animate-spin" />
-                ) : (
-                  <Upload data-icon="inline-start" />
-                )}
-                {importing ? "Extracting…" : "Import sermon notes"}
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                onClick={() => void handleImport()}
+                disabled={importing}
+                aria-label="Import sermon notes"
+                title={importing ? "Extracting sermon notes…" : "Import sermon notes"}
+              >
+                {importing ? <Loader className="animate-spin" /> : <Upload />}
               </Button>
               <Button
                 variant="ghost"
-                size="icon"
+                size="icon-sm"
                 onClick={() => useAppStore.getState().openSettings("scripture")}
                 aria-label="Scripture settings"
                 title="Scripture settings — translations, Bible downloads, auto-detection"
               >
                 <SettingsIcon />
               </Button>
-            </div>
-          </div>
+            </div>,
+            toolbarSlot,
+          )}
 
-          <ScriptureSearchBar
-            query={query}
-            translation={translation}
-            translations={translations}
-            loading={loading}
-            bookCompletion={bookCompletion}
-            bookCompletions={bookCompletions}
-            searchSuggestions={searchSuggestions}
-            suggestionsOpen={suggestionsOpen}
-            activeSuggestion={activeSuggestion}
-            inputRef={inputRef}
-            onQueryChange={(value) => {
-              if (value !== query) suppressSuggestionsQueryRef.current = null;
-              setQuery(value);
-              if (shouldLiveSuggestScriptureQuery(value)) setSuggestionsOpen(true);
-            }}
-            onTranslationChange={(value) => void handleTranslationChange(value)}
-            onSearch={() => void handleSearch()}
-            onClearQuery={() => {
-              setQuery("");
-              inputRef.current?.focus();
-            }}
-            onBookCompletionSelect={(value) => {
-              const submitted = resolveSubmittedScriptureQuery(value);
-              setQuery(submitted);
-              void handleSearch(submitted);
-            }}
-            onKeyDown={handleKeyDown}
-            onFocus={() => {
-              if (suppressSuggestionsQueryRef.current === query.trim()) return;
-              if (searchSuggestions.length > 0) setSuggestionsOpen(true);
-            }}
-            onActiveSuggestionChange={setActiveSuggestion}
-            onPreviewSuggestion={previewSuggestion}
-          />
-
+        <div className="shrink-0 space-y-2 bg-surface px-3 py-2 empty:hidden">
           {shouldShowApiBibleWarning(
             apiBibleAuth,
             Boolean(bootstrapSettings.secretsConfigured.bible),
@@ -1423,7 +1478,7 @@ export default function Scripture(): React.ReactElement {
           ) &&
             translation &&
             !translations.find((item) => item.id === translation)?.available && (
-              <div className="flex gap-2 rounded-lg border border-yellow-500/25 bg-yellow-500/5 px-3.5 py-3 text-xs text-yellow-400">
+              <div className="flex gap-2 rounded-lg border border-yellow-500/25 bg-tint-yellow px-3.5 py-3 text-xs text-yellow-400">
                 <AlertCircle size={14} className="shrink-0" />
                 {translations.find((item) => item.id === translation)?.downloadable
                   ? `${translation} is the default but isn't installed yet. Download it in Settings → Scripture, or add an API.Bible key authorized for ${translation} in Settings → API Keys.`
@@ -1431,25 +1486,9 @@ export default function Scripture(): React.ReactElement {
               </div>
             )}
 
-          {rows.length > 0 &&
-            shouldShowApiBibleAttribution(
-              translations.find((option) => option.id === translation),
-            ) && (
-              <p className="px-1 text-[10px] text-slate-500">
-                <a
-                  href={API_BIBLE_ATTRIBUTION.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="hover:text-slate-300"
-                >
-                  {API_BIBLE_ATTRIBUTION.label}
-                </a>
-              </p>
-            )}
-
           {error && (
             <div
-              className="flex items-start gap-2.5 rounded-xl border border-yellow-500/15 bg-yellow-500/5 px-4 py-3.5 text-sm text-yellow-400 shadow-glow-yellow/5 animate-slide-in"
+              className="flex items-start gap-2.5 rounded-xl border border-yellow-500/15 bg-tint-yellow px-4 py-3.5 text-sm text-yellow-400 shadow-glow-yellow/5 animate-slide-in"
               role="alert"
               aria-live="polite"
             >
@@ -1466,45 +1505,16 @@ export default function Scripture(): React.ReactElement {
         >
           <div className="w-full space-y-4 px-5 py-4 lg:px-6">
             {rows.length === 0 && !loading && !error && (
-              <div className="double-bezel-outer">
-                <div className="double-bezel-inner flex flex-col items-center py-14 text-center">
-                  <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-surface-secondary/60">
-                    <BookOpen size={20} className="text-slate-500" aria-hidden="true" />
-                  </div>
-                  {cardsSource === "plan" ? (
-                    <>
-                      <p className="text-sm font-semibold text-slate-300">
-                        {selectedPlan?.title ?? "Playlist"} is empty
-                      </p>
-                      <p className="mt-1.5 font-sans text-xs text-slate-500">
-                        Search a reference, then use Add all — or use Previous / Next after
-                        the first verse is in the playlist
-                      </p>
-                    </>
-                  ) : (
-                    <>
-                      <p className="text-sm font-semibold text-slate-300">
-                        Enter a reference or words you remember
-                      </p>
-                      <p className="mt-1.5 font-sans text-xs text-slate-500">
-                        Try “jos 1 5 9”, press Tab to complete a book, or search a phrase
-                      </p>
-                    </>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {showVerseGrid && (
-              <div className="px-0.5">
-                <p className="text-xs font-semibold text-slate-300">
+              <div className="flex flex-col items-center py-20 text-center">
+                <p className="text-sm font-medium text-slate-400">
                   {cardsSource === "plan"
-                    ? (selectedPlan?.title ?? "Playlist")
-                    : "Loaded passage"}
+                    ? `${selectedPlan?.title ?? "Playlist"} is empty`
+                    : "Look up a reference or a phrase"}
                 </p>
-                <p className="mt-0.5 text-[11px] text-slate-500">
-                  {rows.length} item{rows.length !== 1 ? "s" : ""} · {cards.length}{" "}
-                  verse{cards.length !== 1 ? "s" : ""}
+                <p className="mt-1 text-xs text-slate-600">
+                  {cardsSource === "plan"
+                    ? "Search a passage, then add it to this playlist"
+                    : "Try “jos 1 5 9” · Tab completes a book"}
                 </p>
               </div>
             )}
@@ -1556,7 +1566,7 @@ export default function Scripture(): React.ReactElement {
               >
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <button type="button" className="inline-flex h-7 items-center gap-1.5 rounded-md bg-white/[0.08] px-2.5 text-[12px] font-medium text-white hover:bg-white/[0.13]">
+                    <button type="button" className="inline-flex h-7 items-center gap-1.5 rounded-md bg-surface-elevated px-2.5 text-[12px] font-medium text-white hover:bg-surface-border">
                       <Plus size={12} /> Add to playlist
                     </button>
                   </DropdownMenuTrigger>
@@ -1608,6 +1618,13 @@ export default function Scripture(): React.ReactElement {
               void runPassagesCommand({ action: "save", result, libraryId });
             }}
             onClear={handleClearResults}
+            scope={searchScope}
+            onShowVerse={showVerseOnly}
+            onShowChapter={() => {
+              const card = cards[activeCardIndex];
+              if (card) void openChapter(card.result);
+            }}
+            openingChapter={openingChapter}
           />
         )}
       </div>

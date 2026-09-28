@@ -1,17 +1,20 @@
 import Store from 'electron-store'
 import log from 'electron-log/main'
+import { renamedStore } from './legacy-store'
 import type { AppSettings } from '@shared/ipc'
 import { DEFAULT_TRANSLATION_ID } from '@shared/bible-translations'
 import { DEFAULT_OVERLAY_SETTINGS, normalizeOverlaySettings } from '@shared/overlay-defaults'
 import { normalizeThemeLibrary } from '@shared/theme-library'
 import { EMPTY_PP_RESOURCE_BINDINGS, normalizeResourceBindings } from '@shared/propresenter-resources'
 import { DEFAULT_DOCUMENTS_SETTINGS } from '@shared/documents'
+import { DEFAULT_PRESENTATION_SETTINGS, normalizePresentationSettings } from '@shared/program'
 
 export type { AppSettings }
 
 const defaults: AppSettings = {
   propresenter: {
-    host: '192.168.1.164',
+    // Empty until the operator sets ProPresenter up — it is an optional integration.
+    host: '',
     port: 57563,
     password: '',
   },
@@ -68,10 +71,11 @@ const defaults: AppSettings = {
   },
   documents: { ...DEFAULT_DOCUMENTS_SETTINGS },
   propresenterResources: { ...EMPTY_PP_RESOURCE_BINDINGS },
+  presentation: DEFAULT_PRESENTATION_SETTINGS,
 }
 
 export const store = new Store<AppSettings>({
-  name: 'proautomate-settings',
+  name: renamedStore('proautomate-settings', 'kairo-settings'),
   defaults,
 })
 
@@ -82,7 +86,7 @@ export const migrations = new Store<{
   /** Songs that predate the Songs folder have been exported into it. */
   songsFolderExportV1: boolean
 }>({
-  name: 'proautomate-migrations',
+  name: renamedStore('proautomate-migrations', 'kairo-migrations'),
   defaults: {
     nkjvDefaultV1: false,
     customThemeLibraryV1: false,
@@ -160,6 +164,8 @@ store.set('propresenterResources', normalizeResourceBindings(store.get('proprese
 // one-time write-back. Heals the on-disk shape on every launch (a no-op once
 // already normalized).
 store.set('overlay', normalizeOverlaySettings(store.get('overlay')))
+// Same shallow-defaults trap as `overlay`: heal the nested shape once on disk.
+store.set('presentation', normalizePresentationSettings(store.get('presentation')))
 if (!migrations.get('customThemeLibraryV1')) {
   store.set('themeLibrary', normalizeThemeLibrary(undefined, store.get('overlay').theme))
   migrations.set('customThemeLibraryV1', true)

@@ -1,3 +1,4 @@
+import { cn } from "@/lib/utils";
 import { VerseThemePreview } from "./VerseThemePreview";
 import { MarqueeSelect } from "@/components/shared/MarqueeSelect";
 import { selectGesture, type SelectGesture } from "@/hooks/useMultiSelect";
@@ -117,22 +118,17 @@ export function VerseCardGrid({
             data-plan-item={row.planItemId ?? undefined}
             className="min-w-0 space-y-2 scroll-mt-3"
           >
-            <div className="flex flex-wrap items-baseline gap-2 px-0.5">
-              <p className="truncate text-xs font-semibold text-slate-300">
-                {row.reference}
-              </p>
-              <span className="shrink-0 text-[10px] text-slate-600">
-                {row.cards.length} verse{row.cards.length !== 1 ? "s" : ""}
-              </span>
-              {row.note && (
-                <span className="text-[10px] text-yellow-500/90">{row.note}</span>
-              )}
-              {rowIsLive && (
-                <span className="rounded-full bg-teal-500/20 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-teal-300">
-                  Live
-                </span>
-              )}
-            </div>
+            {/* A lone passage needs no heading — its slide already shows the reference. */}
+            {(rows.length > 1 || row.note) && (
+              <div className="flex flex-wrap items-baseline gap-2 px-0.5">
+                <p className={cn("truncate text-xs font-semibold", rowIsLive ? "text-teal-300" : "text-slate-300")}>
+                  {row.reference}
+                </p>
+                {row.note && (
+                  <span className="text-[10px] text-yellow-500/90">{row.note}</span>
+                )}
+              </div>
+            )}
             <div
               className="grid w-full gap-3"
               style={{

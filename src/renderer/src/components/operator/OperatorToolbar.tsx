@@ -113,7 +113,7 @@ export default function OperatorToolbar(): React.ReactElement {
 
         <SelectTrigger
           style={{ width: 'var(--header-playlist-width, 208px)' }}
-          className="h-7 overflow-hidden border-0 bg-white/[0.05] text-[11px] shadow-none *:data-[slot=select-value]:min-w-0 hover:bg-white/[0.08] focus:ring-0"
+          className="h-7 overflow-hidden border-0 bg-surface-tertiary text-[11px] shadow-none *:data-[slot=select-value]:min-w-0 hover:bg-surface-elevated focus:ring-0"
           aria-label="Live reference playlist"
           title={
             hasPlans
@@ -158,7 +158,7 @@ export default function OperatorToolbar(): React.ReactElement {
       <div className="group relative shrink-0">
         <button
           type="button"
-          className="flex size-7 items-center justify-center rounded text-zinc-600 transition-colors hover:bg-white/10 hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/30"
+          className="flex size-7 items-center justify-center rounded text-zinc-600 transition-colors hover:bg-surface-elevated hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/30"
           aria-label="Keyboard shortcuts"
         >
           <Keyboard size={14} />

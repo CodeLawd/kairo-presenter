@@ -26,7 +26,7 @@ Three Electron process contexts, each built by electron-vite:
 | Preload (bridge) | `src/preload/index.ts` | exposes `window.api` via contextBridge |
 | Renderer (React) | `src/renderer/index.html` + `src/renderer/src/main.tsx` | Vite + React |
 
-**IPC contract:** All renderer↔main calls go through `window.api` (typed in `src/renderer/src/env.d.ts`). The preload bridges `ipcRenderer.invoke` → `ipcMain.handle`. New IPC channels: add handler in `src/main/ipc/index.ts`, extend the `api` object in `src/preload/index.ts`, extend `ProAutomateAPI` type in `env.d.ts`.
+**IPC contract:** All renderer↔main calls go through `window.api` (typed in `src/renderer/src/env.d.ts`). The preload bridges `ipcRenderer.invoke` → `ipcMain.handle`. New IPC channels: add handler in `src/main/ipc/index.ts`, extend the `api` object in `src/preload/index.ts`, extend `KairoAPI` type in `env.d.ts`.
 
 **Persistent settings:** `electron-store` (v8, CJS-compatible) via `src/main/db/index.ts`. `AppSettings` interface defines all valid keys and defaults. Renderer accesses settings only via `window.api.settings.*`.
 

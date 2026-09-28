@@ -12,8 +12,9 @@ import { renderOverlayHTML } from "@shared/overlay-template";
 import { ScaledOverlayPreview } from "@/components/overlay/ScaledOverlayPreview";
 import { themeOwnsBackground, themeWithLiveMedia } from "@shared/media-playback";
 import {
-  layerLabel,
-  layerOfKind,
+  isRenderedKind,
+  outputRequiresPropresenter,
+  outputDestinationLabel,
   outputTemplateFor,
   outputThemeFor,
 } from "@shared/overlay-outputs";
@@ -27,9 +28,11 @@ import type {
   ScriptureResult,
 } from "@shared/ipc";
 import type { LiveOutputPayload } from "@shared/live-output";
+import { propresenterEnabled } from "@shared/pp-connect-gate";
+import { useBootstrapStore } from "@/bootstrap/useBootstrapStore";
 
 // ─── Per-kind preview fidelity ─────────────────────────────────────────────────
-// Only `ndi` is rendered by this app, so only `ndi` can be shown WYSIWYG. The
+// Only `ndi` and `screen` are rendered by this app, so only they can be shown WYSIWYG. The
 // others are styled inside ProPresenter, and pretending otherwise would show the
 // operator a slide that does not exist. Each kind is labelled with how much of
 // what you see is real.
@@ -38,6 +41,7 @@ const EMPTY_TIME: OverlayVideoTime = { currentTime: 0, duration: 0, ended: false
 
 const FIDELITY: Record<OverlayOutput["kind"], string> = {
   ndi: "Exact — this app renders these pixels",
+  screen: "Exact — this app renders these pixels",
   stage: "Exact — stage messages are plain text",
   message: "Text is exact; ProPresenter controls the styling",
   library: "ProPresenter renders this slide — no preview available",
@@ -64,7 +68,7 @@ interface LiveOutputPreviewProps {
 }
 
 export function LiveOutputPreview({
-  outputs,
+  outputs: allOutputs,
   selectedOutputId,
   onSelectOutput,
   result,
@@ -76,6 +80,9 @@ export function LiveOutputPreview({
   height,
   toolbar,
 }: LiveOutputPreviewProps): React.ReactElement {
+  // ProPresenter outputs only show up here once the integration is on.
+  const ppOn = useBootstrapStore((s) => propresenterEnabled(s.settings));
+  const outputs = ppOn ? allOutputs : allOutputs.filter((output) => !outputRequiresPropresenter(output.kind));
   // Fall back to the first output that can actually be drawn: a library output
   // is triggered inside ProPresenter, so defaulting to it shows a placeholder
   // and hides the render this panel exists to show.
@@ -105,7 +112,7 @@ export function LiveOutputPreview({
     void window.api.media.seek(next);
   }, [mediaTime.duration]);
 
-  const showTransport = selected?.kind === "ndi" && liveMedia?.item.kind === "video";
+  const showTransport = !!selected && isRenderedKind(selected.kind) && liveMedia?.item.kind === "video";
 
   return (
     <div>
@@ -147,17 +154,17 @@ export function LiveOutputPreview({
       {/* Screen picker sits BELOW the frame, the way ProPresenter's own output
           preview does — the label names what you are looking at, and opening it
           is how you look at something else. */}
-      <div className="flex items-center gap-3 border-t border-surface-border bg-surface-tertiary px-3 py-1">
-        <div className="relative min-w-0 flex-1">
+      <div className="flex items-center justify-between gap-3 bg-surface-secondary px-3 py-2">
+        <div className="relative min-w-0 w-full max-w-64 rounded-md bg-surface-elevated transition-colors hover:bg-zinc-700 focus-within:ring-2 focus-within:ring-teal-400/60">
           <select
-            className="w-full cursor-pointer appearance-none truncate bg-transparent py-1 pl-0 pr-6 text-xs font-semibold text-zinc-200 outline-none transition-colors hover:text-white focus-visible:ring-1 focus-visible:ring-teal-500/40"
+            className="w-full cursor-pointer appearance-none truncate bg-transparent px-2.5 py-2 pr-8 text-xs font-semibold text-zinc-100 outline-none disabled:cursor-default disabled:text-zinc-500"
             value={selected?.id ?? ''}
             onChange={(e) => onSelectOutput(e.target.value)}
             disabled={outputs.length === 0}
             aria-label="Preview output"
             title={selected ? FIDELITY[selected.kind] : undefined}
           >
-            {outputs.length === 0 && <option value="">No outputs enabled</option>}
+            {outputs.length === 0 && <option value="">No screens on</option>}
             {outputs.map((output) => (
               <option key={output.id} value={output.id}>
                 {output.name}
@@ -167,7 +174,7 @@ export function LiveOutputPreview({
           <ChevronDown
             size={12}
             aria-hidden="true"
-            className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 text-zinc-600"
+            className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400"
           />
         </div>
 
@@ -176,7 +183,7 @@ export function LiveOutputPreview({
             className="shrink-0 text-[10px] text-zinc-600"
             title={FIDELITY[selected.kind]}
           >
-            {layerLabel(layerOfKind(selected.kind))}
+            {outputDestinationLabel(selected.kind)}
           </span>
         ))}
       </div>
@@ -219,7 +226,7 @@ function PreviewBody({
 
   if (!output || !theme) {
     return (
-      <EmptyFrame width={width} height={height} icon={MonitorOff} title="No outputs enabled">
+      <EmptyFrame width={width} height={height} icon={MonitorOff} title="No screens on">
         Turn one on in Theme → Output
       </EmptyFrame>
     );
@@ -234,7 +241,7 @@ function PreviewBody({
   }
 
   // The one destination this app renders itself, so the preview is the output.
-  if (output.kind === "ndi") {
+  if (isRenderedKind(output.kind)) {
     if (result && kind === "scripture") {
       return (
         <VerseThemePreview
@@ -249,6 +256,7 @@ function PreviewBody({
           isLive
           sendStatus="sent"
           chrome={false}
+          motion
           paused={!!liveMedia?.paused}
           seekTo={seekTo}
           onTime={onTime}
@@ -371,6 +379,7 @@ function GenericThemePreview({
         autoFit={theme.layout.autoFitText}
         width={width}
         height={height}
+        motion
         paused={paused}
         seekTo={seekTo}
         onTime={onTime}
@@ -406,6 +415,7 @@ function BackgroundPreview({
         autoFit={false}
         width={width}
         height={height}
+        motion
         paused={paused}
         seekTo={seekTo}
         onTime={onTime}

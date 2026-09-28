@@ -3,10 +3,12 @@ import type { SettingsWithSecretsStatus } from '@shared/ipc'
 import { EMPTY_PP_RESOURCE_BINDINGS } from '@shared/propresenter-resources'
 import { DEFAULT_TRANSLATION_ID } from '@shared/bible-translations'
 import { DEFAULT_DOCUMENTS_SETTINGS } from '@shared/documents'
+import { DEFAULT_PRESENTATION_SETTINGS } from '@shared/program'
 
 /** Neutral settings used until the real ones arrive from the main process. */
 export const DEFAULT_SETTINGS: SettingsWithSecretsStatus = {
-  propresenter: { host: 'localhost', port: 50000, password: '' },
+  // Matches src/main/db/index.ts: no host until ProPresenter is set up (optional).
+  propresenter: { host: '', port: 57563, password: '' },
   audio: { deviceId: '' },
   stt: { provider: 'none', apiKey: '', anthropicApiKey: '', deepseekApiKey: '', llmProvider: 'anthropic', llmModel: '', bibleApiKey: '', language: 'en-US' },
   scripture: {
@@ -29,6 +31,7 @@ export const DEFAULT_SETTINGS: SettingsWithSecretsStatus = {
   church: { name: '', timezone: '', role: '', serviceTimes: [] },
   documents: { ...DEFAULT_DOCUMENTS_SETTINGS },
   propresenterResources: { ...EMPTY_PP_RESOURCE_BINDINGS },
+  presentation: DEFAULT_PRESENTATION_SETTINGS,
   secretsConfigured: {
     deepgram: false,
     anthropic: false,

@@ -4,11 +4,12 @@ import { requestImport } from '@/hooks/useImportRequest'
 import Documents from '@/components/documents/Documents'
 import { useState, useEffect, useRef, type PointerEvent } from 'react'
 import { AlertTriangle, RefreshCw, X } from '@/icons'
-import AppShell from '@/components/layout/AppShell'
+import AppShell, { WorkspaceRail } from '@/components/layout/AppShell'
+import { DesktopTooltip } from '@/components/layout/DesktopTooltip'
 import UpdateToast from '@/components/layout/UpdateToast'
 import { TransferHost } from '@/components/transfer/TransferHost'
-import MediaDock from '@/components/media/MediaDock'
 import { TracksPlayer } from '@/components/tracks/TracksPlayer'
+import { ProgramAudioFallback } from '@/components/media/ProgramAudioFallback'
 import OperatorToolbar from '@/components/operator/OperatorToolbar'
 import Scripture from '@/components/scripture/Scripture'
 import Lyrics from '@/components/lyrics/Lyrics'
@@ -21,17 +22,17 @@ import { useSetlistSync } from '@/stores/useSetlist'
 import { useLibrariesSync } from '@/stores/useLibraries'
 import { usePassagesSync } from '@/stores/usePassages'
 import { LoadingScreen } from '@/bootstrap/LoadingScreen'
-import PpConnectGate from '@/components/setup/PpConnectGate'
+import ScreenConfiguration from '@/components/screens/ScreenConfiguration'
 import OnboardingWizard from '@/components/onboarding/OnboardingWizard'
 import AccountGate from '@/components/account/AccountGate'
 import {
-  BOOTSTRAP_MIN_VISIBLE_MS,
+  SPLASH_MIN_VISIBLE_MS,
   describeBootstrapWarning,
 } from '@/bootstrap/bootstrap-state'
 import { hydrateIntegrations, useBootstrapStore } from '@/bootstrap/useBootstrapStore'
 import {
   ppLaunchOutcomeFromStatus,
-  shouldOfferPpConnectGate,
+  propresenterEnabled,
   type PpLaunchOutcome,
 } from '@shared/pp-connect-gate'
 import { shouldOfferOnboarding } from '@shared/cloud/onboarding'
@@ -262,7 +263,7 @@ function DraggableSettingsFrame({
       onPointerCancel={endDrag}
       onClick={(event) => event.stopPropagation()}
     >
-      <div className="h-[700px] w-[780px] overflow-hidden rounded-[10px] shadow-[0_24px_80px_rgba(0,0,0,0.72)] ring-1 ring-white/10 animate-spring-in">
+      <div className="h-[min(700px,calc(100vh-32px))] w-[min(780px,calc(100vw-32px))] overflow-hidden rounded-xl ring-1 ring-white/10 animate-spring-in">
         <Settings onClose={onClose} initialSection={initialSection} />
       </div>
     </div>
@@ -275,7 +276,7 @@ export default function App(): React.ReactElement {
   useLibrariesSync()
   usePassagesSync()
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [settingsSection, setSettingsSection] = useState<SettingsSectionId>('propresenter')
+  const [settingsSection, setSettingsSection] = useState<SettingsSectionId>('general')
   const settingsRequest = useAppStore((s) => s.settingsRequest)
   useEffect(() => {
     if (!settingsRequest) return
@@ -283,6 +284,24 @@ export default function App(): React.ReactElement {
     setSettingsOpen(true)
     useAppStore.getState().clearSettingsRequest()
   }, [settingsRequest])
+  const screensWindow = useAppStore((s) => s.screensWindow)
+  // ⌥⌘1 opens Screens — ProPresenter's shortcut for Screen Configuration, so
+  // an operator who knows one finds the other. Escape closes it.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      const store = useAppStore.getState()
+      if (e.key === 'Escape' && store.screensWindow) {
+        e.preventDefault()
+        store.closeScreens()
+      } else if (e.code === 'Digit1' && e.altKey && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault()
+        if (store.screensWindow) store.closeScreens()
+        else store.openScreens()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
   const [songSearchOpen, setSongSearchOpen] = useState(false)
   useEffect(() => window.api.app.onImportRequested((kind) => {
     if (!isImportKind(kind)) return
@@ -291,35 +310,36 @@ export default function App(): React.ReactElement {
     if (option.route) setRoute(option.route)
     requestImport(kind)
   }), [])
-  const [ppGateResolved, setPpGateResolved] = useState(false)
-  /** Opened on demand from the ProPresenter status in the header. */
-  const [ppGateRequested, setPpGateRequested] = useState(false)
   const [onboardingDismissed, setOnboardingDismissed] = useState(false)
-  const [ppLaunch, setPpLaunch] = useState<PpLaunchOutcome>('pending')
 
   const phase = useBootstrapStore((s) => s.phase)
   const progress = useBootstrapStore((s) => s.progress)
   const errors = useBootstrapStore((s) => s.errors)
   const warningDismissed = useBootstrapStore((s) => s.warningDismissed)
-  const ppSettings = useBootstrapStore((s) => s.settings.propresenter)
   const onboarding = useBootstrapStore((s) => s.onboarding)
   const lyricsLibrary = useBootstrapStore((s) => s.lyrics)
   const accountSession = useAccountStore((s) => s.session)
-  const ppState = useAppStore((s) => s.ppState)
-  const ppVersion = useAppStore((s) => s.ppVersion)
-  const [minDurationElapsed, setMinDurationElapsed] = useState(false)
+  const [splashHeld, setSplashHeld] = useState(false)
   const [loaderMounted, setLoaderMounted] = useState(true)
 
   // Start bootstrap once. The runner behind this is memoized at module level,
   // so Strict Mode's double effect cannot produce a second IPC call.
   useEffect(() => {
     void useBootstrapStore.getState().start()
-    const timer = setTimeout(() => setMinDurationElapsed(true), BOOTSTRAP_MIN_VISIBLE_MS)
-    return () => clearTimeout(timer)
   }, [])
 
   const bootstrapped = phase === 'ready' || phase === 'ready-with-warnings'
-  const ready = bootstrapped && minDurationElapsed
+
+  // The branded splash holds on every launch, then fades into the app — or
+  // stays, with real progress, if loading runs longer.
+  useEffect(() => {
+    const timer = setTimeout(() => setSplashHeld(true), SPLASH_MIN_VISIBLE_MS)
+    return () => clearTimeout(timer)
+  }, [])
+
+  const ready = bootstrapped && splashHeld
+  // Progress is only worth showing once loading outlasts the brand beat.
+  const showProgress = splashHeld && !bootstrapped
 
   // Sign-in is a wall, not a prompt: the booth is unreachable until a
   // confirmed session exists. Setup waits behind it, including the OTP
@@ -351,33 +371,25 @@ export default function App(): React.ReactElement {
   }, [])
 
   // Integrations that must never gate startup — but also must not run for a
-  // signed-out operator who has not been let into the booth yet.
+  // signed-out operator who has not been let into the booth yet. They start as
+  // soon as bootstrap lands, so they settle behind the splash, not after it.
+  const needsSignIn = shouldOfferAccountGate(accountSession)
   useEffect(() => {
-    if (!ready || accountGateOpen) return
+    if (!bootstrapped || needsSignIn) return
     void hydrateIntegrations()
-  }, [ready, accountGateOpen])
+  }, [bootstrapped, needsSignIn])
 
   useEffect(() => {
     if (accountGateOpen) setSettingsOpen(false)
   }, [accountGateOpen])
 
-  // Silent handshake as soon as saved host/port exist. The connect modal is
-  // only for a failed attempt — if ProPresenter is already up, skip it.
+  // ProPresenter is opt-in (Settings → ProPresenter → Use ProPresenter). When
+  // it is on, reconnect silently at launch; there is no prompt either way —
+  // a failed handshake only shows in the header status.
   useEffect(() => {
     if (!bootstrapped) return
-    let cancelled = false
-    void probePpOnLaunch().then(async (outcome) => {
-      // Offered once per app launch — a reloaded interface or a reopened
-      // window does not ask again. After that it is the header status's job.
-      if (outcome === 'unavailable') {
-        const first = await window.api.app.claimPpConnectPrompt().catch(() => false)
-        if (!first && !cancelled) setPpGateResolved(true)
-      }
-      if (!cancelled) setPpLaunch(outcome)
-    })
-    return () => {
-      cancelled = true
-    }
+    if (!propresenterEnabled(useBootstrapStore.getState().settings)) return
+    void probePpOnLaunch()
   }, [bootstrapped])
 
   // Listen to Escape key to close settings modal
@@ -409,7 +421,7 @@ export default function App(): React.ReactElement {
     return (
       <div className="relative h-screen w-screen bg-surface text-white overflow-hidden select-none">
         <CloudSubscriptions />
-        <LoadingScreen progress={progress} fadingOut={false} />
+        <LoadingScreen progress={progress} showProgress={showProgress} fadingOut={false} />
       </div>
     )
   }
@@ -418,7 +430,7 @@ export default function App(): React.ReactElement {
     return (
       <div className="relative h-screen w-screen overflow-hidden bg-surface text-white select-none">
         <CloudSubscriptions />
-        {loaderMounted && <LoadingScreen progress={progress} fadingOut />}
+        {loaderMounted && <LoadingScreen progress={progress} showProgress={false} fadingOut />}
         <AccountGate />
       </div>
     )
@@ -427,8 +439,10 @@ export default function App(): React.ReactElement {
   return (
     <div className="relative flex h-screen flex-col overflow-hidden bg-surface text-white select-none animate-fade-in">
       <AudioPipeline />
+      <DesktopTooltip />
       <TracksPlayer />
-      {loaderMounted && <LoadingScreen progress={progress} fadingOut />}
+      <ProgramAudioFallback />
+      {loaderMounted && <LoadingScreen progress={progress} showProgress={false} fadingOut />}
       {errors.length > 0 && !warningDismissed && (
         <div
           className="absolute inset-x-0 top-0 z-40 flex items-start gap-2.5 border-b border-surface-border bg-surface-elevated px-4 py-2.5 text-xs text-yellow-300"
@@ -438,7 +452,7 @@ export default function App(): React.ReactElement {
           <span className="flex-1">{describeBootstrapWarning(errors)}</span>
           <button
             type="button"
-            className="shrink-0 inline-flex items-center gap-1 rounded border border-yellow-500/30 px-2 py-0.5 hover:bg-yellow-500/10"
+            className="shrink-0 inline-flex items-center gap-1 rounded border border-yellow-500/30 px-2 py-0.5 hover:bg-tint-yellow"
             onClick={() => { void useBootstrapStore.getState().retry() }}
           >
             <RefreshCw size={11} aria-hidden="true" />
@@ -446,7 +460,7 @@ export default function App(): React.ReactElement {
           </button>
           <button
             type="button"
-            className="shrink-0 rounded p-0.5 hover:bg-yellow-500/10"
+            className="shrink-0 rounded p-0.5 hover:bg-tint-yellow"
             onClick={() => useBootstrapStore.getState().dismissWarning()}
             aria-label="Dismiss startup warning"
           >
@@ -458,53 +472,53 @@ export default function App(): React.ReactElement {
       <TransferHost />
       <AppShell
         currentRoute={route}
-        onNavigate={setRoute}
-        onOpenSettings={() => {
+        onProPresenterStatus={() => {
+          // ProPresenter is configured in one place only: its Settings page.
           setSettingsSection('propresenter')
           setSettingsOpen(true)
         }}
-        onProPresenterStatus={() => {
-          // Not connected: the connect prompt. Connected: its settings.
-          if (ppState === 'connected') {
-            setSettingsSection('propresenter')
-            setSettingsOpen(true)
-          } else {
-            setPpGateRequested(true)
-          }
-        }}
         toolbar={route === 'operator' ? <OperatorToolbar /> : undefined}
       />
-      <main className="relative flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-surface">
-        {/* Keep Operator and Theme mounted across navigation so live session
-            state and the theme library/draft survive tab switches. */}
-        <div
-          className={`${route === 'operator' ? 'flex' : 'hidden'} min-h-0 w-full flex-1 flex-col overflow-hidden [&>*]:min-h-0 [&>*]:flex-1`}
-          aria-hidden={route !== 'operator'}
-        >
-          <Operator />
-        </div>
-        <div
-          className={`${route === 'theme' ? 'flex' : 'hidden'} min-h-0 w-full flex-1 flex-col overflow-hidden [&>*]:min-h-0 [&>*]:flex-1`}
-          aria-hidden={route !== 'theme'}
-        >
-          <ThemeEditor />
-        </div>
-        <div
-          className={`${route === 'documents' ? 'flex' : 'hidden'} min-h-0 w-full flex-1 flex-col overflow-hidden [&>*]:min-h-0 [&>*]:flex-1`}
-          aria-hidden={route !== 'documents'}
-        >
-          <Documents active={route === 'documents'} />
-        </div>
-        {route !== 'operator' && route !== 'theme' && route !== 'documents' && (
-          <div key={route} className="flex min-h-0 w-full flex-1 flex-col overflow-hidden [&>*]:min-h-0 [&>*]:flex-1">
-            {views[route]}
-          </div>
-        )}
-      </main>
+      <div className="flex min-h-0 w-full flex-1 overflow-hidden">
+        <WorkspaceRail
+          currentRoute={route}
+          onNavigate={setRoute}
+          onOpenSettings={() => {
+            setSettingsSection('general')
+            setSettingsOpen(true)
+          }}
+        />
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          <main className="relative flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-surface">
+            {/* Keep Operator and Theme mounted across navigation so live session
+                state and the theme library/draft survive tab switches. */}
+            <div
+              className={`${route === 'operator' ? 'flex' : 'hidden'} min-h-0 w-full flex-1 flex-col overflow-hidden [&>*]:min-h-0 [&>*]:flex-1`}
+              aria-hidden={route !== 'operator'}
+            >
+              <Operator />
+            </div>
+            <div
+              className={`${route === 'theme' ? 'flex' : 'hidden'} min-h-0 w-full flex-1 flex-col overflow-hidden [&>*]:min-h-0 [&>*]:flex-1`}
+              aria-hidden={route !== 'theme'}
+            >
+              <ThemeEditor />
+            </div>
+            <div
+              className={`${route === 'documents' ? 'flex' : 'hidden'} min-h-0 w-full flex-1 flex-col overflow-hidden [&>*]:min-h-0 [&>*]:flex-1`}
+              aria-hidden={route !== 'documents'}
+            >
+              <Documents active={route === 'documents'} />
+            </div>
+            {route !== 'operator' && route !== 'theme' && route !== 'documents' && (
+              <div key={route} className="flex min-h-0 w-full flex-1 flex-col overflow-hidden [&>*]:min-h-0 [&>*]:flex-1">
+                {views[route]}
+              </div>
+            )}
+          </main>
 
-      {/* Documents has no right rail, so the dock can span the window.
-          Operator / Scripture / Lyrics host it inside BoothWorkspace. */}
-      {route === 'documents' && <MediaDock />}
+        </div>
+      </div>
 
       <CloudSubscriptions />
 
@@ -530,32 +544,21 @@ export default function App(): React.ReactElement {
 
       {onboardingOpen && (
         <OnboardingWizard
-          onDismiss={() => {
-            setOnboardingDismissed(true)
-            // The wizard asks for the ProPresenter host itself, so the launch
-            // gate must not ask again the moment it closes.
-            setPpGateResolved(true)
-          }}
+          onDismiss={() => setOnboardingDismissed(true)}
         />
       )}
 
-      {!onboardingOpen &&
-        (ppGateRequested || shouldOfferPpConnectGate({
-          sessionResolved: ppGateResolved,
-          launch: ppLaunch,
-          accountGateOpen,
-        })) && (
-        <PpConnectGate
-          initialHost={ppSettings.host}
-          initialPort={ppSettings.port}
-          password={ppSettings.password}
-          ppState={ppState}
-          ppVersion={ppVersion}
-          onResolved={() => {
-            setPpGateResolved(true)
-            setPpGateRequested(false)
-          }}
-        />
+      {/* Screens — screen configuration, apart from themes */}
+      {screensWindow && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 animate-fade-in">
+          <div className="absolute inset-0" onClick={() => useAppStore.getState().closeScreens()} />
+          <div className="relative h-[min(760px,90vh)] w-[min(1180px,94vw)] overflow-hidden rounded-xl border border-surface-border animate-spring-in">
+            <ScreenConfiguration
+              initialSelect={screensWindow.select}
+              onClose={() => useAppStore.getState().closeScreens()}
+            />
+          </div>
+        </div>
       )}
 
       {/* Settings Modal Overlay */}

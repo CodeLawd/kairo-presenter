@@ -1,0 +1,52 @@
+/* Scroll timelines need CSS; layout, color, and typography live in Tailwind classes. */
+.landing [id] { scroll-margin-top: 30px; }
+.landing :focus-visible { outline: 2px solid #d0d0d0; outline-offset: 4px; }
+.landing #product :focus-visible,
+.landing #screens :focus-visible,
+.landing #get :focus-visible { outline-color: #111; }
+
+@keyframes landing-rise {
+  from { opacity: .36; transform: translateY(38px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes landing-wordmark {
+  from { opacity: .18; transform: translateY(36px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes landing-letter {
+  from { color: #2a2a2a; }
+  to { color: #f3f3f3; }
+}
+
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .landing [data-reveal] {
+      animation: landing-rise 1s both ease-out;
+      animation-timeline: view();
+      animation-range: entry 0% cover 42%;
+    }
+    .landing-footer-wordmark {
+      animation: landing-wordmark 1s both ease-out;
+      animation-timeline: view();
+      animation-range: entry 0% cover 70%;
+    }
+    .landing-thesis {
+      height: 300svh;
+      view-timeline: --landing-thesis block;
+    }
+    .landing-thesis-pin {
+      position: sticky;
+      top: 0;
+      height: 100svh;
+      padding-block: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+    .landing-thesis-text span[style] {
+      animation: landing-letter linear both;
+      animation-timeline: --landing-thesis;
+      animation-range: contain calc(var(--at) * 88%) contain calc(var(--at) * 88% + 4%);
+    }
+  }
+}

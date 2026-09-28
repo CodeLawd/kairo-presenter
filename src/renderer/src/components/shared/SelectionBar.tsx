@@ -40,7 +40,7 @@ export function SelectionBar({
         <button
           type="button"
           onClick={onClear}
-          className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-slate-400 hover:bg-white/5 hover:text-white"
+          className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-slate-400 hover:bg-surface-tertiary hover:text-white"
           title="Clear selection (Esc)"
         >
           <X size={12} aria-hidden="true" />
@@ -73,7 +73,7 @@ export function SelectionAction({
       title={title}
       className={cn(
         'inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[12px] font-medium transition-colors disabled:opacity-40',
-        danger ? 'text-rose-300 hover:bg-rose-500/15' : 'bg-white/[0.08] text-white hover:bg-white/[0.13]',
+        danger ? 'text-rose-300 hover:bg-tint-rose' : 'bg-surface-elevated text-white hover:bg-surface-border',
       )}
     >
       {children}

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { OnboardingState } from '@shared/ipc'
 import { canEnterApp } from '@shared/cloud/auth-state'
-import { ONBOARDING_STEPS, isStepComplete } from '@shared/cloud/onboarding'
+import { isStepComplete, onboardingSteps } from '@shared/cloud/onboarding'
 import { useBootstrapStore } from '@/bootstrap/useBootstrapStore'
 import { useAccountStore } from '@/stores/useAccountStore'
 import { KairoMark } from '@/components/brand/KairoMark'
@@ -39,8 +39,11 @@ export default function OnboardingWizard({
   const [showDone, setShowDone] = useState(false)
 
   const current = state.currentStep
-  const index = Math.max(0, ONBOARDING_STEPS.indexOf(current))
-  const total = ONBOARDING_STEPS.length
+  // Derived from the outputs the Output step writes: answering "directly to a
+  // screen" drops the ProPresenter steps from the walk.
+  const steps = onboardingSteps(settings)
+  const index = Math.max(0, steps.indexOf(current))
+  const total = steps.length
   const isLast = index === total - 1
   const accountReady = useAccountStore((s) => canEnterApp(s.session))
   // Signing in lives in the token vault rather than in settings, so the account
@@ -100,12 +103,12 @@ export default function OnboardingWizard({
       setShowDone(true)
       return
     }
-    void apply(() => window.api.onboarding.setCurrentStep(ONBOARDING_STEPS[index + 1]))
+    void apply(() => window.api.onboarding.setCurrentStep(steps[index + 1]))
   }
 
   const back = (): void => {
     if (index === 0) return
-    void apply(() => window.api.onboarding.setCurrentStep(ONBOARDING_STEPS[index - 1]))
+    void apply(() => window.api.onboarding.setCurrentStep(steps[index - 1]))
   }
 
   return (
@@ -122,7 +125,7 @@ export default function OnboardingWizard({
 
         {/* Progress is a hairline, not a widget — it answers "how much longer"
             and nothing else. */}
-        <div className="relative h-[2px] w-full bg-surface-border/50" aria-hidden="true">
+        <div className="relative h-[2px] w-full bg-surface-border" aria-hidden="true">
           <div
             className="h-full bg-[#F59E0B] transition-[width] duration-300 ease-out-expo"
             style={{ width: showDone ? '100%' : `${((index + 1) / total) * 100}%` }}

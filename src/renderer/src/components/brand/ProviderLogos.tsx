@@ -12,7 +12,7 @@ function Tile({
   return (
     <span
       className={cn(
-        'grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-[8px] bg-white shadow-[0_0_0_0.5px_rgba(255,255,255,0.12)]',
+        'grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-none bg-white',
         className,
       )}
     >

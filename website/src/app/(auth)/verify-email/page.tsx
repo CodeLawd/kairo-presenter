@@ -7,8 +7,8 @@ import { api, ApiError } from '@/lib/api'
 
 const BRAND = {
   kind: 'quote',
-  quote: <>One account for your church, on every machine in the booth.</>,
-  attribution: 'Kairo for ProPresenter',
+  quote: <>Your church&rsquo;s Kairo account is nearly ready.</>,
+  attribution: 'Kairo presentation software',
 } as const
 
 function VerifyEmailPageContent(): React.ReactElement {

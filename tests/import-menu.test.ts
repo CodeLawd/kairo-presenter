@@ -25,8 +25,8 @@ test('import kinds are the document, media, sermon, lyrics and .kairo pickers', 
 
 test('File > Import is built from IMPORT_OPTIONS', () => {
   const main = read('src/main/index.ts')
-  assert.match(main, /label: 'File'/)
-  assert.match(main, /label: 'Import'/)
+  assert.match(main, /label: ["']File["']/)
+  assert.match(main, /label: ["']Import["']/)
   assert.match(main, /submenu: importMenuTemplate\(\)/)
   assert.match(main, /IMPORT_OPTIONS/)
   assert.match(main, /requestMenuImport\(option\.kind\)/)

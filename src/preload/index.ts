@@ -8,7 +8,7 @@ import type {
   AppBootstrapSnapshot,
   ApiBibleDownloadProgress,
   BootstrapProgress,
-  ProAutomateAPI,
+  KairoAPI,
   ConnectOptions,
   ProPresenterStatus,
   ProPresenterLibrary,
@@ -35,6 +35,7 @@ import type {
   PendingAutoPresent,
   ResilienceStatus,
   NdiStatus,
+  DisplayInfo,
   PPVideoInputInfo,
   PPLook,
   Unsubscribe,
@@ -50,6 +51,8 @@ import { SETLIST_CHANGED, SETLIST_CHANNEL } from '@shared/setlist'
 import { TRANSFER } from '@shared/kairo-bundle'
 import { LIBRARIES_CHANGED, LIBRARIES_CHANNEL } from '@shared/libraries'
 import { PASSAGES_CHANGED, PASSAGES_CHANNEL } from '@shared/passages'
+import { PROGRAM } from '@shared/program'
+import { SONG_USAGE } from '@shared/song-usage'
 
 /**
  * Creates a type-safe subscription to a push channel.
@@ -63,7 +66,7 @@ function subscribe<T>(channel: string, callback: (data: T) => void): Unsubscribe
 
 // ─── propresenter ─────────────────────────────────────────────────────────────
 
-const propresenter: ProAutomateAPI['propresenter'] = {
+const propresenter: KairoAPI['propresenter'] = {
   connect(options: ConnectOptions): Promise<void> {
     return ipcRenderer.invoke(IPC.PROPRESENTER.CONNECT, options)
   },
@@ -90,18 +93,6 @@ const propresenter: ProAutomateAPI['propresenter'] = {
 
   getPlaylists(): Promise<ProPresenterPlaylist[]> {
     return ipcRenderer.invoke(IPC.PROPRESENTER.GET_PLAYLISTS)
-  },
-
-  testOverlay(): Promise<boolean> {
-    return ipcRenderer.invoke(IPC.PROPRESENTER.TEST_OVERLAY)
-  },
-
-  clearText(): Promise<boolean> {
-    return ipcRenderer.invoke(IPC.PROPRESENTER.CLEAR_TEXT)
-  },
-
-  clearOverlay(): Promise<boolean> {
-    return ipcRenderer.invoke(IPC.PROPRESENTER.CLEAR_OVERLAY)
   },
 
   getLooks(): Promise<PPLook[]> {
@@ -131,7 +122,7 @@ const propresenter: ProAutomateAPI['propresenter'] = {
 
 // ─── audio ────────────────────────────────────────────────────────────────────
 
-const audio: ProAutomateAPI['audio'] = {
+const audio: KairoAPI['audio'] = {
   stopCapture(): Promise<void> {
     return ipcRenderer.invoke(IPC.AUDIO.STOP_CAPTURE)
   },
@@ -151,7 +142,7 @@ const audio: ProAutomateAPI['audio'] = {
 
 // ─── app ──────────────────────────────────────────────────────────────────────
 
-const appApi: ProAutomateAPI['app'] = {
+const appApi: KairoAPI['app'] = {
   onImportRequested(callback) {
     const unsubscribe = subscribe(IPC.APP.IMPORT_REQUESTED, callback)
     ipcRenderer.send(IPC.APP.IMPORT_READY)
@@ -159,9 +150,6 @@ const appApi: ProAutomateAPI['app'] = {
   },
   bootstrap(): Promise<AppBootstrapSnapshot> {
     return ipcRenderer.invoke(IPC.APP.BOOTSTRAP)
-  },
-  claimPpConnectPrompt(): Promise<boolean> {
-    return ipcRenderer.invoke(IPC.APP.CLAIM_PP_CONNECT_PROMPT)
   },
 
   onBootstrapProgress(callback: (progress: BootstrapProgress) => void): Unsubscribe {
@@ -171,7 +159,7 @@ const appApi: ProAutomateAPI['app'] = {
 
 // ─── scripture ────────────────────────────────────────────────────────────────
 
-const scripture: ProAutomateAPI['scripture'] = {
+const scripture: KairoAPI['scripture'] = {
   onSuggestion(callback: (suggestion: ScriptureSuggestion) => void): Unsubscribe {
     return subscribe<ScriptureSuggestion>(IPC.SCRIPTURE.SUGGESTION, callback)
   },
@@ -198,10 +186,6 @@ const scripture: ProAutomateAPI['scripture'] = {
 
   getTranslations(apiKey?: string) {
     return ipcRenderer.invoke(IPC.SCRIPTURE.GET_TRANSLATIONS, apiKey)
-  },
-
-  setTranslation(translation: ScriptureTranslation): Promise<void> {
-    return ipcRenderer.invoke(IPC.SCRIPTURE.SET_TRANSLATION, translation)
   },
 
   importSermonNotes() {
@@ -299,7 +283,7 @@ const scripture: ProAutomateAPI['scripture'] = {
 
 // ─── transcription ────────────────────────────────────────────────────────────
 
-const transcription: ProAutomateAPI['transcription'] = {
+const transcription: KairoAPI['transcription'] = {
   onTranscript(callback: (result: TranscriptResult) => void): Unsubscribe {
     return subscribe<TranscriptResult>(IPC.TRANSCRIPTION.TRANSCRIPT, callback)
   },
@@ -319,7 +303,7 @@ const transcription: ProAutomateAPI['transcription'] = {
 
 // ─── workspace ────────────────────────────────────────────────────────────────
 
-const workspace: ProAutomateAPI['workspace'] = {
+const workspace: KairoAPI['workspace'] = {
   get() {
     return ipcRenderer.invoke(IPC.WORKSPACE.GET)
   },
@@ -345,7 +329,7 @@ const workspace: ProAutomateAPI['workspace'] = {
 
 // ─── lyrics ───────────────────────────────────────────────────────────────────
 
-const lyrics: ProAutomateAPI['lyrics'] = {
+const lyrics: KairoAPI['lyrics'] = {
   search(query: string): Promise<LyricsSong[]> {
     return ipcRenderer.invoke(IPC.LYRICS.SEARCH, query)
   },
@@ -421,7 +405,7 @@ const lyrics: ProAutomateAPI['lyrics'] = {
 
 // ─── settings ─────────────────────────────────────────────────────────────────
 
-const settings: ProAutomateAPI['settings'] = {
+const settings: KairoAPI['settings'] = {
   get<K extends keyof AppSettings>(key: K): Promise<AppSettings[K]> {
     return ipcRenderer.invoke(IPC.SETTINGS.GET, key)
   },
@@ -453,7 +437,7 @@ const settings: ProAutomateAPI['settings'] = {
 
 // ─── orchestrator ─────────────────────────────────────────────────────────────
 
-const orchestrator: ProAutomateAPI['orchestrator'] = {
+const orchestrator: KairoAPI['orchestrator'] = {
   start(config: OrchestratorConfig): Promise<void> {
     return ipcRenderer.invoke(IPC.ORCHESTRATOR.START, config)
   },
@@ -493,7 +477,7 @@ const orchestrator: ProAutomateAPI['orchestrator'] = {
 
 // ─── resilience ─────────────────────────────────────────────────────────────
 
-const resilience: ProAutomateAPI['resilience'] = {
+const resilience: KairoAPI['resilience'] = {
   getStatus(): Promise<ResilienceStatus> {
     return ipcRenderer.invoke(IPC.RESILIENCE.GET_STATUS)
   },
@@ -513,7 +497,7 @@ const resilience: ProAutomateAPI['resilience'] = {
 
 // ─── ndi ──────────────────────────────────────────────────────────────────────
 
-const ndi: ProAutomateAPI['ndi'] = {
+const ndi: KairoAPI['ndi'] = {
   getStatus(): Promise<NdiStatus> {
     return ipcRenderer.invoke(IPC.NDI.GET_STATUS)
   },
@@ -529,7 +513,7 @@ const ndi: ProAutomateAPI['ndi'] = {
 
 // ─── Expose ───────────────────────────────────────────────────────────────────
 
-const media: ProAutomateAPI['media'] = {
+const media: KairoAPI['media'] = {
   importFiles: (kind) => ipcRenderer.invoke(IPC.MEDIA.IMPORT_FILES, kind),
   getLibrary() {
     return ipcRenderer.invoke(IPC.MEDIA.GET_LIBRARY)
@@ -604,7 +588,7 @@ const media: ProAutomateAPI['media'] = {
   },
 }
 
-const tracks: ProAutomateAPI['tracks'] = {
+const tracks: KairoAPI['tracks'] = {
   getLibrary() {
     return ipcRenderer.invoke(IPC.TRACKS.GET_LIBRARY)
   },
@@ -633,7 +617,7 @@ const tracks: ProAutomateAPI['tracks'] = {
   },
 }
 
-const onboarding: ProAutomateAPI['onboarding'] = {
+const onboarding: KairoAPI['onboarding'] = {
   getState() {
     return ipcRenderer.invoke(IPC.ONBOARDING.GET_STATE)
   },
@@ -657,7 +641,7 @@ const onboarding: ProAutomateAPI['onboarding'] = {
   },
 }
 
-const account: ProAutomateAPI['account'] = {
+const account: KairoAPI['account'] = {
   getSession() {
     return ipcRenderer.invoke(IPC.ACCOUNT.GET_SESSION)
   },
@@ -702,7 +686,7 @@ const account: ProAutomateAPI['account'] = {
   },
 }
 
-const documents: ProAutomateAPI['documents'] = {
+const documents: KairoAPI['documents'] = {
   list: () => ipcRenderer.invoke(DOCUMENTS.LIST),
   capabilities: () => ipcRenderer.invoke(DOCUMENTS.CAPABILITIES),
   prepare: (kind) => ipcRenderer.invoke(DOCUMENTS.PREPARE, kind),
@@ -714,7 +698,7 @@ const documents: ProAutomateAPI['documents'] = {
   push: (id, page) => ipcRenderer.invoke(DOCUMENTS.PUSH, id, page),
 }
 
-const updates: ProAutomateAPI['updates'] = {
+const updates: KairoAPI['updates'] = {
   getStatus: () => ipcRenderer.invoke(IPC.UPDATES.GET_STATUS),
   check: () => ipcRenderer.invoke(IPC.UPDATES.CHECK),
   download: () => ipcRenderer.invoke(IPC.UPDATES.DOWNLOAD),
@@ -722,26 +706,26 @@ const updates: ProAutomateAPI['updates'] = {
   onStatus: (callback) => subscribe(IPC.UPDATES.STATUS, callback),
 }
 
-const services: ProAutomateAPI['services'] = {
+const services: KairoAPI['services'] = {
   command: (command) => ipcRenderer.invoke('services:command', command),
   onChanged: (callback) => subscribe('services:changed', callback),
 }
-const setlist: ProAutomateAPI['setlist'] = {
+const setlist: KairoAPI['setlist'] = {
   command: (command) => ipcRenderer.invoke(SETLIST_CHANNEL, command),
   onChanged: (callback) => subscribe(SETLIST_CHANGED, callback),
 }
 
-const libraries: ProAutomateAPI['libraries'] = {
+const libraries: KairoAPI['libraries'] = {
   command: (command) => ipcRenderer.invoke(LIBRARIES_CHANNEL, command),
   onChanged: (callback) => subscribe(LIBRARIES_CHANGED, callback),
 }
 
-const passages: ProAutomateAPI['passages'] = {
+const passages: KairoAPI['passages'] = {
   command: (command) => ipcRenderer.invoke(PASSAGES_CHANNEL, command),
   onChanged: (callback) => subscribe(PASSAGES_CHANGED, callback),
 }
 
-const transfer: ProAutomateAPI['transfer'] = {
+const transfer: KairoAPI['transfer'] = {
   export: (request) => ipcRenderer.invoke(TRANSFER.EXPORT, request),
   pickAndPreview: () => ipcRenderer.invoke(TRANSFER.PICK_AND_PREVIEW),
   commit: (request) => ipcRenderer.invoke(TRANSFER.COMMIT, request),
@@ -750,7 +734,53 @@ const transfer: ProAutomateAPI['transfer'] = {
   onOpened: (callback) => subscribe(TRANSFER.OPENED, callback),
 }
 
-const api: ProAutomateAPI = { transfer, passages, libraries, setlist, services, documents, app: appApi, propresenter, audio, scripture, transcription, workspace, lyrics, settings, orchestrator, resilience, ndi, media, tracks, onboarding, account, updates }
+const displays: KairoAPI['displays'] = {
+  list(): Promise<DisplayInfo[]> {
+    return ipcRenderer.invoke(IPC.DISPLAYS.LIST)
+  },
+  identify(): Promise<void> {
+    return ipcRenderer.invoke(IPC.DISPLAYS.IDENTIFY)
+  },
+  onChanged(callback: (displays: DisplayInfo[]) => void): Unsubscribe {
+    return subscribe(IPC.DISPLAYS.CHANGED, callback)
+  },
+}
+
+const output: KairoAPI['output'] = {
+  sendTest: () => ipcRenderer.invoke(IPC.OUTPUT.SEND_TEST),
+  clearText: () => ipcRenderer.invoke(IPC.OUTPUT.CLEAR_TEXT),
+  clearAll: () => ipcRenderer.invoke(IPC.OUTPUT.CLEAR_ALL),
+}
+
+const program: KairoAPI['program'] = {
+  getState: () => ipcRenderer.invoke(PROGRAM.GET_STATE),
+  onState: (callback) => subscribe(PROGRAM.STATE, callback),
+  showMessage: (text) => ipcRenderer.invoke(PROGRAM.SHOW_MESSAGE, text),
+  clearMessage: () => ipcRenderer.invoke(PROGRAM.CLEAR_MESSAGE),
+  setStageMessage: (text) => ipcRenderer.invoke(PROGRAM.SET_STAGE_MESSAGE, text),
+  setProp: (id, on) => ipcRenderer.invoke(PROGRAM.SET_PROP, id, on),
+  clearProps: () => ipcRenderer.invoke(PROGRAM.CLEAR_PROPS),
+  setLogo: (on) => ipcRenderer.invoke(PROGRAM.SET_LOGO, on),
+  setCamera: (label, audioLabel) => ipcRenderer.invoke(PROGRAM.SET_CAMERA, label, audioLabel ?? null),
+  timer: {
+    set: (durationSec) => ipcRenderer.invoke(PROGRAM.TIMER_SET, durationSec),
+    start: () => ipcRenderer.invoke(PROGRAM.TIMER_START),
+    pause: () => ipcRenderer.invoke(PROGRAM.TIMER_PAUSE),
+    reset: () => ipcRenderer.invoke(PROGRAM.TIMER_RESET),
+  },
+  pickImage: () => ipcRenderer.invoke(PROGRAM.PICK_IMAGE),
+  stageStatus: () => ipcRenderer.invoke(PROGRAM.STAGE_STATUS),
+  onStageStatus: (callback) => subscribe(PROGRAM.STAGE_STATUS_CHANGED, callback),
+  ndiAudioSupported: () => ipcRenderer.invoke(PROGRAM.NDI_AUDIO_SUPPORTED),
+}
+
+const songUsage: KairoAPI['songUsage'] = {
+  list: (from, to) => ipcRenderer.invoke(SONG_USAGE.LIST, from, to),
+  exportCsv: (from, to) => ipcRenderer.invoke(SONG_USAGE.EXPORT, from, to),
+  clear: (before) => ipcRenderer.invoke(SONG_USAGE.CLEAR, before),
+}
+
+const api: KairoAPI = { transfer, passages, libraries, setlist, services, documents, app: appApi, propresenter, audio, scripture, transcription, workspace, lyrics, settings, orchestrator, resilience, ndi, displays, output, program, songUsage, media, tracks, onboarding, account, updates }
 
 if (process.contextIsolated) {
   try {

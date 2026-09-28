@@ -25,13 +25,16 @@ import { normalizeResourceBindings } from "@shared/propresenter-resources";
 import {
   chooseNdiVideoInputId,
   firstLookId,
-  findNdiOutput,
   getDispatchPlan,
-  layerOfKind,
+  isRenderedKind,
+  ppLayerOf,
+  outputRequiresPropresenter,
   outputTemplateFor,
   outputThemeFor,
   OVERLAY_LAYERS,
 } from "@shared/overlay-outputs";
+import { ndiRoutedThroughPropresenter, propresenterEnabled, setupUsesPropresenter } from "@shared/pp-connect-gate";
+import { dispatchHealth } from "@shared/output-health";
 import { formatOverlayReference, formatOverlayVerseText, renderOverlayTemplate } from "@shared/overlay-content";
 import { confirmPresenterOutput } from "@shared/presenter-confirmation";
 import { ScriptureDetector } from "./services/scripture/detector";
@@ -52,10 +55,11 @@ import { scriptureService } from "./services/scripture";
 import { lookupDetectedScripture } from "./services/scripture/detection-lookup";
 import { scriptureKeyterms } from "./services/stt/keyterms";
 import { resilienceManager } from "./services/resilience";
-import { ndiService } from "./services/ndi";
 import { mediaService } from "./services/media";
 import { themeOwnsBackground, themeWithLiveMedia } from "@shared/media-playback";
-import { overlayWindow } from "./services/ndi/overlay-window";
+import { surfaceManager, type SurfaceTarget } from "./services/output/surface-manager";
+import { programService } from "./services/output/program-service";
+import type { OutputShowFilter, ProgramSlideInfo } from "@shared/program";
 import { store } from "./db";
 
 /**
@@ -67,6 +71,20 @@ import { store } from "./db";
  * dock's own push, and a lyric slide (which must never resurrect a scripture
  * image over the file the operator just sent).
  */
+/** The operator switched the ProPresenter integration on in Settings. */
+function ppEnabled(): boolean {
+  return propresenterEnabled({ propresenter: store.get("propresenter") });
+}
+
+/**
+ * ProPresenter can be talked to right now: the integration is on AND the link
+ * is up. Every PP call is gated on this — with the integration off, Kairo
+ * never reaches for ProPresenter, even when a stale connection exists.
+ */
+function ppConnected(): boolean {
+  return ppEnabled() && proPresenterService.getStatus().state === "connected";
+}
+
 function withLiveBackground(theme: OverlayTheme, force = false): OverlayTheme {
   const live = mediaService.getLiveItem();
   if (!live) return theme;
@@ -716,7 +734,11 @@ class Orchestrator {
     scriptureTrace.annotate(correlationId, {
       presenterConnectionMode: ppStatus.state === "connected" ? "connected" : "disconnected",
     });
-    if (ppStatus.state !== "connected") {
+    const ppOffline = !ppConnected();
+    // Queue for replay only on a ProPresenter setup that is waiting for PP to
+    // come back, and only when nothing of Kairo's own could show it. With the
+    // integration off there is nothing to wait for — the push just runs.
+    if (ppEnabled() && ppOffline && !this.hasPpIndependentOutput()) {
       log.warn("[Orchestrator] PP not connected — queueing scripture projection", {
         ref: suggestion.reference,
       });
@@ -731,44 +753,30 @@ class Orchestrator {
     }
 
     scriptureTrace.mark(correlationId, "presenterRequestStartedAt");
-    const results = await this.dispatchScripture(
-      suggestion,
-      prepared?.content ?? this.prepareScriptureProjection(suggestion)?.content,
-    );
+    const content = prepared?.content ?? this.prepareScriptureProjection(suggestion)?.content;
+    const results = await this.dispatchScripture(suggestion, content);
     scriptureTrace.mark(correlationId, "presenterRequestCompletedAt");
     const failed = results.filter((r) => !r.ok);
     scriptureTrace.annotate(correlationId, {
       presenterOutputMode: results.filter((result) => result.ok).map((result) => result.kind).join(",") || undefined,
-      presenterConnectionMode: failed.length > 0 ? "degraded" : "connected",
+      presenterConnectionMode: ppOffline ? "disconnected" : failed.length > 0 ? "degraded" : "connected",
     });
+    this.recordDispatchHealth(results, ppOffline);
 
+    // The program goes live whether or not a screen took it — the operator's
+    // preview, the stage displays and the next push all follow the program,
+    // like ProPresenter with no screen assigned. Why nothing showed is a
+    // screen problem: it lives in output health and the Screens status.
     if (!results.some((r) => r.ok)) {
-      const msg = results.length === 0
-        ? `No overlay outputs are enabled — cannot present "${suggestion.reference}"`
-        : `Failed to present "${suggestion.reference}" on any output`;
-      this.updateHealth("propresenter", "error", msg);
-      scriptureTrace.complete(correlationId, {
-        status: "failed",
-        failureReason: "presenter-rejected",
-        error: msg,
+      log.warn("[Orchestrator] Scripture is live but no screen took it", {
+        ref: suggestion.reference,
+        reasons: results.map((r) => `${r.name}: ${r.reason ?? "unknown"}`),
       });
-      this.emitStatus();
-      throw new Error(msg);
     }
 
     livePlanService.observe(suggestion.reference, suggestion.planItemId);
     if (this.session) this.session.totalPresentations++;
-    // Partial success is still on screen somewhere, so it is degraded, not an
-    // error — but the operator needs to know which screen missed out.
-    if (failed.length > 0) {
-      this.updateHealth(
-        "propresenter",
-        "degraded",
-        `Output failed: ${failed.map((f) => `${f.name} (${f.reason ?? "unknown"})`).join("; ")}`,
-      );
-    } else {
-      this.updateHealth("propresenter", "ok");
-    }
+    if (content) programService.setSlide({ reference: content.reference, text: content.text });
     scriptureTrace.mark(correlationId, "presenterStateCheckStartedAt");
     const confirmation = await confirmPresenterOutput({
       reference: suggestion.reference,
@@ -797,6 +805,8 @@ class Orchestrator {
     reference: string,
     text: string,
     coloredLines?: Array<{ text: string; color?: string }>,
+    /** The slide after this one, for the stage displays. */
+    next: ProgramSlideInfo | null = null,
   ): Promise<void> {
     if (!text.trim()) throw new Error("Slide is empty — nothing to push.");
 
@@ -806,43 +816,21 @@ class Orchestrator {
     // projector fed from NDI keeps working through a PP restart mid-service.
     // Outputs that genuinely require the API (stage message, library) report
     // their own failure below.
-    const ppStatus = proPresenterService.getStatus();
-    const ppOffline = ppStatus.state !== "connected";
-    if (ppOffline) {
-      log.warn("[Orchestrator] Pushing lyric slide with ProPresenter disconnected", { reference });
-    }
+    const ppOffline = !ppConnected();
 
     const results = await this.dispatchContent({ reference, text, coloredLines }, "lyrics", null);
-    const failed = results.filter((r) => !r.ok);
+    this.recordDispatchHealth(results, ppOffline);
 
+    // Live in the program even when no screen took it — see presentScripture.
     if (!results.some((r) => r.ok)) {
-      const msg = results.length === 0
-        ? "No overlay outputs are enabled — cannot push this slide"
-        : ppOffline
-          ? `Could not push "${reference}" — every output needs ProPresenter, which is not connected`
-          : `Failed to push "${reference}" on any output`;
-      this.updateHealth("propresenter", "error", msg);
-      this.emitStatus();
-      throw new Error(msg);
+      log.warn("[Orchestrator] Lyric slide is live but no screen took it", {
+        reference,
+        reasons: results.map((r) => `${r.name}: ${r.reason ?? "unknown"}`),
+      });
     }
 
     if (this.session) this.session.totalPresentations++;
-    if (failed.length > 0) {
-      this.updateHealth(
-        "propresenter",
-        "degraded",
-        `Output failed: ${failed.map((f) => `${f.name} (${f.reason ?? "unknown"})`).join("; ")}`,
-      );
-    } else if (ppOffline) {
-      // The slide went out, but PP was never told to cut to it.
-      this.updateHealth(
-        "propresenter",
-        "degraded",
-        "Slide sent on NDI — ProPresenter is not connected, so it was not switched to it",
-      );
-    } else {
-      this.updateHealth("propresenter", "ok");
-    }
+    programService.setSlide({ reference, text }, next);
     this.emitStatus();
   }
 
@@ -913,7 +901,17 @@ class Orchestrator {
     suggestion: ScriptureSuggestion | null,
   ): Promise<OverlayDispatchResult[]> {
     const overlay = normalizeOverlaySettings(store.get("overlay"));
-    const plan = getDispatchPlan(overlay.outputs);
+    // Rendered outputs can opt out of a content kind (a lower-third NDI feed
+    // that never shows lyrics, say). PP outputs have no filter.
+    // ProPresenter outputs only take part while ProPresenter can be reached.
+    // Otherwise they are left out entirely — not attempted, not reported —
+    // so a standalone service never hears about software it is not using.
+    const ppLive = ppConnected();
+    const plan = getDispatchPlan(overlay.outputs, (output) =>
+      outputRequiresPropresenter(output.kind)
+        ? ppLive
+        : !isRenderedKind(output.kind) || output.show[kind],
+    );
 
     // A fresh present is starting — any auto-clear timer left over from a
     // *different* prior push must not fire later and clear this one.
@@ -921,36 +919,44 @@ class Orchestrator {
 
     // A Look is whole-system state: triggering several in a row would just
     // leave the last one standing, so fire exactly the first one configured.
+    // With PP down the call can only time out, delaying every other output.
     const lookId = firstLookId(plan.groups);
-    if (lookId) {
+    if (lookId && ppConnected()) {
       const ok = await proPresenterService.rawClient.triggerLook(lookId);
       if (!ok) log.warn("[Orchestrator] Look trigger failed — pushing anyway", { lookId });
     }
 
-    // Groups land on different PP layers, so they run concurrently.
-    const grouped = await Promise.all(
-      plan.groups.map((group) => this.runInOrder(group.outputs, kind, suggestion, content)),
-    );
-    const results = grouped.flat();
+    // Kairo's own destinations all run; each PP layer takes its first success.
+    // Everything lands on a different window or layer, so it runs concurrently.
+    const [rendered, grouped] = await Promise.all([
+      Promise.all(plan.rendered.map((output) => this.pushToOutput(output, null, kind, suggestion, content))),
+      Promise.all(plan.groups.map((group) => this.runInOrder(group.outputs, group.layer, kind, suggestion, content))),
+    ]);
+    const results = [...rendered, ...grouped.flat()];
 
     if (!results.some((r) => r.ok)) {
-      results.push(...(await this.runInOrder(plan.fallbacks, kind, suggestion, content)));
+      for (const output of plan.fallbacks) {
+        const result = await this.pushToOutput(output, ppLayerOf(output, overlay.outputs), kind, suggestion, content);
+        results.push(result);
+        if (result.ok) break;
+      }
     }
 
     if (results.some((r) => r.ok)) this.scheduleOverlayAutoClear(overlay.autoClearSec);
     return results;
   }
 
-  /** Runs outputs in order and stops at the first success. */
+  /** Runs one PP layer's outputs in order and stops at the first success. */
   private async runInOrder(
     outputs: readonly OverlayOutput[],
+    layer: OverlayLayer,
     kind: OverlayContentKind,
     suggestion: ScriptureSuggestion | null,
     content: PushContent,
   ): Promise<OverlayDispatchResult[]> {
     const results: OverlayDispatchResult[] = [];
     for (const output of outputs) {
-      const result = await this.pushToOutput(output, kind, suggestion, content);
+      const result = await this.pushToOutput(output, layer, kind, suggestion, content);
       results.push(result);
       if (result.ok) break;
     }
@@ -959,17 +965,23 @@ class Orchestrator {
 
   /**
    * Routes one output to the push path for its kind, and on success records the
-   * layer it claimed. Never throws — a failing destination must not take the
-   * other destinations down with it.
+   * PP layer it claimed (`layer` null for Kairo's own destinations). Never
+   * throws — a failing destination must not take the others down with it.
    */
   private async pushToOutput(
     output: OverlayOutput,
+    layer: OverlayLayer | null,
     kind: OverlayContentKind,
     suggestion: ScriptureSuggestion | null,
     content: PushContent,
   ): Promise<OverlayDispatchResult> {
-    const layer = layerOfKind(output.kind);
     const base = { outputId: output.id, name: output.name, kind: output.kind, layer };
+
+    // Fail fast rather than wait out a request timeout: the operator should
+    // see "not connected" at once, and the other outputs must not wait on it.
+    if (outputRequiresPropresenter(output.kind) && !ppConnected()) {
+      return { ...base, ok: false, reason: "ProPresenter is not connected" };
+    }
 
     try {
       let reason: string | null;
@@ -981,7 +993,8 @@ class Orchestrator {
             : "library output only supports scripture references";
           break;
         case "ndi":
-          reason = await this.pushOverlayNdi(output, kind, content);
+        case "screen":
+          reason = await this.pushRendered(output, kind, content);
           break;
         case "stage":
           reason = await this.pushStage(output, kind, content);
@@ -993,7 +1006,7 @@ class Orchestrator {
       }
 
       if (reason === null) {
-        this.activeLayers.add(layer);
+        if (layer) this.activeLayers.add(layer);
         log.info("[Orchestrator] Content presented", {
           ref: suggestion?.reference ?? content.reference,
           content: kind,
@@ -1145,58 +1158,60 @@ class Orchestrator {
   // ─── Presentation layer: in-app rendered NDI slide ─────────────────────────
 
   /**
-   * Pushes `suggestion` through the in-app-rendered NDI overlay: render the
-   * styled slide in the offscreen overlay window using the same theme the
-   * verse cards preview, give it one paint cycle to land in the NDI frame
-   * buffer, then trigger the bound PP video input when one exists.
+   * Draws the slide on this output's own surface — a Kairo screen window or an
+   * NDI feed — with this output's own theme (a projector can be full-frame
+   * while the NDI feed is a lower third). The theme comes off the output being
+   * pushed, not the "live" preview lookup, so per-content-kind overrides hold.
+   * Lyric slides never own a background: the dock goes under them so a
+   * leftover scripture image cannot replace the loop the operator just pushed.
    *
-   * The themed frame is sent even when no video input is bound — otherwise a
-   * missing binding silently falls through to library/message and ProPresenter
-   * shows unstyled text instead of the operator's theme.
+   * The primary NDI feed then soft-cuts ProPresenter to its video input. The
+   * themed frame goes out even when no input is bound — otherwise a missing
+   * binding silently falls through to library / message and PP shows
+   * unstyled text instead of the operator's theme.
    */
-  private async pushOverlayNdi(
+  private async pushRendered(
     output: OverlayOutput,
     kind: OverlayContentKind,
     content: PushContent,
   ): Promise<string | null> {
-    if (!ndiService.getStatus().available) return "NDI sender unavailable";
-
-    // The theme comes off the output being pushed, not off the "live" lookup —
-    // that one answers a preview question and would ignore this output's own
-    // per-content-kind override. Lyric slides never own a background: force
-    // the dock under them so a leftover scripture image cannot replace the
-    // loop the operator just pushed.
+    const surface = surfaceManager.surfaceFor(output);
+    if (!surface) {
+      return output.kind === "screen" ? surfaceManager.screenState(output.id).reason : "NDI sender unavailable";
+    }
     const theme = withLiveBackground(outputThemeFor(output, kind), kind === "lyrics");
-
-    await overlayWindow.showScripture(
-      output.id,
-      content.reference,
-      content.text,
-      theme,
-      content.coloredLines,
-    );
-    // Let at least one 'paint' land in NdiService's frame buffer before
-    // triggering PP onto the video input — otherwise PP may cut to a stale
-    // (blank) frame for one repeat-loop tick.
-    await new Promise((resolve) => setTimeout(resolve, NDI_PAINT_SETTLE_MS));
-
-    const uuid = await this.ensureVideoInputBinding(output);
-    if (!uuid) {
-      log.warn("[Orchestrator] Themed NDI frame sent without a bound ProPresenter video input", {
-        output: output.name,
-      });
-      return null;
-    }
-
-    const triggered = await proPresenterService.rawClient.triggerVideoInput(uuid);
-    if (!triggered) {
-      log.warn("[Orchestrator] Video-input trigger rejected — themed NDI frame is still on the source", {
-        output: output.name,
-        uuid,
-      });
-    }
+    const shown = await surface.showSlide(output.id, content.reference, content.text, theme, content.coloredLines);
+    if (!shown) return output.kind === "screen" ? "Screen window is not available" : "NDI sender unavailable";
+    await this.cutToVideoInput(output, "Slide");
     return null;
   }
+
+
+
+
+  /**
+   * Rendered outputs that can take a push right now, each with its surface.
+   * With `show`, only the ones whose content filter allows that kind.
+   */
+  private liveSurfaceTargets(show?: keyof OutputShowFilter): SurfaceTarget[] {
+    return surfaceManager.liveTargets(show);
+  }
+
+
+  /**
+   * A Kairo screen, or an NDI feed that something other than ProPresenter
+   * takes, is live — so PP being down does not stop a push. An NDI output
+   * bound to a PP video input does not count: its frame only reaches the room
+   * through PP, and queueing is what replays the verse once PP is back.
+   */
+  private hasPpIndependentOutput(): boolean {
+    const outputs = normalizeOverlaySettings(store.get("overlay")).outputs;
+    const { ndiVideoInputId } = normalizeResourceBindings(store.get("propresenterResources"));
+    return this.liveSurfaceTargets().some(
+      ({ output }) => !ndiRoutedThroughPropresenter(output, outputs, ndiVideoInputId),
+    );
+  }
+
 
   /**
    * PP video input binding: persist uuid, name-match only as discovery.
@@ -1210,7 +1225,7 @@ class Orchestrator {
     const durableId = bindings.ndiVideoInputId;
     // Discovery talks to PP. With PP down those calls only burn the push's
     // latency before failing, and the NDI frame has already gone out regardless.
-    if (proPresenterService.getStatus().state !== "connected") {
+    if (!ppConnected()) {
       return durableId || output.ppVideoInputUuid || null;
     }
     const client = proPresenterService.rawClient;
@@ -1260,67 +1275,53 @@ class Orchestrator {
   }
 
   /**
-   * Projects one imported document page onto the NDI overlay (contain-fit image).
-   * Matches media/scripture: paint first, then soft-trigger ProPresenter onto the
-   * video input when a binding exists. A missing binding must not block the push —
-   * the frame is already on the NDI source for anything already taking it.
+   * Projects one imported document page onto every rendered output — each
+   * Kairo screen, and the NDI feed when it is available (contain-fit image).
+   * Paint first, then soft-trigger ProPresenter onto the NDI video input when a
+   * binding exists. A missing binding must not block the push — the frame is
+   * already on the NDI source for anything already taking it.
    */
   async presentDocumentPage(mediaPath: string): Promise<boolean> {
-    if (!ndiService.getStatus().available) throw new Error("NDI output is unavailable on this machine.");
-    const overlay = normalizeOverlaySettings(store.get("overlay"));
-    const ndi =
-      overlay.outputs.find((output) => output.kind === "ndi" && output.enabled) ??
-      findNdiOutput(overlay.outputs);
-    if (!ndi || !ndi.enabled) throw new Error("Enable an NDI output in Settings before projecting documents.");
+    const targets = this.liveSurfaceTargets("documents");
+    if (targets.length === 0) {
+      throw new Error("Enable a screen or NDI output in Settings before projecting documents.");
+    }
     this.cancelOverlayAutoClear();
-    const deckAlreadyLive = this.activeLayers.has("presentation");
-    this.activeLayers.add("presentation");
+    this.notePpLayerFor(targets);
 
-    // Page turn inside a deck that is already on screen: swap the image and
-    // stop there. The slow parts of a first push — rebuilding the slide, the
-    // paint-settle wait and re-triggering the same ProPresenter video input —
-    // are all redundant once the deck is live, and they are what makes a
-    // clicker feel late. Any failure falls through to the full push below.
-    if (deckAlreadyLive && (await overlayWindow.swapDocumentPage(ndi.id, mediaPath))) {
-      mediaService.setLiveItem(null);
-      return true;
-    }
+    const shown = await Promise.all(
+      targets.map(async ({ output, surface }) => {
+        // Page turn inside a deck that is already on screen: swap the image and
+        // stop there. The slow parts of a first push — rebuilding the slide,
+        // the paint-settle wait and re-triggering the same ProPresenter video
+        // input — are all redundant once the deck is live, and they are what
+        // makes a clicker feel late. The surface knows whether it is showing
+        // this output's deck; otherwise this falls through to the full push.
+        if (await surface.swapDocumentPage(output.id, mediaPath)) return true;
 
-    const theme = outputThemeFor(ndi, "scripture");
-    const shown = await overlayWindow.showDocument(ndi.id, {
-      ...theme,
-      background: {
-        ...theme.background,
-        type: "image",
-        mediaPath,
-        mediaFit: "contain",
-        hue: 0,
-        opacity: 1,
-        brightness: 1,
-        contrast: 1,
-        saturation: 1,
-      },
-    });
-    // No blind settle wait here: showDocument already returned on the captured
-    // frame, so the page is on the NDI wire before ProPresenter is asked to
-    // show it.
-    if (!shown) return false;
-
-    try {
-      const uuid = await this.ensureVideoInputBinding(ndi);
-      if (uuid) {
-        await proPresenterService.rawClient.triggerVideoInput(uuid);
-      } else {
-        log.warn("[Orchestrator] Document page on NDI without a bound ProPresenter video input", {
-          output: ndi.name,
+        const theme = outputThemeFor(output, "scripture");
+        const ok = await surface.showDocument(output.id, {
+          ...theme,
+          background: {
+            ...theme.background,
+            type: "image",
+            mediaPath,
+            mediaFit: "contain",
+            hue: 0,
+            opacity: 1,
+            brightness: 1,
+            contrast: 1,
+            saturation: 1,
+          },
         });
-      }
-    } catch (err) {
-      log.warn("[Orchestrator] Could not trigger ProPresenter onto the document page", {
-        output: ndi.name,
-        error: (err as Error).message,
-      });
-    }
+        // No blind settle wait here: showDocument already returned on the
+        // captured frame, so the page is on the NDI wire before ProPresenter
+        // is asked to show it.
+        if (ok && output.kind === "ndi") await this.cutToVideoInput(output, "Document page");
+        return ok;
+      }),
+    );
+    if (!shown.some(Boolean)) return false;
     mediaService.setLiveItem(null);
     return true;
   }
@@ -1328,39 +1329,65 @@ class Orchestrator {
   async presentLiveBackground(): Promise<boolean> {
     const live = mediaService.getLiveItem();
     if (!live) return false;
-    if (!ndiService.getStatus().available) return false;
+    const targets = this.liveSurfaceTargets("backgrounds");
+    if (targets.length === 0) return false;
 
-    const overlay = normalizeOverlaySettings(store.get("overlay"));
-    const ndi =
-      overlay.outputs.find((output) => output.kind === "ndi" && output.enabled) ??
-      findNdiOutput(overlay.outputs);
-    if (!ndi) return false;
+    const shown = await Promise.all(
+      targets.map((target) => this.showLiveBackgroundOn(target, `Background "${live.name}"`, true)),
+    );
+    if (shown.some(Boolean)) this.notePpLayerFor(targets);
+    return shown.some(Boolean);
+  }
 
-    const theme = withLiveBackground(outputThemeFor(ndi, "scripture"), true);
-    const swapped = await overlayWindow.setBackground(theme.background);
-    if (!swapped) {
-      const shown = await overlayWindow.showScripture(ndi.id, "", "", theme);
-      if (!shown) return false;
-    }
+  /**
+   * Kairo's own surfaces are always cleared; ProPresenter only needs clearing
+   * on the layers something was sent to. The primary NDI feed is on PP's
+   * presentation layer (PP was cut to its video input).
+   */
+  private notePpLayerFor(targets: readonly SurfaceTarget[]): void {
+    if (targets.some(({ output }) => surfaceManager.isPrimaryNdi(output.id))) this.activeLayers.add("presentation");
+  }
 
+  /**
+   * Puts the dock background up on one surface, text-free, and cuts PP to it
+   * when that surface is the primary NDI feed. `swap` first tries swapping the
+   * background under whatever is already painted.
+   */
+  private async showLiveBackgroundOn(
+    { output, surface }: SurfaceTarget,
+    what: string,
+    swap: boolean,
+  ): Promise<boolean> {
+    const theme = withLiveBackground(outputThemeFor(output, "scripture"), true);
+    const swapped = swap && (await surface.setBackground(theme.background));
+    if (!swapped && !(await surface.showSlide(output.id, "", "", theme))) return false;
+    await this.cutToVideoInput(output, what);
+    return true;
+  }
+
+  /** Soft-cuts ProPresenter to the NDI video input. Never throws, never fails a push. */
+  private async cutToVideoInput(output: OverlayOutput, what: string): Promise<void> {
+    // Extra NDI feeds (livestream, recording) have no ProPresenter input to
+    // cut to — only the primary sender is bound there.
+    if (!surfaceManager.isPrimaryNdi(output.id)) return;
+    // Let at least one 'paint' reach the NDI frame buffer first, or PP may cut
+    // to a stale (blank) frame for one repeat-loop tick.
     await new Promise((resolve) => setTimeout(resolve, NDI_PAINT_SETTLE_MS));
-
     try {
-      const uuid = await this.ensureVideoInputBinding(ndi);
-      if (uuid) {
+      const uuid = await this.ensureVideoInputBinding(output);
+      if (uuid && ppConnected()) {
         await proPresenterService.rawClient.triggerVideoInput(uuid);
-      } else {
-        log.warn("[Orchestrator] Background on NDI without a bound ProPresenter video input", {
-          name: live.name,
+      } else if (!uuid) {
+        log.warn(`[Orchestrator] ${what} on NDI without a bound ProPresenter video input`, {
+          output: output.name,
         });
       }
     } catch (err) {
-      log.warn("[Orchestrator] Could not trigger ProPresenter onto the background", {
-        name: live.name,
+      log.warn(`[Orchestrator] Could not trigger ProPresenter onto ${what.toLowerCase()}`, {
+        output: output.name,
         error: (err as Error).message,
       });
     }
-    return true;
   }
 
   /**
@@ -1394,7 +1421,7 @@ class Orchestrator {
   // ─── Health ────────────────────────────────────────────────────────────────
 
   private initHealth(): void {
-    const services: ServiceName[] = ["audio", "stt", "detector", "propresenter"];
+    const services: ServiceName[] = ["audio", "stt", "detector", "propresenter", "output"];
     for (const service of services) {
       this.health.set(service, {
         service,
@@ -1422,6 +1449,22 @@ class Orchestrator {
     }
   }
 
+  /**
+   * Splits one push's results into the two health lines (D8): `output` says
+   * whether the slide reached the screens; `propresenter` only reflects the
+   * PP link and the outputs that go through it. A Kairo-screens-only setup is
+   * never marked red because ProPresenter is not running.
+   */
+  private recordDispatchHealth(results: readonly OverlayDispatchResult[], ppOffline: boolean): void {
+    const usesPropresenter = ppEnabled() && setupUsesPropresenter(
+      normalizeOverlaySettings(store.get("overlay")),
+      normalizeResourceBindings(store.get("propresenterResources")).ndiVideoInputId,
+    );
+    const health = dispatchHealth(results, { ppOffline, usesPropresenter });
+    this.updateHealth("output", health.output.status, health.output.lastError);
+    this.updateHealth("propresenter", health.propresenter.status, health.propresenter.lastError);
+  }
+
   private updateHealth(
     service: ServiceName,
     status: ServiceHealth["status"],
@@ -1438,32 +1481,47 @@ class Orchestrator {
   /**
    * Removes verse / lyric / message text and leaves the dock background running.
    * Used by Clear text, Backspace, and the verse auto-clear timer.
+   *
+   * ProPresenter calls only run while it is connected — offline they can only
+   * time out — so an offline Clear succeeds once Kairo's own surfaces are clear.
    */
   async clearText(): Promise<boolean> {
     this.cancelOverlayAutoClear();
     const client = proPresenterService.rawClient;
+    const connected = ppConnected();
 
     const layers = this.activeLayers.size > 0
       ? [...this.activeLayers]
       : [...OVERLAY_LAYERS];
 
-    const results: boolean[] = [];
-    for (const layer of layers) {
-      if (layer === "presentation") {
-        const stripped = await overlayWindow.clearText();
-        if (!stripped) {
-          const keptBackground = await this.presentLiveBackground();
-          if (!keptBackground && !mediaService.getLiveItem()) {
-            await overlayWindow.clear();
-          }
+    programService.clearCurrent();
+    let targets: SurfaceTarget[] | null = null;
+    await Promise.all(
+      surfaceManager.allSurfaces().map(async (surface) => {
+        if (await surface.clearText()) return;
+        // Nothing was painted here: put the dock background up instead, or
+        // blank it when there is no background either. Only this surface —
+        // repainting the others would restart their background video.
+        targets ??= this.liveSurfaceTargets("backgrounds");
+        const target = targets.find((t) => t.surface === surface);
+        if (!target || !mediaService.getLiveItem()) {
+          await surface.clear();
+          return;
         }
-        results.push(true);
-      } else if (layer === "messages") {
-        const clearedMessage = await client.clearScriptureMessage();
-        const clearedLayer = await client.clearMessages();
-        results.push(clearedMessage && clearedLayer);
-      } else {
-        results.push(await client.clearStageMessage());
+        await this.showLiveBackgroundOn(target, "Background", false);
+      }),
+    );
+
+    const results: boolean[] = [];
+    if (connected) {
+      for (const layer of layers) {
+        if (layer === "messages") {
+          const clearedMessage = await client.clearScriptureMessage();
+          const clearedLayer = await client.clearMessages();
+          results.push(clearedMessage && clearedLayer);
+        } else if (layer === "stage") {
+          results.push(await client.clearStageMessage());
+        }
       }
     }
 
@@ -1471,30 +1529,37 @@ class Orchestrator {
   }
 
   /**
-   * Clear is layer-aware: it takes down every PP layer this app most recently
+   * Clear is layer-aware: it takes down every layer this app most recently
    * pushed to, which under fan-out can be several at once.
-   *   presentation → overlay window blanked + NDI frame reset, AND
+   *   screen       → every Kairo screen blanked
+   *   presentation → NDI surface blanked + NDI frame reset, AND
    *                  GET /v1/clear/layer/slide (library slide). Video input stays.
    *   messages     → clearScriptureMessage + clearMessages
    *   stage        → DELETE /v1/stage/message
-   * Also drops the media-dock live item so the operator preview matches the
-   * blank program. Header CLEAR and IPC CLEAR_OVERLAY use this.
+   * PP calls are skipped while it is disconnected. Also drops the media-dock
+   * live item so the operator preview matches the blank program. Header CLEAR
+   * and IPC OUTPUT.CLEAR_ALL use this.
    */
   async clearOverlay(): Promise<boolean> {
     this.cancelOverlayAutoClear();
     const client = proPresenterService.rawClient;
+    const connected = ppConnected();
 
     const layers = this.activeLayers.size > 0
       ? [...this.activeLayers]
       : [...OVERLAY_LAYERS];
 
+    // Kairo's own screens and feeds: local and cheap, so always.
+    await Promise.all(surfaceManager.allSurfaces().map((surface) => surface.clear()));
+
     const results: boolean[] = [];
     for (const layer of layers) {
-      if (layer === "presentation") {
-        await overlayWindow.clear();
-        // The NDI frame is ours to blank, but the PP video-input selection is
-        // operator-owned state. Keep it selected so the next frame is visible
-        // without requiring the operator to click the input again.
+      if (!connected) {
+        continue;
+      } else if (layer === "presentation") {
+        // The NDI frame is ours to blank (above), but the PP video-input
+        // selection is operator-owned state. Keep it selected so the next
+        // frame is visible without the operator clicking the input again.
         results.push(await client.clearAll({ clearVideoInput: false }));
       } else if (layer === "messages") {
         const clearedMessage = await client.clearScriptureMessage();
@@ -1506,6 +1571,8 @@ class Orchestrator {
     }
 
     mediaService.setLiveItem(null);
+    // Clear All takes the message, props, logo and camera down too.
+    programService.clearProgram();
     this.activeLayers.clear();
     return results.every(Boolean);
   }

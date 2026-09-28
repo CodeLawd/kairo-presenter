@@ -1,6 +1,8 @@
 import { useImportRequest } from '@/hooks/useImportRequest'
 import { useAppStore } from '@/stores/useAppStore'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { useHeaderToolbarSlot } from '@/components/layout/header-toolbar'
 import {
   ChevronDown,
   ChevronLeft,
@@ -31,6 +33,10 @@ import { cn } from '@/lib/utils'
 import { LibrarySection } from '@/components/shared/LibrarySection'
 import { startLibraryItemDrag, useLibrary } from '@/stores/useLibraries'
 import { DEFAULT_LIBRARY_ID, itemsInLibrary, libraryCounts } from '@shared/libraries'
+import { useSidebarWidth } from '@/components/layout/useSidebarWidth'
+import { BoothWorkspace } from '@/components/layout/BoothWorkspace'
+import { LiveOutputRail } from '@/components/operator/LiveOutputRail'
+import { useLiveRailWidth } from '@/components/operator/useLiveRailWidth'
 
 interface ContextMenuState {
   id: string
@@ -42,6 +48,9 @@ interface ContextMenuState {
 class ImportCanceled extends Error {}
 
 export default function Documents({ active = true }: { active?: boolean }): React.ReactElement {
+  const toolbarSlot = useHeaderToolbarSlot()
+  const sidebar = useSidebarWidth('kairo.documents-sidebar-width', 240)
+  const liveRail = useLiveRailWidth()
   const [documents, setDocuments] = useState<ProjectionDocument[]>([])
   const [selected, setSelected] = useState<string | null>(null)
   const [page, setPage] = useState(0)
@@ -414,102 +423,117 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
   }
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col bg-surface">
-      <header className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-surface-border px-4">
-        <div className="flex min-w-0 items-baseline gap-3">
-          {current ? (
-            <p className="truncate text-sm text-zinc-200">
-              {current.name}
-              <span className="text-zinc-500"> · {page + 1}/{current.pages.length}</span>
-            </p>
-          ) : (
-            <p className="truncate text-sm text-zinc-600">No document selected</p>
-          )}
-          {busy && status && (
-            <div className="flex min-w-0 items-baseline gap-2">
-              <p className="truncate text-xs text-teal-400/90" aria-live="polite">
-                {canceling ? 'Canceling…' : status}
+    <BoothWorkspace
+      rail={
+        <LiveOutputRail
+          width={liveRail.width}
+          onResizeStart={liveRail.onResizeStart}
+          onResizeKeyDown={liveRail.onResizeKeyDown}
+        />
+      }
+    >
+    <section className="flex h-full min-h-0 w-full flex-col bg-surface">
+      {/* Lives in the app header's toolbar row, only while this tab is showing
+          (the page stays mounted when hidden). */}
+      {active && toolbarSlot && createPortal(
+        <div className="flex h-7 min-w-0 items-center justify-between gap-3">
+          <div className="flex min-w-0 items-baseline gap-3">
+            {current ? (
+              <p className="truncate text-xs text-zinc-200">
+                {current.name}
+                <span className="text-zinc-500"> · {page + 1}/{current.pages.length}</span>
               </p>
-              {importing && (
+            ) : (
+              <p className="truncate text-xs text-zinc-600">No document selected</p>
+            )}
+            {busy && status && (
+              <div className="flex min-w-0 items-baseline gap-2">
+                <p className="truncate text-xs text-teal-400/90" aria-live="polite">
+                  {canceling ? 'Canceling…' : status}
+                </p>
+                {importing && (
+                  <button
+                    type="button"
+                    disabled={canceling}
+                    className="shrink-0 text-xs text-zinc-500 underline-offset-2 hover:text-zinc-200 hover:underline disabled:opacity-40"
+                    onClick={() => { cancelImport.current = true; setCanceling(true) }}
+                  >
+                    Cancel
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div ref={importMenuRef} className="relative shrink-0">
+            <div className="flex">
+              <button
+                type="button"
+                className="btn-primary flex h-7 items-center gap-1.5 rounded-r-none px-3 text-xs"
+                disabled={busy}
+                onClick={() => void importDocument()}
+              >
+                <Upload size={13} aria-hidden="true" />
+                Import
+              </button>
+              <button
+                type="button"
+                className="btn-primary h-7 rounded-l-none border-l border-teal-700 px-2"
+                disabled={busy}
+                aria-expanded={importMenuOpen}
+                aria-haspopup="menu"
+                aria-label="Import options"
+                onClick={() => setImportMenuOpen((open) => !open)}
+              >
+                <ChevronDown size={13} aria-hidden="true" />
+              </button>
+            </div>
+            {importMenuOpen && (
+              <div
+                role="menu"
+                className="absolute right-0 z-40 mt-1 min-w-[11rem] rounded-lg border border-surface-border bg-surface-elevated p-1"
+              >
                 <button
                   type="button"
-                  disabled={canceling}
-                  className="shrink-0 text-xs text-zinc-500 underline-offset-2 hover:text-zinc-200 hover:underline disabled:opacity-40"
-                  onClick={() => { cancelImport.current = true; setCanceling(true) }}
+                  role="menuitem"
+                  className="block w-full rounded-md px-2.5 py-1.5 text-left text-xs text-zinc-200 hover:bg-surface-tertiary"
+                  disabled={busy}
+                  onClick={() => void importDocument('pdf')}
                 >
-                  Cancel
+                  PDF…
                 </button>
-              )}
-            </div>
-          )}
-        </div>
-
-        <div ref={importMenuRef} className="relative shrink-0">
-          <div className="flex">
-            <button
-              type="button"
-              className="btn-primary flex h-8 items-center gap-1.5 rounded-r-none px-3 text-xs"
-              disabled={busy}
-              onClick={() => void importDocument()}
-            >
-              <Upload size={13} aria-hidden="true" />
-              Import
-            </button>
-            <button
-              type="button"
-              className="btn-primary h-8 rounded-l-none border-l border-teal-700/50 px-2"
-              disabled={busy}
-              aria-expanded={importMenuOpen}
-              aria-haspopup="menu"
-              aria-label="Import options"
-              onClick={() => setImportMenuOpen((open) => !open)}
-            >
-              <ChevronDown size={13} aria-hidden="true" />
-            </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="block w-full rounded-md px-2.5 py-1.5 text-left text-xs text-zinc-200 hover:bg-surface-tertiary"
+                  disabled={busy}
+                  onClick={() => void importDocument('powerpoint')}
+                >
+                  PowerPoint…
+                </button>
+              </div>
+            )}
           </div>
-          {importMenuOpen && (
-            <div
-              role="menu"
-              className="absolute right-0 z-20 mt-1 min-w-[11rem] overflow-hidden rounded border border-surface-border bg-surface-elevated"
-            >
-              <button
-                type="button"
-                role="menuitem"
-                className="block w-full px-3 py-2 text-left text-xs text-zinc-200 hover:bg-surface-secondary"
-                disabled={busy}
-                onClick={() => void importDocument('pdf')}
-              >
-                PDF…
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                className="block w-full px-3 py-2 text-left text-xs text-zinc-200 hover:bg-surface-secondary"
-                disabled={busy}
-                onClick={() => void importDocument('powerpoint')}
-              >
-                PowerPoint…
-              </button>
-            </div>
-          )}
-        </div>
-      </header>
+        </div>,
+        toolbarSlot,
+      )}
 
       {error && (
         <p
           role="alert"
-          className="shrink-0 border-b border-red-500/20 bg-red-500/10 px-4 py-2 text-xs text-red-300"
+          className="shrink-0 border-b border-red-500/20 bg-tint-red px-4 py-2 text-xs text-red-300"
         >
           {error}
         </p>
       )}
 
-      <div className="flex min-h-0 flex-1">
+      <div ref={sidebar.containerRef} className="flex min-h-0 flex-1">
         <aside
-          className="flex w-52 shrink-0 flex-col border-r border-surface-border"
+          className="flex min-h-0 shrink-0 flex-col bg-surface-secondary"
+          style={{ width: sidebar.width }}
           aria-label="Imported documents"
         >
-          <div className="shrink-0 border-b border-surface-border p-1.5">
+          <div className="shrink-0 p-1.5">
             <LibrarySection
               kind="documents"
               activeLibraryId={activeLibraryId}
@@ -595,6 +619,13 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
             )}
           </div>
         </aside>
+        <button
+          type="button"
+          {...sidebar.separatorProps}
+          aria-label="Resize document library"
+          title="Drag to resize document library · double-click to reset"
+          className="z-10 w-1.5 shrink-0 cursor-col-resize bg-surface-secondary hover:bg-surface-elevated focus-visible:bg-surface-elevated focus-visible:outline-none"
+        />
 
         <div className="flex min-w-0 flex-1 flex-col">
           {!current ? (
@@ -658,8 +689,8 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
                       className={cn(
                         'inline-flex h-9 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors disabled:opacity-40',
                         playing
-                          ? 'bg-teal-500/15 text-teal-300'
-                          : 'text-zinc-500 hover:bg-white/5 hover:text-zinc-100',
+                          ? 'bg-tint-teal text-teal-300'
+                          : 'text-zinc-500 hover:bg-surface-tertiary hover:text-zinc-100',
                       )}
                       disabled={current.pages.length < 2}
                       aria-pressed={playing}
@@ -675,7 +706,7 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
                     </button>
                     <button
                       type="button"
-                      className="inline-flex h-9 items-center rounded-md px-2 text-zinc-500 transition-colors hover:bg-white/5 hover:text-zinc-100"
+                      className="inline-flex h-9 items-center rounded-md px-2 text-zinc-500 transition-colors hover:bg-surface-tertiary hover:text-zinc-100"
                       aria-expanded={slideshowMenuOpen}
                       aria-haspopup="dialog"
                       aria-label="Slideshow settings"
@@ -710,7 +741,7 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
                                 'rounded px-2 py-1 text-[11px] transition-colors',
                                 slideshow.slideshowSec === preset
                                   ? 'chip-selected'
-                                  : 'text-zinc-500 hover:bg-white/5 hover:text-zinc-200',
+                                  : 'text-zinc-500 hover:bg-surface-tertiary hover:text-zinc-200',
                               )}
                               onClick={() => saveSlideshow({ slideshowSec: preset })}
                             >
@@ -747,7 +778,7 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
                   </span>
                   <button
                     type="button"
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-md p-0 text-zinc-600 transition-colors hover:bg-white/5 hover:text-rose-300 disabled:opacity-40"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-md p-0 text-zinc-600 transition-colors hover:bg-surface-tertiary hover:text-rose-300 disabled:opacity-40"
                     disabled={busy}
                     onClick={() => void remove(current.id)}
                     title="Remove imported copy"
@@ -760,7 +791,7 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
 
               {current.pages.length > 1 && (
                 <div
-                  className="flex shrink-0 gap-2.5 overflow-x-auto border-t border-surface-border bg-black/20 px-3 py-3"
+                  className="flex shrink-0 gap-2.5 overflow-x-auto border-t border-surface-border bg-surface px-3 py-3"
                   aria-label="Pages"
                 >
                   {current.pages.map((path, index) => (
@@ -776,7 +807,7 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
                       className={cn(
                         // Height, not width: pages come portrait and landscape,
                         // and a fixed box letterboxes one of them into a stamp.
-                        'group/page relative h-44 shrink-0 overflow-hidden rounded-md border bg-black transition-opacity',
+                        'group/page relative h-28 shrink-0 overflow-hidden rounded-md border bg-black transition-opacity',
                         page === index
                           ? 'border-teal-400/80 ring-1 ring-teal-400/40'
                           : 'border-white/[0.06] opacity-60 hover:opacity-100',
@@ -791,7 +822,7 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
                       <span
                         className={cn(
                           'absolute bottom-1 right-1.5 rounded px-1 text-[10px] font-medium tabular-nums',
-                          page === index ? 'bg-teal-400/90 text-black' : 'bg-black/55 text-white/70',
+                          page === index ? 'bg-teal-400 text-black' : 'bg-black text-white/70',
                         )}
                       >
                         {index + 1}
@@ -826,7 +857,7 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
           <button
             type="button"
             role="menuitem"
-            className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-rose-300 hover:bg-rose-500/10"
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-rose-300 hover:bg-tint-rose"
             disabled={busy}
             onClick={() => void remove(contextMenu.id)}
           >
@@ -836,5 +867,6 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
         </div>
       )}
     </section>
+    </BoothWorkspace>
   )
 }

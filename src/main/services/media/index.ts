@@ -46,7 +46,9 @@ const MAX_DEPTH = 1
  * because ProPresenter tracks the same files BY PATH: reorganising the folder
  * to make playlists physical would break every PP reference into it.
  */
-const MANIFEST_DIR = '.proautomate'
+const MANIFEST_DIR = '.kairo'
+/** Where playlists lived before the rename; read once, never written again. */
+const LEGACY_MANIFEST_DIR = '.proautomate'
 const MANIFEST_FILE = 'playlists.json'
 const MANIFEST_VERSION = 1
 
@@ -265,7 +267,11 @@ class MediaService {
 
   private async loadPlaylists(root: string): Promise<void> {
     try {
-      const raw = await fs.readFile(this.manifestPath(root), 'utf8')
+      // A folder set up before the rename still has its playlists under the old
+      // name; the next save writes them to the new one.
+      const raw = await fs
+        .readFile(this.manifestPath(root), 'utf8')
+        .catch(() => fs.readFile(join(root, LEGACY_MANIFEST_DIR, MANIFEST_FILE), 'utf8'))
       const parsed = JSON.parse(raw) as {
         playlists?: unknown
         playback?: unknown

@@ -46,7 +46,7 @@ function FieldShell({
   return (
     <div
       className={cn(
-        'flex h-8 items-center gap-2 rounded-md bg-zinc-800/60 px-2.5 text-sm text-zinc-100',
+        'flex h-8 items-center gap-2 rounded-md bg-zinc-800 px-2.5 text-sm text-zinc-100',
         className
       )}
     >
@@ -274,7 +274,7 @@ export function ThemeLayoutPanel({
       <CollapsibleSection title="Placement" open={placementOpen} onOpenChange={setPlacementOpen}>
         <div>
           <FieldLabel>Position preset</FieldLabel>
-          <div className="grid grid-cols-2 gap-1 rounded-md bg-zinc-800/40 p-0.5">
+          <div className="grid grid-cols-2 gap-1 rounded-md bg-zinc-800 p-0.5">
             {(
               [
                 { value: 'lower-third', label: 'Lower third' },
@@ -291,7 +291,7 @@ export function ThemeLayoutPanel({
                   onClick={() => onApplyPreset(opt.value)}
                   className={cn(
                     'rounded-sm px-2 py-1.5 text-[11px] font-semibold transition-colors',
-                    active ? 'bg-zinc-700/90 text-zinc-50' : 'text-zinc-500 hover:text-zinc-300'
+                    active ? 'bg-zinc-700 text-zinc-50' : 'text-zinc-500 hover:text-zinc-300'
                   )}
                 >
                   {opt.label}
@@ -326,10 +326,10 @@ export function ThemeLayoutPanel({
         </div>
       </CollapsibleSection>
 
-      <div className="h-px bg-zinc-800/70" />
+      <div className="h-px bg-zinc-800" />
 
       <CollapsibleSection title="Selected box" open={boxOpen} onOpenChange={setBoxOpen}>
-        <div className="flex gap-1 rounded-md bg-zinc-800/40 p-0.5">
+        <div className="flex gap-1 rounded-md bg-zinc-800 p-0.5">
           {([
             { id: 'verse' as const, label: overlayLayerLabel(contentKind, 'verse') },
             { id: 'reference' as const, label: overlayLayerLabel(contentKind, 'reference') },
@@ -342,7 +342,7 @@ export function ThemeLayoutPanel({
               className={cn(
                 'flex-1 rounded-sm px-2 py-1.5 text-[11px] font-semibold transition-colors disabled:opacity-40',
                 selectedLayer === item.id
-                  ? 'bg-zinc-700/90 text-zinc-50'
+                  ? 'bg-zinc-700 text-zinc-50'
                   : 'text-zinc-500 hover:text-zinc-300'
               )}
             >
@@ -391,7 +391,7 @@ export function ThemeLayoutPanel({
         </div>
       </CollapsibleSection>
 
-      <div className="h-px bg-zinc-800/70" />
+      <div className="h-px bg-zinc-800" />
 
       <CollapsibleSection
         title="Backdrop"
@@ -419,14 +419,6 @@ export function ThemeLayoutPanel({
             onOpacityChange={(opacity) =>
               onUpdateLayout({ backdropColor: colorWithOpacity(backdrop.hex, opacity) })
             }
-          />
-          <CompactSlider
-            label="Corner radius"
-            value={theme.layout.backdropRadiusPx}
-            onChange={(backdropRadiusPx) => onUpdateLayout({ backdropRadiusPx })}
-            min={0}
-            max={64}
-            format={(v) => `${v}px`}
           />
         </div>
       </CollapsibleSection>

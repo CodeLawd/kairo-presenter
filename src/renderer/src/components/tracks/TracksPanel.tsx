@@ -81,7 +81,7 @@ export function TracksPanel(): React.ReactElement {
                   <div
                     className={cn(
                       'border-b border-white/5 px-3 py-1.5',
-                      active && 'bg-white/10',
+                      active && 'bg-surface-elevated',
                     )}
                   >
                     <div className="flex items-center gap-2">
@@ -100,7 +100,7 @@ export function TracksPanel(): React.ReactElement {
                         className={cn(
                           'grid size-6 shrink-0 place-items-center rounded-md transition-colors',
                           active
-                            ? 'bg-teal-500/20 text-teal-200 hover:bg-teal-500/30'
+                            ? 'bg-tint-teal text-teal-200 hover:bg-tint-teal'
                             : 'text-slate-500 hover:bg-surface hover:text-slate-200',
                         )}
                       >

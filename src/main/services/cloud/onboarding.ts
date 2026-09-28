@@ -1,4 +1,5 @@
 import Store from 'electron-store'
+import { renamedStore } from '../../db/legacy-store'
 import log from 'electron-log/main'
 import type { OnboardingState, OnboardingStepId } from '@shared/ipc'
 import {
@@ -22,7 +23,7 @@ import { migrations, store } from '../../db'
  * contract.
  */
 const onboardingStore = new Store<{ onboarding: OnboardingState }>({
-  name: 'proautomate-onboarding',
+  name: renamedStore('proautomate-onboarding', 'kairo-onboarding'),
   defaults: { onboarding: DEFAULT_ONBOARDING_STATE },
 })
 

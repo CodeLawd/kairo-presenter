@@ -79,7 +79,7 @@ function FieldShell({
   return (
     <div
       className={cn(
-        'flex h-8 items-center gap-2 rounded-md bg-zinc-800/60 px-2.5 text-sm text-zinc-100',
+        'flex h-8 items-center gap-2 rounded-md bg-zinc-800 px-2.5 text-sm text-zinc-100',
         className
       )}
     >
@@ -248,7 +248,7 @@ function IconToggleGroup<T extends string>({
     <div
       role="group"
       aria-label={ariaLabel}
-      className="flex h-8 gap-0.5 rounded-md bg-zinc-800/40 p-0.5"
+      className="flex h-8 gap-0.5 rounded-md bg-zinc-800 p-0.5"
     >
       {options.map((opt) => {
         const active = opt.value === value
@@ -262,7 +262,7 @@ function IconToggleGroup<T extends string>({
             onClick={() => onChange(opt.value)}
             className={cn(
               'flex flex-1 items-center justify-center rounded-sm text-zinc-500 transition-colors',
-              active ? 'bg-zinc-700/90 text-zinc-100' : 'hover:text-zinc-300'
+              active ? 'bg-zinc-700 text-zinc-100' : 'hover:text-zinc-300'
             )}
           >
             {opt.node}
@@ -616,7 +616,7 @@ export function ThemeTypePanel({
 
   return (
     <div className="space-y-5">
-      <div className="flex gap-1 rounded-md bg-zinc-800/40 p-0.5">
+      <div className="flex gap-1 rounded-md bg-zinc-800 p-0.5">
         {([
           { id: 'verse' as const, label: overlayLayerLabel(contentKind, 'verse') },
           { id: 'reference' as const, label: referenceLabel },
@@ -628,7 +628,7 @@ export function ThemeTypePanel({
             className={cn(
               'flex-1 rounded-sm px-2 py-1.5 text-[11px] font-semibold transition-colors',
               selectedLayer === item.id
-                ? 'bg-zinc-700/90 text-zinc-50'
+                ? 'bg-zinc-700 text-zinc-50'
                 : 'text-zinc-500 hover:text-zinc-300'
             )}
           >
@@ -656,6 +656,7 @@ export function ThemeTypePanel({
             type="button"
             role="switch"
             aria-checked={theme.reference.show}
+            aria-label={`Show ${referenceLabel.toLowerCase()}`}
             onClick={() => onUpdateReferenceMeta({ show: !theme.reference.show })}
             className={cn(
               'relative h-5 w-9 shrink-0 rounded-full transition-colors',
@@ -720,7 +721,7 @@ export function ThemeTypePanel({
         )}
       </CollapsibleSection>
 
-      <div className="h-px bg-zinc-800/70" />
+      <div className="h-px bg-zinc-800" />
 
       <CollapsibleSection title="Effects" open={effectsOpen} onOpenChange={setEffectsOpen}>
         <EffectsFields

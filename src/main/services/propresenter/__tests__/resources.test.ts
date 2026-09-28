@@ -42,7 +42,7 @@ test('resource collection accepts raw, items, and collections response envelopes
   }
 })
 
-test('clearing ProAutomate output keeps the bound video input selected in PP', async () => {
+test('clearing Kairo output keeps the bound video input selected in PP', async () => {
   const { client, seen } = makeClientReplying({ data: null })
 
   await client.clearAll({ clearVideoInput: false })

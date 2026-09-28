@@ -25,6 +25,16 @@ import type {
 } from './ipc'
 import { boxesForLayoutPreset, clampOverlayBox } from './overlay-boxes'
 import { MAX_NDI_OUTPUTS, OVERLAY_OUTPUT_KINDS, themeForContentKind } from './overlay-outputs'
+import { normalizeShowFilter, SHOW_EVERYTHING } from './program'
+import {
+  asObject,
+  clampNum,
+  nonNegNumber,
+  safeBool,
+  safeColor,
+  safeEnum,
+  safeString,
+} from './normalize'
 
 // ─── Theme defaults (schema locked — see docs/plans/2026-07-08-ndi-overlay.md) ─
 
@@ -96,7 +106,7 @@ export const DEFAULT_OVERLAY_THEME: OverlayTheme = {
     paddingPx: 48,
     backdropBox: true,
     backdropColor: 'rgba(3, 10, 20, 0.75)',
-    backdropRadiusPx: 16,
+    backdropRadiusPx: 0,
     autoFitText: false,
   },
 }
@@ -128,20 +138,56 @@ export function makeOverlayOutput(
     ppVideoInputUuid: '',
     template: DEFAULT_TEMPLATE,
     lyrics: null,
+    displayId: null,
+    displayLabel: '',
+    displaySize: null,
+    aspect: 'letterbox',
+    show: { ...SHOW_EVERYTHING },
+    source: 'program',
+    playlistId: '',
+    slideSec: 8,
     ...patch,
   }
+}
+
+/**
+ * The Kairo screen output every store carries — disabled, so an upgrading
+ * ProPresenter user sees the option without anything on their screens changing.
+ */
+export const PROJECTOR_OUTPUT_ID = 'projector'
+
+function makeProjectorOutput(order: number): OverlayOutput {
+  return makeOverlayOutput(PROJECTOR_OUTPUT_ID, 'screen', { name: 'Projector', order })
 }
 
 /**
  * Fresh-install outputs — literally the `auto` migration, so a new user and an
  * upgrading `auto` user cannot drift apart.
  */
-const DEFAULT_OVERLAY_OUTPUTS: OverlayOutput[] = migrateLegacyOutputs({
+const LEGACY_AUTO_OUTPUTS: OverlayOutput[] = migrateLegacyOutputs({
   mode: 'auto',
   ppVideoInputUuid: '',
   theme: DEFAULT_OVERLAY_THEME,
   template: DEFAULT_TEMPLATE,
 })
+
+/**
+ * What "Through ProPresenter" switches on when nothing PP-side is on yet: the
+ * shipped `auto` setup (NDI slide, library match, lower-third fallback).
+ */
+const PROPRESENTER_PRESET_IDS = new Set(
+  LEGACY_AUTO_OUTPUTS.filter((o) => o.enabled && o.kind !== 'screen').map((o) => o.id),
+)
+
+/**
+ * Fresh installs draw on their own screen: the Projector output is on and
+ * every ProPresenter-facing output (and the NDI feed) is present but off.
+ * ProPresenter is an optional integration, turned on by the operator.
+ */
+const DEFAULT_OVERLAY_OUTPUTS: OverlayOutput[] = LEGACY_AUTO_OUTPUTS
+  .map((o) => ({ ...o, enabled: o.kind === 'screen' }))
+  // The screen the operator will set up first leads the list.
+  .sort((a, b) => Number(b.kind === 'screen') - Number(a.kind === 'screen'))
 
 export const DEFAULT_OVERLAY_SETTINGS: AppSettings['overlay'] = {
   // — phase 1 —
@@ -160,50 +206,10 @@ export const DEFAULT_OVERLAY_SETTINGS: AppSettings['overlay'] = {
 
 // ─── Validation primitives (D5a) ───────────────────────────────────────────────
 
-const COLOR_RE = /^#[0-9a-fA-F]{3,8}$|^rgba?\([\d.,\s%]+\)$/
-
-function isPlainObject(v: unknown): v is Record<string, unknown> {
-  return typeof v === 'object' && v !== null && !Array.isArray(v)
-}
-
-function asObject(v: unknown): Record<string, unknown> {
-  return isPlainObject(v) ? v : {}
-}
-
-function safeString(v: unknown, fallback: string): string {
-  return typeof v === 'string' ? v : fallback
-}
-
-function safeBool(v: unknown, fallback: boolean): boolean {
-  return typeof v === 'boolean' ? v : fallback
-}
-
-function safeNumber(v: unknown, fallback: number): number {
-  return typeof v === 'number' && Number.isFinite(v) ? v : fallback
-}
-
-function clampNum(v: unknown, min: number, max: number, fallback: number): number {
-  const n = safeNumber(v, fallback)
-  return Math.min(max, Math.max(min, n))
-}
-
-function nonNegNumber(v: unknown, fallback: number): number {
-  const n = safeNumber(v, fallback)
-  return n < 0 ? fallback : n
-}
-
-function safeColor(v: unknown, fallback: string): string {
-  return typeof v === 'string' && COLOR_RE.test(v.trim()) ? v.trim() : fallback
-}
-
 /** Strips characters that could break out of a quoted CSS font-family string. */
 function safeFontFamily(v: unknown, fallback: string): string {
   const s = safeString(v, fallback).replace(/["\\;{}]/g, '').trim()
   return s || fallback
-}
-
-function safeEnum<T extends string>(v: unknown, allowed: readonly T[], fallback: T): T {
-  return typeof v === 'string' && (allowed as readonly string[]).includes(v) ? (v as T) : fallback
 }
 
 function normalizeBox(raw: unknown, fallback: OverlayBox): OverlayBox {
@@ -345,7 +351,9 @@ export function normalizeOverlayTheme(raw: unknown): OverlayTheme {
       paddingPx: clampNum(layout.paddingPx, 0, 200, d.layout.paddingPx),
       backdropBox: safeBool(layout.backdropBox, d.layout.backdropBox),
       backdropColor: safeColor(layout.backdropColor, d.layout.backdropColor),
-      backdropRadiusPx: clampNum(layout.backdropRadiusPx, 0, 64, d.layout.backdropRadiusPx),
+      // Retired: corners are always square. Kept in the shape so older stores
+      // and saved themes still parse; healed to 0 on every read.
+      backdropRadiusPx: 0,
       autoFitText: safeBool(layout.autoFitText, d.layout.autoFitText),
     },
   }
@@ -399,6 +407,7 @@ function migrateLegacyOutputs(legacy: LegacyOverlayFields): OverlayOutput[] {
       name: 'Pastor / stage screen',
       template: legacy.template,
     }),
+    makeProjectorOutput(0),
   ]
 }
 
@@ -435,6 +444,7 @@ export function normalizeOverlayOutputs(raw: unknown, legacy: LegacyOverlayField
 
   const seenIds = new Set<string>()
   let ndiEnabled = 0
+  const screenDisplays = new Set<number>()
   const normalized: OverlayOutput[] = []
 
   for (const item of raw) {
@@ -448,6 +458,13 @@ export function normalizeOverlayOutputs(raw: unknown, legacy: LegacyOverlayField
     if (kind === 'ndi' && enabled) {
       if (ndiEnabled >= MAX_NDI_OUTPUTS) enabled = false
       else ndiEnabled++
+    }
+    const displayId = kind === 'screen' ? normalizeDisplayId(r.displayId) : null
+    // Two windows on one display would sit on top of each other — only the
+    // first one configured is allowed to be live.
+    if (kind === 'screen' && enabled && displayId !== null) {
+      if (screenDisplays.has(displayId)) enabled = false
+      else screenDisplays.add(displayId)
     }
 
     normalized.push({
@@ -463,10 +480,36 @@ export function normalizeOverlayOutputs(raw: unknown, legacy: LegacyOverlayField
       ppVideoInputUuid: safeString(r.ppVideoInputUuid, '').trim(),
       template: safeString(r.template, legacy.template),
       lyrics: normalizeOutputVariant(r.lyrics, legacy.template),
+      displayId,
+      displayLabel: kind === 'screen' ? safeString(r.displayLabel, '').trim() : '',
+      displaySize: kind === 'screen' ? normalizeDisplaySize(r.displaySize) : null,
+      aspect: kind === 'screen' ? safeEnum(r.aspect, ['letterbox', 'fill'] as const, 'letterbox') : 'letterbox',
+      show: normalizeShowFilter(r.show),
+      source: kind === 'screen' ? safeEnum(r.source, ['program', 'playlist'] as const, 'program') : 'program',
+      playlistId: kind === 'screen' ? safeString(r.playlistId, '').trim() : '',
+      slideSec: Math.round(clampNum(r.slideSec, 3, 600, 8)),
     })
   }
 
-  return normalized.length > 0 ? normalized : migrateLegacyOutputs(legacy)
+  if (normalized.length === 0) return migrateLegacyOutputs(legacy)
+  // Stores written before Kairo drew screens itself get the (disabled)
+  // Projector output once. Keyed on the kind, not the id, so an operator who
+  // renamed or replaced it does not get a second one.
+  if (!normalized.some((o) => o.kind === 'screen')) normalized.push(makeProjectorOutput(0))
+  return normalized
+}
+
+function normalizeDisplayId(raw: unknown): number | null {
+  return typeof raw === 'number' && Number.isSafeInteger(raw) ? raw : null
+}
+
+function normalizeDisplaySize(raw: unknown): OverlayOutput['displaySize'] {
+  const r = asObject(raw)
+  const width = r.width
+  const height = r.height
+  if (typeof width !== 'number' || typeof height !== 'number') return null
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return null
+  return { width, height }
 }
 
 // ─── Overlay settings normalizer (D3) ──────────────────────────────────────────
@@ -494,4 +537,50 @@ export function normalizeOverlaySettings(raw: unknown): AppSettings['overlay'] {
     ppVideoInputUuid,
     theme,
   }
+}
+
+// ─── Onboarding route (standalone phase 1) ─────────────────────────────────────
+
+/** "How does Kairo reach your screens?" — the onboarding question that seeds outputs. */
+export type OutputRoute = 'screen' | 'propresenter' | 'both'
+
+/** The route an output list currently expresses, or null when nothing is on. */
+export function outputRouteOf(outputs: readonly OverlayOutput[]): OutputRoute | null {
+  const screen = outputs.some((o) => o.enabled && o.kind === 'screen')
+  const propresenter = outputs.some((o) => o.enabled && o.kind !== 'screen')
+  if (screen && propresenter) return 'both'
+  if (screen) return 'screen'
+  if (propresenter) return 'propresenter'
+  return null
+}
+
+/**
+ * Turns an onboarding answer into outputs. Not a stored mode — the answer only
+ * switches outputs on and off, and everything downstream (launch gate, which
+ * setup steps are asked) is derived from the result.
+ *
+ *   screen       → one Kairo screen on, every ProPresenter-side output off
+ *   propresenter → screens off; the ProPresenter outputs as they were, or the
+ *                  shipped ProPresenter preset (NDI, library, lower third) when none are on
+ *   both         → one screen on, plus the ProPresenter outputs as above
+ */
+export function applyOutputRoute(outputs: readonly OverlayOutput[], route: OutputRoute): OverlayOutput[] {
+  const wantScreen = route !== 'propresenter'
+  const wantPp = route !== 'screen'
+
+  let next = outputs.map((o) => ({ ...o }))
+  if (wantScreen && !next.some((o) => o.kind === 'screen')) {
+    next.push(makeProjectorOutput(0))
+  }
+
+  const firstScreenId = next.find((o) => o.enabled && o.kind === 'screen')?.id
+    ?? next.find((o) => o.kind === 'screen')?.id
+  const ppOn = next.some((o) => o.enabled && o.kind !== 'screen')
+
+  next = next.map((o) => {
+    if (o.kind === 'screen') return { ...o, enabled: wantScreen && o.id === firstScreenId }
+    if (!wantPp) return { ...o, enabled: false }
+    return ppOn ? o : { ...o, enabled: PROPRESENTER_PRESET_IDS.has(o.id) }
+  })
+  return next
 }

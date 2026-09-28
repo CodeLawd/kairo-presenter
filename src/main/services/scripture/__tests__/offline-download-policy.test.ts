@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  LEGACY_OFFLINE_BIBLE_IDS_ENV_VAR,
   OFFLINE_BIBLE_IDS_ENV_VAR,
   isOfflineDownloadPermitted,
   resolveOfflineDownloadBibleIds,
@@ -45,4 +46,14 @@ test('public-domain translations need no licence approval', () => {
 test('an unknown copyright is treated as copyrighted', () => {
   assert.equal(isOfflineDownloadPermitted('unknown-01', [], ''), false)
   assert.equal(isOfflineDownloadPermitted('unknown-01', [], 'All rights reserved'), false)
+})
+
+test('the pre-rename environment variable is still honoured', () => {
+  assert.deepEqual(
+    resolveOfflineDownloadBibleIds(['kjv-01'], {
+      [OFFLINE_BIBLE_IDS_ENV_VAR]: 'nlt-01',
+      [LEGACY_OFFLINE_BIBLE_IDS_ENV_VAR]: 'niv-01, nlt-01',
+    }),
+    ['kjv-01', 'nlt-01', 'niv-01'],
+  )
 })

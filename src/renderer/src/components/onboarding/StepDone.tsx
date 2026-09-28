@@ -50,7 +50,7 @@ export default function StepDone({
           <li key={line.step} className="flex items-center gap-3 py-2.5">
             <span
               className={`grid h-4 w-4 shrink-0 place-items-center rounded-full ${
-                line.done ? 'bg-teal-500/15 text-teal-400' : 'bg-surface-secondary text-slate-600'
+                line.done ? 'bg-tint-teal text-teal-400' : 'bg-surface-secondary text-slate-600'
               }`}
               aria-hidden="true"
             >

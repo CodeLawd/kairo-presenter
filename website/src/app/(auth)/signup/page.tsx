@@ -13,10 +13,10 @@ const BRAND = {
   kind: 'quote',
   quote: (
     <>
-      One account for the booth. <span className="font-semibold">Every machine, same church.</span>
+      Set up your church. <span className="font-semibold">Bring your team in when you&rsquo;re ready.</span>
     </>
   ),
-  attribution: 'Kairo for ProPresenter',
+  attribution: 'Kairo presentation software',
 } as const
 
 function SignUpPageContent(): React.ReactElement {
@@ -55,7 +55,7 @@ function SignUpPageContent(): React.ReactElement {
   return (
     <AuthSplit
       title="Create your account"
-      blurb="One account for your church, on every machine in the booth."
+      blurb="Start with your details. You can finish setting up your church afterward."
       brand={BRAND}
       footer={
         <p className="m-0">

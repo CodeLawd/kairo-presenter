@@ -14,7 +14,7 @@ let failed = false
 app.on('window-all-closed', () => {})
 protocol.registerSchemesAsPrivileged([{ scheme: 'pa-media', privileges: { stream: true } }])
 app.whenReady().then(async () => {
-  temporary = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'proautomate-documents-test-')))
+  temporary = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'kairo-documents-test-')))
   app.setPath('userData', temporary)
   protocol.handle('pa-media', request => {
     const requested = decodeURIComponent(request.url.slice('pa-media://media/'.length));
@@ -72,8 +72,8 @@ app.whenReady().then(async () => {
   assert.ok((await fs.stat(fixture)).size > 0)
   dialog.showOpenDialog = async () => ({ canceled: true, filePaths: [] })
   assert.equal(await service.prepare(), null)
-  if (process.env.PROAUTOMATE_TEST_PPTX) {
-    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [process.env.PROAUTOMATE_TEST_PPTX] })
+  if (process.env.KAIRO_TEST_PPTX) {
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [process.env.KAIRO_TEST_PPTX] })
     const powerpoint = await service.prepare()
     assert.equal(Buffer.from(powerpoint.data).subarray(0, 5).toString(), '%PDF-')
     await service.cancel(powerpoint.id)
@@ -123,7 +123,7 @@ app.whenReady().then(async () => {
   assert.equal(pushes[0].page, 1)
   assert.match(await win.webContents.executeJavaScript('document.body.textContent'), /Page 2 of 2/)
   assert.equal(await win.webContents.executeJavaScript('[...document.images].every(image => image.complete && image.naturalWidth > 0)'), true)
-  await fs.writeFile('/tmp/proautomate-documents-preview.png', (await win.webContents.capturePage()).toPNG())
+  await fs.writeFile('/tmp/kairo-documents-preview.png', (await win.webContents.capturePage()).toPNG())
   console.log('PASS: Documents UI import, previews, Next projection request, and compiled preload. NDI hardware is not exercised.')
   console.log('PASS: PDF rendering, page ordering, persistence, path validation, cancellation, removal, original preservation.')
 }).catch(error => {

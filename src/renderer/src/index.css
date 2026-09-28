@@ -4,14 +4,20 @@
 
 @layer base {
   :root {
-    /* Charcoal steps stay close so panes blend; hierarchy comes from
-       tone, not hard lines. Borders are intentionally low-contrast. */
-    --surface: 22 22 22;
-    --surface-secondary: 28 28 28;
-    --surface-tertiary: 34 34 34;
-    --surface-elevated: 42 42 42;
+    /* Pane tones carry the structure without visible divider lines. */
+    --surface: 20 20 20;
+    --surface-secondary: 31 31 31;
+    --surface-tertiary: 39 39 39;
+    --surface-elevated: 49 49 49;
+    --surface-rail: 43 43 43;
+    --surface-header: 38 38 38;
     --surface-border: 52 52 52;
     --control-accent: 245 158 11;
+    --tint-teal: 27 47 45;
+    --tint-red: 53 33 33;
+    --tint-amber: 54 44 26;
+    --tint-yellow: 53 46 26;
+    --tint-rose: 54 32 36;
     --range-track: 63 63 70;
     --text-primary: 244 244 245;
     --neutral-50: 250 250 250;
@@ -26,17 +32,24 @@
     --neutral-900: 24 24 27;
     --neutral-950: 9 9 11;
     --radius: 0.375rem;
-    --radius-md: 0.3125rem;
+    --radius-md: 0.5rem;
     --radius-sm: 0.25rem;
   }
 
   [data-theme='light'] {
     --surface: 250 250 250;
-    --surface-secondary: 244 244 245;
-    --surface-tertiary: 235 235 237;
+    --surface-secondary: 238 238 240;
+    --surface-tertiary: 226 226 229;
     --surface-elevated: 255 255 255;
     --surface-border: 212 212 216;
+    --surface-rail: 220 220 224;
+    --surface-header: 232 232 235;
     --control-accent: 245 158 11;
+    --tint-teal: 217 237 235;
+    --tint-red: 243 223 223;
+    --tint-amber: 244 234 216;
+    --tint-yellow: 243 238 216;
+    --tint-rose: 244 222 226;
     --range-track: 212 212 216;
     --text-primary: 24 24 27;
     --neutral-50: 9 9 11;
@@ -192,49 +205,32 @@
     background: rgb(var(--surface-secondary));
   }
 
-  /* Soft edge — use instead of border-* on structural panes. */
+  /* Pane edge — a crisp, solid 1px separator on structural panes. Drawn
+     inset so it never changes layout; the colour is the theme's border token. */
   .pane-edge-r {
-    box-shadow: inset -1px 0 0 rgb(255 255 255 / 0.04);
+    box-shadow: inset -1px 0 0 rgb(var(--surface-border));
   }
   .pane-edge-l {
-    box-shadow: inset 1px 0 0 rgb(255 255 255 / 0.04);
+    box-shadow: inset 1px 0 0 rgb(var(--surface-border));
   }
   .pane-edge-b {
-    box-shadow: inset 0 -1px 0 rgb(255 255 255 / 0.04);
+    box-shadow: inset 0 -1px 0 rgb(var(--surface-border));
   }
   .pane-edge-t {
-    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04);
-  }
-
-  [data-theme='light'] .pane-edge-r {
-    box-shadow: inset -1px 0 0 rgb(0 0 0 / 0.06);
-  }
-  [data-theme='light'] .pane-edge-l {
-    box-shadow: inset 1px 0 0 rgb(0 0 0 / 0.06);
-  }
-  [data-theme='light'] .pane-edge-b {
-    box-shadow: inset 0 -1px 0 rgb(0 0 0 / 0.06);
-  }
-  [data-theme='light'] .pane-edge-t {
-    box-shadow: inset 0 1px 0 rgb(0 0 0 / 0.06);
+    box-shadow: inset 0 1px 0 rgb(var(--surface-border));
   }
 
   /* Selection is neutral, as in a macOS sidebar or list. Amber is kept for
      live and playing state, where the colour carries meaning — tinting every
-     selected row with it muddies to brown on charcoal. */
+     selected row with it muddies to brown on charcoal. Solid surface steps,
+     so it reads the same over any panel. */
   .row-selected {
-    background-color: rgb(255 255 255 / 0.1);
+    background-color: rgb(var(--surface-elevated));
     color: rgb(var(--text-primary));
   }
   .chip-selected {
-    background-color: rgb(255 255 255 / 0.13);
+    background-color: rgb(var(--surface-border));
     color: rgb(var(--text-primary));
-  }
-  [data-theme='light'] .row-selected {
-    background-color: rgb(0 0 0 / 0.07);
-  }
-  [data-theme='light'] .chip-selected {
-    background-color: rgb(0 0 0 / 0.09);
   }
 
   .page-header {
@@ -328,6 +324,24 @@
     box-shadow: 0 0 0 1px rgb(var(--surface-elevated)), 0 0 0 3px rgb(var(--control-accent) / 0.3);
   }
 
+  .video-seek {
+    @apply block h-1 w-full cursor-pointer appearance-none rounded-full;
+  }
+
+  .video-seek::-webkit-slider-thumb {
+    width: 0.625rem;
+    height: 0.625rem;
+    appearance: none;
+    border: 2px solid rgb(var(--surface-secondary));
+    border-radius: 9999px;
+    background: rgb(45 212 191);
+  }
+
+  .video-seek:focus-visible {
+    outline: 2px solid rgb(45 212 191 / 0.6);
+    outline-offset: 4px;
+  }
+
   /* Utility for styling raw scripture texts */
   .scripture-text {
     @apply font-serif text-slate-200 leading-relaxed text-base antialiased;
@@ -339,8 +353,8 @@
     margin: 0 0.2rem 0 0.45rem;
     padding: 0.05rem 0.42rem;
     border: 1px solid rgb(180 83 9 / 0.2);
-    border-radius: 0.35rem;
-    background: rgb(254 243 199 / 0.88);
+    border-radius: 0;
+    background: rgb(254 243 199);
     color: rgb(120 53 15);
     font-family: "Source Sans 3 Variable", sans-serif;
     font-size: 0.68rem;
@@ -404,7 +418,7 @@
   .sermon-notes-editor .sermon-notes-tiptap blockquote {
     margin: 0.75em 0;
     padding-left: 0.85em;
-    border-left: 3px solid rgb(202 138 4 / 0.45);
+    border-left: 1px solid rgb(202 138 4 / 0.45);
     color: rgb(51 65 85);
   }
 
@@ -421,14 +435,16 @@
 .app-header {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-areas: 'navigation live' 'toolbar statuses';
+  grid-template-areas: 'context live' 'toolbar statuses';
   align-items: center;
   column-gap: 12px;
   row-gap: 6px;
   padding: 8px 12px 6px;
   min-height: 44px;
 }
-.header-navigation { grid-area: navigation; padding-left: 68px; }
+.workspace-rail { width: 56px; background: rgb(var(--surface-rail)); }
+.app-header { background: rgb(var(--surface-header)); }
+.header-context { grid-area: context; }
 .header-toolbar { grid-area: toolbar; }
 .header-statuses { grid-area: statuses; justify-self: end; }
 .header-live { grid-area: live; justify-self: end; }
@@ -436,7 +452,7 @@
 @media (min-width: 1600px) {
   .app-header {
     grid-template-columns: auto minmax(16px, 1fr) auto auto auto;
-    grid-template-areas: 'navigation . toolbar statuses live';
+    grid-template-areas: 'context . toolbar statuses live';
     column-gap: 8px;
     min-height: 44px;
     padding-top: 8px;
@@ -452,8 +468,6 @@
 }
 
 @media (max-width: 1099px) {
-  .header-navigation { gap: 0; }
-  .header-navigation > button { padding-left: 8px; padding-right: 8px; }
   .header-live-label { max-width: 120px; }
   .header-status { padding-left: 6px; padding-right: 6px; }
   .app-header { column-gap: 8px; --header-playlist-width: 192px; }
@@ -482,12 +496,102 @@
   animation: splash-step-in 0.28s ease-out both;
 }
 
+/* Launch mark: the full-colour icon under a liquid-glass lens. */
+
+.splash-glass-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+}
+
+/* Top specular + a faint light pooling at the bottom edge, like a thick lens. */
+.splash-glass-lens {
+  background:
+    linear-gradient(
+      180deg,
+      rgb(255 255 255 / 0.5) 0%,
+      rgb(255 255 255 / 0.18) 30%,
+      rgb(255 255 255 / 0) 52%
+    ),
+    radial-gradient(
+      120% 45% at 50% 108%,
+      rgb(255 255 255 / 0.28) 0%,
+      rgb(255 255 255 / 0) 70%
+    );
+}
+
+/* A soft caustic that drifts across the glass — the "liquid" part. */
+.splash-glass-caustic {
+  background:
+    radial-gradient(
+      38% 30% at 30% 35%,
+      rgb(255 255 255 / 0.55) 0%,
+      rgb(255 255 255 / 0) 100%
+    ),
+    radial-gradient(
+      30% 26% at 72% 70%,
+      rgb(255 255 255 / 0.35) 0%,
+      rgb(255 255 255 / 0) 100%
+    );
+  background-size: 200% 200%;
+  mix-blend-mode: soft-light;
+  animation: splash-glass-drift 3.2s ease-in-out infinite alternate;
+}
+@keyframes splash-glass-drift {
+  0% { background-position: 0% 0%; }
+  50% { background-position: 60% 40%; }
+  100% { background-position: 100% 100%; }
+}
+
+/* Lit glass edge: bright along the top, a touch of shade along the bottom.
+   The radius matches the icon artwork's rounded square. */
+.splash-glass-rim {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: 23%;
+  box-shadow:
+    inset 0 1.5px 0 rgb(255 255 255 / 0.6),
+    inset 0 0 0 1px rgb(255 255 255 / 0.2),
+    inset 0 -1.5px 0 rgb(0 0 0 / 0.18);
+}
+
+/* "Booting up" — a light band running through muted text. */
+.splash-boot {
+  color: transparent;
+  background: linear-gradient(
+    90deg,
+    rgb(113 113 122) 0%,
+    rgb(113 113 122) 40%,
+    rgb(255 255 255) 50%,
+    rgb(113 113 122) 60%,
+    rgb(113 113 122) 100%
+  );
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: splash-boot 1.4s linear infinite;
+}
+@keyframes splash-boot {
+  from { background-position: 100% 0; }
+  to { background-position: 0% 0; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .splash-mark,
   .splash-copy,
-  .splash-step {
+  .splash-step,
+  .splash-glass-caustic,
+  .splash-boot {
     animation: none;
   }
+  .splash-boot { color: rgb(161 161 170); background: none; }
 }
 
 .operator-toolbar [data-slot='select-trigger'] { flex-shrink: 0; }
@@ -526,11 +630,11 @@
 }
 
 .kairo-pp-settings .btn-secondary {
-  @apply rounded-[7px] border-0 bg-[#3a3a3a] text-[13px] font-medium text-white hover:bg-[#454545] hover:text-white;
+  @apply rounded-none border-0 bg-[#3a3a3a] text-[13px] font-medium text-white hover:bg-[#454545] hover:text-white;
 }
 
 .kairo-pp-settings .btn-primary {
-  @apply rounded-[7px] bg-[#007aff] hover:bg-[#0a84ff];
+  @apply rounded-none bg-[#007aff] hover:bg-[#0a84ff];
 }
 
 .kairo-pp-settings .label {

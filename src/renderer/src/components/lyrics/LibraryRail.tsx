@@ -121,7 +121,7 @@ export function LibraryRail({
   const rowClass = (selected: boolean): string =>
     cn(
       'group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] transition-colors',
-      selected ? 'row-selected' : 'text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-200',
+      selected ? 'row-selected' : 'text-zinc-400 hover:bg-surface-tertiary hover:text-zinc-200',
     )
 
   return (
@@ -149,7 +149,7 @@ export function LibraryRail({
       <div
         // The whole section is a drop target: a row takes it into that list,
         // anywhere else goes to the active setlist (or starts one).
-        className={cn('-mx-1 rounded-lg px-1 pb-1 transition-colors', sectionDrop && 'bg-white/[0.05]')}
+        className={cn('-mx-1 rounded-lg px-1 pb-1 transition-colors', sectionDrop && 'bg-surface-tertiary')}
         onDragOver={(event) => {
           if (!event.dataTransfer.types.includes(SONG_DRAG_TYPE)) return
           event.preventDefault()
@@ -175,7 +175,7 @@ export function LibraryRail({
             type="button"
             aria-label="New setlist"
             title="New setlist"
-            className="grid size-5 place-items-center rounded text-zinc-600 transition-colors hover:bg-white/5 hover:text-zinc-300"
+            className="grid size-5 place-items-center rounded text-zinc-600 transition-colors hover:bg-surface-tertiary hover:text-zinc-300"
             onClick={createList}
           >
             <Plus size={12} />
@@ -202,7 +202,7 @@ export function LibraryRail({
                   if (event.key === 'Enter') { event.preventDefault(); commitRename(list) }
                   if (event.key === 'Escape') { event.preventDefault(); setRenamingId(null) }
                 }}
-                className="mb-0.5 w-full rounded-md bg-white/[0.06] px-2 py-1.5 text-[12px] text-zinc-100 outline-none ring-1 ring-teal-500/40"
+                className="mb-0.5 w-full rounded-md bg-surface-tertiary px-2 py-1.5 text-[12px] text-zinc-100 outline-none ring-1 ring-teal-500/40"
               />
             ) : (
               <div
@@ -234,8 +234,8 @@ export function LibraryRail({
                 }}
                 className={cn(
                   rowClass(selected),
-                  dropListId === list.id && 'bg-white/[0.14] text-white',
-                  landedListId === list.id && dropListId !== list.id && 'bg-white/[0.08] text-white',
+                  dropListId === list.id && 'bg-surface-border text-white',
+                  landedListId === list.id && dropListId !== list.id && 'bg-surface-elevated text-white',
                 )}
               >
                 <ListMusic size={13} className="shrink-0" aria-hidden />

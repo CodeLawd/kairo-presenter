@@ -134,7 +134,7 @@ export function SermonNotesReviewModal({
     editorProps: {
       attributes: {
         class:
-          "sermon-notes-tiptap min-h-full break-words px-8 py-7 font-sans text-[15px] leading-7 text-slate-800 outline-none selection:bg-teal-200/70",
+          "sermon-notes-tiptap min-h-full break-words px-8 py-7 font-sans text-[15px] leading-7 text-slate-800 outline-none selection:bg-teal-200",
         spellcheck: "true",
         "aria-label": "Editable sermon notes",
       },
@@ -286,7 +286,7 @@ export function SermonNotesReviewModal({
               className="min-h-0 flex-1 overflow-y-auto px-5 py-5"
               style={{ scrollbarGutter: "stable" }}
             >
-              <div className="mx-auto min-h-full max-w-3xl overflow-hidden rounded-sm bg-[#f7f4ea] shadow-[0_20px_55px_rgba(0,0,0,0.32)] ring-1 ring-black/15 [&_mark]:rounded-[3px] [&_mark]:bg-yellow-300 [&_mark]:px-0.5 [&_mark]:text-slate-950 [&_mark]:shadow-[0_0_0_1px_rgba(202,138,4,0.18)] [&_mark[data-active=true]]:bg-amber-400 [&_mark[data-active=true]]:shadow-[0_0_0_2px_rgba(180,83,9,0.55)]">
+              <div className="mx-auto min-h-full max-w-3xl overflow-hidden rounded-sm bg-[#f7f4ea] ring-1 ring-black/15 [&_mark]:rounded-none [&_mark]:bg-yellow-300 [&_mark]:px-0.5 [&_mark]:text-slate-950 [&_mark[data-active=true]]:bg-amber-400">
                 <EditorContent editor={editor} className="sermon-notes-editor min-h-full" />
               </div>
             </div>
@@ -342,8 +342,8 @@ export function SermonNotesReviewModal({
                       // one earns a tint and an accent bar.
                       "relative flex w-full items-baseline gap-2.5 rounded-lg py-2 pl-3.5 pr-2.5 text-left transition-colors",
                       isActive
-                        ? "bg-yellow-400/[0.09]"
-                        : "hover:bg-surface-tertiary/50",
+                        ? "bg-tint-yellow"
+                        : "hover:bg-surface-tertiary",
                     )}
                   >
                     {isActive && (
@@ -382,7 +382,7 @@ export function SermonNotesReviewModal({
           </aside>
         </div>
 
-        <footer className="flex items-center justify-between gap-4 border-t border-surface-border bg-surface/60 px-5 py-3.5">
+        <footer className="flex items-center justify-between gap-4 border-t border-surface-border bg-surface px-5 py-3.5">
           <p className="text-xs text-slate-500">
             Highlighted text becomes{" "}
             <span className="font-semibold text-slate-300 tabular-nums">{analysis.items.length}</span>{" "}

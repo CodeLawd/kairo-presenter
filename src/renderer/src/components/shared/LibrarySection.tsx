@@ -83,10 +83,10 @@ export function LibrarySection({
     cn(
       'group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] transition-colors duration-150',
       dropping
-        ? 'bg-white/[0.14] text-white'
+        ? 'bg-surface-border text-white'
         : landed
-          ? 'bg-white/[0.08] text-white'
-          : selected ? 'row-selected' : 'text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-200',
+          ? 'bg-surface-elevated text-white'
+          : selected ? 'row-selected' : 'text-zinc-400 hover:bg-surface-tertiary hover:text-zinc-200',
     )
 
   const nameOf = (libraryId: string): string =>
@@ -146,90 +146,92 @@ export function LibrarySection({
           type="button"
           aria-label="New library"
           title="New library"
-          className="grid size-5 place-items-center rounded text-zinc-600 transition-colors hover:bg-white/5 hover:text-zinc-300"
+          className="grid size-5 place-items-center rounded text-zinc-600 transition-colors hover:bg-surface-tertiary hover:text-zinc-300"
           onClick={createLibrary}
         >
           <Plus size={12} />
         </button>
       </div>
 
-      <button
-        type="button"
-        aria-current={activeLibraryId === DEFAULT_LIBRARY_ID}
-        className={rowClass(activeLibraryId === DEFAULT_LIBRARY_ID, dropId === DEFAULT_LIBRARY_ID, landedId === DEFAULT_LIBRARY_ID)}
-        onClick={() => onSelect(DEFAULT_LIBRARY_ID)}
-        {...dropHandlers(DEFAULT_LIBRARY_ID)}
-      >
-        <LibraryIcon size={13} className="shrink-0" aria-hidden />
-        <span className="min-w-0 flex-1 truncate">{DEFAULT_LIBRARY_NAME[kind]}</span>
-        {trailing(DEFAULT_LIBRARY_ID) ?? (
-          <span className="shrink-0 text-[10px] tabular-nums text-zinc-600">{counts[DEFAULT_LIBRARY_ID] ?? 0}</span>
-        )}
-      </button>
+      <div className="flex flex-col gap-0.5">
+        <button
+          type="button"
+          aria-current={activeLibraryId === DEFAULT_LIBRARY_ID}
+          className={rowClass(activeLibraryId === DEFAULT_LIBRARY_ID, dropId === DEFAULT_LIBRARY_ID, landedId === DEFAULT_LIBRARY_ID)}
+          onClick={() => onSelect(DEFAULT_LIBRARY_ID)}
+          {...dropHandlers(DEFAULT_LIBRARY_ID)}
+        >
+          <LibraryIcon size={13} className="shrink-0" aria-hidden />
+          <span className="min-w-0 flex-1 truncate">{DEFAULT_LIBRARY_NAME[kind]}</span>
+          {trailing(DEFAULT_LIBRARY_ID) ?? (
+            <span className="shrink-0 text-[10px] tabular-nums text-zinc-600">{counts[DEFAULT_LIBRARY_ID] ?? 0}</span>
+          )}
+        </button>
 
-      {library.libraries.map((entry) =>
-        renamingId === entry.id ? (
-          <input
-            key={entry.id}
-            ref={inputRef}
-            value={draftName}
-            maxLength={80}
-            aria-label="Library name"
-            onChange={(event) => setDraftName(event.target.value)}
-            onBlur={() => commitRename(entry)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') { event.preventDefault(); commitRename(entry) }
-              if (event.key === 'Escape') { event.preventDefault(); setRenamingId(null) }
-            }}
-            className="mb-0.5 w-full rounded-md bg-white/[0.06] px-2 py-1.5 text-[12px] text-zinc-100 outline-none ring-1 ring-teal-500/40"
-          />
-        ) : (
-          <div
-            key={entry.id}
-            className={rowClass(activeLibraryId === entry.id, dropId === entry.id, landedId === entry.id)}
-            {...dropHandlers(entry.id)}
-          >
-            <LibraryIcon size={13} className="shrink-0" aria-hidden />
-            <button
-              type="button"
-              aria-current={activeLibraryId === entry.id}
-              className="min-w-0 flex-1 truncate text-left"
-              onClick={() => onSelect(entry.id)}
+        {library.libraries.map((entry) =>
+          renamingId === entry.id ? (
+            <input
+              key={entry.id}
+              ref={inputRef}
+              value={draftName}
+              maxLength={80}
+              aria-label="Library name"
+              onChange={(event) => setDraftName(event.target.value)}
+              onBlur={() => commitRename(entry)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') { event.preventDefault(); commitRename(entry) }
+                if (event.key === 'Escape') { event.preventDefault(); setRenamingId(null) }
+              }}
+              className="w-full rounded-md bg-surface-tertiary px-2 py-1.5 text-[12px] text-zinc-100 outline-none ring-1 ring-teal-500/40"
+            />
+          ) : (
+            <div
+              key={entry.id}
+              className={rowClass(activeLibraryId === entry.id, dropId === entry.id, landedId === entry.id)}
+              {...dropHandlers(entry.id)}
             >
-              {entry.name}
-            </button>
-            {trailing(entry.id) ?? (
-              <span className="shrink-0 text-[10px] tabular-nums text-zinc-600 group-hover:hidden">
-                {counts[entry.id] ?? 0}
+              <LibraryIcon size={13} className="shrink-0" aria-hidden />
+              <button
+                type="button"
+                aria-current={activeLibraryId === entry.id}
+                className="min-w-0 flex-1 truncate text-left"
+                onClick={() => onSelect(entry.id)}
+              >
+                {entry.name}
+              </button>
+              {trailing(entry.id) ?? (
+                <span className="shrink-0 text-[10px] tabular-nums text-zinc-600 group-hover:hidden">
+                  {counts[entry.id] ?? 0}
+                </span>
+              )}
+              <span className={cn('hidden shrink-0 items-center gap-0.5', !dropId && !landedId && 'group-hover:flex')}>
+                <button
+                  type="button"
+                  aria-label={`Rename ${entry.name}`}
+                  className="grid size-5 place-items-center rounded text-zinc-500 hover:text-zinc-200"
+                  onClick={() => { setDraftName(entry.name); setRenamingId(entry.id) }}
+                >
+                  <Pencil size={10} />
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Delete ${entry.name}`}
+                  title={`Delete ${entry.name} — its items move to ${DEFAULT_LIBRARY_NAME[kind]}`}
+                  className="grid size-5 place-items-center rounded text-zinc-500 hover:text-rose-400"
+                  onClick={() => {
+                    if (activeLibraryId === entry.id) onSelect(DEFAULT_LIBRARY_ID)
+                    run({ action: 'delete', kind, libraryId: entry.id })
+                  }}
+                >
+                  <Trash2 size={10} />
+                </button>
               </span>
-            )}
-            <span className={cn('hidden shrink-0 items-center gap-0.5', !dropId && !landedId && 'group-hover:flex')}>
-              <button
-                type="button"
-                aria-label={`Rename ${entry.name}`}
-                className="grid size-5 place-items-center rounded text-zinc-500 hover:text-zinc-200"
-                onClick={() => { setDraftName(entry.name); setRenamingId(entry.id) }}
-              >
-                <Pencil size={10} />
-              </button>
-              <button
-                type="button"
-                aria-label={`Delete ${entry.name}`}
-                title={`Delete ${entry.name} — its items move to ${DEFAULT_LIBRARY_NAME[kind]}`}
-                className="grid size-5 place-items-center rounded text-zinc-500 hover:text-rose-400"
-                onClick={() => {
-                  if (activeLibraryId === entry.id) onSelect(DEFAULT_LIBRARY_ID)
-                  run({ action: 'delete', kind, libraryId: entry.id })
-                }}
-              >
-                <Trash2 size={10} />
-              </button>
-            </span>
-          </div>
-        ),
-      )}
+            </div>
+          ),
+        )}
 
-      {extraRows}
+        {extraRows}
+      </div>
       {error && <p role="alert" className="px-2 pt-1 text-[10px] text-red-400">{error}</p>}
     </div>
   )

@@ -1,30 +1,18 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Eraser, Trash2 } from '@/icons';
 import { BoothToolbox } from "./BoothToolbox";
 import { useBootstrapStore } from "@/bootstrap/useBootstrapStore";
 import { useAppStore } from "@/stores/useAppStore";
-import { clearLiveAll, clearLiveText } from "@/lib/clear-live-output";
+import { LiveLayerStrip } from "./LiveLayerStrip";
 import { normalizeMediaPlayback } from "@shared/media-playback";
 import type {
-  AppSettings,
   MediaLibrary,
-  MediaPlayback,
   ScriptureResult,
 } from "@shared/ipc";
-import type { LiveOutputPayload } from "@shared/live-output";
 import { LiveOutputPreview } from "./LiveOutputPreview";
 
 interface LiveOutputRailProps {
   /** Width of the entire right rail, including its inner padding. */
   width: number;
-  /** Optional override for screens that already own the current settings. */
-  overlay?: AppSettings["overlay"];
-  /** Optional media state for screens that already own the media subscription. */
-  liveMedia?: { item: MediaLibrary["items"][number]; playback: MediaPlayback; paused?: boolean } | null;
-  /** Optional local result/content; otherwise the shared last-live payload is used. */
-  result?: ScriptureResult | null;
-  content?: LiveOutputPayload | null;
-  /** Operator-only resize affordance. Other screens use the same rail at a fixed width. */
   onResizeStart?: (event: React.PointerEvent<HTMLButtonElement>) => void;
   onResizeKeyDown?: (event: React.KeyboardEvent<HTMLButtonElement>) => void;
   /** Operator scripture search + queue — becomes the first toolbox tab. */
@@ -39,25 +27,19 @@ interface LiveOutputRailProps {
  */
 export function LiveOutputRail({
   width,
-  overlay: overlayProp,
-  liveMedia: liveMediaProp,
   search,
-  result = null,
-  content: contentProp,
   onResizeStart,
   onResizeKeyDown,
   className = "",
 }: LiveOutputRailProps): React.ReactElement {
-  const bootstrapOverlay = useBootstrapStore((state) => state.settings.overlay);
-  const overlay = overlayProp ?? bootstrapOverlay;
-  const storePayload = useAppStore((state) => state.liveOutputPreview);
-  const payload = contentProp === undefined ? storePayload : contentProp;
+  const settings = useBootstrapStore((state) => state.settings);
+  const overlay = settings.overlay;
+  const payload = useAppStore((state) => state.liveOutputPreview);
   const selectedOutputId = useAppStore((state) => state.operatorPreviewOutputId);
   const onSelectOutput = useAppStore((state) => state.setOperatorPreviewOutputId);
   const [mediaLibrary, setMediaLibrary] = useState<MediaLibrary | null>(null);
 
   useEffect(() => {
-    if (liveMediaProp !== undefined) return;
     let cancelled = false;
     window.api.media
       .getLibrary()
@@ -70,7 +52,7 @@ export function LiveOutputRail({
       cancelled = true;
       unsubscribe();
     };
-  }, [liveMediaProp]);
+  }, []);
 
   const liveMediaFromLibrary = useMemo(() => {
     if (!mediaLibrary?.liveItemId) return null;
@@ -82,7 +64,21 @@ export function LiveOutputRail({
       paused: mediaLibrary.livePaused,
     };
   }, [mediaLibrary]);
-  const liveMedia = liveMediaProp === undefined ? liveMediaFromLibrary : liveMediaProp;
+  const liveMedia = liveMediaFromLibrary;
+  const result = useMemo<ScriptureResult | null>(() => {
+    if (payload?.kind !== "scripture") return null;
+    const parsed = payload.reference.match(/^(.+?)\s+(\d+):(\d+)/);
+    return {
+      reference: payload.reference,
+      translation: payload.translation ?? settings.scripture.defaultTranslation,
+      verses: payload.verses?.length ? payload.verses : [{
+        book: parsed?.[1] ?? "",
+        chapter: Number(parsed?.[2] ?? 0),
+        verse: Number(parsed?.[3] ?? 0),
+        text: payload.text,
+      }],
+    };
+  }, [payload, settings.scripture.defaultTranslation]);
   // Stored settings do not guarantee array order, so sort by the configured
   // precedence — the picker should read the same as the Outputs screen.
   const outputs = useMemo(
@@ -92,7 +88,8 @@ export function LiveOutputRail({
         .sort((a, b) => a.order - b.order),
     [overlay.outputs],
   );
-  const previewWidth = Math.max(160, width - 1);
+  // The clear-layer column (36px + its hairline) sits beside the frame.
+  const previewWidth = Math.max(160, width - 38);
   const previewHeight = Math.round((previewWidth * 9) / 16);
 
   return (
@@ -102,21 +99,24 @@ export function LiveOutputRail({
           type="button"
           aria-label="Resize live output preview panel"
           title="Drag to resize live output preview"
-          className="absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize bg-transparent outline-none hover:bg-teal-500/15 focus-visible:bg-teal-500/20"
+          className="absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize bg-transparent outline-none hover:bg-tint-teal focus-visible:bg-tint-teal"
           onPointerDown={onResizeStart}
           onKeyDown={onResizeKeyDown}
         />
       )}
 
       <aside
+        // The rail's own background shows only in the gutter between the live
+        // output and the toolbox — two separate panels, not one long column.
         className={`flex min-h-0 w-full flex-col overflow-hidden bg-surface-secondary ${className}`}
         style={{ width }}
       >
         <div className="min-h-0 shrink-0 bg-[#0e0e0e]">
           <div className="flex items-baseline justify-between gap-2 px-3 py-1.5">
             <p className="text-[11px] font-medium text-zinc-400">Live</p>
-            <p className="text-[10px] text-zinc-600">ProPresenter</p>
           </div>
+          <div className="flex">
+          <div className="min-w-0 flex-1">
           <LiveOutputPreview
             outputs={outputs}
             selectedOutputId={selectedOutputId}
@@ -128,50 +128,16 @@ export function LiveOutputRail({
             overlay={overlay}
             width={previewWidth}
             height={previewHeight}
-            toolbar={
-              <LiveClearActions
-                hasText={Boolean(payload)}
-                hasBackground={Boolean(liveMedia)}
-              />
-            }
           />
+          </div>
+          <LiveLayerStrip hasText={Boolean(payload)} hasBackground={Boolean(liveMedia)} />
+          </div>
         </div>
 
-        <BoothToolbox search={search} />
+        <div className="mt-2 flex min-h-0 flex-1 flex-col">
+          <BoothToolbox search={search} />
+        </div>
       </aside>
     </div>
   );
-}
-
-function LiveClearActions({
-  hasText,
-  hasBackground,
-}: {
-  hasText: boolean
-  hasBackground: boolean
-}): React.ReactElement {
-  return (
-    <div className="flex shrink-0 items-center gap-3">
-      <button
-        type="button"
-        disabled={!hasText}
-        onClick={() => void clearLiveText()}
-        title="Leave the background. Remove verse or lyric text."
-        className="flex items-center gap-1 text-[11px] text-zinc-500 hover:text-zinc-200 disabled:cursor-not-allowed disabled:opacity-30"
-      >
-        <Eraser size={11} aria-hidden="true" />
-        Clear text
-      </button>
-      <button
-        type="button"
-        disabled={!hasText && !hasBackground}
-        onClick={() => void clearLiveAll()}
-        title="Remove text and the dock background"
-        className="flex items-center gap-1 text-[11px] text-zinc-500 hover:text-rose-300 disabled:cursor-not-allowed disabled:opacity-30"
-      >
-        <Trash2 size={11} aria-hidden="true" />
-        Clear all
-      </button>
-    </div>
-  )
 }

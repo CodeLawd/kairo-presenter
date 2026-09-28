@@ -45,7 +45,7 @@ test('theme editor uses a preview-first three-pane workspace and theme-aware ran
   assert.match(editor, /@\/components\/ui\/slider/)
   assert.match(editor, /@\/components\/ui\/resizable/)
   assert.match(editor, /@\/components\/ui\/dropdown-menu/)
-  assert.match(editor, /bg-surface-secondary\/35/)
+  assert.match(editor, /bg-surface-secondary/)
   assert.match(editor, /<SliderPrimitive/)
   assert.doesNotMatch(editor, /#009f9f|#243d5c/)
   assert.match(css, /--range-track:/)

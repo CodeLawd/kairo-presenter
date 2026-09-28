@@ -1,7 +1,7 @@
 import log from 'electron-log/main'
 import { NDI_SENDER_NAME, PRODUCT_NAME } from '@shared/brand'
 import { loadNdiProvider, type ProviderLoadResult } from './provider-loader'
-import type { NdiProvider, NdiSender, NdiVideoFrame } from './provider'
+import type { NdiAudioFrame, NdiProvider, NdiSender, NdiVideoFrame } from './provider'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -37,6 +37,8 @@ export type { NdiVideoFrame }
 
 class NdiService {
   private provider: NdiProvider | null = null
+  /** Kept so extra channels can share the provider that already loaded. */
+  private loaded: Extract<ProviderLoadResult, { ok: true }> | null = null
   private sender: NdiSender | null = null
   private available = false
   private sending = false
@@ -53,8 +55,17 @@ class NdiService {
   private senderError: string | null = null
   /** Earliest time another attempt may run — see RETRY_COOLDOWN_MS. */
   private retryAfter = 0
+  private audioWarnedAt = 0
 
-  constructor(loadResult?: ProviderLoadResult) {
+  /**
+   * @param senderName The NDI source name. The primary sender keeps the legacy
+   *   name so existing ProPresenter video-input bindings still find it; extra
+   *   feeds come from `createChannel`.
+   */
+  constructor(
+    loadResult?: ProviderLoadResult,
+    readonly senderName: string = SENDER_NAME,
+  ) {
     this.currentFrame = Buffer.alloc(WIDTH * HEIGHT * 4, 0) // fully transparent (alpha 0)
 
     // Dependency loading stays lazy and inside error handling per plan — a
@@ -69,6 +80,7 @@ class NdiService {
       result = { ok: false, reason: `provider loader threw: ${(err as Error).message}` }
     }
     if (result.ok) {
+      this.loaded = result
       this.provider = result.provider
       this.available = true
       try {
@@ -80,6 +92,15 @@ class NdiService {
       this.available = false
       log.warn('[NDI] NDI unavailable — NDI features disabled', { error: result.reason })
     }
+  }
+
+  /**
+   * A second, independent sender on the same loaded provider — one per extra
+   * `ndi` output. Null when NDI is unavailable on this machine.
+   */
+  createChannel(senderName: string): NdiService | null {
+    if (!this.available || !this.loaded) return null
+    return new NdiService(this.loaded, senderName)
   }
 
   getStatus(): { available: boolean; sending: boolean; senderError: string | null } {
@@ -105,10 +126,10 @@ class NdiService {
 
   private async _start(): Promise<void> {
     try {
-      this.sender = await this.provider!.createSender({ name: SENDER_NAME, clockVideo: true })
+      this.sender = await this.provider!.createSender({ name: this.senderName, clockVideo: true })
       this.sending = true
       this.senderError = null
-      log.info('[NDI] Sender created', { name: SENDER_NAME, width: WIDTH, height: HEIGHT })
+      log.info('[NDI] Sender created', { name: this.senderName, width: WIDTH, height: HEIGHT })
       this.startFrameLoop()
     } catch (err) {
       this.senderError = (err as Error).message
@@ -184,6 +205,27 @@ class NdiService {
     // New pixels go out now instead of waiting for the next repeat tick — that
     // wait was pure latency between a page turn and the wall.
     if (!this.sendingFrame) void this.pushFrame()
+  }
+
+  /**
+   * Whether this machine's NDI binding can carry sound. Known from the adapter
+   * before a sender exists; the legacy grandiose-mac sender is video-only.
+   */
+  get audioSupported(): boolean {
+    if (this.sender) return typeof this.sender.sendAudio === 'function'
+    return this.loaded?.adapter === 'grandi'
+  }
+
+  /** One block of program sound. Dropped silently when audio is unsupported. */
+  sendAudio(frame: NdiAudioFrame): void {
+    const sender = this.sender
+    if (!sender?.sendAudio) return
+    sender.sendAudio(frame).catch((err: unknown) => {
+      // ~47 blocks a second: one line per 10 s is plenty.
+      if (Date.now() - this.audioWarnedAt < 10_000) return
+      this.audioWarnedAt = Date.now()
+      log.warn('[NDI] Audio frame failed', (err as Error).message)
+    })
   }
 
   /** True once new pixels have been handed to the sender. */

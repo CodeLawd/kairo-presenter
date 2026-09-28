@@ -9,7 +9,7 @@ export function isTrackExtension(ext: string): boolean {
 
 /**
  * Audio lives next to the backgrounds folder, not inside it.
- * `…/ProAutomate/Media` → `…/ProAutomate/Audio`
+ * `…/Kairo Presenter/Media` → `…/Kairo Presenter/Audio`
  */
 export function siblingAudioFolder(mediaFolder: string): string {
   const trimmed = mediaFolder.replace(/[/\\]+$/, '')

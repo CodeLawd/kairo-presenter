@@ -77,7 +77,7 @@ function MissingBindingsSummary({
   })
   if (missing.length === 0) return null
   return (
-    <div className="flex items-start gap-2.5 rounded-xl border border-yellow-500/20 bg-yellow-500/5 px-3.5 py-3">
+    <div className="flex items-start gap-2.5 rounded-xl border border-yellow-500/20 bg-tint-yellow px-3.5 py-3">
       <AlertTriangle size={14} className="mt-0.5 shrink-0 text-yellow-500" aria-hidden="true" />
       <p className="text-[11px] leading-relaxed text-yellow-300">
         <span className="font-semibold">Unavailable in ProPresenter:</span> {missing.length} saved binding{missing.length === 1 ? '' : 's'} no longer appear in the catalogue. They are kept until you clear or replace them.
@@ -90,7 +90,7 @@ function SavedBindings({ bindings }: { bindings: PPResourceBindings }): React.Re
   const saved = RESOURCE_BINDING_ROLES.filter((role) => Boolean(bindings[role.key]))
   if (saved.length === 0) return null
   return (
-    <div className="rounded-xl border border-surface-border/60 bg-surface-secondary/20 px-3.5 py-3" aria-label="Saved ProPresenter bindings">
+    <div className="rounded-xl border border-surface-border/60 bg-surface-secondary px-3.5 py-3" aria-label="Saved ProPresenter bindings">
       <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-600">Saved bindings</p>
       <div className="mt-2 space-y-1.5">
         {saved.map((role) => (
@@ -172,7 +172,7 @@ function CompactSettingsBindings({
         </div>
         <button
           type="button"
-          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-white/45 transition-colors hover:bg-white/5 hover:text-white/75 disabled:cursor-not-allowed disabled:opacity-40"
+          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-white/45 transition-colors hover:bg-surface-tertiary hover:text-white/75 disabled:cursor-not-allowed disabled:opacity-40"
           onClick={onRefresh}
           disabled={loading || !connected}
           aria-label="Refresh ProPresenter resources"
@@ -352,7 +352,7 @@ export default function ResourceCatalogue({ mode }: { mode: ResourceCatalogueMod
       </div>
 
       {!connected && (
-        <div className="flex items-start gap-2.5 rounded-xl border border-surface-border/60 bg-surface-secondary/25 px-3.5 py-3">
+        <div className="flex items-start gap-2.5 rounded-xl border border-surface-border/60 bg-surface-secondary px-3.5 py-3">
           <WifiOff size={14} className="mt-0.5 shrink-0 text-slate-500" aria-hidden="true" />
           <p className="text-[11px] leading-relaxed text-slate-500">
             Connect ProPresenter to browse its resources. Saved bindings are still shown below and will not be erased while it is offline.
@@ -369,7 +369,7 @@ export default function ResourceCatalogue({ mode }: { mode: ResourceCatalogueMod
       />
 
       {catalogue.warnings.length > 0 && (
-        <div className="flex items-start gap-2.5 rounded-xl border border-yellow-500/20 bg-yellow-500/5 px-3.5 py-3">
+        <div className="flex items-start gap-2.5 rounded-xl border border-yellow-500/20 bg-tint-yellow px-3.5 py-3">
           <AlertTriangle size={14} className="mt-0.5 shrink-0 text-yellow-500" aria-hidden="true" />
           <p className="text-[11px] leading-relaxed text-yellow-300">
             {catalogue.warnings.length} resource type{catalogue.warnings.length === 1 ? '' : 's'} could not be read. The rest of the catalogue is still available.
@@ -382,7 +382,7 @@ export default function ResourceCatalogue({ mode }: { mode: ResourceCatalogueMod
       )}
 
       {loadError ? (
-        <div className="rounded-xl border border-rose-500/20 bg-rose-500/5 px-4 py-5">
+        <div className="rounded-xl border border-rose-500/20 bg-tint-rose px-4 py-5">
           <p className="text-sm font-semibold text-rose-300">Could not load ProPresenter resources</p>
           <p className="mt-1 text-xs leading-relaxed text-slate-500">{loadError}</p>
           <button type="button" className="btn-secondary mt-3 inline-flex items-center gap-1.5 px-3 py-2 text-xs" onClick={() => void loadCatalogue(true)}>
@@ -433,7 +433,7 @@ export default function ResourceCatalogue({ mode }: { mode: ResourceCatalogueMod
                   <button
                     type="button"
                     key={resourceKey}
-                    className={`flex w-full items-center gap-3 rounded-xl border p-2.5 text-left transition-colors ${isSelected ? 'border-white/20 row-selected' : 'border-surface-border/50 bg-surface-secondary/15 hover:border-surface-border hover:bg-surface-secondary/35'}`}
+                    className={`flex w-full items-center gap-3 rounded-xl border p-2.5 text-left transition-colors ${isSelected ? 'border-white/20 row-selected' : 'border-surface-border/50 bg-surface-secondary hover:border-surface-border hover:bg-surface-secondary'}`}
                     onClick={() => setSelectedKey(resourceKey)}
                     aria-pressed={isSelected}
                     data-resource-id={resource.id}

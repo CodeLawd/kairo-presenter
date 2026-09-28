@@ -37,8 +37,9 @@ export function LiveVideoControls({
 
   return (
     <div
-      className="border-t border-surface-border bg-surface-tertiary px-2 py-1.5"
+      className="bg-surface-secondary px-3 pb-2 pt-2"
       onKeyDown={(event) => {
+        if (event.target instanceof HTMLInputElement) return
         if (event.key === ' ' || event.key === 'k') {
           event.preventDefault()
           onTogglePause()
@@ -54,7 +55,29 @@ export function LiveVideoControls({
         }
       }}
     >
-      <div className="flex items-center gap-1.5">
+      <input
+        type="range"
+        min={0}
+        max={ready ? duration : 0}
+        step={0.05}
+        value={ready ? Math.min(shown, duration) : 0}
+        disabled={!ready}
+        aria-label="Seek"
+        onChange={(event) => {
+          const next = Number(event.target.value)
+          setScrub(next)
+          onSeek(next)
+        }}
+        onPointerUp={() => setScrub(null)}
+        className="video-seek"
+        style={{
+          background: ready
+            ? `linear-gradient(to right, rgb(45 212 191) 0%, rgb(45 212 191) ${(shown / duration) * 100}%, rgb(63 63 70) ${(shown / duration) * 100}%, rgb(63 63 70) 100%)`
+            : 'rgb(63 63 70)',
+        }}
+      />
+
+      <div className="mt-2 flex items-center gap-1">
         <TransportButton label="Restart" onClick={onRestart}>
           <RotateCcw size={12} aria-hidden="true" />
         </TransportButton>
@@ -80,7 +103,7 @@ export function LiveVideoControls({
           <SkipForward size={12} aria-hidden="true" />
         </TransportButton>
 
-        <span className="ml-1 min-w-0 flex-1 font-mono text-[10px] tabular-nums text-slate-400">
+        <span className="ml-2 min-w-0 flex-1 font-mono text-[11px] tabular-nums text-zinc-400">
           {formatMediaClock(shown)}
           <span className="text-slate-600"> / </span>
           {ready ? formatMediaClock(duration) : '–:––'}
@@ -94,10 +117,10 @@ export function LiveVideoControls({
             aria-pressed={loop}
             aria-label={loop ? 'Turn loop off' : 'Turn loop on'}
             className={cn(
-              'grid h-6 w-6 place-items-center rounded-md border transition-colors',
+              'grid h-7 w-7 place-items-center rounded-md transition-colors',
               loop
-                ? 'border-teal-500/45 bg-teal-500/15 text-teal-300'
-                : 'border-transparent text-slate-500 hover:border-surface-border hover:text-slate-200',
+                ? 'bg-teal-500/15 text-teal-300'
+                : 'text-zinc-500 hover:bg-surface-elevated hover:text-zinc-200',
             )}
           >
             <Repeat size={12} aria-hidden="true" />
@@ -105,27 +128,6 @@ export function LiveVideoControls({
         )}
       </div>
 
-      <input
-        type="range"
-        min={0}
-        max={ready ? duration : 0}
-        step={0.05}
-        value={ready ? Math.min(shown, duration) : 0}
-        disabled={!ready}
-        aria-label="Seek"
-        onChange={(event) => {
-          const next = Number(event.target.value)
-          setScrub(next)
-          onSeek(next)
-        }}
-        onPointerUp={() => setScrub(null)}
-        className="range-control mt-1.5"
-        style={{
-          background: ready
-            ? `linear-gradient(to right, rgb(45 212 191) 0%, rgb(45 212 191) ${(shown / duration) * 100}%, rgb(63 63 70) ${(shown / duration) * 100}%, rgb(63 63 70) 100%)`
-            : 'rgb(63 63 70)',
-        }}
-      />
     </div>
   )
 }
@@ -148,10 +150,10 @@ function TransportButton({
       aria-label={label}
       onClick={onClick}
       className={cn(
-        'grid h-6 w-6 place-items-center rounded-md border transition-colors',
+        'grid h-7 w-7 place-items-center rounded-md transition-colors',
         primary
-          ? 'border-teal-500/45 bg-teal-500/15 text-teal-200 hover:bg-teal-500/25'
-          : 'border-transparent text-slate-400 hover:border-surface-border hover:text-white',
+          ? 'bg-surface-elevated text-teal-300 hover:bg-zinc-700'
+          : 'text-zinc-400 hover:bg-surface-elevated hover:text-white',
       )}
     >
       {children}

@@ -8,16 +8,37 @@
 // for (see `deriveCompletedSteps`).
 
 import type { AppSettings, OnboardingState, OnboardingStepId } from '../ipc'
+import { setupUsesPropresenter } from '../pp-connect-gate'
 
-/** Wizard order. `account` sits first because the rest can be synced once signed in. */
+/**
+ * Wizard order. `account` sits first because the rest can be synced once signed
+ * in; `output` comes before ProPresenter because its answer decides whether the
+ * ProPresenter steps are asked at all.
+ */
 export const ONBOARDING_STEPS: readonly OnboardingStepId[] = [
   'account',
+  'output',
   'propresenter',
   'propresenterResources',
-  'output',
   'apiKeys',
   'church',
 ] as const
+
+const PROPRESENTER_STEPS: readonly OnboardingStepId[] = ['propresenter', 'propresenterResources']
+
+/**
+ * The steps this setup is walked through. A setup whose outputs never touch
+ * ProPresenter is not asked for a ProPresenter host — derived from the outputs
+ * the Output step writes, so there is no separate answer to keep in sync.
+ */
+export function onboardingSteps(
+  settings: Pick<AppSettings, 'overlay'> & Partial<Pick<AppSettings, 'propresenterResources'>>,
+): OnboardingStepId[] {
+  if (setupUsesPropresenter(settings.overlay, settings.propresenterResources?.ndiVideoInputId)) {
+    return [...ONBOARDING_STEPS]
+  }
+  return ONBOARDING_STEPS.filter((step) => !PROPRESENTER_STEPS.includes(step))
+}
 
 export function onboardingStepLabel(step: OnboardingStepId): string {
   if (step === 'account') return 'Account'
@@ -224,8 +245,8 @@ export interface OnboardingReadiness {
 export function onboardingReadiness(settings: AppSettings): OnboardingReadiness {
   const lines = onboardingSummary(settings)
   const outstanding = lines.filter((line) => !line.done)
-  // "Ready" means a verse can actually reach a screen: a ProPresenter host and
-  // somewhere to send to. A church name and an API key are conveniences.
+  // "Ready" means a verse can actually reach a screen: somewhere to send to,
+  // and a ProPresenter host when the setup goes through ProPresenter. A church name and an API key are conveniences.
   const ready = lines.every((line) => line.done || line.step === 'apiKeys' || line.step === 'church')
   return { lines, outstanding, ready }
 }
@@ -259,15 +280,7 @@ export function onboardingSummary(settings: AppSettings): OnboardingSummaryLine[
     hasDeepgram ? 'Deepgram' : null,
   ].filter((key): key is string => key !== null)
 
-  return [
-    {
-      step: 'propresenter',
-      label: 'ProPresenter',
-      detail: settings.propresenter.host.trim()
-        ? `${settings.propresenter.host}:${settings.propresenter.port}`
-        : 'Not connected yet',
-      done: settings.propresenter.host.trim() !== '',
-    },
+  const lines: OnboardingSummaryLine[] = [
     {
       step: 'output',
       label: 'Outputs',
@@ -291,5 +304,17 @@ export function onboardingSummary(settings: AppSettings): OnboardingSummaryLine[
       detail: settings.church.name.trim() || 'Not named',
       done: settings.church.name.trim() !== '',
     },
+  ]
+  if (!setupUsesPropresenter(settings.overlay, settings.propresenterResources?.ndiVideoInputId)) return lines
+  return [
+    {
+      step: 'propresenter',
+      label: 'ProPresenter',
+      detail: settings.propresenter.host.trim()
+        ? `${settings.propresenter.host}:${settings.propresenter.port}`
+        : 'Not connected yet',
+      done: settings.propresenter.host.trim() !== '',
+    },
+    ...lines,
   ]
 }

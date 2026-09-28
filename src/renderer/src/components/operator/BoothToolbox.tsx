@@ -1,4 +1,5 @@
-import { Clock, MessageSquare, Music2, Search } from '@/icons'
+import { Clock, Layers, MessageSquare, Music2, Search } from '@/icons'
+import { MessagesPanel, ShowPanel, TimersPanel } from '@/components/operator/ProgramPanels'
 import type { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { useBoothToolboxStore, type BoothToolboxTab } from '@/stores/useBoothToolboxStore'
@@ -13,6 +14,7 @@ const TABS: Array<{ id: BoothToolboxTab; label: string; icon: typeof Search }> =
   { id: 'audio', label: 'Audio', icon: Music2 },
   { id: 'timers', label: 'Timers', icon: Clock },
   { id: 'messages', label: 'Messages', icon: MessageSquare },
+  { id: 'show', label: 'Show', icon: Layers },
 ]
 
 export function BoothToolbox({
@@ -28,7 +30,7 @@ export function BoothToolbox({
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-surface-secondary">
       <div
-        className="flex shrink-0 items-stretch bg-surface-tertiary/40"
+        className="flex shrink-0 items-stretch border-b border-surface-border bg-surface-secondary"
         role="tablist"
         aria-label="Booth tools"
       >
@@ -46,7 +48,7 @@ export function BoothToolbox({
                 'relative flex h-9 flex-1 flex-col items-center justify-center gap-0.5 text-[10px] font-medium last:border-r-0',
                 selected
                   ? 'text-teal-400'
-                  : 'text-zinc-500 hover:bg-white/[0.03] hover:text-zinc-300',
+                  : 'text-zinc-500 hover:bg-surface-tertiary hover:text-zinc-300',
               )}
             >
               <Icon size={14} aria-hidden="true" />
@@ -65,12 +67,9 @@ export function BoothToolbox({
       <div className="min-h-0 flex-1 overflow-hidden bg-transparent" role="tabpanel">
         {active === 'search' && (search ?? <DefaultBoothSearch />)}
         {active === 'audio' && <TracksPanel />}
-        {active === 'timers' && (
-          <ComingSoon title="Timers" body="Countdowns will live here — same place as ProPresenter, after house audio." />
-        )}
-        {active === 'messages' && (
-          <ComingSoon title="Messages" body="Quick booth messages will land here. Theme still owns the output style." />
-        )}
+        {active === 'timers' && <TimersPanel />}
+        {active === 'messages' && <MessagesPanel />}
+        {active === 'show' && <ShowPanel />}
       </div>
     </div>
   )
@@ -117,15 +116,6 @@ function DefaultBoothSearch(): React.ReactElement {
       <p className="px-4 text-[10px] leading-relaxed text-zinc-600">
         Type a reference or phrase. Enter sends it to ProPresenter.
       </p>
-    </div>
-  )
-}
-
-function ComingSoon({ title, body }: { title: string; body: string }): React.ReactElement {
-  return (
-    <div className="flex h-full flex-col items-center justify-center px-5 text-center">
-      <p className="text-[11px] font-medium text-zinc-400">{title}</p>
-      <p className="mt-1 max-w-[16rem] text-[10px] leading-relaxed text-zinc-600">{body}</p>
     </div>
   )
 }

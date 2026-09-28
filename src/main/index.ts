@@ -17,6 +17,7 @@ import { Readable } from "stream";
 import { electronApp, optimizer, is } from "@electron-toolkit/utils";
 import log from "electron-log/main";
 import { configuredMediaPaths } from "@shared/overlay-outputs";
+import { presentationMediaPaths } from "@shared/program";
 import {
   mediaMimeType,
   parseByteRange,
@@ -30,7 +31,8 @@ import { workspaceService } from "./services/workspace";
 import { scriptureService } from "./services/scripture";
 import { initOfflineBibles } from "./services/scripture/offline-bibles";
 import { ndiService } from "./services/ndi";
-import { overlayWindow } from "./services/ndi/overlay-window";
+import { surfaceManager } from "./services/output/surface-manager";
+import { getMainWindow, setMainWindow } from "./main-window";
 import { cloudSession } from "./services/cloud/session";
 import { sermonUploader } from "./services/service-records";
 import { isPickedOverlayMediaAllowed } from "./services/ndi/media-allowlist";
@@ -109,10 +111,11 @@ function registerPaMediaProtocol(): void {
       // theme in a later session (the picked-media allowlist only survives the
       // session in which the file was chosen).
       const allowed = new Set(
-        configuredMediaPaths(
-          store.get("overlay"),
-          store.get("themeLibrary"),
-        ).map((p) => resolve(p)),
+        [
+          ...configuredMediaPaths(store.get("overlay"), store.get("themeLibrary")),
+          // Logo and prop images the operator picked for the program layers.
+          ...presentationMediaPaths(store.get("presentation")),
+        ].map((p) => resolve(p)),
       );
       if (
         !allowed.has(requested) &&
@@ -157,7 +160,10 @@ async function serveLocalMedia(
     : createReadStream(filePath);
   return new Response(Readable.toWeb(stream) as ReadableStream, {
     status,
-    headers,
+    // CORS-readable so the program window's Web Audio graph (NDI sound) gets
+    // real samples from a background video instead of silence. The allowlist
+    // above still decides which files are served at all.
+    headers: { ...headers, "Access-Control-Allow-Origin": "*" },
   });
 }
 
@@ -296,6 +302,7 @@ function createWindow(): void {
   });
 
   applicationWindow = mainWindow;
+  setMainWindow(mainWindow);
   importReady = false;
   mainWindow.webContents.on("did-start-loading", () => {
     importReady = false;
@@ -303,13 +310,50 @@ function createWindow(): void {
   mainWindow.on("closed", () => {
     if (applicationWindow === mainWindow) {
       applicationWindow = null;
+      setMainWindow(null);
       importReady = false;
     }
+    // Projector windows (and the offscreen NDI renderer) are windows too, so
+    // they would keep `window-all-closed` from ever firing. A program with no
+    // controls must not stay up on the wall: on macOS close the screens until
+    // the window comes back; elsewhere closing the window quits, as before.
+    if (process.platform === "darwin") {
+      surfaceManager.closeScreens();
+    } else {
+      app.quit();
+    }
   });
+
+  // Moving the controls onto (or off) a projector's display changes whether
+  // that projector is a full-screen output or a rehearsal window.
+  mainWindow.on("moved", () => surfaceManager.displaysChanged());
 
   mainWindow.on("ready-to-show", () => {
     mainWindow.show();
     log.info("Main window shown");
+  });
+
+  // A dead renderer leaves a blank window and, without these, no trace at all.
+  // Reload so the operator gets their controls back mid-service — but stop
+  // after a few crashes in a row so a crash on load cannot loop forever.
+  const recentCrashes: number[] = [];
+  mainWindow.webContents.on("render-process-gone", (_event, details) => {
+    log.error("[MainWindow] Renderer process gone", details);
+    if (details.reason === "clean-exit" || mainWindow.isDestroyed()) return;
+    const now = Date.now();
+    recentCrashes.push(now);
+    while (recentCrashes.length > 0 && now - recentCrashes[0] > 60_000) recentCrashes.shift();
+    if (recentCrashes.length > 3) {
+      log.error("[MainWindow] Renderer keeps crashing — not reloading again");
+      return;
+    }
+    mainWindow.webContents.reload();
+  });
+  mainWindow.on("unresponsive", () => log.warn("[MainWindow] Window unresponsive"));
+  mainWindow.on("responsive", () => log.info("[MainWindow] Window responsive again"));
+  // Renderer errors otherwise only reach DevTools, which is closed in a service.
+  mainWindow.webContents.on("console-message", (_event, level, message, line, sourceId) => {
+    if (level >= 3) log.error("[Renderer]", message, `${sourceId}:${line}`);
   });
 
   // Coming back to the app is the moment someone expects to see a key they just
@@ -416,9 +460,16 @@ app.whenReady().then(async () => {
 
   createWindow();
 
+  // After the main window exists, so the manager can tell which display holds
+  // the controls. Opens every enabled, connected screen output.
+  surfaceManager.init();
+  void surfaceManager.reconcile();
+
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
+    // Not `getAllWindows().length` — projector and NDI windows count there.
+    if (!getMainWindow()) {
       createWindow();
+      void surfaceManager.reconcile();
     }
   });
 });
@@ -431,7 +482,7 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
-  overlayWindow.destroy();
+  surfaceManager.destroyAll();
   ndiService.stop().catch((err) => {
     log.error("[NDI] stop() failed during quit:", (err as Error).message);
   });

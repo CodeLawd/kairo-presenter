@@ -1,0 +1,23 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "bounce-easing",
+        "value": "animate-bounce",
+        "createdAt": "2026-09-28T04:08:52.541Z",
+        "reason": "Codex review: bounce-bar animates live audio waveform bars in InputPanel and TranscriptPanel; literal signal motion is intentional."
+      },
+      {
+        "rule": "gradient-text",
+        "value": "*",
+        "files": [
+          "website/src/app/landing.css"
+        ],
+        "createdAt": "2026-09-28T04:48:14.527Z",
+        "reason": "User requested Cencori-like scroll effects; this gradient paints the heading progressively as it enters view, with solid-text fallback and reduced-motion support."
+      }
+    ]
+  }
+}

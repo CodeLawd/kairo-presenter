@@ -6,7 +6,7 @@ import type {
 } from './ipc'
 import type { LyricSlide } from './lyrics-slides'
 
-/** The last content ProAutomate sent to ProPresenter for cross-tab review. */
+/** The last content Kairo sent to its outputs, for cross-tab review. */
 export interface LiveOutputPayload {
   kind: OverlayContentKind
   /** Bible reference for scripture, or song/section label for lyrics. */

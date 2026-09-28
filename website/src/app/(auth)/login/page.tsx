@@ -13,10 +13,10 @@ const BRAND = {
   kind: 'quote',
   quote: (
     <>
-      Your pastor says the verse. <span className="font-semibold">It&rsquo;s already on screen.</span>
+      Be ready for what&rsquo;s planned. <span className="font-semibold">And what isn&rsquo;t.</span>
     </>
   ),
-  attribution: 'Kairo for ProPresenter',
+  attribution: 'Kairo presentation software',
 } as const
 
 function LoginPageContent(): React.ReactElement {
@@ -73,7 +73,7 @@ function LoginPageContent(): React.ReactElement {
   return (
     <AuthSplit
       title="Sign in"
-      blurb="One account for your church, on every machine in the booth."
+      blurb="Sign in to manage your church's Kairo account."
       brand={BRAND}
       footer={
         <>

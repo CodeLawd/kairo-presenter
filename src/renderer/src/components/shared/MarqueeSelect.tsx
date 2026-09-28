@@ -119,7 +119,7 @@ export function MarqueeSelect({
       {band && (
         <div
           aria-hidden="true"
-          className="pointer-events-none fixed z-50 rounded-[3px] border border-white/60 bg-white/10"
+          className="pointer-events-none fixed z-50 rounded-none border border-white/60 bg-surface-elevated"
           style={{ left: band.x, top: band.y, width: band.w, height: band.h }}
         />
       )}

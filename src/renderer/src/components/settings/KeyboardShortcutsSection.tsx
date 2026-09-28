@@ -31,7 +31,7 @@ export default function KeyboardShortcutsSection({ bindings, onSave }: {
                 if (conflict) { setError(`Already assigned to ${SHORTCUT_COMMANDS.find(item => item.id === conflict)!.label}. Clear that binding first.`); return }
                 change({ ...draft, [command.id]: [shortcut] }); setRecording(null)
               }}
-              className="min-w-[130px] rounded-md border border-white/15 bg-white/[0.04] px-3 py-1.5 text-xs text-white/80 hover:border-teal-400/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-teal-400">
+              className="min-w-[130px] rounded-md border border-white/15 bg-surface-tertiary px-3 py-1.5 text-xs text-white/80 hover:border-teal-400/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-teal-400">
               {recording === command.id ? 'Press keys… Esc cancels' : bindingsFor(command.id, draft).map(shortcutLabel).join(' or ') || 'Not assigned'}
             </button>
             <button type="button" aria-label={`Clear shortcut for ${command.label}`} onClick={() => change({ ...draft, [command.id]: [] })} className="text-xs text-white/45 hover:text-white">Clear</button>

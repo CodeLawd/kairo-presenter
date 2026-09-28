@@ -1,14 +1,19 @@
 // ─── Overlay outputs — layer routing (phase 3) ─────────────────────────────────
 // Pure — no Node/DOM APIs — importable from main, preload, and renderer alike.
 //
-// ProPresenter's REST API has no "send this to screen 2". The routing primitive
-// is the LAYER; a Look decides which layers each screen shows. So an output is a
-// (PP layer, content, styling) triple, and the dispatch rule falls out of the
-// layer map below:
+// Two kinds of destination:
 //
-//   across layer groups → fan out in parallel (stage AND messages AND presentation)
-//   within a layer group → first success wins (library, else NDI — they compete
-//                          for the same presentation layer)
+//   Kairo-rendered (`screen`, extra `ndi` feeds) — separate windows, so every
+//     one of them gets the push, concurrently.
+//   ProPresenter layers — PP's REST API has no "send this to screen 2"; the
+//     routing primitive is the LAYER, and a Look decides which layers each
+//     screen shows. Outputs on one layer compete (first success wins: the
+//     primary NDI feed, else a library match); different layers fan out in
+//     parallel. The primary NDI feed counts as a PP output because PP cuts to
+//     its video input.
+//
+// Whether an output competes is a property of the output
+// (`competesForPpLayer`), not of a layer.
 //
 // This module is deliberately free of theme normalization so it can be imported
 // by `overlay-defaults.ts` without a cycle — `normalizeOverlayOutputs` lives
@@ -32,35 +37,96 @@ export const OVERLAY_OUTPUT_KINDS: readonly OverlayOutputKind[] = [
   'library',
   'message',
   'stage',
+  'screen',
 ] as const
 
 /**
- * How many `ndi` outputs can be live at once. The NDI sender and the offscreen
- * overlay window are both singletons, so a second feed would silently overwrite
- * the first's frame. Single source of truth for the normalizer and the UI — the
- * day those become pools, this is the only number that changes.
+ * How many `ndi` outputs can be live at once. Each gets its own NDI sender and
+ * offscreen window; the first keeps the legacy sender name ProPresenter's video
+ * input is bound to, the rest are extra feeds for livestream / recording. Each
+ * one costs a 1920×1080 capture, so the count stays small. Single source of
+ * truth for the normalizer and the UI.
  */
-export const MAX_NDI_OUTPUTS = 1
+export const MAX_NDI_OUTPUTS = 4
 
-const LAYER_OF: Record<OverlayOutputKind, OverlayLayer> = {
+/** The ProPresenter layer each kind writes to; null for Kairo's own screens. */
+const LAYER_OF: Record<OverlayOutputKind, OverlayLayer | null> = {
   ndi: 'presentation',
   library: 'presentation',
   message: 'messages',
   stage: 'stage',
+  screen: null,
 }
 
-/** Stable group order — only affects reporting; groups run concurrently. */
+/** Stable ProPresenter layer order — only affects reporting; layers run concurrently. */
 export const OVERLAY_LAYERS: readonly OverlayLayer[] = ['presentation', 'messages', 'stage'] as const
 
-export function layerOfKind(kind: OverlayOutputKind): OverlayLayer {
+export function layerOfKind(kind: OverlayOutputKind): OverlayLayer | null {
   return LAYER_OF[kind]
 }
 
-/** Human-facing label for the "where does this land" column in the Outputs UI. */
-export function layerLabel(layer: OverlayLayer): string {
-  if (layer === 'presentation') return 'Presentation layer'
-  if (layer === 'messages') return 'Messages layer'
-  return 'Stage screens'
+/**
+ * The ProPresenter layer this output competes for, or null when it is one of
+ * Kairo's own destinations (a screen, or an NDI feed other than the primary).
+ * `outputs` is the full configured list — the primary NDI feed is decided there.
+ */
+export function ppLayerOf(output: OverlayOutput, outputs: readonly OverlayOutput[]): OverlayLayer | null {
+  if (output.kind === 'ndi') return output.id === primaryNdiOutputId(outputs) ? 'presentation' : null
+  return layerOfKind(output.kind)
+}
+
+export function competesForPpLayer(output: OverlayOutput, outputs: readonly OverlayOutput[]): boolean {
+  return ppLayerOf(output, outputs) !== null
+}
+
+/** Human-facing "where does this land" label for an output kind. */
+export function outputDestinationLabel(kind: OverlayOutputKind): string {
+  switch (kind) {
+    case 'screen': return 'Kairo screen'
+    case 'ndi': return 'NDI feed'
+    case 'library': return 'ProPresenter presentation layer'
+    case 'message': return 'ProPresenter messages layer'
+    case 'stage': return 'ProPresenter stage screens'
+  }
+}
+
+/**
+ * Whether an output can only work through ProPresenter's API. `ndi` is not one:
+ * its frame leaves this machine whatever PP is doing — only the optional cut to
+ * the video input needs the API.
+ */
+export function outputRequiresPropresenter(kind: OverlayOutputKind): boolean {
+  return kind === 'library' || kind === 'message' || kind === 'stage'
+}
+
+/** Kinds Kairo renders itself, through a `ProgramSurface`. */
+export function isRenderedKind(kind: OverlayOutputKind): boolean {
+  return kind === 'ndi' || kind === 'screen'
+}
+
+/**
+ * Whether an output takes service pushes. False only for a `screen` running
+ * its own playlist (a lobby display) — it ignores pushes and Clear alike.
+ */
+export function followsProgram(output: Pick<OverlayOutput, 'kind' | 'source'>): boolean {
+  return !(output.kind === 'screen' && output.source === 'playlist')
+}
+
+/** Enabled outputs Kairo renders itself — documents and backgrounds go to these. */
+export function surfaceOutputs(outputs: readonly OverlayOutput[]): OverlayOutput[] {
+  return outputs.filter((o) => o.enabled && isRenderedKind(o.kind) && followsProgram(o))
+}
+
+/**
+ * The rendered output a preview (or "apply this theme") should target: an
+ * enabled screen, else an enabled NDI output, else any NDI output.
+ */
+export function primaryRenderedOutput(outputs: readonly OverlayOutput[]): OverlayOutput | null {
+  return (
+    outputs.find((o) => o.kind === 'screen' && o.enabled) ??
+    outputs.find((o) => o.kind === 'ndi' && o.enabled) ??
+    findNdiOutput(outputs)
+  )
 }
 
 // ─── Grouping ──────────────────────────────────────────────────────────────────
@@ -71,20 +137,29 @@ export interface OverlayLayerGroup {
   outputs: OverlayOutput[]
 }
 
-/**
- * Enabled outputs bucketed by layer, each bucket sorted by `order`. Empty
- * buckets are dropped, so an empty result means "nothing to push".
- *
- * `fallbackOnly` outputs are excluded — they are not part of the normal fan-out
- * and are retrieved separately via `fallbackOutputs()` once the primary pass has
- * failed everywhere.
- */
-export function groupOutputsByLayer(outputs: readonly OverlayOutput[]): OverlayLayerGroup[] {
-  const groups: OverlayLayerGroup[] = []
+/** Takes part in a normal push: enabled, not a last resort, and following the service. */
+function inNormalPass(o: OverlayOutput): boolean {
+  return o.enabled && !o.fallbackOnly && followsProgram(o)
+}
 
+/**
+ * Enabled outputs that compete for a ProPresenter layer, bucketed by layer,
+ * each bucket sorted by `order`. Empty buckets are dropped.
+ *
+ * `fallbackOnly` outputs are excluded — they are retrieved separately via
+ * `fallbackOutputs()` once the normal pass has failed everywhere.
+ *
+ * `include` narrows which outputs take part (content filters, PP reachable)
+ * without changing which NDI feed is primary — that is decided on `outputs`.
+ */
+export function groupOutputsByLayer(
+  outputs: readonly OverlayOutput[],
+  include: (output: OverlayOutput) => boolean = () => true,
+): OverlayLayerGroup[] {
+  const groups: OverlayLayerGroup[] = []
   for (const layer of OVERLAY_LAYERS) {
     const inLayer = outputs
-      .filter((o) => o.enabled && !o.fallbackOnly && layerOfKind(o.kind) === layer)
+      .filter((o) => inNormalPass(o) && include(o) && ppLayerOf(o, outputs) === layer)
       .sort((a, b) => {
         // Themed NDI must run before a library name-match on the same layer.
         // Otherwise a "John 3:16" presentation in PP wins and the operator's
@@ -98,8 +173,15 @@ export function groupOutputsByLayer(outputs: readonly OverlayOutput[]): OverlayL
       })
     if (inLayer.length > 0) groups.push({ layer, outputs: inLayer })
   }
-
   return groups
+}
+
+/** Kairo's own destinations in a normal push — screens and extra NDI feeds. All of them run. */
+export function renderedOutputs(
+  outputs: readonly OverlayOutput[],
+  include: (output: OverlayOutput) => boolean = () => true,
+): OverlayOutput[] {
+  return outputs.filter((o) => inNormalPass(o) && include(o) && !competesForPpLayer(o, outputs))
 }
 
 /**
@@ -112,12 +194,19 @@ export function fallbackOutputs(outputs: readonly OverlayOutput[]): OverlayOutpu
 }
 
 /**
- * The single `ndi` output, if one is enabled. The normalizer caps the list at
- * one — a second simultaneous NDI feed needs a sender pool (see the deferred
- * section of the phase-3 plan).
+ * The primary `ndi` output: the first enabled one in list order. It keeps the
+ * legacy sender name, so it is the one ProPresenter's video input shows.
+ */
+export function primaryNdiOutputId(outputs: readonly OverlayOutput[]): string | null {
+  return outputs.find((o) => o.kind === 'ndi' && o.enabled)?.id ?? null
+}
+
+/**
+ * The NDI output settings pages talk about: the primary (first enabled) one,
+ * else the first configured, so a disabled NDI output can still be edited.
  */
 export function findNdiOutput(outputs: readonly OverlayOutput[]): OverlayOutput | null {
-  return outputs.find((o) => o.kind === 'ndi') ?? null
+  return outputs.find((o) => o.kind === 'ndi' && o.enabled) ?? outputs.find((o) => o.kind === 'ndi') ?? null
 }
 
 /**
@@ -157,6 +246,8 @@ export function firstLookId(groups: readonly OverlayLayerGroup[]): string | null
 // ─── Dispatch plan ─────────────────────────────────────────────────────────────
 
 export interface OverlayDispatchPlan {
+  /** Kairo's screens and extra NDI feeds — every one gets the push, concurrently. */
+  rendered: OverlayOutput[]
   /**
    * One bucket per PP layer that has work. Buckets run CONCURRENTLY (they land
    * on different layers, so they can all be on screen at once); within a bucket
@@ -164,12 +255,24 @@ export interface OverlayDispatchPlan {
    * same layer — the second would just replace the first).
    */
   groups: OverlayLayerGroup[]
-  /** Tried in order, only if `groups` produced no success at all. */
+  /** Tried in order, only if nothing above produced a success. */
   fallbacks: OverlayOutput[]
 }
 
-export function getDispatchPlan(outputs: readonly OverlayOutput[]): OverlayDispatchPlan {
-  return { groups: groupOutputsByLayer(outputs), fallbacks: fallbackOutputs(outputs) }
+/**
+ * The push plan for `outputs` (the full configured list). `include` narrows
+ * which ones take part — content filters, whether PP is reachable — without
+ * moving the primary NDI role to another feed.
+ */
+export function getDispatchPlan(
+  outputs: readonly OverlayOutput[],
+  include: (output: OverlayOutput) => boolean = () => true,
+): OverlayDispatchPlan {
+  return {
+    rendered: renderedOutputs(outputs, include),
+    groups: groupOutputsByLayer(outputs, include),
+    fallbacks: fallbackOutputs(outputs).filter(include),
+  }
 }
 
 // ─── Content kinds ─────────────────────────────────────────────────────────────
@@ -317,9 +420,8 @@ export function liveOverlayTheme(
   overlay: AppSettings['overlay'],
   kind: OverlayContentKind = 'scripture',
 ): OverlayTheme {
-  const enabledNdi = overlay.outputs.find((output) => output.kind === 'ndi' && output.enabled)
-  const ndi = enabledNdi ?? findNdiOutput(overlay.outputs)
-  return ndi ? outputThemeFor(ndi, kind) : overlay.theme
+  const rendered = primaryRenderedOutput(overlay.outputs)
+  return rendered ? outputThemeFor(rendered, kind) : overlay.theme
 }
 
 // ─── Media allowlist ───────────────────────────────────────────────────────────

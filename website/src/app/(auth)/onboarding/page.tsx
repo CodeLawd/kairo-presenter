@@ -16,37 +16,37 @@ const TOTAL = 3
 const COPY: { title: string; blurb: string; brand: BrandPanel }[] = [
   {
     title: 'Confirm your email',
-    blurb: 'We sent a 6-digit code. Enter it here to finish setting up the account.',
+    blurb: 'Enter the six-digit code we sent to your email.',
     brand: {
       kind: 'quote',
-      quote: 'One account for your church, on every machine in the booth.',
-      attribution: 'Kairo for ProPresenter',
+      quote: 'First, let’s make sure we can reach you.',
+      attribution: 'Kairo presentation software',
     },
   },
   {
     title: 'About your church',
-    blurb: 'This name follows the account to every machine in the booth.',
+    blurb: 'Add the church name and service times your team will use.',
     brand: {
       kind: 'quote',
       quote: (
         <>
-          One name. <span className="font-semibold">Every booth machine stays in sync.</span>
+          Set up the church once. <span className="font-semibold">The team can take it from there.</span>
         </>
       ),
-      attribution: 'Kairo for ProPresenter',
+      attribution: 'Kairo presentation software',
     },
   },
   {
-    title: 'Get Kairo',
-    blurb: 'Install it on the booth machine, or pair one that already has it.',
+    title: 'You’re all set for now',
+    blurb: 'Kairo is still in development. Your account is ready while we prepare desktop access.',
     brand: {
       kind: 'quote',
       quote: (
         <>
-          Your pastor says the verse. <span className="font-semibold">It&rsquo;s already on screen.</span>
+          Ready for the service you planned. <span className="font-semibold">And the moments you didn&rsquo;t.</span>
         </>
       ),
-      attribution: 'Kairo for ProPresenter',
+      attribution: 'Kairo presentation software',
     },
   },
 ]

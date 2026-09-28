@@ -28,11 +28,11 @@ interface StoredBlob {
  * `scripture/api-cache-crypto.ts`, with one deliberate difference: this one
  * FAILS OPEN. That module refuses to run without encryption because it caches
  * licensed Bible text; here, a machine with no keychain (a bare Linux box, a
- * locked-down image) must still run ProAutomate — it simply will not remember
+ * locked-down image) must still run Kairo — it simply will not remember
  * the sign-in between launches. Refusing to launch over a missing keyring would
  * take a church off the air for a feature they may not even use.
  *
- * The token never goes near `proautomate-settings.json`, which is plaintext and
+ * The token never goes near `kairo-settings.json`, which is plaintext and
  * gets copied around.
  */
 export class SecureStore {

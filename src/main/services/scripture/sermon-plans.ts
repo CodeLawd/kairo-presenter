@@ -1,6 +1,7 @@
 import fs from 'fs/promises'
 import path from 'path'
 import Store from 'electron-store'
+import { renamedStore } from '../../db/legacy-store'
 import mammoth from 'mammoth'
 import pdfParse from 'pdf-parse'
 import type {
@@ -120,7 +121,7 @@ interface SermonPlanSchema {
 
 class SermonPlanStore {
   private readonly store = new Store<SermonPlanSchema>({
-    name: 'proautomate-sermon-plans',
+    name: renamedStore('proautomate-sermon-plans', 'kairo-sermon-plans'),
     defaults: { plans: [], livePlanId: null },
   })
 

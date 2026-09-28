@@ -31,7 +31,7 @@ function Segmented<T extends string>({
   size?: 'sm' | 'md'
 }): React.ReactElement {
   return (
-    <div className="inline-flex items-center gap-0.5 rounded-[7px] bg-white/[0.05] p-0.5" role="radiogroup" aria-label={label}>
+    <div className="inline-flex items-center gap-0.5 rounded-none bg-surface-tertiary p-0.5" role="radiogroup" aria-label={label}>
       {options.map((option) => (
         <button
           key={option.id}
@@ -41,9 +41,9 @@ function Segmented<T extends string>({
           title={option.hint}
           onClick={() => onChange(option.id)}
           className={cn(
-            'rounded-[5px] font-medium transition-colors',
+            'rounded-none font-medium transition-colors',
             size === 'sm' ? 'px-2 py-0.5 text-[10px]' : 'px-2.5 py-1 text-[11px]',
-            value === option.id ? 'bg-white/[0.14] text-white' : 'text-white/45 hover:text-white/75',
+            value === option.id ? 'bg-surface-border text-white' : 'text-white/45 hover:text-white/75',
           )}
         >
           {option.label}
@@ -165,7 +165,7 @@ export function ImportReviewModal({ preview }: { preview: TransferPreview }): Re
         onClick={(event) => event.stopPropagation()}
       >
         <header className="flex items-start gap-3 border-b border-surface-border px-5 py-4">
-          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-teal-500/25 bg-teal-500/10 text-teal-300">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-teal-500/25 bg-tint-teal text-teal-300">
             <KindIcon size={16} aria-hidden="true" />
           </span>
           <div className="min-w-0 flex-1">
@@ -178,7 +178,7 @@ export function ImportReviewModal({ preview }: { preview: TransferPreview }): Re
             type="button"
             onClick={close}
             aria-label="Close"
-            className="grid h-7 w-7 place-items-center rounded-md text-white/40 hover:bg-white/[0.06] hover:text-white"
+            className="grid h-7 w-7 place-items-center rounded-md text-white/40 hover:bg-surface-tertiary hover:text-white"
           >
             <X size={14} aria-hidden="true" />
           </button>
@@ -187,7 +187,7 @@ export function ImportReviewModal({ preview }: { preview: TransferPreview }): Re
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
           {preview.playlist ? (
             <div className="space-y-3">
-              <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-3.5 py-3">
+              <div className="rounded-xl border border-white/[0.06] bg-surface-secondary px-3.5 py-3">
                 <p className="text-[13px] font-medium text-white">{preview.playlist.title}</p>
                 <p className="mt-0.5 text-[11px] text-white/40">
                   Scripture playlist · {preview.playlist.itemCount} passage
@@ -213,7 +213,7 @@ export function ImportReviewModal({ preview }: { preview: TransferPreview }): Re
           ) : (
             <>
               {allAlreadyHere ? (
-                <p className="rounded-xl border border-teal-500/20 bg-teal-500/[0.06] px-3.5 py-2.5 text-[12px] leading-relaxed text-teal-200/90">
+                <p className="rounded-xl border border-teal-500/20 bg-tint-teal px-3.5 py-2.5 text-[12px] leading-relaxed text-teal-200/90">
                   {duplicates.length === 1 ? 'This song is' : `All ${duplicates.length} songs are`} already in
                   your library, so there’s nothing new to add. Choose <span className="font-medium">Replace</span> to
                   overwrite your copies with these, or <span className="font-medium">Keep both</span> to add them again.
@@ -228,7 +228,7 @@ export function ImportReviewModal({ preview }: { preview: TransferPreview }): Re
               </p>
 
               {preview.setlist ? (
-                <label className="flex cursor-pointer items-center gap-2.5 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3.5 py-2.5">
+                <label className="flex cursor-pointer items-center gap-2.5 rounded-xl border border-white/[0.06] bg-surface-secondary px-3.5 py-2.5">
                   <input
                     type="checkbox"
                     checked={createSetlist}
@@ -291,7 +291,7 @@ export function ImportReviewModal({ preview }: { preview: TransferPreview }): Re
                           options={DUPLICATE_CHOICES}
                         />
                       ) : (
-                        <span className="shrink-0 rounded-full bg-teal-500/10 px-1.5 py-0.5 text-[10px] font-medium text-teal-300">
+                        <span className="shrink-0 rounded-full bg-tint-teal px-1.5 py-0.5 text-[10px] font-medium text-teal-300">
                           New
                         </span>
                       )}

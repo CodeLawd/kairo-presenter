@@ -4,15 +4,18 @@ import test from "node:test";
 import {
   DEFAULT_OVERLAY_THEME,
   DEFAULT_OVERLAY_SETTINGS,
+  applyOutputRoute,
   makeOverlayOutput,
   normalizeOverlayOutputs,
   normalizeOverlaySettings,
+  outputRouteOf,
 } from "../src/lib/overlay-defaults";
 import {
   hasContentOverride,
   inheritLyricsTheme,
   themeForContentKind,
   liveOverlayTheme,
+  MAX_NDI_OUTPUTS,
   outputTemplateFor,
   outputThemeFor,
   outputThemeIdFor,
@@ -75,19 +78,18 @@ test("every migration offers a stage output, switched off so upgrades change not
 
 // ─── Normalizer invariants ────────────────────────────────────────────────────
 
-test("a second NDI output is disabled, not deleted — the operator's config survives", () => {
-  const outputs = normalizeOverlayOutputs(
-    [
-      makeOverlayOutput("main", "ndi", { enabled: true }),
-      makeOverlayOutput("second", "ndi", { enabled: true }),
-      makeOverlayOutput("stage", "stage", { enabled: true }),
-    ],
-    legacy,
+test("NDI outputs beyond the sender limit are disabled, not deleted — the operator's config survives", () => {
+  const ndi = Array.from({ length: MAX_NDI_OUTPUTS + 1 }, (_, i) =>
+    makeOverlayOutput(`ndi-${i}`, "ndi", { enabled: true }),
   );
+  const outputs = normalizeOverlayOutputs([...ndi, makeOverlayOutput("stage", "stage", { enabled: true })], legacy);
 
-  assert.deepEqual(outputs.map((o) => o.id), ["main", "second", "stage"]);
-  assert.equal(outputs[0].enabled, true);
-  assert.equal(outputs[1].enabled, false);
+  // `projector` is the disabled Kairo screen every older store is given.
+  assert.deepEqual(outputs.map((o) => o.id), [...ndi.map((o) => o.id), "stage", "projector"]);
+  assert.deepEqual(
+    outputs.filter((o) => o.kind === "ndi").map((o) => o.enabled),
+    [...Array(MAX_NDI_OUTPUTS).fill(true), false],
+  );
 });
 
 test("duplicate, blank and unknown-kind entries are healed rather than trusted", () => {
@@ -102,7 +104,7 @@ test("duplicate, blank and unknown-kind entries are healed rather than trusted",
     legacy,
   );
 
-  assert.deepEqual(outputs.map((o) => o.id), ["a", "b"]);
+  assert.deepEqual(outputs.map((o) => o.id), ["a", "b", "projector"]);
   assert.equal(outputs[1].kind, "message");
 });
 
@@ -376,4 +378,111 @@ test("a stored lyrics override cannot keep a scripture background", () => {
 
   assert.equal(output.lyrics?.theme.background.type, "image");
   assert.equal(outputThemeFor(output, "lyrics").background.type, "transparent");
+});
+
+// ─── Kairo screens (standalone phase 1) ───────────────────────────────────────
+
+test("screen outputs are accepted and display fields are filled on every kind", () => {
+  const outputs = normalizeOverlayOutputs(
+    [
+      { id: "proj", kind: "screen", enabled: true, displayId: 7, displayLabel: " DELL ", displaySize: { width: 1920, height: 1080 } },
+      { id: "stage", kind: "stage", displayId: 7, displayLabel: "junk" },
+    ],
+    legacy,
+  );
+  assert.equal(outputs[0].kind, "screen");
+  assert.equal(outputs[0].displayId, 7);
+  assert.equal(outputs[0].displayLabel, "DELL");
+  assert.deepEqual(outputs[0].displaySize, { width: 1920, height: 1080 });
+  // Display fields mean nothing off a screen output — kept uniform, not trusted.
+  assert.equal(outputs[1].displayId, null);
+  assert.equal(outputs[1].displayLabel, "");
+  assert.equal(outputs[1].displaySize, null);
+});
+
+test("an invalid displayId or size heals to null", () => {
+  for (const displayId of ["7", 1.5, NaN, Infinity, null, undefined]) {
+    const [output] = normalizeOverlayOutputs([{ id: "p", kind: "screen", displayId }], legacy);
+    assert.equal(output.displayId, null, String(displayId));
+  }
+  const [output] = normalizeOverlayOutputs(
+    [{ id: "p", kind: "screen", displaySize: { width: -1, height: 1080 } }],
+    legacy,
+  );
+  assert.equal(output.displaySize, null);
+});
+
+test("a second enabled screen on the same display is disabled, not deleted", () => {
+  const outputs = normalizeOverlayOutputs(
+    [
+      makeOverlayOutput("a", "screen", { enabled: true, displayId: 3 }),
+      makeOverlayOutput("b", "screen", { enabled: true, displayId: 3 }),
+      makeOverlayOutput("c", "screen", { enabled: true, displayId: 4 }),
+    ],
+    legacy,
+  );
+  assert.deepEqual(outputs.map((o) => [o.id, o.enabled]), [["a", true], ["b", false], ["c", true]]);
+});
+
+test("an older store gets one disabled Projector output — once", () => {
+  const once = normalizeOverlayOutputs([makeOverlayOutput("main", "ndi", { enabled: true })], legacy);
+  const projector = once.find((o) => o.id === "projector")!;
+  assert.equal(projector.kind, "screen");
+  assert.equal(projector.enabled, false);
+  const twice = normalizeOverlayOutputs(once, legacy);
+  assert.equal(twice.filter((o) => o.kind === "screen").length, 1);
+  // Fresh installs and legacy migrations carry it too, still off.
+  const migrated = normalizeOverlayOutputs(undefined, legacy);
+  assert.equal(migrated.filter((o) => o.kind === "screen" && !o.enabled).length, 1);
+});
+
+test("liveOverlayTheme prefers an enabled screen, then an enabled NDI output", () => {
+  const screenTheme = { ...DEFAULT_OVERLAY_THEME, verse: { ...DEFAULT_OVERLAY_THEME.verse, color: "#00ff00" } };
+  const overlay = {
+    ...DEFAULT_OVERLAY_SETTINGS,
+    outputs: [
+      makeOverlayOutput("main", "ndi", { enabled: true, theme: RED_THEME }),
+      makeOverlayOutput("projector", "screen", { enabled: true, theme: screenTheme }),
+    ],
+  };
+  assert.equal(liveOverlayTheme(overlay).verse.color, "#00ff00");
+  const screenOff = {
+    ...overlay,
+    outputs: overlay.outputs.map((o) => (o.kind === "screen" ? { ...o, enabled: false } : o)),
+  };
+  assert.equal(liveOverlayTheme(screenOff).verse.color, "#ff0000");
+});
+
+test("the onboarding route switches outputs on and off, and reads back", () => {
+  const defaults = DEFAULT_OVERLAY_SETTINGS.outputs;
+  // A fresh install draws on its own screen; ProPresenter is opt-in.
+  assert.equal(outputRouteOf(defaults), "screen");
+  assert.deepEqual(defaults.filter((o) => o.enabled).map((o) => o.id), ["projector"]);
+
+  const pp = applyOutputRoute(defaults, "propresenter");
+  assert.equal(outputRouteOf(pp), "propresenter");
+  // Nothing PP-side was on, so the shipped ProPresenter preset comes on.
+  assert.deepEqual(pp.filter((o) => o.enabled).map((o) => o.id).sort(), ["library", "lower-third", "main"]);
+
+  const back = applyOutputRoute(pp, "screen");
+  assert.equal(outputRouteOf(back), "screen");
+  assert.deepEqual(back.filter((o) => o.enabled).map((o) => o.id), ["projector"]);
+
+  assert.equal(outputRouteOf(applyOutputRoute(defaults, "both")), "both");
+});
+
+test("playlist fields are clamped, and only a screen can run its own playlist", () => {
+  const [screen, ndi] = normalizeOverlayOutputs(
+    [
+      { ...makeOverlayOutput("lobby", "screen"), source: "playlist", playlistId: " p1 ", slideSec: 1 },
+      { ...makeOverlayOutput("feed", "ndi"), source: "playlist", playlistId: "p1", slideSec: 9999 },
+    ],
+    legacy,
+  );
+  assert.equal(screen.source, "playlist");
+  assert.equal(screen.playlistId, "p1");
+  assert.equal(screen.slideSec, 3);
+  assert.equal(ndi.source, "program");
+  assert.equal(ndi.playlistId, "");
+  assert.equal(normalizeOverlayOutputs([{ ...makeOverlayOutput("s", "screen"), source: "bogus" }], legacy)[0].source, "program");
 });

@@ -26,6 +26,7 @@ import { lyricsService } from '../lyrics'
 import { setlistService } from '../setlist'
 import { sermonPlanStore } from '../scripture/sermon-plans'
 import { livePlanService } from '../scripture/live-plan'
+import { dialogParentWindow } from '../../main-window'
 
 const OPEN_FILTERS = [
   { name: 'Kairo files', extensions: ['kairo', 'json'] },
@@ -43,7 +44,7 @@ class TransferService {
   private pending = new Map<string, { bundle: KairoBundle; fileName: string }>()
 
   private window(): BrowserWindow | undefined {
-    return BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+    return dialogParentWindow() ?? undefined
   }
 
   // ─── Export ─────────────────────────────────────────────────────────────────

@@ -37,7 +37,7 @@ export default function AccountSection({
       {signedIn ? (
         <section className="space-y-1.5">
           <h3 className="px-0.5 text-[11px] font-semibold tracking-tight text-white/45">Account</h3>
-          <div className="divide-y divide-white/[0.07] overflow-hidden rounded-[10px] bg-[#2c2c2c]">
+          <div className="divide-y divide-white/[0.07] overflow-hidden rounded-md bg-[#2c2c2c]">
             <div className="flex min-h-[38px] items-center justify-between gap-4 px-3.5 py-2.5">
               <div className="min-w-0">
                 <p className="text-[13px] leading-none text-white">{session.user?.email}</p>
@@ -81,7 +81,7 @@ export default function AccountSection({
 
       <section className="space-y-1.5">
         <h3 className="px-0.5 text-[11px] font-semibold tracking-tight text-white/45">Setup</h3>
-        <div className="overflow-hidden rounded-[10px] bg-[#2c2c2c] px-3.5 py-3">
+        <div className="overflow-hidden rounded-md bg-[#2c2c2c] px-3.5 py-3">
           <p className="text-[13px] leading-relaxed text-white/45">
             Walk through ProPresenter, outputs, API keys and your church profile again. Nothing is
             reset — the wizard opens on what you already have.

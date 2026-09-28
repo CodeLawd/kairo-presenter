@@ -42,7 +42,7 @@ function RecapStatus({ record, onRetry }: {
     return (
       <button
         type="button"
-        className="rounded-md px-2 py-1.5 text-[11px] text-teal-400 hover:bg-white/5 hover:text-teal-300"
+        className="rounded-md px-2 py-1.5 text-[11px] text-teal-400 hover:bg-surface-tertiary hover:text-teal-300"
         onClick={() => void window.api.account.openWeb(
           upload.sermonId ? `/dashboard/sermons/${upload.sermonId}` : '/dashboard/sermons',
         )}
@@ -57,7 +57,7 @@ function RecapStatus({ record, onRetry }: {
       <button
         type="button"
         title={upload.error ?? undefined}
-        className="rounded-md px-2 py-1.5 text-[11px] text-amber-400 hover:bg-white/5 hover:text-amber-300"
+        className="rounded-md px-2 py-1.5 text-[11px] text-amber-400 hover:bg-surface-tertiary hover:text-amber-300"
         onClick={onRetry}
       >
         Recap not sent — Retry
@@ -123,7 +123,7 @@ export function ServicePanel(): React.ReactElement {
 
   return <>
     {active || error ? (
-      <div className="shrink-0 border-y border-white/[0.06] bg-white/[0.02] px-3 py-1.5">
+      <div className="shrink-0 border-y border-white/[0.06] bg-surface-secondary px-3 py-1.5">
         {active ? (
           <div className="flex min-w-0 items-center gap-2">
             {/* The elapsed clock leads: mid-service it is the number the booth
@@ -138,8 +138,8 @@ export function ServicePanel(): React.ReactElement {
               {active.speaker ? <span className="text-zinc-600"> · {active.speaker}</span> : null}
             </p>
             <div className="flex shrink-0 items-center gap-0.5 text-[10px]">
-              <button type="button" className="rounded px-1.5 py-0.5 text-zinc-500 hover:bg-white/5 hover:text-zinc-200" onClick={() => setViewId(active.id)}>Review</button>
-              <button type="button" disabled={busy} className="rounded px-1.5 py-0.5 text-zinc-500 hover:bg-white/5 hover:text-zinc-200 disabled:opacity-40" onClick={() => setConfirmEnd(true)}>End</button>
+              <button type="button" className="rounded px-1.5 py-0.5 text-zinc-500 hover:bg-surface-tertiary hover:text-zinc-200" onClick={() => setViewId(active.id)}>Review</button>
+              <button type="button" disabled={busy} className="rounded px-1.5 py-0.5 text-zinc-500 hover:bg-surface-tertiary hover:text-zinc-200 disabled:opacity-40" onClick={() => setConfirmEnd(true)}>End</button>
             </div>
           </div>
         ) : null}
@@ -243,13 +243,13 @@ export function ServicePanel(): React.ReactElement {
                     <span>{record.status === 'ended' ? 'Ended' : 'In progress'}</span>
                   </p>
                 </div>
-                <Dialog.Close className="grid size-7 shrink-0 place-items-center rounded-md text-zinc-500 hover:bg-white/5 hover:text-zinc-200" aria-label="Close">
+                <Dialog.Close className="grid size-7 shrink-0 place-items-center rounded-md text-zinc-500 hover:bg-surface-tertiary hover:text-zinc-200" aria-label="Close">
                   <X size={14} />
                 </Dialog.Close>
               </div>
 
               <div className="mt-4 flex items-center justify-between gap-3">
-                <div className="flex min-w-0 items-center gap-0.5 rounded-lg bg-white/[0.04] p-0.5" role="tablist" aria-label="Service sections">
+                <div className="flex min-w-0 items-center gap-0.5 rounded-lg bg-surface-tertiary p-0.5" role="tablist" aria-label="Service sections">
                   {([
                     ['nuggets', record.nuggets.length],
                     ['transcript', record.transcript.length],
@@ -264,7 +264,7 @@ export function ServicePanel(): React.ReactElement {
                       onClick={() => setTab(value)}
                       className={cn(
                         'rounded-md px-2.5 py-1.5 text-[11px] font-medium capitalize transition-colors',
-                        tab === value ? 'bg-white/10 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300',
+                        tab === value ? 'bg-surface-elevated text-zinc-100' : 'text-zinc-500 hover:text-zinc-300',
                       )}
                     >
                       {value}
@@ -279,14 +279,14 @@ export function ServicePanel(): React.ReactElement {
                   />
                   <button
                     type="button"
-                    className="rounded-md px-2 py-1.5 text-[11px] text-zinc-500 hover:bg-white/5 hover:text-zinc-200"
+                    className="rounded-md px-2 py-1.5 text-[11px] text-zinc-500 hover:bg-surface-tertiary hover:text-zinc-200"
                     onClick={() => downloadFile(serviceTextExport(record), `${record.title.replace(/[^a-z0-9]+/gi, '-')}.txt`, 'text/plain')}
                   >
                     Export
                   </button>
                   <button
                     type="button"
-                    className="rounded-md px-2 py-1.5 text-[11px] text-zinc-500 hover:bg-white/5 hover:text-zinc-200"
+                    className="rounded-md px-2 py-1.5 text-[11px] text-zinc-500 hover:bg-surface-tertiary hover:text-zinc-200"
                     onClick={() => downloadFile(JSON.stringify(record, null, 2), `service-${record.id}.json`, 'application/json')}
                     title="Download full JSON archive"
                   >
@@ -318,7 +318,7 @@ export function ServicePanel(): React.ReactElement {
                     <p className="py-10 text-center text-[12px] text-zinc-600">No nuggets yet.</p>
                   ) : (
                     record.nuggets.map(n => (
-                      <article key={n.id} className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-3.5 py-3">
+                      <article key={n.id} className="rounded-lg border border-white/[0.06] bg-surface-secondary px-3.5 py-3">
                         <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-zinc-200">{n.text}</p>
                         <div className="mt-2.5 flex items-center gap-3 text-[10px] text-zinc-500">
                           <span className="capitalize">{n.origin}</span>
@@ -384,7 +384,7 @@ export function ServicePanel(): React.ReactElement {
                 ) : (
                   <ul className="space-y-3">
                     {record.scriptures.map(s => (
-                      <li key={s.id} className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-3.5 py-3">
+                      <li key={s.id} className="rounded-lg border border-white/[0.06] bg-surface-secondary px-3.5 py-3">
                         <p className="text-[13px] font-medium text-zinc-100">
                           {s.reference}
                           <span className="ml-2 text-[11px] font-normal text-zinc-500">{s.translation}</span>

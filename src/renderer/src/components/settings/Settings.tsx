@@ -1,5 +1,5 @@
 import KeyboardShortcutsSection from './KeyboardShortcutsSection'
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { Fragment, useState, useEffect, useRef, useCallback } from 'react'
 import {
   Mic,
   Key,
@@ -40,6 +40,7 @@ import { listAudioInputDevices, resolveCaptureDeviceId } from '@/audio/devices'
 import { applyAppTheme } from '@/lib/appTheme'
 import { parseProPresenterPort } from '@/lib/propresenter-port'
 import { normalizeOverlaySettings } from '@shared/overlay-defaults'
+import { normalizePresentationSettings } from '@shared/program'
 import type {
   AppSettings,
   AudioDevice,
@@ -59,6 +60,7 @@ import { useAccountStore } from '@/stores/useAccountStore'
 import ProPresenterMark from '@/components/brand/ProPresenterMark'
 import { ProviderLogo, type ProviderId } from '@/components/brand/ProviderLogos'
 import ResourceCatalogue from '@/components/propresenter/ResourceCatalogue'
+import { propresenterEnabled } from '@shared/pp-connect-gate'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -69,16 +71,20 @@ type UpdateFn = <K extends keyof AppSettings>(section: K, partial: Partial<AppSe
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
+// Kairo first; ProPresenter is an optional integration, listed last under its
+// own heading (see INTEGRATION_SECTIONS).
 const SECTION_NAV: { id: Section; label: string; hint: string; icon?: Icon }[] = [
-  { id: 'propresenter', label: 'ProPresenter', hint: 'Connection & API' },
+  { id: 'general', label: 'General', hint: 'Theme, fonts, lyrics color & storage', icon: SlidersHorizontal },
+  { id: 'overlay', label: 'Verses on screen', hint: 'Translation, verse numbers & auto-clear', icon: MonitorPlay },
+  { id: 'scripture', label: 'Scripture', hint: 'Detection & display', icon: BookOpen },
   { id: 'audio', label: 'Audio', hint: 'Input device & levels', icon: Mic },
   { id: 'apikeys', label: 'API Keys', hint: 'Deepgram, Claude, Bible, Brave', icon: Key },
-  { id: 'scripture', label: 'Scripture', hint: 'Detection & display', icon: BookOpen },
-  { id: 'overlay', label: 'Overlay', hint: 'Message template & styling', icon: MonitorPlay },
   { id: 'shortcuts', label: 'Keyboard Shortcuts', hint: 'Commands & key bindings', icon: SlidersHorizontal },
-  { id: 'general', label: 'General', hint: 'Theme, fonts, lyrics color & storage', icon: SlidersHorizontal },
+  { id: 'propresenter', label: 'ProPresenter', hint: 'Optional — connection & resources' },
   { id: 'account', label: 'Account', hint: 'Sign in, team sync & setup', icon: CircleUser },
 ]
+
+const INTEGRATION_SECTIONS: ReadonlySet<Section> = new Set(['propresenter'])
 
 const NAV_ICON_BG: Record<Section, string> = {
   propresenter: 'bg-[#3B6FD9]',
@@ -200,7 +206,7 @@ function MacTrafficLights({ onClose }: { onClose?: () => void }): React.ReactEle
         type="button"
         aria-label="Close"
         onClick={onClose}
-        className="relative h-[12px] w-[12px] rounded-full bg-[#FF5F57] shadow-[0_0_0_0.5px_rgba(0,0,0,0.2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
+        className="relative h-[12px] w-[12px] rounded-full bg-[#FF5F57] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
       >
         <span className="pointer-events-none absolute inset-0 grid place-items-center text-[9px] font-bold leading-none text-[#4d0000] opacity-0 group-hover/lights:opacity-100">
           ×
@@ -208,7 +214,7 @@ function MacTrafficLights({ onClose }: { onClose?: () => void }): React.ReactEle
       </button>
       <span
         aria-hidden="true"
-        className="relative h-[12px] w-[12px] rounded-full bg-[#FEBC2E] shadow-[0_0_0_0.5px_rgba(0,0,0,0.2)]"
+        className="relative h-[12px] w-[12px] rounded-full bg-[#FEBC2E]"
       >
         <span className="pointer-events-none absolute inset-0 grid place-items-center text-[9px] font-bold leading-none text-[#5a3a00] opacity-0 group-hover/lights:opacity-100">
           −
@@ -216,7 +222,7 @@ function MacTrafficLights({ onClose }: { onClose?: () => void }): React.ReactEle
       </span>
       <span
         aria-hidden="true"
-        className="relative h-[12px] w-[12px] rounded-full bg-[#28C840] shadow-[0_0_0_0.5px_rgba(0,0,0,0.2)]"
+        className="relative h-[12px] w-[12px] rounded-full bg-[#28C840]"
       >
         <span className="pointer-events-none absolute inset-0 grid place-items-center text-[8px] font-bold leading-none text-[#0b4a14] opacity-0 group-hover/lights:opacity-100">
           +
@@ -268,14 +274,14 @@ function LevelMeter({ level, active }: { level: AudioLevel | null; active: boole
           <div
             key={i}
             className={cn(
-              'min-w-0 flex-1 rounded-[1px]',
+              'min-w-0 flex-1 rounded-sm',
               lit
                 ? clip
                   ? 'bg-[#FF453A]'
                   : warn
                     ? 'bg-[#FFD60A]'
                     : 'bg-[#30D158]'
-                : 'bg-white/[0.08]',
+                : 'bg-surface-elevated',
             )}
           />
         )
@@ -409,7 +415,7 @@ function KeyStatus({
     fail: 'bg-[#FF453A]',
     pending: 'bg-[#0A84FF]',
     warn: 'bg-[#FFD60A]',
-    idle: 'bg-white/20',
+    idle: 'bg-surface-border',
   }
   return (
     <span className="inline-flex items-center gap-1.5 text-[11px] text-white/50">
@@ -420,7 +426,7 @@ function KeyStatus({
 }
 
 const KEY_ACTION =
-  'inline-flex h-7 items-center gap-1.5 rounded-[6px] bg-white/[0.08] px-2.5 text-[12px] font-medium text-white transition-colors hover:bg-white/[0.13] disabled:opacity-40'
+  'inline-flex h-7 items-center gap-1.5 rounded-md bg-surface-elevated px-2.5 text-[12px] font-medium text-white transition-colors hover:bg-surface-border disabled:opacity-40'
 
 function ProviderKeyRow({
   provider,
@@ -505,7 +511,7 @@ function ProviderKeyRow({
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                className="grid h-7 w-7 shrink-0 place-items-center rounded-[6px] text-white/35 hover:bg-white/[0.07] hover:text-white"
+                className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-white/35 hover:bg-surface-tertiary hover:text-white"
                 aria-label={`${name} actions`}
               >
                 <MoreVertical size={15} aria-hidden="true" />
@@ -516,7 +522,7 @@ function ProviderKeyRow({
                 <ExternalLink size={13} aria-hidden="true" />
                 Get a {name} key
               </DropdownMenuItem>
-              <DropdownMenuSeparator className="bg-white/10" />
+              <DropdownMenuSeparator className="bg-surface-elevated" />
               <DropdownMenuItem
                 variant="destructive"
                 disabled={!configured && !editing}
@@ -609,7 +615,7 @@ function SaveBar({
     <div className="flex justify-end pt-1">
       <button
         className={cn(
-          'inline-flex items-center gap-1.5 rounded-[7px] bg-[#3a3a3a] px-3.5 py-1.5 text-[13px] font-medium text-white transition-colors hover:bg-[#454545] disabled:opacity-40 disabled:hover:bg-[#3a3a3a]',
+          'inline-flex items-center gap-1.5 rounded-md bg-[#3a3a3a] px-3.5 py-1.5 text-[13px] font-medium text-white transition-colors hover:bg-[#454545] disabled:opacity-40 disabled:hover:bg-[#3a3a3a]',
           saved && 'bg-[#2f6b3a] hover:bg-[#2f6b3a] disabled:opacity-100 disabled:hover:bg-[#2f6b3a]',
         )}
         disabled={disabled && !saved}
@@ -623,6 +629,46 @@ function SaveBar({
 }
 
 // ─── Section: ProPresenter Connection ────────────────────────────────────────
+
+/**
+ * The one switch for the whole integration. Kairo is standalone: until this is
+ * on, ProPresenter is never probed, prompted for or reported on anywhere.
+ * Saved at once — it is not part of the connection form's Save.
+ */
+function PropresenterSwitch({
+  settings,
+  onChange,
+}: {
+  settings: AppSettings
+  onChange: (next: AppSettings['propresenter']) => void
+}): React.ReactElement {
+  const enabled = propresenterEnabled(settings)
+  const toggle = async (on: boolean): Promise<void> => {
+    const next = { ...settings.propresenter, enabled: on }
+    onChange(next)
+    await window.api.settings.set('propresenter', next)
+    if (on) {
+      // Try straight away; a miss only shows in the header status.
+      await window.api.propresenter
+        .connect({ host: next.host, port: next.port, password: next.password })
+        .catch(() => undefined)
+    }
+  }
+  return (
+    <PrefGroup title="ProPresenter" plain>
+      <PrefRow
+        label="Use ProPresenter"
+        hint={
+          enabled
+            ? 'Kairo can also send to ProPresenter — library matches, messages, stage and its NDI video input.'
+            : 'Off — Kairo runs its own screens and never contacts ProPresenter.'
+        }
+      >
+        <Toggle checked={enabled} onChange={(on) => void toggle(on)} />
+      </PrefRow>
+    </PrefGroup>
+  )
+}
 
 function ConnectionSection({
   settings,
@@ -705,7 +751,7 @@ function ConnectionSection({
         </PrefRow>
         <PrefRow label="IP Address">
           <input
-            className={cn(PREF_INPUT, 'w-[220px] max-w-[44vw] !border-0 !bg-transparent !shadow-none focus:!bg-white/[0.025] focus:!ring-0')}
+            className={cn(PREF_INPUT, 'w-[220px] max-w-[44vw] !border-0 !bg-transparent !shadow-none focus:!bg-surface-secondary focus:!ring-0')}
             value={pp.host}
             onChange={(e) => update('propresenter', { host: e.target.value })}
             placeholder="192.168.1.100"
@@ -716,7 +762,7 @@ function ConnectionSection({
         </PrefRow>
         <PrefRow label="Port">
           <input
-            className={cn(PREF_INPUT, 'w-[220px] max-w-[44vw] tabular-nums !border-0 !bg-transparent !shadow-none focus:!bg-white/[0.025] focus:!ring-0')}
+            className={cn(PREF_INPUT, 'w-[220px] max-w-[44vw] tabular-nums !border-0 !bg-transparent !shadow-none focus:!bg-surface-secondary focus:!ring-0')}
             type="text"
             inputMode="numeric"
             pattern="[0-9]*"
@@ -735,7 +781,7 @@ function ConnectionSection({
         <PrefRow label="Password" hint="Preferences → Stage Display">
           <div className="w-[220px] max-w-[44vw]">
             <PasswordInput
-              className="h-7 border-0 bg-transparent py-0 text-right font-mono text-[13px] shadow-none focus:bg-white/[0.025] focus:ring-0"
+              className="h-7 border-0 bg-transparent py-0 text-right font-mono text-[13px] shadow-none focus:bg-surface-secondary focus:ring-0"
               value={pp.password}
               onChange={(e) => update('propresenter', { password: e.target.value })}
               placeholder="Optional"
@@ -926,8 +972,8 @@ function AudioSection({
                       aria-selected={selected}
                       onClick={() => update('audio', { deviceId: device.id })}
                       className={cn(
-                        'grid w-full grid-cols-[minmax(0,1fr)_5.5rem] items-center gap-3 rounded-[6px] px-2 py-[7px] text-left text-[13px]',
-                        selected ? 'bg-[#3d3d3d] text-white' : 'text-white/90 hover:bg-white/[0.04]',
+                        'grid w-full grid-cols-[minmax(0,1fr)_5.5rem] items-center gap-3 rounded-md px-2 py-[7px] text-left text-[13px]',
+                        selected ? 'bg-[#3d3d3d] text-white' : 'text-white/90 hover:bg-surface-tertiary',
                       )}
                     >
                       <span className="truncate">{device.label}</span>
@@ -1165,7 +1211,7 @@ function ApiKeysSection({
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center gap-2.5 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3.5 py-2.5">
+      <div className="flex items-center gap-2.5 rounded-xl border border-white/[0.06] bg-surface-secondary px-3.5 py-2.5">
         <Cloud size={15} className="shrink-0 text-white/40" aria-hidden="true" />
         <p className="min-w-0 flex-1 text-[11px] leading-snug text-white/50">{syncHint}</p>
         <span className="shrink-0 text-[11px] tabular-nums text-white/35">{configuredCount} of 6 set</span>
@@ -1186,7 +1232,7 @@ function ApiKeysSection({
 
       <PrefGroup title="Scripture detection" description="Reads the transcript and suggests verses. Only one provider is used at a time.">
         <PrefRow label="Provider">
-          <div className="flex items-center gap-0.5 rounded-[7px] bg-white/[0.05] p-0.5" role="radiogroup" aria-label="Detection provider">
+          <div className="flex items-center gap-0.5 rounded-md bg-surface-tertiary p-0.5" role="radiogroup" aria-label="Detection provider">
             {(['anthropic', 'deepseek'] as const).map((id) => {
               const active = llmProvider === id
               return (
@@ -1197,8 +1243,8 @@ function ApiKeysSection({
                   aria-checked={active}
                   onClick={() => update('stt', { llmProvider: id })}
                   className={cn(
-                    'rounded-[5px] px-3 py-1 text-[12px] font-medium transition-colors',
-                    active ? 'bg-white/[0.14] text-white shadow-sm' : 'text-white/45 hover:text-white/75',
+                    'rounded-md px-3 py-1 text-[12px] font-medium transition-colors',
+                    active ? 'bg-surface-border text-white shadow-sm' : 'text-white/45 hover:text-white/75',
                   )}
                 >
                   {id === 'anthropic' ? 'Anthropic' : 'DeepSeek'}
@@ -1417,8 +1463,8 @@ function ScriptureSection({
                     className={cn(
                       'rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors',
                       active
-                        ? 'bg-white/[0.12] text-white'
-                        : 'text-white/45 hover:bg-white/[0.05] hover:text-white/70',
+                        ? 'bg-surface-elevated text-white'
+                        : 'text-white/45 hover:bg-surface-tertiary hover:text-white/70',
                     )}
                   >
                     {option.label}
@@ -1478,22 +1524,7 @@ function ScriptureSection({
   )
 }
 
-// ─── Section: Overlay ─────────────────────────────────────────────────────────
-
-const OVERLAY_SAMPLE = {
-  reference: 'John 3:16',
-  translation: 'KJV' as ScriptureTranslation,
-  text: 'For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.',
-}
-
-function renderOverlayPreview(template: string, showTranslation: boolean): string {
-  const reference = showTranslation
-    ? `${OVERLAY_SAMPLE.reference} (${OVERLAY_SAMPLE.translation})`
-    : OVERLAY_SAMPLE.reference
-  return template
-    .replaceAll('{Reference}', reference)
-    .replaceAll('{Text}', OVERLAY_SAMPLE.text)
-}
+// ─── Section: Verses on screen ────────────────────────────────────────────────
 
 function OverlaySection({
   settings,
@@ -1507,21 +1538,17 @@ function OverlaySection({
   savedSection: string | null
 }) {
   const ov = settings.overlay
-  const ppState = useAppStore((s) => s.ppState)
-  const ppConnected = ppState === 'connected'
 
   const [testStatus, setTestStatus] = useState<TestStatus>('idle')
   const [testMsg, setTestMsg] = useState('')
-
-  const missingTextToken = !ov.template.includes('{Text}')
 
   const handleSendTest = async () => {
     setTestStatus('testing')
     setTestMsg('Sending…')
     try {
-      const ok = await window.api.propresenter.testOverlay()
+      const ok = await window.api.output.sendTest()
       setTestStatus(ok ? 'ok' : 'fail')
-      setTestMsg(ok ? 'Sent to ProPresenter' : 'Push failed — check logs')
+      setTestMsg(ok ? 'Sent' : 'Nothing took the test verse — check Screens')
     } catch (err) {
       setTestStatus('fail')
       setTestMsg(err instanceof Error ? err.message : 'Unknown error')
@@ -1532,7 +1559,7 @@ function OverlaySection({
     setTestStatus('testing')
     setTestMsg('Clearing…')
     try {
-      const ok = await window.api.propresenter.clearOverlay()
+      const ok = await window.api.output.clearAll()
       setTestStatus(ok ? 'ok' : 'fail')
       setTestMsg(ok ? 'Cleared' : 'Clear failed — check logs')
     } catch (err) {
@@ -1543,24 +1570,7 @@ function OverlaySection({
 
   return (
     <div className="space-y-5">
-      <PrefGroup title="Message">
-        <PrefRow
-          stacked
-          label="Template"
-          hint="{Reference} and {Text} are replaced when a verse is pushed."
-        >
-          <textarea
-            value={ov.template}
-            onChange={(e) => update('overlay', { template: e.target.value })}
-            rows={3}
-            className="input resize-none py-1.5 font-mono text-[12px]"
-            aria-label="ProPresenter message template"
-            aria-invalid={missingTextToken}
-          />
-          {missingTextToken ? (
-            <p className="text-[11px] text-yellow-400">Add {'{Text}'} or the verse will not show.</p>
-          ) : null}
-        </PrefRow>
+      <PrefGroup title="Verse text">
         <PrefRow label="Show translation" hint={'John 3:16 (KJV)'}>
           <Toggle
             checked={ov.showTranslation}
@@ -1602,20 +1612,12 @@ function OverlaySection({
             <span className="text-[12px] text-white/40">sec</span>
           </div>
         </PrefRow>
-        <PrefPad>
-          <p className="mb-2 text-[11px] text-white/40">Preview</p>
-          <div className="rounded-md bg-black/80 px-3 py-3">
-            <p className="text-center text-[12px] leading-snug text-white/90">
-              {renderOverlayPreview(ov.template, ov.showTranslation)}
-            </p>
-          </div>
-        </PrefPad>
-        <PrefRow label="Live test" hint={ppConnected ? testMsg || undefined : 'Connect ProPresenter first'}>
+        <PrefRow label="Test" hint={testMsg || 'Sends John 3:16 to every screen that is on'}>
           <div className="flex items-center gap-1.5">
             <button
               className="btn-secondary inline-flex items-center gap-1.5 py-1 px-2.5 text-[12px]"
               onClick={() => void handleSendTest()}
-              disabled={!ppConnected || testStatus === 'testing'}
+              disabled={testStatus === 'testing'}
             >
               <Send size={12} aria-hidden="true" />
               Send
@@ -1623,24 +1625,13 @@ function OverlaySection({
             <button
               className="btn-secondary inline-flex items-center gap-1.5 py-1 px-2.5 text-[12px]"
               onClick={() => void handleClear()}
-              disabled={!ppConnected || testStatus === 'testing'}
+              disabled={testStatus === 'testing'}
             >
               <Trash2 size={12} aria-hidden="true" />
               Clear
             </button>
           </div>
         </PrefRow>
-      </PrefGroup>
-
-      <PrefGroup title="ProPresenter theme">
-        <PrefPad>
-          <ol className="list-decimal space-y-1.5 pl-4 text-[12px] leading-relaxed text-white/45">
-            <li>Open Messages in ProPresenter.</li>
-            <li>Edit “Kairo Scripture” → Theme.</li>
-            <li>One full-width text box, lower-third or centered, dark backdrop.</li>
-            <li>Send a test verse above while you style it.</li>
-          </ol>
-        </PrefPad>
       </PrefGroup>
 
       <SaveBar sectionId="overlay" savedSection={savedSection} onSave={onSave} />
@@ -1653,7 +1644,7 @@ function OverlaySection({
 // ─── Software update ──────────────────────────────────────────────────────────
 
 const UPDATE_BTN =
-  'inline-flex items-center gap-1.5 rounded-[7px] bg-[#3a3a3a] px-3 py-1.5 text-[12px] font-medium text-white transition-colors hover:bg-[#454545] disabled:cursor-default disabled:opacity-40'
+  'inline-flex items-center gap-1.5 rounded-md bg-[#3a3a3a] px-3 py-1.5 text-[12px] font-medium text-white transition-colors hover:bg-[#454545] disabled:cursor-default disabled:opacity-40'
 
 /**
  * Reads 'idle' with no action in dev and in unpackaged builds, because the main
@@ -1778,7 +1769,7 @@ function WorkspaceGroup(): React.ReactElement {
   return (
     <PrefGroup title="Storage">
       <PrefRow stacked label="Kairo folder" hint="Songs and backgrounds live here">
-        <p className="break-all rounded-md bg-black/40 px-3 py-2 font-mono text-[11px] leading-snug text-white/70">
+        <p className="break-all rounded-md bg-surface px-3 py-2 font-mono text-[11px] leading-snug text-white/70">
           {info?.root ?? 'Locating\u2026'}
         </p>
         {info && !info.ready && (
@@ -1965,7 +1956,7 @@ function GeneralSection({
               aria-label="Gloss color hex"
             />
           </div>
-          <div className="rounded-md bg-black/70 px-3 py-3 text-center">
+          <div className="rounded-md bg-black px-3 py-3 text-center">
             <p className="text-[13px] font-medium leading-snug text-white">
               Onye nke di ike n&apos;aka Ya
             </p>
@@ -2031,6 +2022,7 @@ export default function Settings({
         church: { ...prev.church, ...stored.church },
         documents: { ...prev.documents, ...stored.documents },
         propresenterResources: { ...prev.propresenterResources, ...stored.propresenterResources },
+        presentation: normalizePresentationSettings(stored.presentation ?? prev.presentation),
       }))
       setLoading(false)
     }
@@ -2160,18 +2152,19 @@ export default function Settings({
     return `${item.label} ${item.hint}`.toLowerCase().includes(query)
   })
   const currentNav = SECTION_NAV.find((s) => s.id === activeSection) ?? SECTION_NAV[0]
+  const firstIntegration = navItems.find((item) => INTEGRATION_SECTIONS.has(item.id))?.id
   const displayName = session.user?.name?.trim() || 'Account'
   const displayMeta = session.org?.name || session.user?.email || 'Signed in'
   const canBack = histIndex > 0
   const canForward = histIndex < historyRef.current.length - 1
 
   return (
-    <div className="kairo-pp-settings flex h-full w-full bg-[#1e1e1e] text-white">
+    <div className="kairo-pp-settings flex h-full w-full overflow-hidden rounded-xl bg-[#1e1e1e] text-white">
       <aside data-settings-drag className="flex w-[212px] shrink-0 flex-col bg-[#323232]">
         <MacTrafficLights onClose={onClose} />
 
         <div className="px-3 pb-2.5">
-          <label className="flex h-8 items-center gap-1.5 rounded-[6px] bg-[#1c1c1c] px-2">
+          <label className="flex h-8 items-center gap-1.5 rounded-md bg-[#1c1c1c] px-2">
             <Search size={11} className="shrink-0 text-white/35" aria-hidden="true" />
             <input
               value={navQuery}
@@ -2187,8 +2180,8 @@ export default function Settings({
           type="button"
           onClick={() => selectSection('account')}
           className={cn(
-            'mx-2 mb-2 flex items-center gap-2.5 rounded-[8px] px-2 py-1.5 text-left',
-            activeSection === 'account' ? 'bg-[#454545]' : 'hover:bg-white/[0.06]',
+            'mx-2 mb-2 flex items-center gap-2.5 rounded-md px-2 py-1.5 text-left',
+            activeSection === 'account' ? 'bg-[#454545]' : 'hover:bg-surface-tertiary',
           )}
         >
           <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#E07A3D] text-[11px] font-semibold text-white">
@@ -2211,20 +2204,25 @@ export default function Settings({
             navItems.map(({ id, label, hint, icon }) => {
               const active = activeSection === id
               return (
+                <Fragment key={id}>
+                {id === firstIntegration && (
+                  <p className="px-2 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-[0.08em] text-white/35">
+                    Integrations
+                  </p>
+                )}
                 <button
-                  key={id}
                   type="button"
                   onClick={() => selectSection(id)}
                   className={cn(
-                    'flex w-full items-center gap-2.5 rounded-[6px] px-2 py-2 text-left text-[13px] text-white',
-                    active ? 'bg-[#454545]' : 'hover:bg-white/[0.06]',
+                    'flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-left text-[13px] text-white',
+                    active ? 'bg-[#454545]' : 'hover:bg-surface-tertiary',
                   )}
                   aria-current={active ? 'page' : undefined}
                   aria-label={`${label} settings: ${hint}`}
                 >
                   <span
                     className={cn(
-                      'grid h-[18px] w-[18px] shrink-0 place-items-center rounded-[4px] text-white',
+                      'grid h-[18px] w-[18px] shrink-0 place-items-center rounded-md text-white',
                       NAV_ICON_BG[id],
                     )}
                   >
@@ -2232,6 +2230,7 @@ export default function Settings({
                   </span>
                   <span className="min-w-0 truncate">{label}</span>
                 </button>
+                </Fragment>
               )
             })
           )}
@@ -2245,7 +2244,7 @@ export default function Settings({
             aria-label="Back"
             disabled={!canBack}
             onClick={() => goHistory(-1)}
-            className="grid h-6 w-6 place-items-center rounded text-white/50 hover:bg-white/10 disabled:opacity-25"
+            className="grid h-6 w-6 place-items-center rounded text-white/50 hover:bg-surface-elevated disabled:opacity-25"
           >
             <ChevronLeft size={16} aria-hidden="true" />
           </button>
@@ -2254,7 +2253,7 @@ export default function Settings({
             aria-label="Forward"
             disabled={!canForward}
             onClick={() => goHistory(1)}
-            className="grid h-6 w-6 place-items-center rounded text-white/50 hover:bg-white/10 disabled:opacity-25"
+            className="grid h-6 w-6 place-items-center rounded text-white/50 hover:bg-surface-elevated disabled:opacity-25"
           >
             <ChevronRight size={16} aria-hidden="true" />
           </button>
@@ -2272,6 +2271,15 @@ export default function Settings({
               <>
                 {activeSection === 'propresenter' && (
                   <>
+                    <PropresenterSwitch
+                      settings={settings}
+                      onChange={(next) => {
+                        update('propresenter', { enabled: next.enabled })
+                        publish('propresenter', next)
+                      }}
+                    />
+                    {propresenterEnabled(settings) && (<>
+                    <SettingsDivider />
                     <ConnectionSection
                       settings={settings}
                       update={update}
@@ -2279,7 +2287,34 @@ export default function Settings({
                       savedSection={savedSection}
                     />
                     <SettingsDivider />
+                    <PrefGroup title="Messages layer">
+                      <PrefPad>
+                        <p className="text-[12px] leading-relaxed text-white/45">
+                          What Kairo sends to ProPresenter — library matches, the Messages layer and
+                          stage messages, and their text templates — is set up in{' '}
+                          <button
+                            type="button"
+                            className="text-teal-400 hover:underline"
+                            onClick={() => {
+                              onClose?.()
+                              useAppStore.getState().openScreens()
+                            }}
+                          >
+                            Screens
+                          </button>
+                          . To style the Messages layer:
+                        </p>
+                        <ol className="mt-2 list-decimal space-y-1.5 pl-4 text-[12px] leading-relaxed text-white/45">
+                          <li>Open Messages in ProPresenter.</li>
+                          <li>Edit “Kairo Scripture” → Theme.</li>
+                          <li>One full-width text box, lower-third or centered, dark backdrop.</li>
+                          <li>Use Test verse in Screens while you style it.</li>
+                        </ol>
+                      </PrefPad>
+                    </PrefGroup>
+                    <SettingsDivider />
                     <ResourceCatalogue mode="settings" />
+                    </>)}
                   </>
                 )}
                 {activeSection === 'audio' && (

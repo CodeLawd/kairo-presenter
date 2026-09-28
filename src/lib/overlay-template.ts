@@ -29,7 +29,7 @@ export function escapeHtml(input: string): string {
 }
 
 /** Escape first, then convert newlines to <br> — never the other order. */
-function escapeAndBreak(input: string): string {
+export function escapeAndBreak(input: string): string {
   return escapeHtml(input).replace(/\n/g, '<br>')
 }
 
@@ -146,7 +146,7 @@ function backgroundLayerHTML(theme: OverlayTheme): string {
     const mediaStyle = `width:100%; height:100%; object-fit:${bg.mediaFit ?? 'cover'}; display:block;`
     const media =
       bg.type === 'video'
-        ? `<video src="${src}" style="${mediaStyle}" autoplay${playback.loop ? ' loop' : ''} muted playsinline preload="auto"></video>`
+        ? `<video src="${src}" style="${mediaStyle}" autoplay${playback.loop ? ' loop' : ''} muted playsinline preload="auto" crossorigin="anonymous"></video>`
         : `<img src="${src}" style="${mediaStyle}" alt="">`
     const filterStyle = filter ? ` filter:${filter};` : ''
     return `<div class="pa-bg" style="position:absolute; inset:0; opacity:${bg.opacity}; overflow:hidden;${filterStyle}">${media}</div>`
@@ -271,7 +271,7 @@ export function estimateAutoFitVerseFontPx(
  * `frameWidth`/`frameHeight` matter only to the auto-fit estimate; both real
  * consumers (NDI overlay window and Theme editor preview) render at 1920×1080.
  */
-function textBoxChrome(theme: OverlayTheme, style: OverlayTextStyle, edgeToEdge: boolean): string {
+function textBoxChrome(theme: OverlayTheme, style: OverlayTextStyle): string {
   const { layout } = theme
   const justify =
     style.verticalAlign === 'top'
@@ -279,7 +279,6 @@ function textBoxChrome(theme: OverlayTheme, style: OverlayTextStyle, edgeToEdge:
       : style.verticalAlign === 'bottom'
         ? 'flex-end'
         : 'center'
-  const radius = edgeToEdge ? 0 : layout.backdropRadiusPx
   const parts = [
     `padding:${layout.paddingPx}px;`,
     'display:flex;',
@@ -292,8 +291,8 @@ function textBoxChrome(theme: OverlayTheme, style: OverlayTextStyle, edgeToEdge:
     'min-width:0;',
   ]
   if (layout.backdropBox) {
+    // Square corners always — the program has no rounded chrome.
     parts.push(`background:${layout.backdropColor};`)
-    parts.push(`border-radius:${radius}px;`)
   }
   return parts.join(' ')
 }
@@ -323,10 +322,6 @@ function verseFillCss(style: OverlayTextStyle, autoFit: boolean): string {
   ].join(' ')
 }
 
-function isEdgeToEdgeBox(box: OverlayTheme['verse']['box']): boolean {
-  return box.xPct <= 0.5 && box.yPct <= 0.5 && box.widthPct >= 99 && box.heightPct >= 99
-}
-
 export function renderOverlayHTML(
   theme: OverlayTheme,
   reference: string,
@@ -348,8 +343,8 @@ export function renderOverlayHTML(
 
   const verseBox = verse.box
   const refBox = ref.box
-  const verseChrome = textBoxChrome(theme, verse, isEdgeToEdgeBox(verseBox))
-  const refChrome = textBoxChrome(theme, ref, isEdgeToEdgeBox(refBox))
+  const verseChrome = textBoxChrome(theme, verse)
+  const refChrome = textBoxChrome(theme, ref)
 
   const verseBlock = text.trim()
     ? `<div class="pa-verse-box" data-auto-fit="${layout.autoFitText ? 'true' : 'false'}" data-max-font-px="${verseFontPx}" style="${overlayBoxStyle(verseBox)} ${verseChrome}">

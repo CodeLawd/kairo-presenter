@@ -1,4 +1,9 @@
 import { DOCUMENTS } from "@shared/documents";
+import { writeFile } from "fs/promises";
+import { normalizePresentationSettings, PROGRAM } from "@shared/program";
+import { SONG_USAGE, songUsageCsv } from "@shared/song-usage";
+import { programService } from "../services/output/program-service";
+import { songUsageService } from "../services/song-usage";
 import { TRANSFER, type TransferCommitRequest, type TransferExportRequest } from "@shared/kairo-bundle";
 import { transferService } from "../services/transfer";
 import { documentsService } from "../services/documents";
@@ -25,7 +30,8 @@ import type {
   PPResourceKind,
 } from "@shared/propresenter-resources";
 import { normalizeOverlaySettings } from "@shared/overlay-defaults";
-import { findNdiOutput } from "@shared/overlay-outputs";
+import { findNdiOutput, outputRequiresPropresenter, surfaceOutputs } from "@shared/overlay-outputs";
+import { propresenterEnabled } from "@shared/pp-connect-gate";
 import { normalizeThemeLibrary } from "@shared/theme-library";
 import {
   LYRICS_SECRET_KEYS,
@@ -66,7 +72,8 @@ import { ndiService } from "../services/ndi";
 import { mediaService, MEDIA_FILE_EXTENSIONS } from "../services/media";
 import { tracksService } from "../services/tracks";
 import { TRACK_FILE_EXTENSIONS } from "@shared/tracks";
-import { overlayWindow } from "../services/ndi/overlay-window";
+import { surfaceManager } from "../services/output/surface-manager";
+import { dialogParentWindow } from "../main-window";
 import { allowPickedOverlayMedia } from "../services/ndi/media-allowlist";
 import { runBootstrap } from "../bootstrap";
 import { onboardingService } from "../services/cloud/onboarding";
@@ -177,18 +184,6 @@ function registerProPresenterHandlers(): void {
     return proPresenterService.getPlaylists();
   });
 
-  ipcMain.handle(IPC.PROPRESENTER.TEST_OVERLAY, async () => {
-    return orchestrator.testOverlay();
-  });
-
-  ipcMain.handle(IPC.PROPRESENTER.CLEAR_TEXT, async () => {
-    return orchestrator.clearText();
-  });
-
-  ipcMain.handle(IPC.PROPRESENTER.CLEAR_OVERLAY, async () => {
-    return orchestrator.clearOverlay();
-  });
-
   ipcMain.handle(IPC.PROPRESENTER.GET_LOOKS, async () => {
     if (proPresenterService.getStatus().state !== "connected") return [];
     return proPresenterService.rawClient.getLooks();
@@ -276,7 +271,7 @@ function registerScriptureHandlers(): void {
   });
 
   ipcMain.handle(IPC.SCRIPTURE.IMPORT_SERMON_NOTES, async () => {
-    const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+    const win = dialogParentWindow();
     const options: OpenDialogOptions = {
       properties: ['openFile'],
       filters: [{ name: 'Sermon notes', extensions: ['docx', 'pdf', 'txt', 'md', 'rtf'] }],
@@ -330,20 +325,6 @@ function registerScriptureHandlers(): void {
   ipcMain.handle(
     IPC.SCRIPTURE.SET_LIVE_PLAN,
     (_event, planId: string | null) => livePlanService.setPlan(planId),
-  );
-
-  ipcMain.handle(
-    IPC.SCRIPTURE.SET_TRANSLATION,
-    async (_event, translation: string) => {
-      scriptureService.setDefaultTranslation(translation);
-      orchestrator.setScriptureTranslation(
-        translation as AppSettings["scripture"]["defaultTranslation"],
-      );
-      await store.set("scripture", {
-        ...store.get("scripture"),
-        defaultTranslation: translation,
-      });
-    },
   );
 
   ipcMain.handle(
@@ -416,7 +397,7 @@ function registerScriptureHandlers(): void {
   });
 
   ipcMain.handle(IPC.SCRIPTURE.INSTALL_LOCAL_BIBLE_PACK, async () => {
-    const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+    const win = dialogParentWindow();
     const options: OpenDialogOptions = {
       title: "Install local Bible pack",
       properties: ["openFile"],
@@ -675,11 +656,17 @@ function registerLyricsHandlers(): void {
     const slide = slides[slideIndex];
     if (!slide) throw new Error(`Slide ${slideIndex + 1} not found in "${song.title}"`);
 
+    const following = slides[slideIndex + 1];
     await orchestrator.presentLyricSlide(
       `${song.title} — ${slide.sectionLabel}`,
       slide.lines.join("\n"),
       slide.lines.map((text, index) => ({ text, color: slide.lineColors?.[index] })),
+      following
+        ? { reference: `${song.title} — ${following.sectionLabel}`, text: following.lines.join("\n") }
+        : null,
     );
+    // After the push: a slide that failed to go up was not sung from Kairo.
+    songUsageService.record(song);
   });
 
   ipcMain.handle(
@@ -767,16 +754,32 @@ function registerDocumentHandlers(): void {
   handle(DOCUMENTS.PUSH, async (_event, id, page) => {
     const path = await documentsService.page(id, page);
     const applied = await orchestrator.presentDocumentPage(path);
+    if (applied) programService.setSlide({ reference: `Page ${page + 1}`, text: "" });
     // Decode the next page while the room reads this one. Never awaited: a
     // missing next page (end of deck) must not slow or fail this push.
     if (applied) {
       void documentsService
         .page(id, page + 1)
-        .then((next) => overlayWindow.preloadDocumentPage(next))
+        .then((next) => surfaceManager.preloadDocumentPage(next))
         .catch(() => undefined);
     }
     return { applied };
   });
+}
+
+/**
+ * Why a background reached no screen, in the operator's words: the first
+ * screen that should have taken it and what is wrong with it.
+ */
+function backgroundTargetProblem(): string {
+  // Outputs a background could land on — lobby screens play their own playlist.
+  const outputs = surfaceOutputs(normalizeOverlaySettings(store.get("overlay")).outputs).filter(
+    (o) => o.show.backgrounds,
+  );
+  if (outputs.length === 0) return "No screen is on";
+  const screen = outputs.find((o) => o.kind === "screen");
+  if (screen) return `${screen.name}: ${surfaceManager.screenState(screen.id).reason}`;
+  return "The NDI feed is not available";
 }
 
 function registerMediaHandlers(): void {
@@ -825,12 +828,12 @@ function registerMediaHandlers(): void {
     const applied = await orchestrator.presentLiveBackground();
 
     log.info("[Media] Background pushed", { name: item.name, applied });
-    return { applied };
+    return applied ? { applied } : { applied, reason: backgroundTargetProblem() };
   });
 
   ipcMain.handle(IPC.MEDIA.CLEAR, async () => {
     mediaService.setLiveItem(null);
-    await overlayWindow.setBackground({
+    await surfaceManager.setBackground({
       ...normalizeOverlaySettings(store.get("overlay")).theme.background,
       type: "transparent",
       mediaPath: "",
@@ -859,7 +862,7 @@ function registerMediaHandlers(): void {
     // A background that was on screen must come down with the file — otherwise
     // the NDI frame keeps showing a path that no longer exists.
     if (live?.id === itemId) {
-      await overlayWindow.setBackground({
+      await surfaceManager.setBackground({
         ...normalizeOverlaySettings(store.get("overlay")).theme.background,
         type: "transparent",
         mediaPath: "",
@@ -885,7 +888,7 @@ function registerMediaHandlers(): void {
   ipcMain.handle(IPC.MEDIA.CLIPBOARD_HAS_FILES, () => mediaService.clipboardHasFiles());
 
   ipcMain.handle(IPC.MEDIA.ADD_MEDIA_TO_PLAYLIST, async (_event, playlistId: string) => {
-    const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+    const win = dialogParentWindow();
     const options: OpenDialogOptions = {
       title: "Add backgrounds",
       properties: ["openFile", "multiSelections"],
@@ -902,21 +905,21 @@ function registerMediaHandlers(): void {
     const library = await mediaService.setPlayback(itemId, patch);
     const live = mediaService.getLiveItem();
     if (live?.id === itemId) {
-      await overlayWindow.patchBackgroundPlayback(mediaService.getPlayback(itemId));
+      await surfaceManager.patchBackgroundPlayback(mediaService.getPlayback(itemId));
     }
     return library;
   });
 
   ipcMain.handle(IPC.MEDIA.SET_PAUSED, async (_event, paused: boolean) => {
     const library = mediaService.setLivePaused(!!paused);
-    await overlayWindow.setVideoPaused(library.livePaused);
+    await surfaceManager.setVideoPaused(library.livePaused);
     return library;
   });
 
   ipcMain.handle(IPC.MEDIA.SEEK, async (_event, seconds: number) => {
     const live = mediaService.getLiveItem();
     if (!live || live.kind !== "video") return;
-    await overlayWindow.seekVideo(Number(seconds));
+    await surfaceManager.seekVideo(Number(seconds));
   });
 }
 
@@ -958,11 +961,97 @@ function registerTracksHandlers(): void {
   handle(IPC.TRACKS.STOP, () => tracksService.stop());
 }
 
+function registerProgramHandlers(): void {
+  programService.onChange((state) => broadcast(PROGRAM.STATE, state));
+
+  handle(PROGRAM.GET_STATE, () => programService.getState());
+  handle(PROGRAM.SHOW_MESSAGE, (_event, text: string) => programService.showMessage(String(text ?? "")));
+  handle(PROGRAM.CLEAR_MESSAGE, () => programService.clearMessage());
+  handle(PROGRAM.SET_STAGE_MESSAGE, (_event, text: string | null) =>
+    programService.setStageMessage(typeof text === "string" ? text : null),
+  );
+  handle(PROGRAM.SET_PROP, (_event, id: string, on: boolean) => programService.setProp(String(id), !!on));
+  handle(PROGRAM.CLEAR_PROPS, () => programService.clearProps());
+  handle(PROGRAM.SET_LOGO, (_event, on: boolean) => programService.setLogo(!!on));
+  handle(PROGRAM.SET_CAMERA, (_event, label: string | null, audioLabel?: string | null) =>
+    programService.setCamera(
+      typeof label === "string" ? label : null,
+      typeof audioLabel === "string" ? audioLabel : null,
+    ),
+  );
+  // Program sound from an NDI surface's page (src/preload/program.ts). A
+  // fire-and-forget stream — ~47 blocks a second per feed — so `on`, not `handle`.
+  ipcMain.removeAllListeners(PROGRAM.NDI_AUDIO);
+  ipcMain.on(PROGRAM.NDI_AUDIO, (event, block) => {
+    if (!block || typeof block !== "object") return;
+    surfaceManager.handleNdiAudio(event.sender.id, block);
+  });
+  handle(PROGRAM.NDI_AUDIO_SUPPORTED, () => surfaceManager.ndiAudioSupported());
+  handle(PROGRAM.TIMER_SET, (_event, seconds: number) => programService.setTimer(Number(seconds) || 0));
+  handle(PROGRAM.TIMER_START, () => programService.startTimer());
+  handle(PROGRAM.TIMER_PAUSE, () => programService.pauseTimer());
+  handle(PROGRAM.TIMER_RESET, () => programService.resetTimer());
+  handle(PROGRAM.STAGE_STATUS, () => surfaceManager.stageStatus());
+  surfaceManager.onStageStatus((status) => broadcast(PROGRAM.STAGE_STATUS_CHANGED, status));
+  handle(PROGRAM.PICK_IMAGE, async () => {
+    const win = dialogParentWindow();
+    const options: OpenDialogOptions = {
+      title: "Choose an image",
+      properties: ["openFile"],
+      filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"] }],
+    };
+    const result = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
+    if (result.canceled || result.filePaths.length === 0) return null;
+    // Servable at once for the preview; saved into `presentation` it stays servable.
+    allowPickedOverlayMedia(result.filePaths[0]);
+    return result.filePaths[0];
+  });
+}
+
+function registerSongUsageHandlers(): void {
+  const range = (from: unknown, to: unknown): [number, number] => [
+    Number.isFinite(Number(from)) ? Number(from) : 0,
+    Number.isFinite(Number(to)) ? Number(to) : Date.now(),
+  ];
+  handle(SONG_USAGE.LIST, (_event, from: number, to: number) => songUsageService.list(...range(from, to)));
+  handle(SONG_USAGE.CLEAR, (_event, before: number) => songUsageService.clearBefore(Number(before) || 0));
+  handle(SONG_USAGE.EXPORT, async (_event, from: number, to: number) => {
+    const entries = songUsageService.list(...range(from, to));
+    const win = dialogParentWindow();
+    const options = {
+      title: "Export song usage",
+      defaultPath: `song-usage-${new Date().toISOString().slice(0, 10)}.csv`,
+      filters: [{ name: "CSV", extensions: ["csv"] }],
+    };
+    const result = win ? await dialog.showSaveDialog(win, options) : await dialog.showSaveDialog(options);
+    if (result.canceled || !result.filePath) return null;
+    await writeFile(result.filePath, songUsageCsv(entries), "utf8");
+    return result.filePath;
+  });
+}
+
+function registerOutputHandlers(): void {
+  handle(IPC.OUTPUT.SEND_TEST, () => orchestrator.testOverlay());
+  handle(IPC.OUTPUT.CLEAR_TEXT, () => orchestrator.clearText());
+  handle(IPC.OUTPUT.CLEAR_ALL, () => orchestrator.clearOverlay());
+}
+
+function registerDisplayHandlers(): void {
+  ipcMain.handle(IPC.DISPLAYS.LIST, () => surfaceManager.listDisplays());
+  ipcMain.handle(IPC.DISPLAYS.IDENTIFY, () => surfaceManager.identify());
+  surfaceManager.onChange((displays) => broadcast(IPC.DISPLAYS.CHANGED, displays));
+  // A re-matched display id was written behind the renderer's back — resend
+  // settings so its next overlay write does not put the old id back.
+  surfaceManager.onStoreWrite(() => broadcastSettingsChanged());
+}
+
 function registerNdiHandlers(): void {
   ipcMain.handle(IPC.NDI.GET_STATUS, async () => {
     const ndiStatus = ndiService.getStatus();
     const overlay = normalizeOverlaySettings(store.get("overlay"));
-    const connected = proPresenterService.getStatus().state === "connected";
+    // With the integration off, ProPresenter simply is not part of the answer.
+    const ppOn = propresenterEnabled({ propresenter: store.get("propresenter") });
+    const connected = ppOn && proPresenterService.getStatus().state === "connected";
     const ndiOutput = findNdiOutput(overlay.outputs);
 
     // Trust a stored uuid. Hitting /v1/video_inputs on this 4s poll saturates the
@@ -974,14 +1063,19 @@ function registerNdiHandlers(): void {
     const outputs: NdiOutputStatus[] = overlay.outputs
       .filter((o) => o.enabled)
       .map((o) => {
-        if (!connected) return { id: o.id, ready: false, reason: "ProPresenter not connected" };
-        if (o.kind !== "ndi") return { id: o.id, ready: true };
+        // Kairo screens never depend on ProPresenter — their state is the display's.
+        if (o.kind === "screen") return { id: o.id, ...surfaceManager.screenState(o.id) };
+        if (outputRequiresPropresenter(o.kind)) {
+          if (!ppOn) return { id: o.id, ready: false, reason: "ProPresenter integration is off" };
+          return connected ? { id: o.id, ready: true } : { id: o.id, ready: false, reason: "Waiting for ProPresenter" };
+        }
         if (!ndiStatus.available) {
           return { id: o.id, ready: false, reason: "NDI sender unavailable" };
         }
-        if (!ppInputConfigured) {
-          return { id: o.id, ready: false, reason: "no ProPresenter video input bound" };
-        }
+        // Extra NDI feeds go to livestream / recording receivers, never to PP.
+        if (!surfaceManager.isPrimaryNdi(o.id)) return { id: o.id, ready: true };
+        // The frame goes out either way; switching ProPresenter to it is an
+        // optional extra, so none of this makes the feed "not ready".
         return { id: o.id, ready: true };
       });
 
@@ -994,7 +1088,7 @@ function registerNdiHandlers(): void {
   });
 
   ipcMain.handle(IPC.NDI.PICK_OVERLAY_MEDIA, async (_event, kind: "image" | "video") => {
-    const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+    const win = dialogParentWindow();
     const filters =
       kind === "video"
         ? [{ name: "Videos", extensions: ["mp4", "mov", "m4v", "webm"] }]
@@ -1014,6 +1108,7 @@ function settingsForRenderer(): SettingsWithSecretsStatus {
   const raw: AppSettings = {
     ...store.store,
     overlay: normalizeOverlaySettings(store.get("overlay")),
+    presentation: normalizePresentationSettings(store.get("presentation")),
     themeLibrary: normalizeThemeLibrary(
       store.get("themeLibrary"),
       store.get("overlay").theme,
@@ -1055,6 +1150,9 @@ function registerSettingsHandlers(): void {
           ...(value as Partial<AppSettings["overlay"]>),
         });
         store.set("overlay", merged);
+        // Enabling, disabling or re-pointing a screen output opens, closes or
+        // moves its window right away.
+        void surfaceManager.reconcile(merged.outputs);
       } else if (key === "themeLibrary") {
         store.set(
           "themeLibrary",
@@ -1082,8 +1180,19 @@ function registerSettingsHandlers(): void {
         void cloudSession.pushOrgSecrets(incoming.clearKeys ?? []);
       } else if (key === "documents") {
         store.set("documents", normalizeDocumentsSettings(value));
+      } else if (key === "presentation") {
+        store.set("presentation", normalizePresentationSettings(value));
+        programService.pruneProps();
+        // Transition, audio, message style, props and stage displays all live
+        // in the program windows — re-apply and open / close stage windows.
+        void surfaceManager.reconcile();
       } else {
         store.set(key, value);
+        // Switching the integration off means Kairo stops talking to
+        // ProPresenter at once — no lingering link, no reconnect attempts.
+        if (key === "propresenter" && !propresenterEnabled({ propresenter: value as AppSettings["propresenter"] })) {
+          void proPresenterService.disconnect().catch(() => undefined);
+        }
         if (key === "church") {
           const church = value as AppSettings["church"];
           void cloudSession.syncOrgProfile({
@@ -1353,16 +1462,7 @@ async function cloudResult<T>(run: () => Promise<T>): Promise<{
 
 // ─── Startup bootstrap ────────────────────────────────────────────────────────
 
-/** Whether this launch has already shown the ProPresenter connect prompt. */
-let ppConnectPromptClaimed = false;
-
 function registerAppHandlers(): void {
-  handle(IPC.APP.CLAIM_PP_CONNECT_PROMPT, () => {
-    if (ppConnectPromptClaimed) return false;
-    ppConnectPromptClaimed = true;
-    return true;
-  });
-
   // One round trip for everything the first render needs. Only local resources
   // are awaited — API.Bible authorization, audio devices, NDI, and the
   // ProPresenter connection hydrate in the background afterwards.
@@ -1421,6 +1521,10 @@ export function registerIpcHandlers(): void {
   registerResilienceHandlers();
   registerUpdateHandlers();
   registerNdiHandlers();
+  registerDisplayHandlers();
+  registerOutputHandlers();
+  registerProgramHandlers();
+  registerSongUsageHandlers();
   registerDocumentHandlers();
   registerMediaHandlers();
   registerTracksHandlers();
