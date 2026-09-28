@@ -219,7 +219,7 @@ export default function DevicesPage(): React.ReactElement {
   return (
     <div className="flex w-full max-w-md flex-col gap-5">
       <header>
-        <h2 className="font-display text-[22px] font-semibold tracking-tight">Booth machines</h2>
+        <h2 className="font-display text-[22px] font-semibold tracking-tight">Kairo computers</h2>
         <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
           Macs and PCs signed into this church from the Kairo app.
         </p>
@@ -246,7 +246,7 @@ export default function DevicesPage(): React.ReactElement {
         <Card>
           <CardContent className="py-6">
             <p className="text-sm leading-relaxed text-muted-foreground">
-              No booth computers are signed in yet. Open Kairo on a machine with{' '}
+              No Kairo computers are signed in yet. Open Kairo on a computer with{' '}
               <span className="text-foreground">{session.user.email}</span> and it will appear here.
             </p>
             <Button

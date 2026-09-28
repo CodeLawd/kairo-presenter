@@ -82,7 +82,7 @@ export default function StepChurchProfile(): React.ReactElement {
   }
 
   return (
-    <StepShell title="Your church" blurb="This is the name of your organization — it follows this account to every machine in the booth.">
+    <StepShell title="Your church" blurb="This is the name of your organization — it follows this account to every Kairo computer.">
       <div>
         <label className="label" htmlFor="ob-church-name">Church name</label>
         <input

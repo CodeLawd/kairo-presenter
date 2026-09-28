@@ -8,7 +8,7 @@ export function MoreFeatures(): React.ReactElement {
     <section className={cx(section, wrap)}>
       <Reveal>
         <h2 className={cx(display, 'max-w-[18ch] text-[clamp(30px,3.7vw,48px)]')}>
-          Everything else the booth needs
+          Everything else your team needs
         </h2>
         <div className="mt-[clamp(32px,4vw,52px)] grid gap-4 min-[720px]:grid-cols-2 min-[1080px]:grid-cols-3">
           {MORE.map((item) => (

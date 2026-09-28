@@ -1120,7 +1120,7 @@ function StageInspector({
           </label>
         ))}
         <p className="text-[10px] leading-snug text-slate-500">
-          The slide that is up is always shown. Stage-only messages come from Booth → Timers.
+          The slide that is up is always shown. Stage-only messages come from Operator → Timers.
         </p>
       </InspectorGroup>
       <RemoveButton label="Remove stage display" onRemove={onRemove} />

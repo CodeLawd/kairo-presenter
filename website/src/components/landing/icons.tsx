@@ -16,6 +16,16 @@ export function IconWindows(): React.ReactElement {
   )
 }
 
+export function IconLinux(): React.ReactElement {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <ellipse cx="12" cy="10" rx="4.6" ry="7.5" />
+      <path d="M8.3 11.5c-2.1 1.6-3.6 4.2-3.3 6.5.2 1.6 1.2 2.4 2.8 2.4h8.4c1.6 0 2.6-.8 2.8-2.4.3-2.3-1.2-4.9-3.3-6.5M9 20.4l-2 1.4M15 20.4l2 1.4" />
+      <path d="M10.5 8.3h.1M13.4 8.3h.1M11 10.5l1 1 1-1M9.4 15.6c.7 1.1 1.5 1.7 2.6 1.7s1.9-.6 2.6-1.7" />
+    </svg>
+  )
+}
+
 export function IconShield(): React.ReactElement {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

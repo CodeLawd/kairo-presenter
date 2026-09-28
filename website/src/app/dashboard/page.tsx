@@ -163,7 +163,7 @@ export default function DashboardPage(): React.ReactElement {
           ? filter.range === 'all' && !filter.speaker
             ? 'All recorded services'
             : formatCountDelta(stats.services, previous.services)
-          : 'From the booth',
+          : 'Recorded by your team',
     },
     {
       label: 'Hours transcribed',
@@ -198,7 +198,7 @@ export default function DashboardPage(): React.ReactElement {
       href: '/dashboard/keys',
       icon: KeyRoundIcon,
       title: 'API keys',
-      description: 'Sync keys to every booth machine',
+      description: 'Sync keys to every Kairo computer',
     },
     {
       href: '/dashboard/devices',
@@ -291,7 +291,7 @@ export default function DashboardPage(): React.ReactElement {
         <Card>
           <CardHeader>
             <CardTitle>Recent recaps</CardTitle>
-            <CardDescription>Latest services written up from the booth.</CardDescription>
+            <CardDescription>Latest services written up by your team.</CardDescription>
             <CardAction>
               <Button render={<Link href="/dashboard/sermons" />} nativeButton={false} variant="ghost" size="sm">
                 View all
@@ -415,7 +415,7 @@ export default function DashboardPage(): React.ReactElement {
           <Card size="sm">
             <CardHeader>
               <CardTitle>Shortcuts</CardTitle>
-              <CardDescription>Keep the booth in sync.</CardDescription>
+              <CardDescription>Keep your team in sync.</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-1">
               {shortcuts.map((item) => (

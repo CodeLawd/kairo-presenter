@@ -11,7 +11,7 @@ const PLANS = [
     name: 'Free',
     price: '$0',
     current: true,
-    features: ['1 booth machine', 'Church account sync', 'API key vault'],
+    features: ['1 Kairo computer', 'Church account sync', 'API key vault'],
   },
   {
     name: 'Plus',

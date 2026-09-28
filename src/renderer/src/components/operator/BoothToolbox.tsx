@@ -32,7 +32,7 @@ export function BoothToolbox({
       <div
         className="flex shrink-0 items-stretch border-b border-surface-border bg-surface-secondary"
         role="tablist"
-        aria-label="Booth tools"
+        aria-label="Presentation tools"
       >
         {TABS.map(({ id, label, icon: Icon }) => {
           const selected = id === active

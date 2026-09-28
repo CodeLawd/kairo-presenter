@@ -59,7 +59,7 @@ export default function StepAccount(): React.ReactElement {
     return (
       <StepShell
         title="You are signed in"
-        blurb="Your setup will follow this account to the other machines in your booth."
+        blurb="Your setup will follow this account to your other Kairo computers."
       >
         <p className="inline-flex items-center gap-2 text-[13px] text-teal-400">
           <Check size={14} aria-hidden="true" />

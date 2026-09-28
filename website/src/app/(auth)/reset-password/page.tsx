@@ -44,7 +44,7 @@ function ResetPasswordPageContent(): React.ReactElement {
     return (
       <AuthSplit
         title="Password changed"
-        // A reset signs every device out — say so, or the booth machine
+        // A reset signs every device out — say so, or the Kairo computer
         // dropping out looks like a fault.
         blurb="Every device signed into this account has been signed out. Sign in again on each one."
         brand={BRAND}

@@ -38,7 +38,7 @@ const COPY: { title: string; blurb: string; brand: BrandPanel }[] = [
   },
   {
     title: 'You’re all set for now',
-    blurb: 'Kairo is still in development. Your account is ready while we prepare desktop access.',
+    blurb: 'Your account is ready. Choose a download for your computer, then sign in to Kairo with this account.',
     brand: {
       kind: 'quote',
       quote: (

@@ -35,7 +35,7 @@ type SecretKey = keyof Omit<Secrets, 'updatedAt'>
 const GROUPS: { title: string; hint: string; fields: { key: SecretKey; label: string; hint: string }[] }[] = [
   {
     title: 'Live service',
-    hint: 'Needed for transcription and scripture lookup on the booth.',
+    hint: 'Needed for transcription and scripture lookup on your Kairo computers.',
     fields: [
       { key: 'deepgramApiKey', label: 'Deepgram', hint: 'Speech-to-text for the live transcript' },
       { key: 'bibleApiKey', label: 'Bible API', hint: 'Verse lookup during the sermon' },
@@ -206,7 +206,7 @@ export default function KeysPage(): React.ReactElement {
       <div>
         <h2 className="font-display text-[28px] font-semibold tracking-tight">API keys</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Encrypted for your church. Booth machines sync these instead of typing keys locally.
+          Encrypted for your church. Kairo computers sync these instead of typing keys locally.
         </p>
       </div>
 

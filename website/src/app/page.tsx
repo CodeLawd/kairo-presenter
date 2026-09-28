@@ -1,6 +1,7 @@
 import { Fragment } from "react";
 import Link from "next/link";
 import { Wordmark } from "@/components/brand/Wordmark";
+import { IconApple, IconLinux, IconWindows } from "@/components/landing/icons";
 import "./landing.css";
 
 const container =
@@ -11,8 +12,14 @@ const heading =
 const button =
   "inline-flex min-h-11 items-center justify-center gap-6 rounded-full px-[19px] text-sm font-semibold whitespace-nowrap transition-[background,color,transform] duration-200 hover:-translate-y-0.5 motion-reduce:transform-none motion-reduce:transition-none";
 const lightButton = `${button} bg-[#f1f1f1] text-[#0a0a0a] hover:bg-[#e6e6e6]`;
-const darkButton = `${button} bg-[#111] text-[#f2f2f0] hover:bg-[#2b2a28]`;
 const hairline = "border-[#3e3e3e]";
+
+const downloads = [
+  { name: "Apple silicon", system: "macOS", detail: "M series · macOS 11 or later", format: ".dmg", platform: "mac-arm64" },
+  { name: "Intel Mac", system: "macOS", detail: "Intel · macOS 11 or later", format: ".dmg", platform: "mac-x64" },
+  { name: "Windows", system: "Windows", detail: "64-bit · Windows 10 or later", format: ".exe", platform: "windows-x64" },
+  { name: "Linux", system: "Linux", detail: "64-bit · AppImage", format: ".AppImage", platform: "linux-x64" },
+];
 
 const thesis =
   "You can prepare the songs and readings. You can't predict every verse that comes up. Kairo helps you find it, check it, and put it on screen.";
@@ -109,9 +116,9 @@ const questions = [
       "No. Kairo can run the screens connected to your computer. If your team uses ProPresenter, you can connect it too.",
   },
   {
-    question: "Does somebody still need to run the booth?",
+    question: "Does someone still need to manage what goes live?",
     answer:
-      "Yes. Kairo can suggest a verse, but someone in the booth can check it before it goes live. Automatic output is there if your team chooses to use it.",
+      "Yes. Kairo can suggest a verse, but someone on your team can check it before it goes live. Automatic output is there if your team chooses to use it.",
   },
   {
     question:
@@ -306,12 +313,12 @@ export default function HomePage(): React.ReactElement {
           >
             Sign in
           </Link>
-          <Link
+          <a
             className={`${lightButton} gap-[9px] px-3.5 text-xs min-[701px]:gap-6 min-[701px]:px-[19px] min-[701px]:text-sm`}
-            href="/signup"
+            href="#get"
           >
-            Get early access <span aria-hidden="true">↗</span>
-          </Link>
+            Download Kairo <span aria-hidden="true">↓</span>
+          </a>
         </div>
       </header>
 
@@ -320,23 +327,41 @@ export default function HomePage(): React.ReactElement {
           className="relative flex h-auto min-h-[760px] flex-col justify-end overflow-hidden border-b border-[#272727] bg-[radial-gradient(ellipse_at_top_right,#1b1b1b_0%,#060606_60%)] min-[701px]:h-[max(680px,100svh)] min-[701px]:min-h-[min(840px,100svh)]"
           aria-labelledby="hero-title"
         >
-          <div className="relative z-2 mb-[105px] w-auto px-5 min-[701px]:mb-[clamp(56px,9vh,100px)] min-[701px]:px-10">
+          <div className="landing-hero-copy relative z-2 mb-[105px] w-auto px-5 min-[701px]:mb-[clamp(56px,9vh,100px)] min-[701px]:px-10">
             <p className={label}>PRESENTATION SOFTWARE FOR THE CHURCH</p>
             <h1
-              className="my-6 text-[clamp(43px,11vw,70px)] leading-[.98] font-medium tracking-[-.065em] min-[701px]:text-[clamp(52px,7.4vw,128px)]"
+              className="landing-hero-title my-6 text-[clamp(43px,11vw,70px)] leading-[.98] font-medium tracking-[-.065em] min-[701px]:text-[clamp(52px,7.4vw,128px)]"
               id="hero-title"
+              aria-label="Run the service. Keep up with the sermon."
             >
-              Run the service. <br className="hidden min-[701px]:block" />
-              Keep up with the sermon.
+              <span className="landing-hero-line">
+                <span className="landing-hero-word" style={{ "--word-index": 0 } as React.CSSProperties}>Run</span>{" "}
+                <span className="landing-hero-word" style={{ "--word-index": 1 } as React.CSSProperties}>the</span>{" "}
+                <span className="landing-hero-word" style={{ "--word-index": 2 } as React.CSSProperties}>service.</span>
+              </span>
+              <span className="landing-hero-line">
+                <span className="landing-hero-word" style={{ "--word-index": 3 } as React.CSSProperties}>Keep</span>{" "}
+                <span className="landing-hero-word" style={{ "--word-index": 4 } as React.CSSProperties}>up</span>{" "}
+                <span className="landing-hero-word" style={{ "--word-index": 5 } as React.CSSProperties}>with</span>{" "}
+                <span className="landing-hero-word" style={{ "--word-index": 6 } as React.CSSProperties}>the</span>{" "}
+                <span className="landing-hero-word landing-hero-cue landing-hero-rotate" style={{ "--word-index": 7 } as React.CSSProperties} aria-hidden="true">
+                  <span className="landing-hero-rotate-measure">message.</span>
+                  <span className="landing-hero-rotate-window">
+                    <span className="landing-hero-rotate-word">sermon.</span>
+                    <span className="landing-hero-rotate-word">message.</span>
+                    <span className="landing-hero-rotate-word">moment.</span>
+                  </span>
+                </span>
+              </span>
             </h1>
             <p className="max-w-[510px] text-[clamp(17px,1.4vw,20px)] leading-[1.55] text-[#bdbdbd]">
               Put lyrics, Scripture, slides and media on your own screens. When
               a verse comes up that you didn't prepare, Kairo helps you find it.
             </p>
             <div className="mt-[33px] flex flex-wrap items-center gap-[30px]">
-              <Link className={lightButton} href="/signup">
-                Get early access <span aria-hidden="true">↗</span>
-              </Link>
+              <a className={lightButton} href="#get">
+                Download Kairo <span aria-hidden="true">↓</span>
+              </a>
               <a
                 className="inline-flex gap-[18px] text-sm font-semibold text-[#e6e6e6] hover:underline hover:underline-offset-[5px]"
                 href="#product"
@@ -460,30 +485,30 @@ export default function HomePage(): React.ReactElement {
         </section>
 
         <section
-          className={`border-t ${hairline} py-[80px] min-[701px]:py-[130px]`}
+          className={`border-t ${hairline} py-[64px] min-[701px]:py-[90px]`}
           aria-labelledby="features-title"
         >
           <div className={container}>
             <p className={label}>MORE TO WORK WITH</p>
             <h2
-              className={`${heading} my-[26px] mb-14 max-w-[760px]`}
+              className={`${heading} mt-5 mb-9 max-w-[760px]`}
               id="features-title"
               data-reveal=""
             >
               The details your team needs.
             </h2>
             <div
-              className={`grid grid-cols-1 border-t border-l min-[701px]:grid-cols-2 min-[901px]:grid-cols-3 ${hairline}`}
+              className="grid grid-cols-1 gap-x-10 min-[701px]:grid-cols-2 min-[901px]:grid-cols-3"
             >
               {features.map((feature) => (
                 <article
-                  className={`border-r border-b px-7 pt-7 pb-8 ${hairline}`}
+                  className={`border-t py-4 ${hairline}`}
                   key={feature.title}
                 >
-                  <h3 className="text-lg font-medium tracking-[-.02em]">
+                  <h3 className="text-base font-medium tracking-[-.02em]">
                     {feature.title}
                   </h3>
-                  <p className="mt-2.5 text-[15px] leading-[1.55] text-[#b2b2b2]">
+                  <p className="mt-1.5 text-sm leading-[1.5] text-[#b2b2b2]">
                     {feature.body}
                   </p>
                 </article>
@@ -549,29 +574,55 @@ export default function HomePage(): React.ReactElement {
           </div>
         </section>
 
-        <section className="bg-[#e8e7e3] text-[#111]">
+        <section className="bg-[#f4f3f0] text-[#111]">
           <div
-            className={`${container} py-[85px] min-[701px]:py-[100px] min-[701px]:pb-[120px]`}
+            className={`${container} py-[85px] min-[701px]:py-[110px] min-[701px]:pb-[130px]`}
             id="get"
           >
-            <p className={`${label} text-[#6d6c68]`}>GET STARTED</p>
-            <h2 className={`${heading} my-[22px] max-w-[700px]`} data-reveal="">
-              Want to try Kairo at your church?
+            <p className={`${label} text-[#6d6c68]`}>THE DESKTOP APP</p>
+            <h2 className={`${heading} mb-[20px] mt-[22px] max-w-[700px]`} data-reveal="">
+              Download Kairo.
             </h2>
-            <p className="mb-[30px] max-w-[530px] text-lg leading-[1.5] text-[#4f4e4b]">
-              Kairo is still in development. Create an account now if your
-              church would like to try it.
+            <p className="mb-[38px] max-w-[580px] text-lg leading-[1.5] text-[#55534f]">
+              Choose the version for your computer. Sign in after installing to keep your church setup in sync.
             </p>
-            <Link className={darkButton} href="/signup">
-              Get early access <span aria-hidden="true">↗</span>
-            </Link>
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label="Download Kairo">
+              {downloads.map(({ name, system, detail, format, platform }) => (
+                <a
+                  key={platform}
+                  className="group flex min-h-[235px] flex-col justify-between rounded-2xl bg-white p-6 text-[#111] shadow-[0_10px_30px_rgba(0,0,0,0.045)] transition-[box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:shadow-[0_16px_38px_rgba(0,0,0,0.09)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#111] motion-reduce:transform-none motion-reduce:transition-none min-[701px]:p-7"
+                  href={`/api/download/${platform}`}
+                >
+                  <span className="block">
+                    <span className="flex items-center gap-3">
+                      <span className="grid size-12 shrink-0 place-items-center rounded-xl bg-[#f4f3f0] text-[#181818] [&_svg]:size-7">
+                        {system === "macOS" ? <IconApple /> : system === "Windows" ? <IconWindows /> : <IconLinux />}
+                      </span>
+                      <span className="text-[11px] font-semibold uppercase tracking-[.16em] text-[#77736e]">{system}</span>
+                    </span>
+                    <span className="mt-5 block text-[clamp(23px,2.4vw,32px)] font-medium leading-none tracking-[-.04em]">{name}</span>
+                    <span className="mt-3 block text-sm text-[#66635e]">{detail}</span>
+                  </span>
+                  <span className="mt-7 flex items-center justify-between gap-4 rounded-lg bg-[#f4f3f0] px-4 py-3 text-sm font-semibold text-[#111] transition-colors group-hover:bg-[#171717] group-hover:text-white">
+                    <span>Download {format}</span>
+                    <span className="text-lg" aria-hidden="true">↓</span>
+                  </span>
+                </a>
+              ))}
+            </div>
           </div>
         </section>
       </main>
 
-      <footer className="overflow-hidden border-t border-[#3e3e3e] bg-[#040404] pt-[60px] min-[701px]:pt-[70px]">
+      <footer className="relative isolate overflow-hidden border-t border-[#3e3e3e] bg-[#040404] pt-[60px] min-[701px]:pt-[70px]">
         <div
-          className={`${container} grid min-h-[240px] grid-cols-2 gap-x-5 gap-y-[42px] pb-[65px] min-[701px]:grid-cols-[minmax(0,1.5fr)_repeat(2,minmax(0,1fr))] min-[701px]:gap-[60px] min-[701px]:pb-0`}
+          className="landing-footer-wordmark pointer-events-none absolute inset-x-0 bottom-[-.08em] z-0 select-none whitespace-nowrap text-center text-[23vw] leading-none font-bold tracking-[-.09em] text-[#181818] opacity-[0.28]"
+          aria-hidden="true"
+        >
+          <span className="inline-block scale-x-[1.4]">KAIRO</span>
+        </div>
+        <div
+          className={`${container} relative z-10 grid min-h-[240px] grid-cols-2 gap-x-5 gap-y-[42px] pb-[65px] min-[701px]:grid-cols-[minmax(0,1.5fr)_repeat(2,minmax(0,1fr))] min-[701px]:gap-[60px] min-[701px]:pb-0`}
         >
           <div className="col-span-2 min-[701px]:col-span-1">
             <Wordmark href="#top" />
@@ -605,18 +656,18 @@ export default function HomePage(): React.ReactElement {
             >
               Sign in
             </Link>
-            <Link
+            <a
               className="text-sm text-[#f4f4f4] hover:underline hover:underline-offset-[5px]"
-              href="/signup"
+              href="#get"
             >
-              Get early access <span aria-hidden="true">↗</span>
-            </Link>
+              Download Kairo <span aria-hidden="true">↓</span>
+            </a>
           </div>
         </div>
         <div
-          className={`${container} grid grid-cols-[1fr_auto] items-center gap-3 border-t border-[#292929] py-[22px] text-[11px] tracking-[.16em] text-[#959595] min-[701px]:grid-cols-3 min-[701px]:gap-6`}
+          className={`${container} relative z-10 grid grid-cols-[1fr_auto] items-center gap-3 border-t border-[#292929] py-[22px] text-[11px] tracking-[.16em] text-[#959595] min-[701px]:grid-cols-3 min-[701px]:gap-6`}
         >
-          <span>BUILT FOR THE BOOTH</span>
+          <span>BUILT FOR YOUR TEAM</span>
           <small className="col-span-2 row-start-2 text-[11px] tracking-[.16em] min-[701px]:col-span-1 min-[701px]:row-start-auto min-[701px]:text-center">
             © {new Date().getFullYear()} Kairo
           </small>
@@ -626,12 +677,6 @@ export default function HomePage(): React.ReactElement {
           >
             Back to top ↑
           </a>
-        </div>
-        <div
-          className="landing-footer-wordmark w-full select-none whitespace-nowrap px-[1.4vw] pt-[22px] pb-[.08em] text-center text-[15vw] leading-[.9] font-bold tracking-[-.09em] text-[#181818] min-[701px]:text-[clamp(2.5rem,18vw,16rem)]"
-          aria-hidden="true"
-        >
-          KAIRO
         </div>
       </footer>
     </div>

@@ -18,7 +18,7 @@ export function GetKairo(): React.ReactElement {
       <div className={cx(section, wrap, 'relative z-10 text-center')}>
         <Reveal>
           <h2 className={cx(display, 'mx-auto max-w-[16ch] text-[clamp(32px,4.2vw,54px)]')}>
-            <span className={thin}>Put it in the booth</span>{' '}
+            <span className={thin}>Bring Kairo to your team</span>{' '}
             <span className="whitespace-nowrap">this Sunday</span>
           </h2>
           <p className={cx(lede, 'mx-auto mt-5')}>

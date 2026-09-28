@@ -73,7 +73,7 @@ export const FEATURES: {
     ],
   },
   {
-    label: 'The booth',
+    label: 'Your team',
     title: 'Nothing goes out without you',
     lede: 'Live output on top, your staging queue below. Add a detection or search one yourself, then send.',
     bullets: [
@@ -141,7 +141,7 @@ export const FAQ: { q: string; a: string }[] = [
     a: 'That is the case it is built for. Detection runs on meaning, not on hearing a book and chapter spoken aloud, so a close paraphrase still resolves. Every match carries a confidence score.',
   },
   {
-    q: 'Do we still need someone in the booth?',
+    q: 'Do we still need someone to manage what goes live?',
     a: 'Yes, by design. The app suggests, you send. It takes away the typing, not the operator. There is an auto mode with a confidence threshold if your team decides they want it.',
   },
   {

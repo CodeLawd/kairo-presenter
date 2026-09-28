@@ -121,7 +121,7 @@ export default function AccountPage(): React.ReactElement {
           </CardContent>
           <CardFooter className="justify-between gap-3">
             <p className="text-sm text-muted-foreground">
-              {saved ? 'Saved.' : dirty ? 'Unsaved changes' : 'Matches what’s on the booth.'}
+              {saved ? 'Saved.' : dirty ? 'Unsaved changes' : 'Matches your Kairo computers.'}
             </p>
             <Button type="submit" disabled={busy || !orgId || !dirty}>
               {busy ? 'Saving…' : 'Save'}
@@ -134,7 +134,7 @@ export default function AccountPage(): React.ReactElement {
         <CardHeader>
           <CardTitle>Sign out</CardTitle>
           <CardDescription>
-            Ends this browser session. Booth machines stay signed in until you remove them.
+            Ends this browser session. Kairo computers stay signed in until you remove them.
           </CardDescription>
         </CardHeader>
         <CardContent>

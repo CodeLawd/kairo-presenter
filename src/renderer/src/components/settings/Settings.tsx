@@ -1892,7 +1892,7 @@ function GeneralSection({
       <PrefGroup title="Appearance">
         <PrefRow
           label="Dark mode"
-          hint={isDark ? 'Dim booth lighting' : 'Bright rooms — booth use is harder'}
+          hint={isDark ? 'Dim room lighting' : 'Bright rooms — easier to see during a service'}
         >
           <Toggle
             checked={isDark}
@@ -1915,7 +1915,7 @@ function GeneralSection({
             </span>
           </div>
         </PrefRow>
-        <PrefRow stacked label="Transcription size" hint="Live transcript in the booth">
+        <PrefRow stacked label="Transcription size" hint="Live transcript during a service">
           <div className="flex items-center gap-3">
             <Slider
               min={12}
