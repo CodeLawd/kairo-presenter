@@ -15,6 +15,7 @@ import {
   parseSlide,
   parseTable,
   slideBackground,
+  slideHtml,
   slideImages,
   slideSize,
   slideTexts,
@@ -118,4 +119,36 @@ test('built-in parser keeps PowerPoint layer order and run colors', () => {
     assert.ok(photo.crop)
     assert.ok((photo.crop?.t ?? 0) > 0)
   }
+})
+
+test('built-in conversion preserves a 4:3 slide canvas and media coordinates', async () => {
+  const { slideHtml } = await import('../src/main/services/documents/pptx-slides')
+  const size = { cx: 1200, cy: 900 }
+  const slide = parseSlide('<p:sld><p:pic><a:blip r:embed="rId9"/><a:xfrm><a:off x="120" y="90"/><a:ext cx="480" cy="360"/></a:xfrm></p:pic></p:sld>', '<Relationship Id="rId9" Target="../media/poster.png"/>', size, {})
+  const image = slide.elements[0]
+  assert.equal(image.kind, 'image')
+  assert.deepEqual(image.box, { x: 192, y: 144, w: 768, h: 576 })
+  assert.match(slideHtml([slide], (file) => file, {}, size), /size: 1920px 1440px/)
+})
+
+test('fallback inherits master background and layout artwork without rendering placeholder text twice', async () => {
+  const { slideHtml } = await import('../src/main/services/documents/pptx-slides')
+  const size = { cx: 9144000, cy: 5143500 }
+  const master = '<p:sldMaster><p:cSld><p:bg><p:bgPr><a:solidFill><a:schemeClr val="dk1"/></a:solidFill></p:bgPr></p:bg></p:cSld></p:sldMaster>'
+  const layout = '<p:sldLayout><p:cSld><p:spTree><p:sp><p:nvSpPr><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="100" y="100"/><a:ext cx="1000" cy="1000"/></a:xfrm><a:prstGeom prst="rect"/><a:solidFill><a:srgbClr val="DAFF80"/></a:solidFill></p:spPr></p:sp></p:spTree></p:cSld></p:sldLayout>'
+  const xml = '<p:sld><p:cSld><p:spTree><p:sp><p:spPr><a:xfrm><a:off x="259050" y="2207719"/><a:ext cx="5760900" cy="2050800"/></a:xfrm></p:spPr><p:txBody><a:bodyPr anchor="b"/><a:p><a:r><a:rPr sz="3800"><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></a:rPr><a:t>Betpikr</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld></p:sld>'
+  const slide = parseSlide(xml, '', size, { dk1: '#000000' }, { master, layout })
+  assert.equal(slide.background, '#000000')
+  assert.deepEqual(slide.elements.map((element) => element.kind), ['shape', 'text'])
+  const html = slideHtml([slide], (file) => file, {}, size)
+  assert.match(html, /background:#DAFF80/)
+  assert.match(html, /font-size:101\.33px/)
+  assert.match(html, /justify-content:flex-end/)
+})
+
+test('video pictures use their poster image rather than their embedded media reference', () => {
+  const slide = parseSlide('<p:sld><p:pic><p:nvPicPr><p:nvPr><p14:media r:embed="rIdVideo"/></p:nvPr></p:nvPicPr><p:blipFill><a:blip r:embed="rIdPoster"/></p:blipFill><p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="9144000" cy="5143500"/></a:xfrm></p:spPr></p:pic></p:sld>', '<Relationships><Relationship Id="rIdVideo" Target="../media/clip.mp4"/><Relationship Id="rIdPoster" Target="../media/poster.png"/></Relationships>', { cx: 9144000, cy: 5143500 }, {})
+  assert.equal(slide.elements[0]?.kind, 'image')
+  assert.equal(slide.elements[0]?.file, 'poster.png')
+  assert.doesNotMatch(slideHtml([slide], file => file, {}), /clip\.mp4/)
 })

@@ -1285,10 +1285,10 @@ class Orchestrator {
    * binding exists. A missing binding must not block the push — the frame is
    * already on the NDI source for anything already taking it.
    */
-  async presentDocumentPage(mediaPath: string): Promise<boolean> {
+  async presentDocumentPage(mediaPath: string, slide?: import('@shared/documents').DocumentSlide): Promise<boolean> {
     const targets = this.liveSurfaceTargets("documents");
     if (targets.length === 0) {
-      throw new Error("Enable a screen or NDI output in Settings before projecting documents.");
+      return false;
     }
     this.cancelOverlayAutoClear();
     this.notePpLayerFor(targets);
@@ -1301,7 +1301,7 @@ class Orchestrator {
         // input — are all redundant once the deck is live, and they are what
         // makes a clicker feel late. The surface knows whether it is showing
         // this output's deck; otherwise this falls through to the full push.
-        if (await surface.swapDocumentPage(output.id, mediaPath)) return true;
+        if (await surface.swapDocumentPage(output.id, mediaPath, slide)) return true;
 
         const theme = outputThemeFor(output, "scripture");
         const ok = await surface.showDocument(output.id, {
@@ -1317,7 +1317,7 @@ class Orchestrator {
             contrast: 1,
             saturation: 1,
           },
-        });
+        }, slide);
         // No blind settle wait here: showDocument already returned on the
         // captured frame, so the page is on the NDI wire before ProPresenter
         // is asked to show it.

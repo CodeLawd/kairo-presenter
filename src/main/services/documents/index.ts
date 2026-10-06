@@ -3,14 +3,15 @@ import { promises as fs } from 'fs'
 import { basename, extname, join } from 'path'
 import { randomUUID } from 'crypto'
 import log from 'electron-log/main'
-import type { DocumentsCapabilities, ProjectionDocument } from '@shared/documents'
-import { POWERPOINT_NEEDS_CONVERTER, normalizeDocumentName, validDocumentPage } from '@shared/documents'
+import type { DocumentSlide, DocumentsCapabilities, ProjectionDocument, DocumentImportInfo } from '@shared/documents'
+import { formatDocumentSize, POWERPOINT_NEEDS_CONVERTER, normalizeDocumentName, validDocumentPage } from '@shared/documents'
 import { allowPickedOverlayMedia } from '../ndi/media-allowlist'
 import {
   convertPowerPointToPdf,
   detectPowerpointConverters,
 } from './converters'
 import { convertPptxBuiltin } from './pptx-builtin'
+import { readPptxVideos } from './pptx-videos'
 
 class DocumentsService {
   private pending = new Map<string, ProjectionDocument>()
@@ -38,12 +39,13 @@ class DocumentsService {
         metadata.id = id
         metadata.pages = metadata.pages.map((_, i) => join(dir, `${i}.png`))
         metadata.pages.forEach(allowPickedOverlayMedia)
+        this.allowVideos(metadata, dir)
         documents.push(metadata)
       } catch { /* Incomplete imports are never listed. */ }
     }
     return documents.sort((a, b) => a.name.localeCompare(b.name))
   }
-  async prepare(kind?: 'pdf' | 'powerpoint'): Promise<{ id: string; data: Uint8Array } | null> {
+  async prepare(kind?: 'pdf' | 'powerpoint', onPreparing?: (document: DocumentImportInfo) => void): Promise<{ id: string; data: Uint8Array; name: string; format: ProjectionDocument['format'] } | null> {
     if (kind !== undefined && kind !== 'pdf' && kind !== 'powerpoint') throw new Error('Unsupported document type.')
     const extensions = kind === 'pdf'
       ? ['pdf']
@@ -68,13 +70,28 @@ class DocumentsService {
     const source = result.filePaths[0]
     const format = extname(source).slice(1).toLowerCase() as ProjectionDocument['format']
     if (!['pdf', 'ppt', 'pptx'].includes(format)) throw new Error('Choose a PDF or PowerPoint file.')
-    if ((await fs.stat(source)).size > 100 * 1024 * 1024) throw new Error('Documents must be smaller than 100 MB.')
+    const maxMB = format === 'pptx' ? 500 : 100
+    const sizeBytes = (await fs.stat(source)).size
+    onPreparing?.({ name: basename(source, extname(source)), format, sizeBytes, maxSizeBytes: maxMB * 1024 * 1024 })
+    if (sizeBytes > maxMB * 1024 * 1024) throw new Error(`This document is ${formatDocumentSize(sizeBytes)}. The maximum for ${format.toUpperCase()} files is ${maxMB} MB.`)
     const id = randomUUID()
     const dir = this.directory(id)
     await fs.mkdir(dir, { recursive: true })
     try {
       const copy = join(dir, `source.${format}`)
       await fs.copyFile(source, copy)
+      const metadata: ProjectionDocument = { id, name: basename(source, extname(source)), format, pages: [] }
+      if (format === 'pptx') {
+        const embedded = await readPptxVideos(await fs.readFile(copy))
+        metadata.slideSize = { width: embedded.width, height: embedded.height }
+        metadata.videos = embedded.slides
+        metadata.warnings = embedded.warnings
+        const mediaDir = join(dir, 'media')
+        await fs.mkdir(mediaDir, { recursive: true })
+        for (const [file, bytes] of embedded.media) await fs.writeFile(join(mediaDir, file), bytes)
+      } else if (format === 'ppt') {
+        metadata.warnings = ['Embedded video playback requires .pptx. Save this presentation as .pptx and import again to play its videos.']
+      }
       let pdf = copy
       if (format !== 'pdf') {
         const dest = join(dir, 'source.pdf')
@@ -95,8 +112,8 @@ class DocumentsService {
       }
       const data = await fs.readFile(pdf)
       if (data.length > 100 * 1024 * 1024) throw new Error('Converted PDF exceeds 100 MB.')
-      this.pending.set(id, { id, name: basename(source, extname(source)), format, pages: [] })
-      return { id, data }
+      this.pending.set(id, metadata)
+      return { id, data, name: metadata.name, format }
     } catch (error) {
       await fs.rm(dir, { recursive: true, force: true })
       throw error
@@ -116,6 +133,7 @@ class DocumentsService {
   async finish(id: string): Promise<ProjectionDocument[]> {
     const doc = this.pending.get(id)
     if (!doc?.pages.length) throw new Error('No pages were rendered.')
+    if (doc.videos && doc.videos.length !== doc.pages.length) throw new Error('PowerPoint conversion changed the slide count. Export this deck again before importing.')
     const dir = this.directory(id)
     await fs.writeFile(join(dir, 'document.json.tmp'), JSON.stringify(doc))
     await fs.rename(join(dir, 'document.json.tmp'), join(dir, 'document.json'))
@@ -172,6 +190,26 @@ class DocumentsService {
     await fs.access(path)
     allowPickedOverlayMedia(path)
     return path
+  }
+
+  private allowVideos(doc: ProjectionDocument, dir: string): void {
+    for (const videos of doc.videos ?? []) {
+      for (const video of videos) {
+        if (!/^[^/\\]+\.(mp4|m4v|webm|mov|ogv)$/i.test(video.file)) throw new Error('Invalid document video filename.')
+        allowPickedOverlayMedia(join(dir, 'media', video.file))
+      }
+    }
+  }
+
+  async slide(id: string, page: number): Promise<DocumentSlide> {
+    const path = await this.page(id, page)
+    const dir = this.directory(id)
+    const doc = JSON.parse(await fs.readFile(join(dir, 'document.json'), 'utf8')) as ProjectionDocument
+    this.allowVideos(doc, dir)
+    const videos = (doc.videos?.[page] ?? []).map((video) => ({ ...video, file: join(dir, 'media', video.file) }))
+    for (const video of videos) await fs.access(video.file)
+    const size = doc.slideSize ?? nativeImage.createFromPath(path).getSize()
+    return { id, page, path, width: size.width, height: size.height, videos }
   }
 }
 export const documentsService = new DocumentsService()

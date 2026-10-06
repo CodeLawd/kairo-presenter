@@ -1,5 +1,4 @@
 const SLIDE_W = 1920
-const SLIDE_H = 1080
 const DEFAULT_CX = 12_192_000
 const DEFAULT_CY = 6_858_000
 
@@ -14,6 +13,12 @@ export interface SlideLine {
   text: string
   color: string
   sizePt: number
+  fontFamily?: string
+  bold?: boolean
+  italic?: boolean
+  beforePt?: number
+  afterPt?: number
+  lineHeight?: number
 }
 
 export interface SlideText {
@@ -22,6 +27,17 @@ export interface SlideText {
   align: 'left' | 'center' | 'right'
   sizePt: number
   lines: SlideLine[]
+  anchor?: 'top' | 'center' | 'bottom'
+  insets?: { top: number; right: number; bottom: number; left: number }
+}
+
+export interface SlideShape {
+  kind: 'shape'
+  box: SlideBox
+  fill: string
+  border?: string
+  borderWidth?: number
+  geometry: string
 }
 
 export interface SlideTable {
@@ -45,7 +61,7 @@ export interface SlideImage {
   crop?: SlideCrop
 }
 
-export type SlideElement = SlideText | SlideTable | SlideImage
+export type SlideElement = SlideText | SlideTable | SlideImage | SlideShape
 
 export interface ParsedSlide {
   background: string
@@ -101,11 +117,12 @@ function emuBox(xml: string, cx: number, cy: number): SlideBox | null {
   const off = xfrm[0].match(/<(?:a:)?off\b[^>]*>/)
   const ext = xfrm[0].match(/<(?:a:)?ext\b[^>]*>/)
   if (!off || !ext) return null
+  const height = SLIDE_W * cy / cx
   return {
     x: (Number(attr(off[0], 'x')) || 0) / cx * SLIDE_W,
-    y: (Number(attr(off[0], 'y')) || 0) / cy * SLIDE_H,
+    y: (Number(attr(off[0], 'y')) || 0) / cy * height,
     w: (Number(attr(ext[0], 'cx')) || 0) / cx * SLIDE_W,
-    h: (Number(attr(ext[0], 'cy')) || 0) / cy * SLIDE_H,
+    h: (Number(attr(ext[0], 'cy')) || 0) / cy * height,
   }
 }
 
@@ -122,9 +139,9 @@ function blockLines(xml: string): string[] {
     .filter(Boolean)
 }
 
-function fontPt(xml: string): number {
+function fontPt(xml: string, fallback = 24): number {
   const sz = xml.match(/\bsz="(\d+)"/)
-  return sz ? Number(sz[1]) / 100 : 24
+  return sz ? Number(sz[1]) / 100 : fallback
 }
 
 function align(xml: string): 'left' | 'center' | 'right' {
@@ -149,12 +166,20 @@ function resolveColor(xml: string, colors: Record<string, string>, fallback: str
   return fallback
 }
 
-function textLines(xml: string, colors: Record<string, string>): SlideLine[] {
-  const fallback = colors.tx1 ?? '#111111'
+function textLines(xml: string, colors: Record<string, string>, inherited = ''): SlideLine[] {
+  const defaults = xml.match(/<a:lstStyle\b[\s\S]*?<\/a:lstStyle>/)?.[0] ?? ''
+  const fallback = resolveColor(defaults || inherited, colors, colors.tx1 ?? '#111111')
   return [...xml.matchAll(/<a:p\b[\s\S]*?<\/a:p>/g)].flatMap((match) => {
     const text = paragraphText(match[0])
     if (!text) return []
-    return [{ text, color: resolveColor(match[0], colors, fallback), sizePt: fontPt(match[0]) }]
+    const paragraph = match[0]
+    const fontFamily = paragraph.match(/<a:latin\b[^>]*typeface="([^"]+)"/)?.[1] ?? (defaults + inherited).match(/<a:latin\b[^>]*typeface="([^"]+)"/)?.[1] ?? 'Arial'
+    const before = paragraph.match(/<a:spcBef>\s*<a:spcPts\b[^>]*val="(\d+)"/)?.[1]
+    const after = paragraph.match(/<a:spcAft>\s*<a:spcPts\b[^>]*val="(\d+)"/)?.[1]
+    const spacing = paragraph.match(/<a:lnSpc>\s*<a:spcPct\b[^>]*val="(\d+)"/)?.[1]
+    return [{ text, color: resolveColor(paragraph, colors, fallback), sizePt: fontPt(paragraph, fontPt(defaults || inherited)), fontFamily,
+      bold: /\bb="1"/.test(paragraph + defaults + inherited), italic: /\bi="1"/.test(paragraph),
+      beforePt: Number(before ?? 0) / 100, afterPt: Number(after ?? 0) / 100, lineHeight: Number(spacing ?? 100000) / 100000 }]
   })
 }
 
@@ -185,7 +210,7 @@ function sliceTagged(xml: string, start: number, tag: string): string | null {
 }
 
 function eachChild(xml: string): Array<{ tag: string; xml: string }> {
-  const tags = ['p:sp', 'p:pic', 'p:graphicFrame', 'p:grpSp']
+  const tags = ['p:sp', 'p:pic', 'p:graphicFrame', 'p:grpSp', 'p:cxnSp']
   const open = new RegExp(`<(${tags.join('|')})\\b`, 'g')
   const found: Array<{ tag: string; xml: string }> = []
   let match: RegExpExecArray | null
@@ -214,19 +239,38 @@ function collectElements(
   embeds: Record<string, string>,
   colors: Record<string, string>,
   elements: SlideElement[],
+  inherited = '',
+  skipPlaceholders = false,
 ): void {
   for (const child of eachChild(xml)) {
     if (child.tag === 'p:grpSp') {
       const inner = child.xml.replace(/^<p:grpSp\b[^>]*>/, '').replace(/<\/p:grpSp>$/, '')
-      collectElements(inner, size, embeds, colors, elements)
+      collectElements(inner, size, embeds, colors, elements, inherited, skipPlaceholders)
       continue
     }
-    const box = emuBox(child.xml, size.cx, size.cy)
+    if (skipPlaceholders && /<p:ph\b/.test(child.xml)) continue
+    const ph = child.xml.match(/<p:ph\b[^>]*>/)?.[0]
+    const inheritedShape = ph ? eachChild(inherited).find((item) => {
+      const other = item.xml.match(/<p:ph\b[^>]*>/)?.[0]
+      return other && (attr(ph, 'idx') ?? '0') === (attr(other, 'idx') ?? '0') && (attr(ph, 'type') ?? 'obj') === (attr(other, 'type') ?? 'obj')
+    })?.xml ?? '' : ''
+    const box = emuBox(child.xml, size.cx, size.cy) ?? emuBox(inheritedShape, size.cx, size.cy)
     if (!box) continue
-    if (child.tag === 'p:sp') {
-      const lines = textLines(child.xml, colors)
+    if (child.tag === 'p:sp' || child.tag === 'p:cxnSp') {
+      const properties = child.xml.match(/<p:spPr\b[\s\S]*?<\/p:spPr>/)?.[0] ?? ''
+      const line = properties.match(/<a:ln\b[\s\S]*?<\/a:ln>/)?.[0] ?? ''
+      const fill = resolveColor(properties.replace(line, ''), colors, 'transparent')
+      const border = resolveColor(line, colors, 'transparent')
+      if (fill !== 'transparent' || border !== 'transparent') elements.push({ kind: 'shape', box, fill, border,
+        borderWidth: Number(attr(line, 'w') ?? 9525) * SLIDE_W / size.cx,
+        geometry: properties.match(/<a:prstGeom\b[^>]*prst="([^"]+)"/)?.[1] ?? 'rect' })
+      const lines = textLines(child.xml, colors, inheritedShape)
       if (!lines.length) continue
-      elements.push({ kind: 'text', box, align: align(child.xml), sizePt: lines[0].sizePt, lines })
+      const body = child.xml.match(/<a:bodyPr\b[^>]*>/)?.[0] ?? ''
+      const px = (name: string): number => Number(attr(body, name) ?? 91440) * SLIDE_W / size.cx
+      elements.push({ kind: 'text', box, align: align(child.xml), sizePt: lines[0].sizePt, lines,
+        anchor: attr(body, 'anchor') === 'b' ? 'bottom' : attr(body, 'anchor') === 'ctr' ? 'center' : 'top',
+        insets: { top: px('tIns'), right: px('rIns'), bottom: px('bIns'), left: px('lIns') } })
       continue
     }
     if (child.tag === 'p:graphicFrame') {
@@ -234,18 +278,24 @@ function collectElements(
       if (table) elements.push(parseTable(table[0], box))
       continue
     }
-    const embed = child.xml.match(/r:embed="([^"]+)"/)?.[1]
+    const blip = child.xml.match(/<a:blip\b[^>]*>/)?.[0] ?? ''
+    const embed = attr(blip, 'r:embed')
     const file = embed ? embeds[embed] : null
     if (!file) continue
     elements.push({ kind: 'image', box, file, crop: imageCrop(child.xml) })
   }
 }
 
-export function parseSlide(xml: string, rels: string, size: { cx: number; cy: number }, colors: Record<string, string>): ParsedSlide {
+export function parseSlide(xml: string, rels: string, size: { cx: number; cy: number }, colors: Record<string, string>, inherited: { master?: string; layout?: string; masterRels?: string; layoutRels?: string } = {}): ParsedSlide {
   const elements: SlideElement[] = []
-  collectElements(xml, size, relTargets(rels), colors, elements)
-  const scheme = xml.match(/<p:bg[\s\S]*?<a:schemeClr\s+val="([^"]+)"/)?.[1]
-  const hex = xml.match(/<p:bg[\s\S]*?<a:srgbClr\s+val="([0-9A-Fa-f]{6})"/)?.[1]
+  if (!/\bshowMasterSp="0"/.test(xml)) {
+    collectElements(inherited.master ?? '', size, relTargets(inherited.masterRels ?? ''), colors, elements, '', true)
+    collectElements(inherited.layout ?? '', size, relTargets(inherited.layoutRels ?? ''), colors, elements, '', true)
+  }
+  collectElements(xml, size, relTargets(rels), colors, elements, (inherited.layout ?? '') + (inherited.master ?? ''))
+  const background = [xml, inherited.layout, inherited.master].map((part) => part?.match(/<p:bg\b[\s\S]*?<\/p:bg>/)?.[0]).find(Boolean) ?? ''
+  const scheme = background.match(/<a:schemeClr\s+val="([^"]+)"/)?.[1]
+  const hex = background.match(/<a:srgbClr\s+val="([0-9A-Fa-f]{6})"/)?.[1]
   return {
     background: hex ? `#${hex}` : colors[scheme ?? 'bg2'] ?? colors.bg2 ?? '#EBEBEB',
     elements,
@@ -256,7 +306,12 @@ function boxStyle(box: SlideBox): string {
   return `left:${box.x.toFixed(1)}px;top:${box.y.toFixed(1)}px;width:${box.w.toFixed(1)}px;height:${box.h.toFixed(1)}px`
 }
 
-function renderElement(element: SlideElement, mediaHref: (file: string) => string, _colors: Record<string, string>): string {
+function renderElement(element: SlideElement, mediaHref: (file: string) => string, _colors: Record<string, string>, pxPerPt: number): string {
+  if (element.kind === 'shape') {
+    const rounded = element.geometry === 'ellipse' ? 'border-radius:50%;' : element.geometry === 'roundRect' ? 'border-radius:12%;' : ''
+    const snip = element.geometry === 'snip2DiagRect' ? 'clip-path:polygon(0 0,50% 0,100% 50%,100% 100%,50% 100%,0 50%);' : ''
+    return `<div class="shape" style="${boxStyle(element.box)};background:${escapeHtml(element.fill)};border:${element.borderWidth ?? 0}px solid ${escapeHtml(element.border ?? 'transparent')};${rounded}${snip}"></div>`
+  }
   if (element.kind === 'image') {
     const src = escapeHtml(mediaHref(element.file))
     const crop = element.crop
@@ -267,9 +322,11 @@ function renderElement(element: SlideElement, mediaHref: (file: string) => strin
   }
   if (element.kind === 'text') {
     const lines = element.lines
-      .map((line) => `<div style="color:${escapeHtml(line.color)};font-size:${line.sizePt}pt">${escapeHtml(line.text)}</div>`)
+      .map((line) => `<div style="color:${escapeHtml(line.color)};font-size:${(line.sizePt * pxPerPt).toFixed(2)}px;font-family:&quot;${escapeHtml(line.fontFamily ?? 'Arial')}&quot;,Arial,sans-serif;font-weight:${line.bold ? 700 : 400};font-style:${line.italic ? 'italic' : 'normal'};line-height:${line.lineHeight ?? 1};margin-top:${(line.beforePt ?? 0) * pxPerPt}px;margin-bottom:${(line.afterPt ?? 0) * pxPerPt}px">${escapeHtml(line.text)}</div>`)
       .join('')
-    return `<div class="text" style="${boxStyle(element.box)};text-align:${element.align}">${lines}</div>`
+    const insets = element.insets ?? { top: 0, right: 0, bottom: 0, left: 0 }
+    const anchor = element.anchor === 'bottom' ? 'flex-end' : element.anchor === 'center' ? 'center' : 'flex-start'
+    return `<div class="text" style="${boxStyle(element.box)};text-align:${element.align};justify-content:${anchor};padding:${insets.top}px ${insets.right}px ${insets.bottom}px ${insets.left}px">${lines}</div>`
   }
   const rows = element.rows.map((row, index) => {
     const tag = element.header && index === 0 ? 'th' : 'td'
@@ -278,29 +335,31 @@ function renderElement(element: SlideElement, mediaHref: (file: string) => strin
   return `<div class="table" style="${boxStyle(element.box)}"><table>${rows}</table></div>`
 }
 
-export function slideHtml(slides: ParsedSlide[], mediaHref: (file: string) => string, colors: Record<string, string>): string {
+export function slideHtml(slides: ParsedSlide[], mediaHref: (file: string) => string, colors: Record<string, string>, size = { cx: DEFAULT_CX, cy: DEFAULT_CY }): string {
+  const height = SLIDE_W * size.cy / size.cx
   const accent = colors.accent1 ?? '#B01513'
   const ink = colors.tx1 ?? '#111111'
   const pages = slides.map((slide) => {
-    const body = slide.elements.map((element) => renderElement(element, mediaHref, colors)).join('')
+    const body = slide.elements.map((element) => renderElement(element, mediaHref, colors, 12700 * SLIDE_W / size.cx)).join('')
     return `<section class="slide" style="background:${escapeHtml(slide.background)}">${body}</section>`
   })
   return `<!doctype html>
 <html><head><meta charset="utf-8">
 <style>
-  @page { size: ${SLIDE_W}px ${SLIDE_H}px; margin: 0 }
+  @page { size: ${SLIDE_W}px ${height}px; margin: 0 }
   html, body { margin: 0; padding: 0; background: #000 }
   .slide {
     width: ${SLIDE_W}px;
-    height: ${SLIDE_H}px;
+    height: ${height}px;
     position: relative;
     overflow: hidden;
     page-break-after: always;
     break-after: page;
     font-family: "Calibri", "Segoe UI", system-ui, sans-serif;
   }
-  .text, .pic, .table { position: absolute; box-sizing: border-box }
-  .text { display: flex; flex-direction: column; justify-content: center; font-weight: 700; line-height: 1.15 }
+  .text, .pic, .table, .shape { position: absolute; box-sizing: border-box }
+  .text { display: flex; flex-direction: column; overflow:hidden }
+  .text > div { flex-shrink: 0; white-space:pre-wrap }
   .pic { object-fit: cover }
   .pic.crop { overflow: hidden }
   .pic.crop img { position: absolute; max-width: none }

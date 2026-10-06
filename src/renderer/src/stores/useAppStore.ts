@@ -1,3 +1,4 @@
+import type { ProjectionDocument, DocumentPlaybackStatus } from '@shared/documents'
 import { create } from 'zustand'
 import type { ProPresenterStatus, ProPresenterConnectionState, AudioLevel } from '@shared/ipc'
 import type { LiveOutputPayload } from '@shared/live-output'
@@ -67,6 +68,7 @@ interface AppState {
   /** Reference currently on Kairo's output — drives the header LIVE badge. */
   liveOutputLabel: string | null
   /** Last text sent to ProPresenter, shared by the Operator, Scripture and Lyrics tabs. */
+  liveDocumentPreview: { doc: ProjectionDocument; page: number; playback: DocumentPlaybackStatus | null } | null
   liveOutputPreview: LiveOutputPayload | null
   /** Bumps when PP output is cleared so Scripture can drop Live badges. */
   scriptureOutputClearToken: number
@@ -186,6 +188,7 @@ export const useAppStore = create<AppState>((set) => ({
   scriptureActiveCardInRow: 0,
   scriptureHighlightMode: 'none',
   liveOutputLabel: null,
+  liveDocumentPreview: null,
   liveOutputPreview: null,
   scriptureOutputClearToken: 0,
   lyricsSelectedSongId: null,
@@ -283,6 +286,7 @@ export const useAppStore = create<AppState>((set) => ({
       scriptureActiveCardInRow: 0,
       scriptureHighlightMode: 'none',
       liveOutputLabel: null,
+      liveDocumentPreview: null,
       liveOutputPreview: null,
     }),
 
@@ -294,6 +298,7 @@ export const useAppStore = create<AppState>((set) => ({
 
   setLiveOutputPreview: (payload) =>
     set({
+      liveDocumentPreview: null,
       liveOutputPreview: payload,
       liveOutputLabel: payload?.reference.trim() || null,
     }),
@@ -301,7 +306,7 @@ export const useAppStore = create<AppState>((set) => ({
   clearScriptureLiveOutput: () =>
     set((state) => ({
       scriptureOutputClearToken: state.scriptureOutputClearToken + 1,
-      liveOutputLabel: null,
+      liveOutputLabel: state.liveDocumentPreview ? state.liveOutputLabel : null,
       liveOutputPreview: null,
       scriptureHighlightMode:
         state.scriptureHighlightMode === 'live' ? 'focus' : state.scriptureHighlightMode,

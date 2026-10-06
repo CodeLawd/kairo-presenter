@@ -1,3 +1,5 @@
+import { DocumentSlidePreview } from '@/components/documents/DocumentSlidePreview'
+import { useAppStore } from '@/stores/useAppStore'
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { BookOpenCheck, ChevronDown, MonitorOff } from '@/icons';
 import type { OverlayVideoTime } from "@shared/overlay-fit";
@@ -86,6 +88,8 @@ export function LiveOutputPreview({
     outputs[0] ??
     null;
 
+  const documentPreview = useAppStore(state => state.liveDocumentPreview);
+  const showDocument = documentPreview && (!selected || (isRenderedKind(selected.kind) && selected.show.documents));
   const [mediaTime, setMediaTime] = useState(EMPTY_TIME);
   const [seekTo, setSeekTo] = useState<{ token: number; seconds: number } | null>(null);
 
@@ -124,7 +128,7 @@ export function LiveOutputPreview({
   return (
     <div>
       <div className="relative" style={{ width, height }}>
-        <PreviewBody
+        {showDocument ? <div className="flex h-full w-full flex-col overflow-hidden bg-black"><DocumentSlidePreview doc={documentPreview.doc} page={documentPreview.page} playback={documentPreview.playback} /></div> : <PreviewBody
           output={selected}
           result={result}
           content={content}
@@ -136,11 +140,11 @@ export function LiveOutputPreview({
           seekTo={seekTo}
           onTime={onTime}
           blankWhenIdle={drawn}
-        />
+        />}
         {drawn && layers && <ProgramLayersPreview layers={layers} info={info} width={width} />}
       </div>
 
-      {showTransport && liveMedia && (
+      {!showDocument && showTransport && liveMedia && (
         <LiveVideoControls
           key={liveMedia.item.id}
           paused={!!liveMedia.paused}

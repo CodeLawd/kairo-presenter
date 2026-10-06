@@ -18,6 +18,7 @@ export async function clearLiveAll(): Promise<void> {
   } catch (err) {
     console.error(err)
   } finally {
+    useAppStore.setState({ liveDocumentPreview: null })
     useAppStore.getState().clearScriptureLiveOutput()
   }
 }

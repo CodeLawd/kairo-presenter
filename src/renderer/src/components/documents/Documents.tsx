@@ -25,6 +25,8 @@ import {
   SLIDESHOW_MIN_SEC,
   type DocumentsSettings,
   type ProjectionDocument,
+  type DocumentPlaybackStatus,
+  type DocumentVideoCommand,
 } from '@shared/documents'
 import { overlayMediaUrl } from '@shared/overlay-template'
 import { commandForShortcut, shortcutFromEvent } from '@shared/keyboard-shortcuts'
@@ -37,6 +39,9 @@ import { useSidebarWidth } from '@/components/layout/useSidebarWidth'
 import { BoothWorkspace } from '@/components/layout/BoothWorkspace'
 import { LiveOutputRail } from '@/components/operator/LiveOutputRail'
 import { useLiveRailWidth } from '@/components/operator/useLiveRailWidth'
+import { DocumentImportModal, type DocumentImportProgress } from './DocumentImportModal'
+import { DocumentSlidePreview } from './DocumentSlidePreview'
+import { LiveVideoControls } from '@/components/operator/LiveVideoControls'
 
 interface ContextMenuState {
   id: string
@@ -80,9 +85,51 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
   /** Set by the Cancel button; the render loop checks it between pages. */
   const cancelImport = useRef(false)
   const [canceling, setCanceling] = useState(false)
-  const [importing, setImporting] = useState(false)
+  const [importProgress, setImportProgress] = useState<DocumentImportProgress | null>(null)
+  const retryKind = useRef<'pdf' | 'powerpoint' | undefined>(undefined)
   const current = documents.find((doc) => doc.id === selected)
+  const [playback, setPlayback] = useState<DocumentPlaybackStatus | null>(null)
+  const [localPresentation, setLocalPresentation] = useState<string | null>(null)
+  const [localCommand, setLocalCommand] = useState<{ video: number; command: DocumentVideoCommand; sequence: number } | null>(null)
+  const pushedDocument = useAppStore(state => state.liveDocumentPreview)
+  useEffect(() => {
+    if (!pushedDocument) { setPlaying(false); setLocalPresentation(null); setLocalCommand(null); setPlayback(null) }
+  }, [pushedDocument])
+  const localMode = localPresentation === `${current?.id}:${page}`
+  const pageVideos = current?.videos?.[page] ?? []
+  const livePlayback = playback?.id === current?.id && playback?.page === page ? playback : null
+  useEffect(() => {
+    const preview = useAppStore.getState().liveDocumentPreview
+    if (preview && playback?.id === preview.doc.id && playback.page === preview.page) {
+      useAppStore.setState({ liveDocumentPreview: { ...preview, playback } })
+    }
+  }, [playback])
   const visibleDocuments = itemsInLibrary(documentLibrary, documents, activeLibraryId)
+
+  useEffect(() => {
+    if (localMode) return
+    if (!pageVideos.length || (!active && !playing)) { setPlayback(null); return }
+    let disposed = false
+    let timer: ReturnType<typeof setTimeout>
+    const poll = async (): Promise<void> => {
+      try {
+        const state = await window.api.documents.playback(current!.id, page)
+        if (!disposed) setPlayback(state)
+      } catch { if (!disposed) setPlayback(null) }
+      if (!disposed) timer = setTimeout(() => void poll(), 350)
+    }
+    void poll()
+    return () => { disposed = true; clearTimeout(timer) }
+  }, [current?.id, page, pageVideos.length, active, playing, localMode])
+
+  const controlVideo = async (video: number, command: DocumentVideoCommand): Promise<void> => {
+    if (!current) return
+    if (localMode) { setLocalCommand({ video, command, sequence: Date.now() }); return }
+    try {
+      await window.api.documents.control(current.id, page, video, command)
+      setPlayback(await window.api.documents.playback(current.id, page))
+    } catch (err) { setError(documentsErrorMessage(err)) }
+  }
 
   useEffect(() => {
     void window.api.documents.list().then(setDocuments).catch((err) => setError(documentsErrorMessage(err)))
@@ -133,20 +180,25 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
       lock.current = true
       cancelImport.current = false
       setCanceling(false)
-      setImporting(true)
+      retryKind.current = kind
+      setImportProgress(null)
       setBusy(true)
       setImportMenuOpen(false)
       setError('')
-      setStatus('Opening…')
+      setStatus('')
       let id: string | undefined
       let pdf: PDFDocumentProxy | undefined
       try {
-        const prepared = await window.api.documents.prepare(kind)
+        const prepared = await window.api.documents.prepare(kind, (document) => {
+          setImportProgress({ stage: 'preparing', completed: 0, total: 0, ...document })
+        })
         if (!prepared) {
+          setImportProgress(null)
           setStatus('')
           return
         }
         id = prepared.id
+        setImportProgress(previous => ({ ...previous, stage: 'preparing', completed: 0, total: 0, name: prepared.name, format: prepared.format }))
         if (cancelImport.current) throw new ImportCanceled()
         const [{ getDocument, GlobalWorkerOptions }, { default: workerUrl }] = await Promise.all([
           import('pdfjs-dist'),
@@ -154,12 +206,14 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
         ])
         GlobalWorkerOptions.workerSrc = workerUrl
         pdf = await getDocument({ data: prepared.data, isEvalSupported: false }).promise
-        if (pdf.numPages > 500) {
+        const totalPages = pdf.numPages
+        if (totalPages > 500) {
           throw new Error('Documents can contain up to 500 pages. Split this document into smaller files.')
         }
-        for (let index = 0; index < pdf.numPages; index++) {
+        setImportProgress(previous => ({ ...previous, stage: 'rendering', completed: 0, total: totalPages, name: prepared.name, format: prepared.format }))
+        for (let index = 0; index < totalPages; index++) {
           if (cancelImport.current) throw new ImportCanceled()
-          setStatus(`Rendering ${index + 1} / ${pdf.numPages}`)
+          setStatus(`Rendering ${index + 1} / ${totalPages}`)
           const sourcePage = await pdf.getPage(index + 1)
           const original = sourcePage.getViewport({ scale: 1 })
           const viewport = sourcePage.getViewport({
@@ -178,11 +232,15 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
             ),
           )
           await window.api.documents.savePage(id, index, new Uint8Array(await blob.arrayBuffer()))
+          setImportProgress(previous => ({ ...previous, stage: 'rendering', completed: index + 1, total: totalPages, name: prepared.name, format: prepared.format }))
           canvas.width = 0
           canvas.height = 0
           sourcePage.cleanup()
         }
+        if (cancelImport.current) throw new ImportCanceled()
+        setImportProgress(previous => ({ ...previous, stage: 'finishing', completed: totalPages, total: totalPages, name: prepared.name, format: prepared.format }))
         setDocuments(await window.api.documents.finish(id))
+        setImportProgress(null)
         setSelected(id)
         setPage(0)
         setStatus('')
@@ -191,12 +249,12 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
         // import, but never shout about it in the error banner.
         if (id) await window.api.documents.cancel(id).catch(() => undefined)
         setStatus('')
-        if (!(err instanceof ImportCanceled)) setError(documentsErrorMessage(err))
+        if (err instanceof ImportCanceled) setImportProgress(null)
+        else setImportProgress((previous) => ({ ...(previous ?? { completed: 0, total: 0 }), stage: 'error', error: documentsErrorMessage(err) }))
       } finally {
         await pdf?.destroy().catch(() => undefined)
         cancelImport.current = false
         setCanceling(false)
-        setImporting(false)
         lock.current = false
         setBusy(false)
       }
@@ -214,13 +272,13 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
     setStatus('Pushing…')
     try {
       const result = await window.api.documents.push(current.id, target)
-      if (!result.applied) {
-        throw new Error('The page could not be displayed on NDI. Check output settings and try again.')
-      }
+      setLocalCommand(null)
+      setLocalPresentation(result.applied ? null : `${current.id}:${target}`)
       useAppStore.getState().clearScriptureLiveOutput()
-      useAppStore.setState({ liveOutputLabel: `${current.name} · Page ${target + 1}` })
+      useAppStore.setState({ liveOutputLabel: `${current.name} · Page ${target + 1}`, liveDocumentPreview: { doc: current, page: target, playback: null } })
       setPage(target)
-      setStatus('')
+      if (result.applied || localPresentation !== `${current.id}:${target}`) setPlayback(null)
+      setStatus(result.applied ? '' : 'Preview only · No output connected')
       // Announcement loops: the first page going live is the whole cue, so the
       // operator should not have to press a second button to start the run.
       if (slideshow.slideshowAutoStart) setPlaying(true)
@@ -255,6 +313,7 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
       if (
         event.defaultPrevented ||
         event.isComposing ||
+        target?.closest('[data-document-transport]') ||
         target?.matches('input, textarea, select, [contenteditable="true"]') ||
         document.querySelector('[role="menu"], [role="dialog"], [role="alertdialog"]')
       ) return
@@ -309,6 +368,12 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
       return
     }
     const seconds = slideshow.slideshowSec
+    if (pageVideos.length) {
+      setCountdown(0)
+      if (livePlayback?.videos.some((video) => video.error)) { setPlaying(false); return }
+      if (livePlayback?.videos.length && livePlayback.videos.every((video) => video.ended)) advance.current()
+      return
+    }
     setCountdown(seconds)
     const tick = setInterval(() => setCountdown((value) => Math.max(0, value - 1)), 1000)
     // If a push is still in flight when the dwell expires, wait for it rather
@@ -322,7 +387,7 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
       advance.current()
     }, seconds * 1000)
     return () => { clearInterval(tick); clearTimeout(timer) }
-  }, [playing, current?.id, current?.pages.length, page, slideshow.slideshowSec, slideshow.slideshowLoop])
+  }, [playing, current?.id, current?.pages.length, page, slideshow.slideshowSec, slideshow.slideshowLoop, pageVideos.length, livePlayback])
 
   // Keep the live page visible in the strip — during a slideshow nobody is
   // there to scroll it by hand.
@@ -331,7 +396,14 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
   }, [page, selected])
 
   // A deck that is gone, or replaced by another, must not keep advancing.
-  useEffect(() => { setPlaying(false) }, [selected])
+  useEffect(() => {
+    setPlaying(false)
+    const preview = useAppStore.getState().liveDocumentPreview
+    if (localPresentation && preview?.playback) {
+      useAppStore.setState({ liveDocumentPreview: { ...preview, playback: { ...preview.playback, videos: preview.playback.videos.map(video => ({ ...video, paused: true })) } } })
+    }
+    setLocalCommand(null); setLocalPresentation(null)
+  }, [selected])
 
   useEffect(() => {
     if (!slideshowMenuOpen) return
@@ -446,21 +518,12 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
             ) : (
               <p className="truncate text-xs text-zinc-600">No document selected</p>
             )}
-            {busy && status && (
+            {busy && !importProgress && status && (
               <div className="flex min-w-0 items-baseline gap-2">
                 <p className="truncate text-xs text-teal-400/90" aria-live="polite">
                   {canceling ? 'Canceling…' : status}
                 </p>
-                {importing && (
-                  <button
-                    type="button"
-                    disabled={canceling}
-                    className="shrink-0 text-xs text-zinc-500 underline-offset-2 hover:text-zinc-200 hover:underline disabled:opacity-40"
-                    onClick={() => { cancelImport.current = true; setCanceling(true) }}
-                  >
-                    Cancel
-                  </button>
-                )}
+
               </div>
             )}
           </div>
@@ -516,6 +579,14 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
           </div>
         </div>,
         toolbarSlot,
+      )}
+
+      {importProgress && createPortal(
+        <DocumentImportModal progress={importProgress} canceling={canceling}
+          onCancel={() => { cancelImport.current = true; setCanceling(true) }}
+          onClose={() => setImportProgress(null)}
+          onRetry={() => void importDocument(retryKind.current)} />,
+        document.body,
       )}
 
       {error && (
@@ -643,13 +714,33 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
             </div>
           ) : (
             <>
-              <div className="relative flex min-h-0 flex-1 items-center justify-center bg-black px-4 py-3">
-                <img
-                  className="max-h-full max-w-full object-contain"
-                  src={overlayMediaUrl(current.pages[page])}
-                  alt={`${current.name}, page ${page + 1}`}
-                />
-              </div>
+              {current.warnings?.length ? (
+                <details className="shrink-0 px-3 py-2 text-xs text-amber-300">
+                  <summary className="cursor-pointer">Import notes ({current.warnings.length})</summary>
+                  <ul className="mt-1 list-inside list-disc">{current.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul>
+                </details>
+              ) : null}
+              {localMode && <p className="px-3 py-2 text-xs text-zinc-400">Preview only · No output connected</p>}
+              <DocumentSlidePreview doc={current} page={page} playback={livePlayback} local={localMode} command={localCommand} onPlayback={setPlayback} />
+              {pageVideos.length > 0 && (
+                <div data-document-transport className="shrink-0">
+                  {!livePlayback && <p className="px-3 py-2 text-xs text-zinc-400">Push this slide to play its embedded video.</p>}
+                  {livePlayback?.videos.map((video, index) => (
+                    <div key={`${current.id}:${page}:${index}`}>
+                      <p className="px-3 pt-2 text-xs text-zinc-400">Video {index + 1}{playing && !video.ended ? ' · Slideshow waits for playback' : ''}</p>
+                      {video.error ? <p role="alert" className="px-3 py-2 text-xs text-amber-300">{video.error}</p> : (
+                        <LiveVideoControls paused={video.paused} ended={video.ended} loop={false} showLoop={false}
+                          currentTime={video.currentTime} duration={video.duration}
+                          onTogglePause={() => void controlVideo(index, { action: video.paused || video.ended ? 'play' : 'pause' })}
+                          onRestart={() => void controlVideo(index, { action: 'restart' })}
+                          onSeek={(seconds) => void controlVideo(index, { action: 'seek', seconds })}
+                          onSkip={(delta) => void controlVideo(index, { action: 'seek', seconds: video.currentTime + delta })}
+                        />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
 
               <div className="flex shrink-0 items-center justify-between gap-3 px-3 py-2.5">
                 <div className="flex items-center gap-1.5">
@@ -699,7 +790,7 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
                     >
                       {playing ? <Square size={12} weight="fill" aria-hidden="true" /> : <Play size={12} aria-hidden="true" />}
                       {playing ? (
-                        <span className="tabular-nums">{countdown}s</span>
+                        <span className="tabular-nums">{pageVideos.length ? 'Video' : `${countdown}s`}</span>
                       ) : (
                         'Slideshow'
                       )}

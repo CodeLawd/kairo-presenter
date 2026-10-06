@@ -689,13 +689,19 @@ const account: KairoAPI['account'] = {
 const documents: KairoAPI['documents'] = {
   list: () => ipcRenderer.invoke(DOCUMENTS.LIST),
   capabilities: () => ipcRenderer.invoke(DOCUMENTS.CAPABILITIES),
-  prepare: (kind) => ipcRenderer.invoke(DOCUMENTS.PREPARE, kind),
+  prepare: async (kind, onPreparing) => {
+    const unsubscribe = onPreparing ? subscribe(DOCUMENTS.PREPARING, onPreparing) : undefined
+    try { return await ipcRenderer.invoke(DOCUMENTS.PREPARE, kind) }
+    finally { unsubscribe?.() }
+  },
   savePage: (id, page, png) => ipcRenderer.invoke(DOCUMENTS.SAVE_PAGE, id, page, png),
   finish: (id) => ipcRenderer.invoke(DOCUMENTS.FINISH, id),
   cancel: (id) => ipcRenderer.invoke(DOCUMENTS.CANCEL, id),
   rename: (id, name) => ipcRenderer.invoke(DOCUMENTS.RENAME, id, name),
   remove: (id) => ipcRenderer.invoke(DOCUMENTS.REMOVE, id),
   push: (id, page) => ipcRenderer.invoke(DOCUMENTS.PUSH, id, page),
+  playback: (id, page) => ipcRenderer.invoke(DOCUMENTS.PLAYBACK, id, page),
+  control: (id, page, video, command) => ipcRenderer.invoke(DOCUMENTS.CONTROL, id, page, video, command),
 }
 
 const updates: KairoAPI['updates'] = {

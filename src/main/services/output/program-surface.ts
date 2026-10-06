@@ -5,6 +5,7 @@ import overlayHtml from './overlay.html?asset'
 import { overlayMediaUrl, renderOverlayHTML, type OverlayColoredLine } from '@shared/overlay-template'
 import type { MediaPlayback, OverlayTheme } from '@shared/ipc'
 import type { ConfidenceInfo } from '@shared/program'
+import type { DocumentSlide, DocumentPlaybackStatus, DocumentVideoCommand } from '@shared/documents'
 import { mediaFilterCss } from '@shared/media-playback'
 import type { NdiService } from '../ndi'
 import { createDisplayWindow, needsRebuild, sameBounds, showDisplayWindow, type DisplaySink } from './display-window'
@@ -90,6 +91,7 @@ export class ProgramSurface extends ManagedWindow {
   private lastOutputId: string | null = null
   /** True while the surface is showing a document page and nothing else. */
   private documentMode = false
+  private documentSlide: DocumentSlide | null = null
   /** Resolvers waiting for the next captured frame (ndi sink only). */
   private paintWaiters: Array<() => void> = []
   /**
@@ -230,8 +232,12 @@ export class ProgramSurface extends ManagedWindow {
         return
       }
       const wasDocument = this.documentMode
+      const documentSlide = this.documentSlide
       await this.paint(current, true)
-      if (wasDocument) await this.markDocument()
+      if (wasDocument) {
+        await this.markDocument()
+        if (documentSlide) await this.setDocumentSlide(documentSlide)
+      }
       log.info(`[Output] ${this.label} recovered`, { reason })
     } catch (err) {
       log.error(`[Output] ${this.label} recovery failed`, (err as Error).message)
@@ -317,7 +323,7 @@ export class ProgramSurface extends ManagedWindow {
   private idleFrameRate(): number {
     const theme = this.lastRender?.theme
     const video = theme?.background.type === 'video' && !!theme.background.mediaPath
-    return video || this.layers.camera ? OSR_FRAME_RATE_VIDEO : OSR_FRAME_RATE
+    return video || this.documentSlide?.videos.length || this.layers.camera ? OSR_FRAME_RATE_VIDEO : OSR_FRAME_RATE
   }
 
   // ─── Content ────────────────────────────────────────────────────────────────
@@ -422,6 +428,7 @@ export class ProgramSurface extends ManagedWindow {
     if (!win) return
     const html = renderOverlayHTML(theme, reference, text, WIDTH, this.frameHeight, { coloredLines })
     this.documentMode = false
+    this.documentSlide = null
     if (this.sink.kind === 'ndi') {
       if (!instant && this.config.transitionMs > 0) this.bumpForFade()
       else if (!this.fadeTimer) win.webContents.setFrameRate(this.idleFrameRate())
@@ -432,10 +439,32 @@ export class ProgramSurface extends ManagedWindow {
   }
 
   /** Documents use a clean, opaque frame and wait for the page pixels to decode. */
-  async showDocument(outputId: string, theme: OverlayTheme): Promise<boolean> {
+  async showDocument(outputId: string, theme: OverlayTheme, slide?: DocumentSlide): Promise<boolean> {
     if (!(await this.showSlide(outputId, '', '', theme, undefined, { instant: true }))) return false
     if (!this.win || this.win.isDestroyed()) return false
     await this.markDocument()
+    if (slide) await this.setDocumentSlide(slide)
+    return true
+  }
+
+  private async setDocumentSlide(slide: DocumentSlide): Promise<void> {
+    if (!this.win || this.win.isDestroyed()) return
+    this.documentSlide = slide
+    const payload = { ...slide, path: overlayMediaUrl(slide.path), videos: slide.videos.map((video) => ({ ...video, file: overlayMediaUrl(video.file) })) }
+    await this.win.webContents.executeJavaScript(`window.__setDocumentVideos(${JSON.stringify(payload)})`)
+    if (this.sink.kind === 'ndi') this.win.webContents.setFrameRate(this.idleFrameRate())
+    await this.nextPaint(PAINT_WAIT_MS)
+  }
+
+  async documentPlayback(): Promise<DocumentPlaybackStatus | null> {
+    if (!this.documentMode || !this.documentSlide || !this.win || this.win.isDestroyed()) return null
+    return this.win.webContents.executeJavaScript('window.__documentPlayback()')
+  }
+
+  async controlDocumentVideo(id: string, page: number, video: number, command: DocumentVideoCommand): Promise<boolean> {
+    const slide = this.documentSlide
+    if (!this.documentMode || !slide || slide.id !== id || slide.page !== page || !slide.videos[video] || !this.win || this.win.isDestroyed()) return false
+    await this.win.webContents.executeJavaScript(`window.__controlDocumentVideo(${video}, ${JSON.stringify(command)})`)
     return true
   }
 
@@ -477,7 +506,7 @@ export class ProgramSurface extends ManagedWindow {
    * surface is not currently showing a document from this output — the caller
    * then does the full push, so correctness never depends on this shortcut.
    */
-  async swapDocumentPage(outputId: string, mediaPath: string): Promise<boolean> {
+  async swapDocumentPage(outputId: string, mediaPath: string, slide?: DocumentSlide): Promise<boolean> {
     const current = this.lastRender
     if (!this.documentMode || !current || this.lastOutputId !== outputId) return false
     if (!this.win || this.win.isDestroyed()) return false
@@ -502,10 +531,12 @@ export class ProgramSurface extends ManagedWindow {
       if (ndi && this.win && !this.win.isDestroyed()) this.win.webContents.setFrameRate(this.idleFrameRate())
     }
     if (!swapped) return false
+    this.documentSlide = null
     this.lastRender = {
       ...current,
       theme: { ...current.theme, background: { ...current.theme.background, mediaPath } },
     }
+    if (slide) await this.setDocumentSlide(slide)
     return true
   }
 
@@ -543,6 +574,7 @@ export class ProgramSurface extends ManagedWindow {
     this.lastOutputId = null
     this.lastRender = null
     this.documentMode = false
+    this.documentSlide = null
     const win = this.win
     const fades = !!win && !win.isDestroyed() && this.config.transitionMs > 0
     // With a fade the captured frames carry the dissolve down to transparent;

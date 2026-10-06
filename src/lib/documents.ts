@@ -3,7 +3,45 @@ export interface ProjectionDocument {
   name: string
   format: 'pdf' | 'ppt' | 'pptx'
   pages: string[]
+  /** Original slide aspect ratio and embedded videos; absent in older imports. */
+  slideSize?: { width: number; height: number }
+  videos?: DocumentVideo[][]
+  warnings?: string[]
 }
+
+export interface DocumentVideo {
+  /** Cached media filename; absolute paths are resolved only by the main process. */
+  file: string
+  box: { x: number; y: number; width: number; height: number }
+  start: number
+  end?: number
+}
+
+export interface DocumentSlide {
+  id: string
+  page: number
+  path: string
+  width: number
+  height: number
+  videos: DocumentVideo[]
+}
+
+export interface DocumentVideoStatus {
+  currentTime: number
+  duration: number
+  paused: boolean
+  ended: boolean
+  visible: boolean
+  error: string | null
+}
+
+export interface DocumentPlaybackStatus {
+  id: string
+  page: number
+  videos: DocumentVideoStatus[]
+}
+
+export type DocumentVideoCommand = { action: 'pause' | 'play' | 'restart' } | { action: 'seek'; seconds: number }
 
 export type PowerpointConverterId = 'powerpoint' | 'wps' | 'keynote' | 'libreoffice' | 'builtin'
 
@@ -47,21 +85,35 @@ export function normalizeDocumentsSettings(raw: unknown): DocumentsSettings {
   }
 }
 
+export interface DocumentImportInfo {
+  name: string
+  format: ProjectionDocument['format']
+  sizeBytes: number
+  maxSizeBytes: number
+}
+
+export function formatDocumentSize(bytes: number): string {
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
 export interface DocumentsAPI {
   list(): Promise<ProjectionDocument[]>
   capabilities(): Promise<DocumentsCapabilities>
-  prepare(kind?: 'pdf' | 'powerpoint'): Promise<{ id: string; data: Uint8Array } | null>
+  prepare(kind?: 'pdf' | 'powerpoint', onPreparing?: (document: DocumentImportInfo) => void): Promise<{ id: string; data: Uint8Array; name: string; format: ProjectionDocument['format'] } | null>
   savePage(id: string, page: number, png: Uint8Array): Promise<void>
   finish(id: string): Promise<ProjectionDocument[]>
   cancel(id: string): Promise<void>
   rename(id: string, name: string): Promise<ProjectionDocument[]>
   remove(id: string): Promise<ProjectionDocument[]>
   push(id: string, page: number): Promise<{ applied: boolean }>
+  playback(id: string, page: number): Promise<DocumentPlaybackStatus | null>
+  control(id: string, page: number, video: number, command: DocumentVideoCommand): Promise<void>
 }
 
 export const DOCUMENTS = {
   LIST: 'documents:list', CAPABILITIES: 'documents:capabilities', PREPARE: 'documents:prepare', SAVE_PAGE: 'documents:savePage',
   FINISH: 'documents:finish', CANCEL: 'documents:cancel', RENAME: 'documents:rename', REMOVE: 'documents:remove', PUSH: 'documents:push',
+  PREPARING: 'documents:preparing', PLAYBACK: 'documents:playback', CONTROL: 'documents:control',
 } as const
 
 /** Strip Electron's invoke wrapper so operators see the real reason. */

@@ -163,6 +163,18 @@
       var config = { transitionMs: 0, audio: { enabled: false, volume: 1, outputLabel: '' }, ndiAudio: false };
       // Whether this window plays the camera's sound — also only the audio surface.
       var cameraAudible = false;
+      var documentSlide = null;
+
+      function clearDocumentVideos() {
+        documentSlide = null;
+        var canvas = layers.bg.querySelector('[data-document-videos]');
+        if (canvas) { stopMedia(canvas); canvas.remove(); }
+      }
+
+      function documentVideos() {
+        var canvas = layers.bg.querySelector('[data-document-videos]');
+        return canvas ? canvas.querySelectorAll('video') : [];
+      }
 
       // ─── Layer helpers ────────────────────────────────────────────────────
       // A node on its way out keeps `data-leaving` until it is removed, and
@@ -523,6 +535,7 @@
       // the same file), `.pa-layer` to the text layer. `instant` skips the
       // transition — documents turn pages, they do not dissolve.
       window.__setContent = function (html, instant) {
+        clearDocumentVideos();
         var ms = instant ? 0 : config.transitionMs;
         program.style.background = '';
         var holder = document.createElement('div');
@@ -575,6 +588,7 @@
       // the new pixels are decoded AND painted, so the NDI sender never grabs a
       // frame of the previous page.
       window.__swapDocumentPage = function (src) {
+        clearDocumentVideos();
         var image = live(layers.bg, 'img');
         if (!image) return Promise.resolve(false);
         image.src = src;
@@ -593,6 +607,74 @@
         var image = new Image();
         image.src = src;
         if (image.decode) image.decode().catch(function () {});
+      };
+      // Match the contain-fit slide image, including letterboxing on non-16:9 screens.
+      window.__setDocumentVideos = function (slide) {
+        clearDocumentVideos();
+        documentSlide = slide;
+        if (!slide.videos.length) return;
+        var bg = currentNode(layers.bg);
+        if (!bg) return;
+        var canvas = document.createElement('div');
+        canvas.setAttribute('data-document-videos', '1');
+        var scale = Math.min(FRAME_W / slide.width, FRAME_H / slide.height);
+        var w = slide.width * scale, h = slide.height * scale;
+        canvas.style.cssText = 'position:absolute;overflow:hidden;left:' + ((FRAME_W-w)/2) + 'px;top:' + ((FRAME_H-h)/2) + 'px;width:' + w + 'px;height:' + h + 'px;';
+        slide.videos.forEach(function (clip) {
+          var video = document.createElement('video');
+          video.src = clip.file;
+          video.preload = 'auto';
+          video.playsInline = true;
+          video.dataset.paPaused = '1';
+          video.style.cssText = 'position:absolute;object-fit:fill;visibility:hidden;left:' + (clip.box.x*100) + '%;top:' + (clip.box.y*100) + '%;width:' + (clip.box.width*100) + '%;height:' + (clip.box.height*100) + '%;';
+          video.addEventListener('loadedmetadata', function () { video.currentTime = clip.start; });
+          video.addEventListener('timeupdate', function () {
+            if (clip.end && video.currentTime >= clip.end) { video.pause(); video.dataset.paPaused = '1'; }
+          });
+          canvas.appendChild(video);
+          applyAudio(video);
+        });
+        bg.appendChild(canvas);
+        applySink();
+      };
+      window.__documentPlayback = function () {
+        if (!documentSlide) return null;
+        var videos = documentVideos();
+        return { id: documentSlide.id, page: documentSlide.page, videos: Array.from(videos).map(function (video, index) {
+          var clip = documentSlide.videos[index];
+          var end = isFinite(video.duration) ? Math.min(clip.end || video.duration, video.duration) : (clip.end || 0);
+          var ended = video.ended || (end > 0 && video.currentTime >= end);
+          return {
+            currentTime: Math.max(0, (video.currentTime || 0) - clip.start),
+            duration: Math.max(0, end - clip.start),
+            paused: video.paused,
+            ended: ended,
+            visible: video.style.visibility !== 'hidden',
+            error: video.error ? 'This embedded video cannot be played. Convert it to MP4 (H.264/AAC) or WebM and import again.' : (video.dataset.playError || null),
+          };
+        }) };
+      };
+      window.__controlDocumentVideo = function (index, command) {
+        var video = documentVideos()[index];
+        if (!video || !documentSlide) return Promise.resolve();
+        var clip = documentSlide.videos[index];
+        if (command.action === 'pause') { video.dataset.paPaused = '1'; video.pause(); return Promise.resolve(); }
+        var start = clip.start || 0;
+        var end = isFinite(video.duration) ? Math.min(clip.end || video.duration, video.duration) : (clip.end || Infinity);
+        if (command.action === 'seek') {
+          video.style.visibility = 'visible';
+          video.currentTime = Math.min(end, Math.max(start, start + command.seconds));
+          return Promise.resolve();
+        }
+        if (command.action === 'restart' || video.ended || video.currentTime >= end) video.currentTime = start;
+        video.dataset.paPaused = '';
+        video.style.visibility = 'visible';
+        delete video.dataset.playError;
+        return video.play().catch(function () {
+          video.dataset.playError = 'Video playback could not start. Check the video format and try again.';
+          video.style.visibility = 'hidden';
+          video.dataset.paPaused = '1';
+        });
       };
       window.__clearText = function () {
         swapLayer(layers.text, '', config.transitionMs);

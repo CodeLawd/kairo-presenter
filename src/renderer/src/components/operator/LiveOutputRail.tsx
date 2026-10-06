@@ -35,6 +35,25 @@ export function LiveOutputRail({
   const settings = useBootstrapStore((state) => state.settings);
   const overlay = settings.overlay;
   const payload = useAppStore((state) => state.liveOutputPreview);
+  const documentPreview = useAppStore(state => state.liveDocumentPreview);
+  useEffect(() => {
+    if (!documentPreview?.doc.videos?.[documentPreview.page]?.length) return
+    let disposed = false
+    let timer: ReturnType<typeof setTimeout>
+    const { doc, page } = documentPreview
+    const poll = async (): Promise<void> => {
+      try {
+        const playback = await window.api.documents.playback(doc.id, page)
+        const current = useAppStore.getState().liveDocumentPreview
+        if (!disposed && playback && current?.doc.id === doc.id && current.page === page && JSON.stringify(current.playback) !== JSON.stringify(playback)) {
+          useAppStore.setState({ liveDocumentPreview: { ...current, playback } })
+        }
+      } catch { /* Keep the most recent frame while an output reconnects. */ }
+      if (!disposed) timer = setTimeout(() => void poll(), 350)
+    }
+    void poll()
+    return () => { disposed = true; clearTimeout(timer) }
+  }, [documentPreview?.doc.id, documentPreview?.page])
   const selectedOutputId = useAppStore((state) => state.operatorPreviewOutputId);
   const onSelectOutput = useAppStore((state) => state.setOperatorPreviewOutputId);
   const [mediaLibrary, setMediaLibrary] = useState<MediaLibrary | null>(null);
@@ -47,7 +66,10 @@ export function LiveOutputRail({
         if (!cancelled) setMediaLibrary(library);
       })
       .catch(() => undefined);
-    const unsubscribe = window.api.media.onLibraryChange((library) => setMediaLibrary(library));
+    const unsubscribe = window.api.media.onLibraryChange((library) => {
+      setMediaLibrary(library);
+      if (library.liveItemId) useAppStore.setState({ liveDocumentPreview: null });
+    });
     return () => {
       cancelled = true;
       unsubscribe();
@@ -132,7 +154,7 @@ export function LiveOutputRail({
             height={previewHeight}
           />
           </div>
-          <LiveLayerStrip hasText={Boolean(payload)} hasBackground={Boolean(liveMedia)} />
+          <LiveLayerStrip hasText={Boolean(payload)} hasBackground={Boolean(liveMedia || documentPreview)} />
           </div>
         </div>
 

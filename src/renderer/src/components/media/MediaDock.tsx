@@ -334,6 +334,7 @@ export default function MediaDock(): React.ReactElement | null {
     setOffAir(false)
     try {
       await window.api.media.clear()
+      useAppStore.setState({ liveDocumentPreview: null })
     } catch (err) {
       setError((err as Error).message)
     }

@@ -99,6 +99,7 @@ docs/decisions/*
 !docs/decisions/001-cross-platform-ndi.md
 !docs/release-checklist.md
 !docs/signing-setup.md
+!docs/embedded-powerpoint-video.md
 
 # electron-builder output
 release/

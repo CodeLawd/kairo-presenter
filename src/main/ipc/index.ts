@@ -742,7 +742,9 @@ function registerResilienceHandlers(): void {
 function registerDocumentHandlers(): void {
   handle(DOCUMENTS.LIST, () => documentsService.list());
   handle(DOCUMENTS.CAPABILITIES, () => documentsService.capabilities());
-  handle(DOCUMENTS.PREPARE, (_event, kind) => documentsService.prepare(kind));
+  handle(DOCUMENTS.PREPARE, (event, kind) => documentsService.prepare(kind, (document) => {
+    if (!event.sender.isDestroyed()) event.sender.send(DOCUMENTS.PREPARING, document);
+  }));
   handle(DOCUMENTS.SAVE_PAGE, (_event, id, page, png) => documentsService.savePage(id, page, png));
   handle(DOCUMENTS.FINISH, (_event, id) => documentsService.finish(id));
   handle(DOCUMENTS.CANCEL, (_event, id) => documentsService.cancel(id));
@@ -752,9 +754,10 @@ function registerDocumentHandlers(): void {
     return documentsService.remove(id);
   });
   handle(DOCUMENTS.PUSH, async (_event, id, page) => {
-    const path = await documentsService.page(id, page);
-    const applied = await orchestrator.presentDocumentPage(path);
-    if (applied) programService.setSlide({ reference: `Page ${page + 1}`, text: "" });
+    const slide = await documentsService.slide(id, page);
+    const applied = await orchestrator.presentDocumentPage(slide.path, slide);
+    mediaService.setLiveItem(null);
+    programService.setSlide({ reference: `Page ${page + 1}`, text: "" });
     // Decode the next page while the room reads this one. Never awaited: a
     // missing next page (end of deck) must not slow or fail this push.
     if (applied) {
@@ -764,6 +767,17 @@ function registerDocumentHandlers(): void {
         .catch(() => undefined);
     }
     return { applied };
+  });
+  handle(DOCUMENTS.PLAYBACK, async (_event, id, page) => {
+    const states = await Promise.all(surfaceManager.allSurfaces().map((surface) => surface.documentPlayback().catch(() => null)));
+    return states.find((state) => state !== null && state.id === id && state.page === page) ?? null;
+  });
+  handle(DOCUMENTS.CONTROL, async (_event, id, page, video, command) => {
+    if (typeof id !== 'string' || !Number.isInteger(page) || !Number.isInteger(video) || video < 0 ||
+      !command || !['play', 'pause', 'restart', 'seek'].includes(command.action) ||
+      (command.action === 'seek' && !Number.isFinite(command.seconds))) throw new Error('Invalid document video command.');
+    const results = await Promise.all(surfaceManager.allSurfaces().map((surface) => surface.controlDocumentVideo(id, page, video, command)));
+    if (!results.some(Boolean)) throw new Error('Push this slide before playing its video.');
   });
 }
 

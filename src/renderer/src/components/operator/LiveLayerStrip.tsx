@@ -1,3 +1,4 @@
+import { useAppStore } from '@/stores/useAppStore'
 import { useState } from 'react'
 import {
   AlignCenter,
@@ -76,7 +77,10 @@ export function LiveLayerStrip({
       label: 'Background',
       icon: ImageIcon,
       on: hasBackground,
-      clear: () => window.api.media.clear(),
+      clear: async () => {
+        await window.api.media.clear()
+        useAppStore.setState({ liveDocumentPreview: null })
+      },
     },
     {
       id: 'camera',
