@@ -66,7 +66,7 @@ export default function StepOutput(): React.ReactElement {
       title="How does Kairo reach your screens?"
       blurb="You can change this any time in Theme → Output."
     >
-      <ul className="-mx-1 divide-y divide-surface-border/40" role="radiogroup">
+      <ul className="-mx-1" role="radiogroup">
         {ROUTES.map((option) => {
           const selected = route === option.id
           return (
@@ -81,7 +81,7 @@ export default function StepOutput(): React.ReactElement {
                 <span
                   className={cn(
                     'mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full border transition-colors',
-                    selected ? 'border-teal-500 bg-teal-500' : 'border-surface-border',
+                    selected ? 'border-teal-500 bg-teal-500' : 'border-transparent bg-surface-elevated',
                   )}
                   aria-hidden="true"
                 >
@@ -112,7 +112,7 @@ export default function StepOutput(): React.ReactElement {
           <summary className="cursor-pointer text-[11px] text-slate-500 hover:text-slate-300">
             Fine-tune which outputs are on
           </summary>
-          <ul className="-mx-1 mt-2 divide-y divide-surface-border/40">
+          <ul className="-mx-1 mt-2">
             {overlay.outputs.map((output) => (
               <li key={output.id}>
                 <button
@@ -125,7 +125,7 @@ export default function StepOutput(): React.ReactElement {
                     className={`grid h-4 w-4 shrink-0 place-items-center rounded border transition-colors ${
                       output.enabled
                         ? 'border-teal-500 bg-teal-500 text-white'
-                        : 'border-surface-border bg-transparent'
+                        : 'border-transparent bg-surface-elevated'
                     }`}
                     aria-hidden="true"
                   >

@@ -10,11 +10,13 @@ import {
 } from "@shared/overlay-content";
 import { renderOverlayHTML } from "@shared/overlay-template";
 import { ScaledOverlayPreview } from "@/components/overlay/ScaledOverlayPreview";
-import { themeOwnsBackground, themeWithLiveMedia } from "@shared/media-playback";
+import { usePresentation, useProgramState } from "@/hooks/useProgramState";
+import { ProgramLayersPreview } from "./ConfidencePreview";
+import { confidenceFor, programLayersFor } from "@shared/program";
+import { themeForPush } from "@shared/media-playback";
 import {
   isRenderedKind,
   outputRequiresPropresenter,
-  outputDestinationLabel,
   outputTemplateFor,
   outputThemeFor,
 } from "@shared/overlay-outputs";
@@ -38,14 +40,6 @@ import { useBootstrapStore } from "@/bootstrap/useBootstrapStore";
 // what you see is real.
 
 const EMPTY_TIME: OverlayVideoTime = { currentTime: 0, duration: 0, ended: false };
-
-const FIDELITY: Record<OverlayOutput["kind"], string> = {
-  ndi: "Exact — this app renders these pixels",
-  screen: "Exact — this app renders these pixels",
-  stage: "Exact — stage messages are plain text",
-  message: "Text is exact; ProPresenter controls the styling",
-  library: "ProPresenter renders this slide — no preview available",
-};
 
 interface LiveOutputPreviewProps {
   /** Enabled outputs, in the order the Outputs panel lists them. */
@@ -112,22 +106,39 @@ export function LiveOutputPreview({
     void window.api.media.seek(next);
   }, [mediaTime.duration]);
 
-  const showTransport = !!selected && isRenderedKind(selected.kind) && liveMedia?.item.kind === "video";
+  const showTransport =
+    !!selected && isRenderedKind(selected.kind) && selected.show.backgrounds && liveMedia?.item.kind === "video";
+  const program = useProgramState();
+  const [presentation] = usePresentation();
+  const rendered = !!selected && isRenderedKind(selected.kind);
+  const layers = useMemo(
+    () => (rendered && selected ? programLayersFor(selected, program, presentation) : null),
+    [rendered, selected, program, presentation],
+  );
+  const info = useMemo(
+    () => (rendered && selected ? confidenceFor(selected, program, presentation) : null),
+    [rendered, selected, program, presentation],
+  );
+  const drawn = !!info || !!(layers && (layers.props || layers.message || layers.logo));
 
   return (
     <div>
-      <PreviewBody
-        output={selected}
-        result={result}
-        content={content}
-        contentKind={contentKind}
-        liveMedia={liveMedia}
-        overlay={overlay}
-        width={width}
-        height={height}
-        seekTo={seekTo}
-        onTime={onTime}
-      />
+      <div className="relative" style={{ width, height }}>
+        <PreviewBody
+          output={selected}
+          result={result}
+          content={content}
+          contentKind={contentKind}
+          liveMedia={liveMedia}
+          overlay={overlay}
+          width={width}
+          height={height}
+          seekTo={seekTo}
+          onTime={onTime}
+          blankWhenIdle={drawn}
+        />
+        {drawn && layers && <ProgramLayersPreview layers={layers} info={info} width={width} />}
+      </div>
 
       {showTransport && liveMedia && (
         <LiveVideoControls
@@ -162,7 +173,6 @@ export function LiveOutputPreview({
             onChange={(e) => onSelectOutput(e.target.value)}
             disabled={outputs.length === 0}
             aria-label="Preview output"
-            title={selected ? FIDELITY[selected.kind] : undefined}
           >
             {outputs.length === 0 && <option value="">No screens on</option>}
             {outputs.map((output) => (
@@ -178,14 +188,7 @@ export function LiveOutputPreview({
           />
         </div>
 
-        {toolbar ?? (selected && (
-          <span
-            className="shrink-0 text-[10px] text-zinc-600"
-            title={FIDELITY[selected.kind]}
-          >
-            {outputDestinationLabel(selected.kind)}
-          </span>
-        ))}
+        {toolbar}
       </div>
     </div>
   );
@@ -202,6 +205,7 @@ function PreviewBody({
   height,
   seekTo,
   onTime,
+  blankWhenIdle = false,
 }: {
   output: OverlayOutput | null;
   result: ScriptureResult | null;
@@ -213,16 +217,31 @@ function PreviewBody({
   height: number;
   seekTo: { token: number; seconds: number } | null;
   onTime: (time: OverlayVideoTime) => void;
+  /** Countdown, clock or stage message are drawn on top — show the black screen, not a placeholder. */
+  blankWhenIdle?: boolean;
 }): React.ReactElement {
-  // Same rule the push takes (orchestrator `withLiveBackground`): a verse on a
-  // theme that owns its background keeps it, even while the dock loop runs.
+  // Same rules the push takes (orchestrator `pushRendered`): this screen's Look
+  // decides what reaches it, and a verse on a theme that owns its background
+  // keeps it even while the dock loop runs. Backgrounds off = words on black.
   const kind = content?.kind ?? contentKind;
-  const outputTheme = output ? outputThemeFor(output, kind) : null;
-  const theme = output
-    ? (result || content?.kind === "scripture") && themeOwnsBackground(outputTheme!)
-      ? outputTheme!
-      : themeWithLiveMedia(outputTheme!, liveMedia?.item ?? null, liveMedia?.playback)
-    : null;
+  const showsBackgrounds = !output || !isRenderedKind(output.kind) || output.show.backgrounds;
+  const showsText = !output || !isRenderedKind(output.kind) || output.show[kind];
+  if (!showsBackgrounds) liveMedia = null;
+  if (!showsText) {
+    result = null;
+    content = null;
+  }
+  // A background with nothing over it is the dock's own "present this", so it wins (force).
+  const force = kind === "lyrics" || (!result && !content);
+  const liveItem = liveMedia?.item ?? null;
+  const playback = liveMedia?.playback;
+  const theme = useMemo(
+    () =>
+      output
+        ? themeForPush(outputThemeFor(output, kind), { showsBackgrounds, live: liveItem, playback, force })
+        : null,
+    [output, kind, showsBackgrounds, liveItem, playback, force],
+  );
 
   if (!output || !theme) {
     return (
@@ -233,6 +252,7 @@ function PreviewBody({
   }
 
   if (!result && !content && !liveMedia) {
+    if (blankWhenIdle) return <div className="bg-black" style={{ width, height }} />;
     return (
       <EmptyFrame width={width} height={height} icon={BookOpenCheck} title="Nothing is live">
         Send a verse or click a background

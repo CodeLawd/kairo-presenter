@@ -251,10 +251,10 @@ function HighlightedText({
         if (run.type === "scripture") {
           return (
             <span key={idx} className="relative inline">
-              <mark className="bg-tint-teal text-teal-200 border-b border-teal-500/30 pb-0.5 not-italic">
+              <mark className="bg-tint-teal text-teal-200 pb-0.5 not-italic">
                 {run.text}
               </mark>
-              <span className="ml-1 inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-zinc-800 text-[10px] text-zinc-300 border border-zinc-700 align-middle leading-none">
+              <span className="ml-1 inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-zinc-800 text-[10px] text-zinc-300 align-middle leading-none">
                 <BookOpen size={9} />
                 {run.reference}
               </span>
@@ -1419,7 +1419,7 @@ export default function Operator(): React.ReactElement {
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-surface">
       {resilienceStatus?.recoverySessionAvailable && (
-        <div className="bg-tint-teal border-b border-teal-500/30 px-6 py-3 flex items-center justify-between text-xs text-teal-300">
+        <div className="bg-tint-teal px-6 py-3 flex items-center justify-between text-xs text-teal-300">
           <div className="flex items-center gap-2.5">
             <AlertTriangle size={15} className="text-teal-400 animate-pulse" />
             <div>
@@ -1461,12 +1461,12 @@ export default function Operator(): React.ReactElement {
       )}
 
       {usesPropresenter && resilienceStatus && ppReconnectCountdown > 0 && (
-        <div className="bg-tint-rose border-b border-rose-500/30 px-6 py-2.5 flex items-center justify-between text-xs font-bold text-rose-400 animate-fade-in">
+        <div className="bg-tint-rose px-6 py-2.5 flex items-center justify-between text-xs font-bold text-rose-400 animate-fade-in">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
             <span>ProPresenter disconnected — retrying in {ppReconnectCountdown}s</span>
             {resilienceStatus.ppQueueSize > 0 && (
-              <span className="bg-tint-rose border border-rose-500/20 px-1.5 py-0.5 rounded text-[10px]">
+              <span className="bg-tint-rose px-1.5 py-0.5 rounded text-[10px]">
                 {resilienceStatus.ppQueueSize} projection(s) queued
               </span>
             )}
@@ -1478,7 +1478,7 @@ export default function Operator(): React.ReactElement {
       )}
 
       {lastLatency && (
-        <div className="flex items-center gap-2 border-b border-white/[0.05] px-6 py-1.5 text-[10px] text-white/40">
+        <div className="flex items-center gap-2 px-6 py-1.5 text-[10px] text-white/40">
           <span className="font-semibold text-white/60">Last scripture</span>
           <span>{lastLatency.trace.reference}</span>
           <span className="font-mono tabular-nums text-white/55">
@@ -1555,7 +1555,7 @@ export default function Operator(): React.ReactElement {
                                 "group flex items-start gap-2 rounded-md border px-2.5 py-2 transition-colors",
                                 isLive
                                   ? "border-teal-500/40 bg-tint-teal"
-                                  : "border-transparent hover:border-surface-border hover:bg-surface",
+                                  : "border-transparent hover:bg-surface",
                               )}
                             >
                               <button
@@ -1696,7 +1696,7 @@ export default function Operator(): React.ReactElement {
               </div>
               {nuggetsOpen && (
                 <div
-                  className="absolute inset-x-2 top-full z-50 mt-1.5 overflow-hidden rounded-lg border border-white/10 bg-zinc-950 shadow-2xl"
+                  className="absolute inset-x-2 top-full z-50 mt-1.5 overflow-hidden rounded-lg bg-zinc-950 shadow-2xl"
                   role="dialog"
                   aria-label={
                     activeService
@@ -1704,7 +1704,7 @@ export default function Operator(): React.ReactElement {
                       : "Legacy nuggets"
                   }
                 >
-                  <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
+                  <div className="flex items-center justify-between px-3 py-2">
                     <span className="text-[11px] font-semibold text-zinc-200">
                       {activeService
                         ? "This service’s nuggets"
@@ -1777,7 +1777,7 @@ export default function Operator(): React.ReactElement {
             {resilienceStatus &&
               (sttHealth?.status === "degraded" ||
                 sttHealth?.status === "error") && (
-                <div className="border-b border-amber-500/10 bg-tint-amber px-3 py-2 text-[11px] text-amber-300 flex flex-wrap items-center gap-1.5 shrink-0">
+                <div className="bg-tint-amber px-3 py-2 text-[11px] text-amber-300 flex flex-wrap items-center gap-1.5 shrink-0">
                   <span>Reconnecting…</span>
                   <span className="bg-tint-amber px-1.5 py-0.5 rounded text-[9px]">
                     Audio is buffered
@@ -1848,7 +1848,7 @@ export default function Operator(): React.ReactElement {
                   // No button here on purpose: Start lives in the panel header,
                   // and one live control is easier to find than two.
                   <div className="mx-auto flex w-full max-w-[17rem] flex-1 flex-col items-center justify-center px-6 text-center">
-                    <div className="grid size-9 place-items-center rounded-full border border-white/[0.06] text-zinc-600">
+                    <div className="grid size-9 place-items-center rounded-full text-zinc-600">
                       <Mic size={15} aria-hidden />
                     </div>
                     <p className="mt-3 text-[12px] leading-relaxed text-zinc-500">
@@ -1866,7 +1866,7 @@ export default function Operator(): React.ReactElement {
               </div>
 
               {/* Vertical audio level rail — same height as the transcript */}
-              <div className="flex w-7 shrink-0 flex-col items-center gap-2 border-l border-white/[0.06] bg-surface py-2.5">
+              <div className="flex w-7 shrink-0 flex-col items-center gap-2 bg-surface py-2.5">
                 <Volume2
                   size={12}
                   className={isTranscribing ? "text-teal-400" : "text-zinc-600"}

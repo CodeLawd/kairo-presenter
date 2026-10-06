@@ -445,14 +445,14 @@ export default function App(): React.ReactElement {
       {loaderMounted && <LoadingScreen progress={progress} showProgress={false} fadingOut />}
       {errors.length > 0 && !warningDismissed && (
         <div
-          className="absolute inset-x-0 top-0 z-40 flex items-start gap-2.5 border-b border-surface-border bg-surface-elevated px-4 py-2.5 text-xs text-yellow-300"
+          className="absolute inset-x-0 top-0 z-40 flex items-start gap-2.5 bg-surface-elevated px-4 py-2.5 text-xs text-yellow-300"
           role="alert"
         >
           <AlertTriangle size={14} className="mt-px shrink-0" aria-hidden="true" />
           <span className="flex-1">{describeBootstrapWarning(errors)}</span>
           <button
             type="button"
-            className="shrink-0 inline-flex items-center gap-1 rounded border border-yellow-500/30 px-2 py-0.5 hover:bg-tint-yellow"
+            className="shrink-0 inline-flex items-center gap-1 rounded px-2 py-0.5 hover:bg-tint-yellow"
             onClick={() => { void useBootstrapStore.getState().retry() }}
           >
             <RefreshCw size={11} aria-hidden="true" />
@@ -552,7 +552,7 @@ export default function App(): React.ReactElement {
       {screensWindow && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 animate-fade-in">
           <div className="absolute inset-0" onClick={() => useAppStore.getState().closeScreens()} />
-          <div className="relative h-[min(760px,90vh)] w-[min(1180px,94vw)] overflow-hidden rounded-xl border border-surface-border animate-spring-in">
+          <div className="relative h-[min(760px,90vh)] w-[min(1180px,94vw)] overflow-hidden rounded-xl animate-spring-in">
             <ScreenConfiguration
               initialSelect={screensWindow.select}
               onClose={() => useAppStore.getState().closeScreens()}

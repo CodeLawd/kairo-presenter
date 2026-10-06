@@ -34,6 +34,17 @@ export interface ProgramMessageStyle {
   scroll: boolean
 }
 
+/** How the countdown looks and behaves on screens and stage displays. */
+export interface ProgramTimerStyle {
+  /** Keep counting past 0:00 into overtime (-0:12). Off: stop at 0:00. */
+  rollover: boolean
+  color: string
+  /** Overtime, or 0:00 once time is up without roll over. */
+  overrunColor: string
+  /** A dark bar behind the clock and countdown on screens, for legibility over slides. */
+  backdrop: boolean
+}
+
 export type PropPosition = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center'
 
 /** An image pinned over the slide — a logo bug, a "Welcome" corner card. */
@@ -90,6 +101,7 @@ export interface PresentationSettings {
   logo: ProgramLogo
   stageDisplays: StageDisplayConfig[]
   audio: ProgramAudioSettings
+  timer: ProgramTimerStyle
 }
 
 export const DEFAULT_PRESENTATION_SETTINGS: PresentationSettings = {
@@ -107,6 +119,7 @@ export const DEFAULT_PRESENTATION_SETTINGS: PresentationSettings = {
   // Video sound on by default, as in ProPresenter: a countdown or a clip with
   // audio should be heard; silent motion loops are unaffected.
   audio: { enabled: true, volume: 1, outputLabel: '', ndi: false },
+  timer: { rollover: true, color: '#5eead4', overrunColor: '#f87171', backdrop: false },
 }
 
 // ─── Normalizer ────────────────────────────────────────────────────────────────
@@ -180,6 +193,7 @@ export function normalizePresentationSettings(raw: unknown): PresentationSetting
   const m = asObject(r.message)
   const l = asObject(r.logo)
   const a = asObject(r.audio)
+  const tm = asObject(r.timer)
   return {
     transition: {
       kind: safeEnum(t.kind, ['cut', 'fade'] as const, d.transition.kind),
@@ -203,6 +217,12 @@ export function normalizePresentationSettings(raw: unknown): PresentationSetting
       volume: clampNum(a.volume, 0, 1, d.audio.volume),
       outputLabel: safeString(a.outputLabel, '').trim(),
       ndi: safeBool(a.ndi, d.audio.ndi),
+    },
+    timer: {
+      rollover: safeBool(tm.rollover, d.timer.rollover),
+      color: safeColor(tm.color, d.timer.color),
+      overrunColor: safeColor(tm.overrunColor, d.timer.overrunColor),
+      backdrop: safeBool(tm.backdrop, d.timer.backdrop),
     },
   }
 }
@@ -239,7 +259,7 @@ export interface ProgramTimerState {
 export interface ProgramState {
   /** Audience message on the program screens, or null. */
   message: string | null
-  /** Message for the stage displays only. */
+  /** Message for stage displays and screens showing the stage-message layer. */
   stageMessage: string | null
   activePropIds: string[]
   logo: boolean
@@ -248,6 +268,10 @@ export interface ProgramState {
   /** Label of the audio input played with the camera, or null for a silent camera. */
   cameraAudio: string | null
   timer: ProgramTimerState
+  /** The operator put the countdown up. Screens show it only if their Look allows it. */
+  countdownOnScreens: boolean
+  /** The operator put the clock up. Screens show it only if their Look allows it. */
+  clockOnScreens: boolean
   current: ProgramSlideInfo | null
   next: ProgramSlideInfo | null
 }
@@ -260,6 +284,8 @@ export const EMPTY_PROGRAM_STATE: ProgramState = {
   camera: null,
   cameraAudio: null,
   timer: { durationSec: 300, endsAt: null, remainingSec: 300 },
+  countdownOnScreens: false,
+  clockOnScreens: false,
   current: null,
   next: null,
 }
@@ -272,6 +298,31 @@ export function timerRemainingSec(timer: ProgramTimerState, now: number): number
 
 export function timerRunning(timer: ProgramTimerState): boolean {
   return timer.endsAt !== null
+}
+
+/**
+ * Everything a countdown readout needs at `now`, so the booth, the preview and
+ * the screen shells agree: the number to show (held at 0 without roll over),
+ * whether time is up, and whether it is paused part-way.
+ */
+export function timerReadout(
+  timer: ProgramTimerState,
+  now: number,
+  rollover: boolean,
+): { seconds: number; timeUp: boolean; paused: boolean } {
+  const raw = timerRemainingSec(timer, now)
+  const running = timerRunning(timer)
+  return {
+    seconds: rollover ? raw : Math.max(0, raw),
+    timeUp: timer.durationSec > 0 && (raw < 0 || (raw === 0 && running)),
+    paused: !running && raw !== timer.durationSec,
+  }
+}
+
+/** Wall clock as the screens show it: `9:05 PM`. */
+export function formatClock(date: Date): string {
+  const hours = date.getHours()
+  return `${hours % 12 || 12}:${String(date.getMinutes()).padStart(2, '0')} ${hours < 12 ? 'AM' : 'PM'}`
 }
 
 /** `5:00`, `1:02:03`, `-0:12` for an overrun. */
@@ -371,24 +422,52 @@ export interface OutputShowFilter {
   messages: boolean
   /** Logo and props. */
   overlays: boolean
+  countdown: boolean
+  clock: boolean
+  stageMessage: boolean
 }
 
-export const SHOW_EVERYTHING: OutputShowFilter = {
+/** Where the countdown, clock and stage message sit on a screen, and how big. */
+export interface ConfidenceLayout {
+  position: 'top' | 'bottom'
+  size: 'small' | 'medium' | 'large'
+}
+
+export const DEFAULT_CONFIDENCE_LAYOUT: ConfidenceLayout = { position: 'top', size: 'medium' }
+
+/** Font sizes (1920-wide frame px) for the clock/countdown bar and the stage message. */
+export function confidenceSizes(size: ConfidenceLayout['size']): { barPx: number; messagePx: number } {
+  return size === 'small' ? { barPx: 48, messagePx: 40 } : size === 'large' ? { barPx: 104, messagePx: 84 } : { barPx: 72, messagePx: 60 }
+}
+
+export function normalizeConfidenceLayout(raw: unknown): ConfidenceLayout {
+  const r = asObject(raw)
+  return {
+    position: safeEnum(r.position, ['top', 'bottom'] as const, 'top'),
+    size: safeEnum(r.size, ['small', 'medium', 'large'] as const, 'medium'),
+  }
+}
+
+/** Everything the room sees; the confidence layers start off. */
+export const DEFAULT_SHOW_FILTER: OutputShowFilter = {
   scripture: true,
   lyrics: true,
   documents: true,
   backgrounds: true,
   messages: true,
   overlays: true,
+  countdown: false,
+  clock: false,
+  stageMessage: false,
 }
 
-export const OUTPUT_SHOW_KEYS: readonly (keyof OutputShowFilter)[] = [
-  'scripture',
-  'lyrics',
-  'documents',
-  'backgrounds',
+/** Layers a playlist (lobby) screen can still show on top of its playlist. */
+export const PLAYLIST_SHOW_KEYS: readonly (keyof OutputShowFilter)[] = [
   'messages',
   'overlays',
+  'countdown',
+  'clock',
+  'stageMessage',
 ]
 
 export function outputShowLabel(key: keyof OutputShowFilter): string {
@@ -399,6 +478,9 @@ export function outputShowLabel(key: keyof OutputShowFilter): string {
     case 'backgrounds': return 'Backgrounds'
     case 'messages': return 'Messages'
     case 'overlays': return 'Logo & props'
+    case 'countdown': return 'Countdown'
+    case 'clock': return 'Clock'
+    case 'stageMessage': return 'Stage message'
   }
 }
 
@@ -411,6 +493,55 @@ export function normalizeShowFilter(raw: unknown): OutputShowFilter {
     backgrounds: safeBool(r.backgrounds, true),
     messages: safeBool(r.messages, true),
     overlays: safeBool(r.overlays, true),
+    countdown: safeBool(r.countdown, false),
+    clock: safeBool(r.clock, false),
+    stageMessage: safeBool(r.stageMessage, false),
+  }
+}
+
+// ─── What an output shows right now ────────────────────────────────────────────
+// One rule for the screen windows (surface-manager) and the operator's preview.
+
+/** Props, audience message and logo markup an output shows right now. '' = layer off. */
+export function programLayersFor(
+  output: Pick<import('./ipc').OverlayOutput, 'show'>,
+  state: ProgramState,
+  presentation: PresentationSettings,
+): { props: string; message: string; logo: string } {
+  return {
+    props: output.show.overlays ? renderPropsHTML(presentation.props, state.activePropIds) : '',
+    message: output.show.messages ? renderMessageHTML(state.message, presentation.message) : '',
+    logo: output.show.overlays ? renderLogoHTML(presentation.logo, state.logo) : '',
+  }
+}
+
+/** Countdown, clock and stage message for one output, with how to draw them. */
+export interface ConfidenceInfo {
+  timer: ProgramTimerState | null
+  clock: boolean
+  stageMessage: string | null
+  layout: ConfidenceLayout
+  sizes: { barPx: number; messagePx: number }
+  style: ProgramTimerStyle
+}
+
+/** Null when the output shows none of them right now (its Look allows it and the operator put it up). */
+export function confidenceFor(
+  output: Pick<import('./ipc').OverlayOutput, 'show' | 'confidence'>,
+  state: ProgramState,
+  presentation: PresentationSettings,
+): ConfidenceInfo | null {
+  const timer = output.show.countdown && state.countdownOnScreens ? state.timer : null
+  const clock = output.show.clock && state.clockOnScreens
+  const stageMessage = output.show.stageMessage ? state.stageMessage : null
+  if (!timer && !clock && !stageMessage) return null
+  return {
+    timer,
+    clock,
+    stageMessage,
+    layout: output.confidence,
+    sizes: confidenceSizes(output.confidence.size),
+    style: presentation.timer,
   }
 }
 
@@ -438,6 +569,7 @@ export const PROGRAM = {
   TIMER_START: 'program:timerStart',
   TIMER_PAUSE: 'program:timerPause',
   TIMER_RESET: 'program:timerReset',
+  SET_ON_SCREENS: 'program:setOnScreens',
   PICK_IMAGE: 'program:pickImage',
   STAGE_STATUS: 'program:stageStatus',
   /** push (StageDisplayStatus[]) — whenever a reconcile changes it. */
@@ -467,6 +599,8 @@ export interface ProgramAPI {
     pause: () => Promise<ProgramState>
     reset: () => Promise<ProgramState>
   }
+  /** Puts the countdown or clock up on (or takes it off) every screen whose Look allows it. */
+  setOnScreens: (layer: 'countdown' | 'clock', on: boolean) => Promise<ProgramState>
   /** Native image picker for logo / props. Null when cancelled. */
   pickImage: () => Promise<string | null>
   stageStatus: () => Promise<StageDisplayStatus[]>

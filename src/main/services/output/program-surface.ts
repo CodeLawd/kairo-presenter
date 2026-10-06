@@ -4,6 +4,7 @@ import log from 'electron-log/main'
 import overlayHtml from './overlay.html?asset'
 import { overlayMediaUrl, renderOverlayHTML, type OverlayColoredLine } from '@shared/overlay-template'
 import type { MediaPlayback, OverlayTheme } from '@shared/ipc'
+import type { ConfidenceInfo } from '@shared/program'
 import { mediaFilterCss } from '@shared/media-playback'
 import type { NdiService } from '../ndi'
 import { createDisplayWindow, needsRebuild, sameBounds, showDisplayWindow, type DisplaySink } from './display-window'
@@ -59,15 +60,18 @@ export interface CameraLayer {
   audioLabel: string | null
 }
 
+
 /** The program layers above the slide. Markup comes from `src/lib/program.ts`. */
 export interface SurfaceLayers {
   message: string
   props: string
   logo: string
   camera: CameraLayer | null
+  /** Countdown, clock and stage message, drawn as text by the shell. */
+  info: ConfidenceInfo | null
 }
 
-const EMPTY_LAYERS: SurfaceLayers = { message: '', props: '', logo: '', camera: null }
+const EMPTY_LAYERS: SurfaceLayers = { message: '', props: '', logo: '', camera: null, info: null }
 
 interface RenderState {
   reference: string
@@ -251,7 +255,7 @@ export class ProgramSurface extends ManagedWindow {
   }
 
   /**
-   * Message, props, logo and camera above the slide. Only the layers that
+   * Message, props, logo, camera and info above the slide. Only the layers that
    * changed are sent, so an unrelated update never re-fades a logo.
    */
   async setLayers(next: SurfaceLayers): Promise<void> {
@@ -281,6 +285,9 @@ export class ProgramSurface extends ManagedWindow {
       calls.push(
         `window.__setCamera(${JSON.stringify(next.camera?.label ?? null)}, ${JSON.stringify(next.camera?.audioLabel ?? null)})`,
       )
+    }
+    if (JSON.stringify(next.info) !== JSON.stringify(previous.info)) {
+      calls.push(`window.__setInfo(${JSON.stringify(next.info)})`)
     }
     if (calls.length === 0) return
     this.bumpForFade()
@@ -569,5 +576,5 @@ function sameCamera(a: CameraLayer | null, b: CameraLayer | null): boolean {
 }
 
 function hasAnyLayer(layers: SurfaceLayers): boolean {
-  return !!(layers.message || layers.props || layers.logo || layers.camera)
+  return !!(layers.message || layers.props || layers.logo || layers.camera || layers.info)
 }

@@ -1,13 +1,13 @@
 import type { BrowserWindow } from 'electron'
 import log from 'electron-log/main'
 import stageHtml from './stage.html?asset'
-import type { ProgramState, StageDisplayConfig } from '@shared/program'
+import type { ProgramState, ProgramTimerStyle, StageDisplayConfig } from '@shared/program'
 import { createDisplayWindow, needsRebuild, sameBounds, showDisplayWindow, type DisplaySink } from './display-window'
 import { ManagedWindow } from './managed-window'
 
 /** What the stage page renders — program state plus this display's toggles. */
 type StageView = Pick<ProgramState, 'current' | 'next' | 'stageMessage' | 'timer'> &
-  Pick<StageDisplayConfig, 'showNext' | 'showClock' | 'showTimer'>
+  Pick<StageDisplayConfig, 'showNext' | 'showClock' | 'showTimer'> & { timerStyle: ProgramTimerStyle }
 
 // ─── Stage display window (standalone phase 2, E5) ────────────────────────────
 // A confidence monitor on its own display: current slide, next slide, clock,

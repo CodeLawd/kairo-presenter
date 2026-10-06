@@ -44,7 +44,31 @@ import { PlaylistSidebar } from "./PlaylistSidebar";
 import { passageToResult } from "@shared/passages";
 import { runPassagesCommand } from "@/stores/usePassages";
 import { QueueDock } from "./QueueDock";
-import { ScriptureSearchBar } from "./ScriptureSearchBar";
+import { ScripturePhraseSearch, ScriptureSearchBar, ScriptureTranslationSelect } from "./ScriptureSearchBar";
+
+// Recent reference lookups for the lookup field's ▾ list — per machine, newest first.
+const RECENT_LOOKUPS_KEY = "kairo-scripture-recent-lookups";
+const RECENT_LOOKUPS_MAX = 10;
+
+function readRecentLookups(): string[] {
+  try {
+    const raw = window.localStorage.getItem(RECENT_LOOKUPS_KEY);
+    const list: unknown = raw ? JSON.parse(raw) : [];
+    return Array.isArray(list) ? list.filter((item): item is string => typeof item === "string").slice(0, RECENT_LOOKUPS_MAX) : [];
+  } catch {
+    return [];
+  }
+}
+
+function rememberLookup(current: string[], reference: string): string[] {
+  const next = [reference, ...current.filter((item) => item !== reference)].slice(0, RECENT_LOOKUPS_MAX);
+  try {
+    window.localStorage.setItem(RECENT_LOOKUPS_KEY, JSON.stringify(next));
+  } catch {
+    // Blocked storage only costs the history.
+  }
+  return next;
+}
 import { SermonNotesReviewModal } from "./SermonNotesReviewModal";
 import { LiveOutputRail } from "@/components/operator/LiveOutputRail";
 import { BoothWorkspace } from "@/components/layout/BoothWorkspace";
@@ -116,6 +140,8 @@ export default function Scripture(): React.ReactElement {
   const liveRail = useLiveRailWidth();
   const sidebar = useSidebarWidth('kairo.scripture-sidebar-width', 288);
   const [query, setQuery] = useState("");
+  const [phrase, setPhrase] = useState("");
+  const [recentLookups, setRecentLookups] = useState<string[]>(readRecentLookups);
   const [rows, setRows] = useState<ResultRow[]>([]);
   /**
    * The last search's rows, kept while a playlist is open.
@@ -386,6 +412,10 @@ export default function Scripture(): React.ReactElement {
               window.api.scripture.search(lookupQuery, lookupTranslation),
           );
           results = reloaded.results;
+        }
+        if (results.length > 0 && normalizeScriptureQuery(q)) {
+          const reference = results.length === 1 ? results[0].reference : q;
+          setRecentLookups((current) => rememberLookup(current, reference));
         }
         const searchResultRows = results.map((result, index) =>
           createResultRow(result, { id: `search-${index}-${result.reference}` }),
@@ -1401,40 +1431,6 @@ export default function Scripture(): React.ReactElement {
         {toolbarSlot &&
           createPortal(
             <div className="flex h-7 min-w-0 items-center gap-1.5">
-              {/* Fixed, not flex-1: a lookup field, not a page-wide bar. */}
-              <div className="w-[26rem] min-w-0 shrink pr-1">
-                <ScriptureSearchBar
-                  query={query}
-                  translation={translation}
-                  translations={translations}
-                  loading={loading}
-                  bookCompletions={bookCompletions}
-                  searchSuggestions={searchSuggestions}
-                  suggestionsOpen={suggestionsOpen}
-                  inputRef={inputRef}
-                  onQueryChange={(value) => {
-                    if (value !== query) suppressSuggestionsQueryRef.current = null;
-                    setQuery(value);
-                    if (shouldLiveSuggestScriptureQuery(value)) setSuggestionsOpen(true);
-                  }}
-                  onTranslationChange={(value) => void handleTranslationChange(value)}
-                  onClearQuery={() => {
-                    setQuery("");
-                    inputRef.current?.focus();
-                  }}
-                  onBookComplete={(value) => {
-                    setQuery(value);
-                    inputRef.current?.focus();
-                  }}
-                  onKeyDown={handleKeyDown}
-                  onFocus={() => {
-                    if (suppressSuggestionsQueryRef.current === query.trim()) return;
-                    if (searchSuggestions.length > 0) setSuggestionsOpen(true);
-                  }}
-                  onPreviewSuggestion={previewSuggestion}
-                  onOpenChapter={(result) => void openChapter(result)}
-                />
-              </div>
               {selectedPlan && (
                 <Button
                   size="sm"
@@ -1470,6 +1466,51 @@ export default function Scripture(): React.ReactElement {
             toolbarSlot,
           )}
 
+        {/* The Bible bar, like ProPresenter's: look up a reference, or search the
+            text, in the chosen translation. */}
+        <div className="grid shrink-0 grid-cols-[minmax(0,18rem)_minmax(0,1fr)_minmax(0,14rem)] gap-2 px-5 pb-1 pt-3 lg:px-6">
+          <ScriptureSearchBar
+            query={query}
+            loading={loading}
+            recentLookups={recentLookups}
+            onPickRecent={(reference) => {
+              setQuery(reference);
+              void handleSearch(reference);
+            }}
+            bookCompletions={bookCompletions}
+            searchSuggestions={searchSuggestions}
+            suggestionsOpen={suggestionsOpen}
+            inputRef={inputRef}
+            onQueryChange={(value) => {
+              if (value !== query) suppressSuggestionsQueryRef.current = null;
+              setQuery(value);
+              if (shouldLiveSuggestScriptureQuery(value)) setSuggestionsOpen(true);
+            }}
+            onClearQuery={() => {
+              setQuery("");
+              inputRef.current?.focus();
+            }}
+            onBookComplete={(value) => {
+              setQuery(value);
+              inputRef.current?.focus();
+            }}
+            onKeyDown={handleKeyDown}
+            onFocus={() => {
+              if (suppressSuggestionsQueryRef.current === query.trim()) return;
+              if (searchSuggestions.length > 0) setSuggestionsOpen(true);
+            }}
+            onPreviewSuggestion={previewSuggestion}
+            onOpenChapter={(result) => void openChapter(result)}
+          />
+          <ScripturePhraseSearch value={phrase} loading={loading} onChange={setPhrase} onSubmit={(text) => void handleSearch(text)} />
+          <ScriptureTranslationSelect
+            translation={translation}
+            translations={translations}
+            disabled={loading}
+            onChange={(value) => void handleTranslationChange(value)}
+          />
+        </div>
+
         <div className="shrink-0 space-y-2 bg-surface px-3 py-2 empty:hidden">
           {shouldShowApiBibleWarning(
             apiBibleAuth,
@@ -1478,7 +1519,7 @@ export default function Scripture(): React.ReactElement {
           ) &&
             translation &&
             !translations.find((item) => item.id === translation)?.available && (
-              <div className="flex gap-2 rounded-lg border border-yellow-500/25 bg-tint-yellow px-3.5 py-3 text-xs text-yellow-400">
+              <div className="flex gap-2 rounded-lg bg-tint-yellow px-3.5 py-3 text-xs text-yellow-400">
                 <AlertCircle size={14} className="shrink-0" />
                 {translations.find((item) => item.id === translation)?.downloadable
                   ? `${translation} is the default but isn't installed yet. Download it in Settings → Scripture, or add an API.Bible key authorized for ${translation} in Settings → API Keys.`
@@ -1488,7 +1529,7 @@ export default function Scripture(): React.ReactElement {
 
           {error && (
             <div
-              className="flex items-start gap-2.5 rounded-xl border border-yellow-500/15 bg-tint-yellow px-4 py-3.5 text-sm text-yellow-400 shadow-glow-yellow/5 animate-slide-in"
+              className="flex items-start gap-2.5 rounded-xl bg-tint-yellow px-4 py-3.5 text-sm text-yellow-400 shadow-glow-yellow/5 animate-slide-in"
               role="alert"
               aria-live="polite"
             >
@@ -1509,12 +1550,12 @@ export default function Scripture(): React.ReactElement {
                 <p className="text-sm font-medium text-slate-400">
                   {cardsSource === "plan"
                     ? `${selectedPlan?.title ?? "Playlist"} is empty`
-                    : "Look up a reference or a phrase"}
+                    : "Look up a reference or search the text"}
                 </p>
                 <p className="mt-1 text-xs text-slate-600">
                   {cardsSource === "plan"
                     ? "Search a passage, then add it to this playlist"
-                    : "Try “jos 1 5 9” · Tab completes a book"}
+                    : "“jos 1 5 9” works too · Tab completes a book"}
                 </p>
               </div>
             )}

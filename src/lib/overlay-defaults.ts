@@ -25,7 +25,7 @@ import type {
 } from './ipc'
 import { boxesForLayoutPreset, clampOverlayBox } from './overlay-boxes'
 import { MAX_NDI_OUTPUTS, OVERLAY_OUTPUT_KINDS, themeForContentKind } from './overlay-outputs'
-import { normalizeShowFilter, SHOW_EVERYTHING } from './program'
+import { DEFAULT_CONFIDENCE_LAYOUT, DEFAULT_SHOW_FILTER, normalizeConfidenceLayout, normalizeShowFilter } from './program'
 import {
   asObject,
   clampNum,
@@ -142,10 +142,11 @@ export function makeOverlayOutput(
     displayLabel: '',
     displaySize: null,
     aspect: 'letterbox',
-    show: { ...SHOW_EVERYTHING },
+    show: { ...DEFAULT_SHOW_FILTER },
     source: 'program',
     playlistId: '',
     slideSec: 8,
+    confidence: { ...DEFAULT_CONFIDENCE_LAYOUT },
     ...patch,
   }
 }
@@ -488,6 +489,7 @@ export function normalizeOverlayOutputs(raw: unknown, legacy: LegacyOverlayField
       source: kind === 'screen' ? safeEnum(r.source, ['program', 'playlist'] as const, 'program') : 'program',
       playlistId: kind === 'screen' ? safeString(r.playlistId, '').trim() : '',
       slideSec: Math.round(clampNum(r.slideSec, 3, 600, 8)),
+      confidence: normalizeConfidenceLayout(r.confidence),
     })
   }
 

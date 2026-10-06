@@ -79,7 +79,7 @@ function FieldShell({
   return (
     <div
       className={cn(
-        'flex h-8 items-center gap-2 rounded-md bg-zinc-800 px-2.5 text-sm text-zinc-100',
+        'flex h-8 items-center gap-2 rounded-md bg-surface-tertiary px-2.5 text-[13px] text-zinc-100',
         className
       )}
     >
@@ -110,7 +110,7 @@ function CompactSelect({
           aria-label={label}
         >
           {options.map((opt) => (
-            <option key={opt.value} value={opt.value} className="bg-zinc-900 text-zinc-100">
+            <option key={opt.value} value={opt.value} className="bg-surface-secondary text-zinc-100">
               {opt.label}
             </option>
           ))}
@@ -248,7 +248,7 @@ function IconToggleGroup<T extends string>({
     <div
       role="group"
       aria-label={ariaLabel}
-      className="flex h-8 gap-0.5 rounded-md bg-zinc-800 p-0.5"
+      className="flex h-8 gap-0.5 rounded-lg bg-surface p-0.5"
     >
       {options.map((opt) => {
         const active = opt.value === value
@@ -261,8 +261,8 @@ function IconToggleGroup<T extends string>({
             aria-pressed={active}
             onClick={() => onChange(opt.value)}
             className={cn(
-              'flex flex-1 items-center justify-center rounded-sm text-zinc-500 transition-colors',
-              active ? 'bg-zinc-700 text-zinc-100' : 'hover:text-zinc-300'
+              'flex flex-1 items-center justify-center rounded-md text-zinc-500 transition-colors',
+              active ? 'bg-surface-elevated text-white' : 'hover:text-zinc-300'
             )}
           >
             {opt.node}
@@ -513,7 +513,7 @@ function EffectsFields({
               step={1}
               value={shadow.blurPx}
               onChange={(event) => onShadowChange({ blurPx: Number(event.target.value) })}
-              className="h-1 w-full cursor-pointer appearance-none rounded-full bg-zinc-800 accent-orange-500 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-orange-500"
+              className="h-1 w-full cursor-pointer appearance-none rounded-full bg-surface-elevated [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
               aria-label="Shadow blur"
             />
           </div>
@@ -616,7 +616,7 @@ export function ThemeTypePanel({
 
   return (
     <div className="space-y-5">
-      <div className="flex gap-1 rounded-md bg-zinc-800 p-0.5">
+      <div className="flex gap-1 rounded-lg bg-surface p-0.5">
         {([
           { id: 'verse' as const, label: overlayLayerLabel(contentKind, 'verse') },
           { id: 'reference' as const, label: referenceLabel },
@@ -626,15 +626,15 @@ export function ThemeTypePanel({
             type="button"
             onClick={() => onSelectLayer(item.id)}
             className={cn(
-              'flex-1 rounded-sm px-2 py-1.5 text-[11px] font-semibold transition-colors',
+              'flex-1 rounded-md px-2 py-1 text-[12px] font-medium transition-colors',
               selectedLayer === item.id
-                ? 'bg-zinc-700 text-zinc-50'
+                ? 'bg-surface-elevated text-white'
                 : 'text-zinc-500 hover:text-zinc-300'
             )}
           >
             {item.label}
             {item.id === 'reference' && !theme.reference.show && (
-              <span className="ml-1 text-[9px] font-medium text-zinc-600">off</span>
+              <span className="ml-1 text-[10px] text-zinc-500">off</span>
             )}
           </button>
         ))}
@@ -644,14 +644,7 @@ export function ThemeTypePanel({
           and burying it under the layer it removes made it unfindable. */}
       {(
         <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-[12px] font-semibold text-zinc-200">Show {referenceLabel.toLowerCase()}</p>
-            <p className="text-[10px] text-zinc-500">
-              {theme.reference.show
-                ? `Hide to drop the ${referenceLabel.toLowerCase()} from output`
-                : `Turn on to show the ${referenceLabel.toLowerCase()} again`}
-            </p>
-          </div>
+          <p className="text-[12px] text-zinc-300">Show {referenceLabel.toLowerCase()}</p>
           <button
             type="button"
             role="switch"
@@ -660,7 +653,7 @@ export function ThemeTypePanel({
             onClick={() => onUpdateReferenceMeta({ show: !theme.reference.show })}
             className={cn(
               'relative h-5 w-9 shrink-0 rounded-full transition-colors',
-              theme.reference.show ? 'bg-orange-500' : 'bg-zinc-700'
+              theme.reference.show ? 'bg-slate-400' : 'bg-surface-elevated'
             )}
           >
             <span
@@ -676,12 +669,7 @@ export function ThemeTypePanel({
       <CollapsibleSection title={title} open={scriptureOpen} onOpenChange={setScriptureOpen}>
         {selectedLayer === 'verse' && (
           <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-[12px] font-semibold text-zinc-200">Fit to box</p>
-              <p className="text-[10px] leading-relaxed text-zinc-500">
-                Fits long verses into the box. Short lines stay a natural size.
-              </p>
-            </div>
+            <p className="text-[12px] text-zinc-300" title="Long verses shrink to fit the box; short ones keep their size.">Fit to box</p>
             <button
               type="button"
               role="switch"
@@ -689,7 +677,7 @@ export function ThemeTypePanel({
               onClick={() => onAutoFitChange(!theme.layout.autoFitText)}
               className={cn(
                 'relative h-5 w-9 shrink-0 rounded-full transition-colors',
-                theme.layout.autoFitText ? 'bg-orange-500' : 'bg-zinc-700'
+                theme.layout.autoFitText ? 'bg-slate-400' : 'bg-surface-elevated'
               )}
             >
               <span
@@ -721,7 +709,6 @@ export function ThemeTypePanel({
         )}
       </CollapsibleSection>
 
-      <div className="h-px bg-zinc-800" />
 
       <CollapsibleSection title="Effects" open={effectsOpen} onOpenChange={setEffectsOpen}>
         <EffectsFields

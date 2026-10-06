@@ -57,7 +57,7 @@ export function LocalBiblePackManager(): JSX.Element {
   }
 
   return (
-    <ul className="divide-y divide-white/[0.07]">
+    <ul>
       {bundled.map((option) => (
         <BibleRowShell key={option.id} id={option.id} name={option.name} detail="Included with Kairo · works offline">
           <span className="inline-flex items-center gap-1 text-[11px] text-white/40">

@@ -3,6 +3,24 @@ module.exports = {
   content: ['./src/renderer/**/*.{html,js,ts,jsx,tsx}'],
   theme: {
     extend: {
+      // Grey text runs a step brighter than grey surfaces — see --fg-* in index.css.
+      textColor: {
+        slate: {
+          200: 'rgb(var(--fg-200) / <alpha-value>)',
+          300: 'rgb(var(--fg-300) / <alpha-value>)',
+          400: 'rgb(var(--fg-400) / <alpha-value>)',
+          500: 'rgb(var(--fg-500) / <alpha-value>)',
+          600: 'rgb(var(--fg-600) / <alpha-value>)',
+        },
+        zinc: {
+          200: 'rgb(var(--fg-200) / <alpha-value>)',
+          300: 'rgb(var(--fg-300) / <alpha-value>)',
+          400: 'rgb(var(--fg-400) / <alpha-value>)',
+          500: 'rgb(var(--fg-500) / <alpha-value>)',
+          600: 'rgb(var(--fg-600) / <alpha-value>)',
+        },
+        muted: { foreground: 'rgb(var(--fg-400) / <alpha-value>)' },
+      },
       colors: {
         border: 'rgb(var(--surface-border) / <alpha-value>)',
         input: 'rgb(var(--surface-border) / <alpha-value>)',

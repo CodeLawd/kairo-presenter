@@ -72,7 +72,7 @@ export function QueueDock({
     queueLabel ?? cards[activeCardIndex]?.result.reference ?? "—";
 
   return (
-    <div className="transcript-glass shrink-0 border-t border-white/10 px-4 py-2">
+    <div className="transcript-glass shrink-0 px-4 py-2">
       <div className="flex flex-wrap items-center gap-2.5">
         <p className="min-w-0 shrink truncate text-[11px] text-zinc-400">
           <span className="font-semibold tabular-nums text-zinc-200">
@@ -96,7 +96,7 @@ export function QueueDock({
             <div
               role="radiogroup"
               aria-label="Show the verse or its whole chapter"
-              className="flex items-center rounded-md border border-white/10 bg-surface p-0.5"
+              className="flex items-center rounded-md bg-surface p-0.5"
             >
               {(["verse", "chapter"] as const).map((option) => (
                 <button
@@ -124,10 +124,10 @@ export function QueueDock({
             </div>
           )}
 
-          <div className="flex items-center overflow-hidden rounded-md border border-white/10 bg-surface">
+          <div className="flex items-center overflow-hidden rounded-md bg-surface">
             <button
               type="button"
-              className="flex items-center gap-1 border-r border-white/10 px-2.5 py-1.5 text-[11px] font-semibold text-zinc-300 hover:bg-surface-tertiary hover:text-white disabled:cursor-wait disabled:opacity-50"
+              className="flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-semibold text-zinc-300 hover:bg-surface-tertiary hover:text-white disabled:cursor-wait disabled:opacity-50"
               onClick={onPrevious}
               disabled={navigating !== null}
               aria-label="Previous verse"

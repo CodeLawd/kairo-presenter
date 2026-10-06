@@ -101,9 +101,11 @@ function registerPaMediaProtocol(): void {
       if (!request.url.startsWith(PA_MEDIA_URL_PREFIX)) {
         return new Response("Bad request", { status: 400 });
       }
-      const requested = resolve(
-        decodeURIComponent(request.url.slice(PA_MEDIA_URL_PREFIX.length)),
-      );
+      // Strip #fragment / ?query (e.g. `#t=0.1`); the path itself is encoded.
+      const encodedPath = request.url
+        .slice(PA_MEDIA_URL_PREFIX.length)
+        .split(/[?#]/)[0];
+      const requested = resolve(decodeURIComponent(encodedPath));
 
       // Allowlist: only background media the user has already configured is
       // servable — the scheme must not become an arbitrary-file-read bridge.

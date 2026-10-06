@@ -37,7 +37,7 @@ export function TracksPanel(): React.ReactElement {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-center gap-2 border-b border-surface-border bg-surface-tertiary px-3 py-1.5">
+      <div className="flex shrink-0 items-center gap-2 bg-surface-tertiary px-3 py-1.5">
         <p className="min-w-0 flex-1 truncate text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-400">
           House audio
         </p>
@@ -80,7 +80,7 @@ export function TracksPanel(): React.ReactElement {
                 <li key={item.id}>
                   <div
                     className={cn(
-                      'border-b border-white/5 px-3 py-1.5',
+                      'px-3 py-1.5',
                       active && 'bg-surface-elevated',
                     )}
                   >

@@ -93,13 +93,15 @@ export function LiveOutputRail({
   const previewHeight = Math.round((previewWidth * 9) / 16);
 
   return (
-    <div className="relative flex min-h-0 shrink-0">
+    // pl-1.5: a gutter of the workspace background, so the rail reads as its
+    // own panel next to the middle column instead of running into it.
+    <div className="relative flex min-h-0 shrink-0 pl-1.5">
       {onResizeStart && (
         <button
           type="button"
           aria-label="Resize live output preview panel"
           title="Drag to resize live output preview"
-          className="absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize bg-transparent outline-none hover:bg-tint-teal focus-visible:bg-tint-teal"
+          className="absolute inset-y-0 left-0 z-10 w-1.5 cursor-col-resize bg-transparent outline-none hover:bg-tint-teal focus-visible:bg-tint-teal"
           onPointerDown={onResizeStart}
           onKeyDown={onResizeKeyDown}
         />
@@ -108,7 +110,7 @@ export function LiveOutputRail({
       <aside
         // The rail's own background shows only in the gutter between the live
         // output and the toolbox — two separate panels, not one long column.
-        className={`flex min-h-0 w-full flex-col overflow-hidden bg-surface-secondary ${className}`}
+        className={`flex min-h-0 w-full flex-col overflow-hidden bg-surface ${className}`}
         style={{ width }}
       >
         <div className="min-h-0 shrink-0 bg-[#0e0e0e]">
@@ -134,7 +136,7 @@ export function LiveOutputRail({
           </div>
         </div>
 
-        <div className="mt-2 flex min-h-0 flex-1 flex-col">
+        <div className="mt-1.5 flex min-h-0 flex-1 flex-col">
           <BoothToolbox search={search} />
         </div>
       </aside>

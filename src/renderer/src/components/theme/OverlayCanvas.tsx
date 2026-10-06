@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { X } from '@/icons'
 import { cn } from '@/lib/utils'
 import type { OverlayBox, OverlayContentKind, OverlayTheme } from '@shared/ipc'
@@ -43,6 +43,36 @@ interface OverlayCanvasProps {
   onBoxChange: (id: OverlayLayerId, box: OverlayBox) => void
   /** Hides a layer — the canvas's Delete key and the frame's × both call this. */
   onDeleteLayer: (id: OverlayLayerId) => void
+  /** Double-click on a box: open its text settings. */
+  onEditLayer?: (id: OverlayLayerId) => void
+}
+
+/** How close (in % of the frame) a box centre has to come to the frame centre to snap. */
+const SNAP_PCT = 1.5
+/** Arrow-key nudge, and with Shift. */
+const NUDGE_PCT = 0.5
+const NUDGE_SHIFT_PCT = 5
+
+function isTyping(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null
+  return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)
+}
+
+/** Centres a moved box on the frame's axes when it comes close, and says which guides to draw. */
+function snapToCentre(box: OverlayBox): { box: OverlayBox; v: boolean; h: boolean } {
+  const cx = box.xPct + box.widthPct / 2
+  const cy = box.yPct + box.heightPct / 2
+  const v = Math.abs(cx - 50) < SNAP_PCT
+  const h = Math.abs(cy - 50) < SNAP_PCT
+  return {
+    box: {
+      ...box,
+      xPct: v ? 50 - box.widthPct / 2 : box.xPct,
+      yPct: h ? 50 - box.heightPct / 2 : box.yPct,
+    },
+    v,
+    h,
+  }
 }
 
 /**
@@ -61,8 +91,10 @@ export function OverlayCanvas({
   onSelect,
   onBoxChange,
   onDeleteLayer,
+  onEditLayer,
 }: OverlayCanvasProps): React.ReactElement {
   const frameRef = useRef<HTMLDivElement>(null)
+  const [guides, setGuides] = useState({ v: false, h: false })
   const dragRef = useRef<{
     id: OverlayLayerId
     mode: 'move' | 'resize'
@@ -76,6 +108,8 @@ export function OverlayCanvas({
   onBoxChangeRef.current = onBoxChange
   const onSelectRef = useRef(onSelect)
   onSelectRef.current = onSelect
+  const themeRef = useRef(theme)
+  themeRef.current = theme
   const listenersRef = useRef<{
     move: (event: PointerEvent | MouseEvent) => void
     up: (event: Event) => void
@@ -97,6 +131,7 @@ export function OverlayCanvas({
       frame.releasePointerCapture(drag.pointerId)
     }
     dragRef.current = null
+    setGuides({ v: false, h: false })
   }
 
   const applyPointer = (clientX: number, clientY: number): void => {
@@ -107,11 +142,13 @@ export function OverlayCanvas({
     if (rect.width <= 0 || rect.height <= 0) return
     const dxPct = ((clientX - drag.startX) / rect.width) * 100
     const dyPct = ((clientY - drag.startY) / rect.height) * 100
-    const next =
-      drag.mode === 'resize' && drag.handle
-        ? resizeOverlayBox(drag.startBox, drag.handle, dxPct, dyPct)
-        : moveOverlayBox(drag.startBox, dxPct, dyPct)
-    onBoxChangeRef.current(drag.id, next)
+    if (drag.mode === 'resize' && drag.handle) {
+      onBoxChangeRef.current(drag.id, resizeOverlayBox(drag.startBox, drag.handle, dxPct, dyPct))
+      return
+    }
+    const snapped = snapToCentre(moveOverlayBox(drag.startBox, dxPct, dyPct))
+    setGuides((g) => (g.v === snapped.v && g.h === snapped.h ? g : { v: snapped.v, h: snapped.h }))
+    onBoxChangeRef.current(drag.id, snapped.box)
   }
 
   const beginDrag = (
@@ -162,22 +199,35 @@ export function OverlayCanvas({
     window.addEventListener('mouseup', up, true)
   }
 
-  // Delete/Backspace on the selected box, the way any canvas editor behaves.
-  // Ignored while typing so the number and color fields keep their own keys.
+  // Canvas keys, the way any design tool behaves: Delete hides the reference,
+  // arrows nudge, Esc deselects. Ignored while typing in a field.
   useEffect(() => {
-    if (!selected || !isDeletable(selected)) return
+    if (!selected) return
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key !== 'Delete' && event.key !== 'Backspace') return
-      const target = event.target as HTMLElement | null
-      if (
-        target &&
-        (target.tagName === 'INPUT' ||
-          target.tagName === 'TEXTAREA' ||
-          target.tagName === 'SELECT' ||
-          target.isContentEditable)
-      ) return
+      if (isTyping(event.target)) return
+      if (event.key === 'Escape') {
+        onSelectRef.current(null)
+        return
+      }
+      if ((event.key === 'Delete' || event.key === 'Backspace') && isDeletable(selected)) {
+        event.preventDefault()
+        onDeleteLayer(selected)
+        return
+      }
+      const step = event.shiftKey ? NUDGE_SHIFT_PCT : NUDGE_PCT
+      const delta: Record<string, [number, number]> = {
+        ArrowLeft: [-step, 0],
+        ArrowRight: [step, 0],
+        ArrowUp: [0, -step],
+        ArrowDown: [0, step],
+      }
+      const move = delta[event.key]
+      if (!move) return
+      // Read through the ref so the listener isn't re-attached on every drag frame.
+      const box = selected === 'verse' ? themeRef.current.verse.box : themeRef.current.reference.box
+      if (!box) return
       event.preventDefault()
-      onDeleteLayer(selected)
+      onBoxChangeRef.current(selected, moveOverlayBox(box, move[0], move[1]))
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
@@ -203,11 +253,13 @@ export function OverlayCanvas({
           box={id === 'verse' ? theme.verse.box : theme.reference.box}
           selected={selected === id}
           stacked={selected === id ? 30 : id === 'reference' ? 20 : 10}
-          accent={id === 'verse' ? 'teal' : 'amber'}
           onDelete={isDeletable(id) ? () => onDeleteLayer(id) : undefined}
           onPointerDown={beginDrag}
+          onDoubleClick={onEditLayer ? () => onEditLayer(id) : undefined}
         />
       ))}
+      {guides.v && <div className="pointer-events-none absolute inset-y-0 left-1/2 z-40 w-px -translate-x-1/2 bg-white/70" />}
+      {guides.h && <div className="pointer-events-none absolute inset-x-0 top-1/2 z-40 h-px -translate-y-1/2 bg-white/70" />}
     </div>
   )
 }
@@ -218,16 +270,15 @@ function LayerFrame({
   box,
   selected,
   stacked,
-  accent,
   onDelete,
   onPointerDown,
+  onDoubleClick,
 }: {
   id: OverlayLayerId
   label: string
   box: OverlayBox
   selected: boolean
   stacked: number
-  accent: 'teal' | 'amber'
   /** Omitted for layers that cannot be hidden. */
   onDelete?: () => void
   onPointerDown: (
@@ -236,14 +287,12 @@ function LayerFrame({
     mode: 'move' | 'resize',
     handle?: ResizeHandle
   ) => void
+  onDoubleClick?: () => void
 }): React.ReactElement | null {
   if (!box) return null
 
-  // Outline-only frames so verse/reference text color stays visible in the preview.
-  const ring = accent === 'teal' ? 'ring-teal-400' : 'ring-amber-400'
-  const dash = accent === 'teal' ? 'ring-teal-400/70' : 'ring-amber-400/70'
-  const chip = accent === 'teal' ? 'bg-teal-500' : 'bg-amber-500'
-  const handleFill = accent === 'teal' ? 'bg-teal-300' : 'bg-amber-300'
+  // Like a design tool: boxes are invisible until hovered, so the slide reads as
+  // the real thing. Hover shows the outline and name, selection adds handles.
 
   return (
     <div
@@ -252,8 +301,8 @@ function LayerFrame({
       aria-label={`Move ${label}`}
       aria-pressed={selected}
       className={cn(
-        'absolute cursor-grab touch-none select-none rounded-none bg-transparent ring-2 active:cursor-grabbing',
-        selected ? ring : dash
+        'group/frame absolute cursor-move touch-none select-none bg-transparent outline-none ring-inset transition-shadow',
+        selected ? 'ring-2 ring-white/90' : 'ring-0 hover:ring-1 hover:ring-white/50 focus-visible:ring-1 focus-visible:ring-white/50'
       )}
       style={{
         left: `${box.xPct}%`,
@@ -264,11 +313,12 @@ function LayerFrame({
         pointerEvents: 'auto',
       }}
       onPointerDown={(event) => onPointerDown(event, id, 'move')}
+      onDoubleClick={onDoubleClick}
     >
       <span
         className={cn(
-          'pointer-events-none absolute -top-5 left-0 z-10 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.14em] text-white',
-          chip
+          'pointer-events-none absolute -top-5 left-0 z-10 rounded bg-black/75 px-1.5 py-0.5 text-[10px] font-medium text-white transition-opacity',
+          selected ? 'opacity-100' : 'opacity-0 group-hover/frame:opacity-100'
         )}
       >
         {label}
@@ -286,8 +336,7 @@ function LayerFrame({
           title={`Hide ${label} (Delete)`}
           aria-label={`Hide ${label}`}
           className={cn(
-            'absolute -top-5 -right-1 z-20 grid h-4 w-4 place-items-center rounded text-white transition-opacity hover:opacity-80',
-            chip
+            'absolute -top-5 -right-1 z-20 grid h-4 w-4 place-items-center rounded bg-black/75 text-white transition-opacity hover:opacity-80'
           )}
           style={{ pointerEvents: 'auto' }}
         >
@@ -299,8 +348,7 @@ function LayerFrame({
           <span
             key={handle}
             className={cn(
-              'absolute z-20 h-3 w-3 rounded-sm border border-white shadow-sm',
-              handleFill,
+              'absolute z-20 h-2.5 w-2.5 rounded-sm bg-white',
               HANDLE_CLASS[handle]
             )}
             style={{ cursor: HANDLE_CURSOR[handle], pointerEvents: 'auto' }}

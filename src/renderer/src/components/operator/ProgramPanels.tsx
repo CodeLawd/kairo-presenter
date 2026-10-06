@@ -1,24 +1,38 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
+import { SegmentedControl } from '@/components/shared/SegmentedControl'
+import { Switch } from '@/components/ui/switch'
 import { Image, Layers, Pause, Play, Plus, RotateCcw, Send, Trash2, Video, Volume2, X } from '@/icons'
 import { cn } from '@/lib/utils'
 import { useNow, usePresentation, useProgramState } from '@/hooks/useProgramState'
 import {
-  formatTimer,
-  timerRemainingSec,
+  formatClock,
+  timerReadout,
   timerRunning,
   type PresentationSettings,
   type ProgramProp,
   type ProgramTimerState,
+  type ProgramTimerStyle,
   type PropPosition,
 } from '@shared/program'
 
 // ─── Booth toolbox panels for the program layers (standalone phases 2–3) ──────
 // Everything here acts on Kairo's own screens and NDI feeds, not ProPresenter.
 
-function Section({ title, children }: { title: string; children: React.ReactNode }): React.ReactElement {
+function Section({
+  title,
+  action,
+  children,
+}: {
+  title: string
+  action?: React.ReactNode
+  children: React.ReactNode
+}): React.ReactElement {
   return (
-    <section className="space-y-2 border-b border-surface-border/40 px-3 py-3 last:border-b-0">
-      <h3 className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">{title}</h3>
+    <section className="space-y-2.5 px-3 py-3">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">{title}</h3>
+        {action}
+      </div>
       {children}
     </section>
   )
@@ -33,41 +47,241 @@ function report(err: unknown): void {
 
 const PRESET_MINUTES = [1, 3, 5, 10, 15, 30]
 
-/** The countdown readout — the only part of the panel that ticks, and only while running. */
-function CountdownReadout({ timer }: { timer: ProgramTimerState }): React.ReactElement {
+/**
+ * Presentation settings with writes coalesced: the panel follows every change
+ * at once, but a slider or colour drag reaches settings (a disk write and a
+ * reconcile of every screen in main) once it settles, not on every step.
+ */
+function useDraftPresentation(): [PresentationSettings, (next: PresentationSettings) => void] {
+  const [stored, save] = usePresentation()
+  const [draft, setDraft] = useState<PresentationSettings | null>(null)
+  const pending = useRef<PresentationSettings | null>(null)
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const flush = useCallback(() => {
+    if (timer.current) clearTimeout(timer.current)
+    timer.current = null
+    const next = pending.current
+    pending.current = null
+    // Drop the draft once saved, unless a newer change is already waiting.
+    if (next) void save(next).then(() => !pending.current && setDraft(null), report)
+  }, [save])
+  useEffect(() => flush, [flush])
+  const update = useCallback(
+    (next: PresentationSettings) => {
+      pending.current = next
+      setDraft(next)
+      if (timer.current) clearTimeout(timer.current)
+      timer.current = setTimeout(flush, 250)
+    },
+    [flush],
+  )
+  return [draft ?? stored, update]
+}
+
+/** Screens whose Look allows the layer show it only while this is on. */
+function OnScreensToggle({ on, label, onChange }: { on: boolean; label: string; onChange: (on: boolean) => void }): React.ReactElement {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      aria-label={`${label} on screens`}
+      onClick={() => onChange(!on)}
+      className={cn(
+        'rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors',
+        on ? 'bg-slate-200 text-surface' : 'bg-surface-tertiary text-zinc-300 hover:bg-surface-elevated hover:text-white',
+      )}
+    >
+      {on ? 'On screens' : 'Show'}
+    </button>
+  )
+}
+
+type TimePart = 'h' | 'm' | 's'
+const TIME_PARTS: Array<{ part: TimePart; label: string; max: number }> = [
+  { part: 'h', label: 'Hours', max: 99 },
+  { part: 'm', label: 'Minutes', max: 59 },
+  { part: 's', label: 'Seconds', max: 59 },
+]
+
+function splitTime(totalSec: number): Record<TimePart, string> {
+  const t = Math.abs(Math.trunc(totalSec))
+  return {
+    h: String(Math.floor(t / 3600)),
+    m: String(Math.floor((t % 3600) / 60)).padStart(2, '0'),
+    s: String(t % 60).padStart(2, '0'),
+  }
+}
+
+/** The countdown readout, H:MM:SS. Click any part to type over it; the colons stay put. */
+function CountdownReadout({ timer, style }: { timer: ProgramTimerState; style: ProgramTimerStyle }): React.ReactElement {
   const running = timerRunning(timer)
   const now = useNow(250, running)
-  const remaining = timerRemainingSec(timer, now)
+  const { seconds: remaining, timeUp } = timerReadout(timer, now, style.rollover)
+  const [draft, setDraft] = useState<(Record<TimePart, string> & { focus: TimePart }) | null>(null)
+  const boxRef = useRef<HTMLDivElement>(null)
+
+  const commit = (): void => {
+    if (!draft) return
+    const seconds = (Number(draft.h) || 0) * 3600 + (Number(draft.m) || 0) * 60 + (Number(draft.s) || 0)
+    setDraft(null)
+    if (seconds > 0) void window.api.program.timer.set(seconds).catch(report)
+  }
+
+  // Same time-up colour as the screens, so the booth reads what the room sees.
+  const color = timeUp ? '' : running ? 'text-white' : 'text-zinc-200'
+  const colorStyle = timeUp ? { color: style.overrunColor } : undefined
+  const digits = 'bg-transparent font-mono text-4xl font-semibold tabular-nums outline-none'
+  const colon = <span className={cn(digits, color, 'select-none')} style={colorStyle}>:</span>
+
+  if (draft) {
+    return (
+      <div
+        ref={boxRef}
+        className="flex items-center justify-center py-0.5"
+        onBlur={(e) => {
+          if (!boxRef.current?.contains(e.relatedTarget as Node | null)) commit()
+        }}
+      >
+        {TIME_PARTS.map(({ part, label, max }, index) => (
+          <Fragment key={part}>
+            {index > 0 && colon}
+            <input
+              autoFocus={draft.focus === part}
+              inputMode="numeric"
+              aria-label={label}
+              value={draft[part]}
+              maxLength={2}
+              className={cn(digits, color, 'rounded-md px-0.5 text-center focus:bg-surface-tertiary')}
+              // Exactly as wide as its digits (plus the same padding as the readout), so editing never shifts the layout.
+              style={{ ...colorStyle, width: `calc(${Math.max(1, draft[part].length)}ch + 0.25rem)` }}
+              onFocus={(e) => e.currentTarget.select()}
+              onChange={(e) => {
+                const value = e.target.value.replace(/\D/g, '')
+                setDraft({ ...draft, [part]: Number(value) > max ? String(max) : value })
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commit()
+                if (e.key === 'Escape') setDraft(null)
+                // The colon jumps to the next part, like a time field.
+                if (e.key === ':') {
+                  e.preventDefault()
+                  boxRef.current?.querySelectorAll('input')[index + 1]?.focus()
+                }
+              }}
+            />
+          </Fragment>
+        ))}
+      </div>
+    )
+  }
+
+  const parts = splitTime(remaining)
   return (
-    <p
-      className={cn(
-        'text-center font-mono text-4xl font-semibold tabular-nums',
-        remaining < 0 ? 'text-red-400' : running ? 'text-teal-300' : 'text-zinc-300',
-      )}
-      aria-live="off"
-    >
-      {formatTimer(remaining)}
-    </p>
+    <div className={cn('flex items-center justify-center py-0.5', digits, color)} style={colorStyle} aria-live="off">
+      {remaining < 0 && <span className="select-none">-</span>}
+      {TIME_PARTS.map(({ part, label }, index) => (
+        <Fragment key={part}>
+          {index > 0 && <span className="select-none">:</span>}
+          <button
+            type="button"
+            title={`Change ${label.toLowerCase()}`}
+            className="cursor-text rounded-md px-0.5 hover:bg-surface-tertiary"
+            onClick={() => setDraft({ ...splitTime(Math.max(0, remaining)), focus: part })}
+          >
+            {parts[part]}
+          </button>
+        </Fragment>
+      ))}
+    </div>
   )
+}
+
+/** The shared switch in the panel's neutral look: light grey when on. */
+function MiniSwitch({ on, label, onChange }: { on: boolean; label: string; onChange: (on: boolean) => void }): React.ReactElement {
+  return (
+    <Switch
+      size="sm"
+      checked={on}
+      onCheckedChange={onChange}
+      aria-label={label}
+      className="data-[state=checked]:bg-slate-300 data-[state=unchecked]:bg-surface-elevated"
+    />
+  )
+}
+
+/** Roll over, and how the countdown looks on screens and stage displays. */
+function TimerStyleFields({
+  style,
+  onChange,
+}: {
+  style: ProgramTimerStyle
+  onChange: (patch: Partial<ProgramTimerStyle>) => void
+}): React.ReactElement {
+  const [open, setOpen] = useState(false)
+  const row = 'flex items-center justify-between gap-3 text-[12px] text-zinc-300'
+  return (
+    <div className="space-y-2 rounded-md bg-surface-tertiary/60 px-2.5 py-2">
+      <label className={row}>
+        <span title="Keep counting into overtime (-0:12) after 0:00. Off: stop at 0:00.">Roll over past 0:00</span>
+        <MiniSwitch on={style.rollover} label="Roll over past 0:00" onChange={(rollover) => onChange({ rollover })} />
+      </label>
+      <button
+        type="button"
+        className="flex w-full items-center justify-between text-[12px] text-zinc-300 hover:text-white"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        Style
+        <span className="flex items-center gap-1">
+          <span className="h-3 w-3 rounded-full" style={{ background: style.color }} />
+          <span className="h-3 w-3 rounded-full" style={{ background: style.overrunColor }} />
+        </span>
+      </button>
+      {open && (
+        <div className="space-y-2 pt-1">
+          <label className={row}>
+            Color
+            <input type="color" className="h-5 w-8 cursor-pointer rounded bg-transparent" value={hexOr(style.color, '#5eead4')} onChange={(e) => onChange({ color: e.target.value })} />
+          </label>
+          <label className={row}>
+            Time-up color
+            <input type="color" className="h-5 w-8 cursor-pointer rounded bg-transparent" value={hexOr(style.overrunColor, '#f87171')} onChange={(e) => onChange({ overrunColor: e.target.value })} />
+          </label>
+          <label className={row}>
+            <span title="A dark bar behind the clock and countdown on screens">Backdrop</span>
+            <MiniSwitch on={style.backdrop} label="Backdrop" onChange={(backdrop) => onChange({ backdrop })} />
+          </label>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ClockReadout(): React.ReactElement {
+  const now = useNow(1000)
+  return <span className="font-mono text-[13px] tabular-nums text-zinc-300">{formatClock(new Date(now))}</span>
 }
 
 export function TimersPanel(): React.ReactElement {
   const state = useProgramState()
+  const [presentation, setPresentation] = useDraftPresentation()
   const running = timerRunning(state.timer)
-  const [minutes, setMinutes] = useState('')
   const [stageDraft, setStageDraft] = useState('')
-
-  const setFromInput = (): void => {
-    const value = Number(minutes)
-    if (!Number.isFinite(value) || value <= 0) return
-    void window.api.program.timer.set(Math.round(value * 60)).catch(report)
-    setMinutes('')
-  }
 
   return (
     <div className="h-full overflow-y-auto">
-      <Section title="Countdown">
-        <CountdownReadout timer={state.timer} />
+      <Section
+        title="Countdown"
+        action={
+          <OnScreensToggle
+            on={state.countdownOnScreens}
+            label="Countdown"
+            onChange={(on) => void window.api.program.setOnScreens('countdown', on).catch(report)}
+          />
+        }
+      >
+        <CountdownReadout timer={state.timer} style={presentation.timer} />
         <div className="flex justify-center gap-2">
           {running ? (
             <button type="button" className="btn-secondary flex items-center gap-1 px-3 py-1.5 text-xs" onClick={() => void window.api.program.timer.pause().catch(report)}>
@@ -82,47 +296,45 @@ export function TimersPanel(): React.ReactElement {
             <RotateCcw size={12} aria-hidden="true" /> Reset
           </button>
         </div>
-        <div className="flex flex-wrap justify-center gap-1">
+        <div className="flex justify-center gap-1">
           {PRESET_MINUTES.map((m) => (
             <button
               key={m}
               type="button"
-              className="rounded border border-surface-border px-2 py-0.5 text-[11px] text-zinc-400 hover:text-zinc-200"
+              className="rounded-md px-2 py-0.5 text-[11px] text-zinc-400 hover:bg-surface-tertiary hover:text-white"
               onClick={() => void window.api.program.timer.set(m * 60).catch(report)}
             >
-              {m} min
+              {m}m
             </button>
           ))}
         </div>
-        <form
-          className="flex gap-2"
-          onSubmit={(e) => {
-            e.preventDefault()
-            setFromInput()
-          }}
-        >
-          <input
-            className="input flex-1 py-1 text-xs"
-            inputMode="decimal"
-            placeholder="Minutes"
-            aria-label="Countdown minutes"
-            value={minutes}
-            onChange={(e) => setMinutes(e.target.value)}
+        <TimerStyleFields
+          style={presentation.timer}
+          onChange={(patch) => setPresentation({ ...presentation, timer: { ...presentation.timer, ...patch } })}
+        />
+      </Section>
+
+      <Section
+        title="Clock"
+        action={
+          <OnScreensToggle
+            on={state.clockOnScreens}
+            label="Clock"
+            onChange={(on) => void window.api.program.setOnScreens('clock', on).catch(report)}
           />
-          <button type="submit" className="btn-secondary px-3 py-1 text-xs">Set</button>
-        </form>
-        <p className="text-[10px] leading-snug text-zinc-500">
-          Shows on every stage display that has the countdown turned on.
-        </p>
+        }
+      >
+        <ClockReadout />
       </Section>
 
       <Section title="Stage message">
         {state.stageMessage && (
-          <div className="flex items-start justify-between gap-2 rounded bg-tint-red px-2 py-1.5 text-xs text-red-100">
+          <div className="flex items-center justify-between gap-2 rounded-md bg-tint-red px-2.5 py-1.5 text-xs text-red-100">
             <span className="min-w-0 break-words">{state.stageMessage}</span>
             <button
               type="button"
-              aria-label="Clear stage message"
+              aria-label="Take the stage message down"
+              title="Take down"
               className="shrink-0 text-red-200 hover:text-white"
               onClick={() => void window.api.program.setStageMessage(null).catch(report)}
             >
@@ -145,11 +357,10 @@ export function TimersPanel(): React.ReactElement {
             value={stageDraft}
             onChange={(e) => setStageDraft(e.target.value)}
           />
-          <button type="submit" className="btn-primary flex items-center gap-1 px-3 py-1 text-xs">
+          <button type="submit" className="btn-primary flex items-center gap-1 px-3 py-1 text-xs" disabled={!stageDraft.trim()}>
             <Send size={12} aria-hidden="true" /> Send
           </button>
         </form>
-        <p className="text-[10px] leading-snug text-zinc-500">Stage displays only — the room never sees it.</p>
       </Section>
     </div>
   )
@@ -159,85 +370,118 @@ export function TimersPanel(): React.ReactElement {
 
 export function MessagesPanel(): React.ReactElement {
   const state = useProgramState()
-  const [presentation, setPresentation] = usePresentation()
+  const [presentation, setPresentation] = useDraftPresentation()
   const [draft, setDraft] = useState('')
+  const [styleOpen, setStyleOpen] = useState(false)
   const style = presentation.message
 
   const patchStyle = (patch: Partial<PresentationSettings['message']>): void => {
-    void setPresentation({ ...presentation, message: { ...style, ...patch } }).catch(report)
+    setPresentation({ ...presentation, message: { ...style, ...patch } })
   }
+  const send = (): void => {
+    if (!draft.trim()) return
+    void window.api.program.showMessage(draft).then(() => setDraft(''), report)
+  }
+  const row = 'flex items-center justify-between gap-3 text-[12px] text-zinc-300'
 
   return (
     <div className="h-full overflow-y-auto">
-      <Section title="On screen">
-        {state.message ? (
-          <div className="flex items-start justify-between gap-2 rounded bg-tint-teal px-2 py-1.5 text-xs text-teal-100">
+      <Section title="Message">
+        {state.message && (
+          <div className="flex items-start justify-between gap-2 rounded-md bg-surface-tertiary px-2.5 py-2 text-xs text-white">
             <span className="min-w-0 whitespace-pre-wrap break-words">{state.message}</span>
             <button
               type="button"
-              className="shrink-0 rounded border border-teal-500/40 px-2 py-0.5 text-[11px] hover:bg-tint-teal"
+              className="shrink-0 text-[11px] text-zinc-400 hover:text-white"
               onClick={() => void window.api.program.clearMessage().catch(report)}
             >
               Take down
             </button>
           </div>
-        ) : (
-          <p className="text-[11px] text-zinc-500">No message showing.</p>
         )}
-        <form
-          className="space-y-2"
-          onSubmit={(e) => {
-            e.preventDefault()
-            if (!draft.trim()) return
-            void window.api.program.showMessage(draft).then(() => setDraft(''), report)
+        <textarea
+          className="input min-h-[56px] w-full resize-none py-1.5 text-xs"
+          rows={2}
+          placeholder="Parents of child 42, please come to the nursery"
+          aria-label="Message for the screens"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            // Enter shows it; Shift+Enter starts a new line.
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault()
+              send()
+            }
           }}
-        >
-          <textarea
-            className="input min-h-[64px] w-full resize-y py-1.5 text-xs"
-            placeholder="Parents of child 42, please come to the nursery"
-            aria-label="Message for the screens"
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-          />
-          <button type="submit" className="btn-primary flex w-full items-center justify-center gap-1 py-1.5 text-xs">
-            <Send size={12} aria-hidden="true" /> Show on screens
+        />
+        <div className="flex justify-end">
+          <button type="button" className="btn-primary flex items-center gap-1 px-3 py-1 text-xs" disabled={!draft.trim()} onClick={send}>
+            <Send size={12} aria-hidden="true" /> {state.message ? 'Replace' : 'Show'}
           </button>
-        </form>
+        </div>
       </Section>
 
       <Section title="Style">
-        <div className="grid grid-cols-2 gap-2 text-[11px] text-zinc-400">
-          <label className="flex flex-col gap-1">
-            Position
-            <select className="input py-1 text-xs" value={style.position} onChange={(e) => patchStyle({ position: e.target.value as 'top' | 'bottom' })}>
-              <option value="bottom">Bottom</option>
-              <option value="top">Top</option>
-            </select>
-          </label>
-          <label className="flex flex-col gap-1">
-            Size
-            <input
-              type="number"
-              min={16}
-              max={160}
-              className="input py-1 text-xs"
-              value={style.fontSizePx}
-              onChange={(e) => patchStyle({ fontSizePx: Number(e.target.value) })}
-            />
-          </label>
-          <label className="flex flex-col gap-1">
-            Text
-            <input type="color" className="h-7 w-full cursor-pointer rounded bg-transparent" value={hexOr(style.color, '#ffffff')} onChange={(e) => patchStyle({ color: e.target.value })} />
-          </label>
-          <label className="flex flex-col gap-1">
-            Bar
-            <input type="color" className="h-7 w-full cursor-pointer rounded bg-transparent" value={hexOr(style.background, '#000000')} onChange={(e) => patchStyle({ background: e.target.value })} />
-          </label>
+        <div className="space-y-2.5 rounded-md bg-surface-tertiary/60 px-2.5 py-2">
+          <button
+            type="button"
+            className="flex w-full items-center justify-between text-[12px] text-zinc-300 hover:text-white"
+            aria-expanded={styleOpen}
+            onClick={() => setStyleOpen(!styleOpen)}
+          >
+            {style.position === 'top' ? 'Top' : 'Bottom'} · {style.fontSizePx}px{style.scroll ? ' · ticker' : ''}
+            <span className="flex items-center gap-1">
+              <span className="h-3 w-3 rounded-full ring-1 ring-white/20" style={{ background: style.color }} />
+              <span className="h-3 w-3 rounded-full ring-1 ring-white/20" style={{ background: style.background }} />
+            </span>
+          </button>
+          {styleOpen && (
+            <div className="space-y-2.5 pt-1">
+              <div className={row}>
+                Position
+                <SegmentedControl
+                  label="Position"
+                  value={style.position}
+                  options={[
+                    { value: 'top', label: 'Top' },
+                    { value: 'bottom', label: 'Bottom' },
+                  ]}
+                  onChange={(position) => patchStyle({ position })}
+                  className="w-28"
+                  itemClassName="py-0.5 text-[11px]"
+                />
+
+              </div>
+              <label className={row}>
+                Size
+                <span className="flex items-center gap-2">
+                  <input
+                    type="range"
+                    min={16}
+                    max={160}
+                    value={style.fontSizePx}
+                    aria-label="Size"
+                    className="h-1 w-24 cursor-pointer appearance-none rounded-full bg-surface-elevated [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
+                    onChange={(e) => patchStyle({ fontSizePx: Number(e.target.value) })}
+                  />
+                  <span className="w-8 text-right text-[11px] tabular-nums text-zinc-400">{style.fontSizePx}</span>
+                </span>
+              </label>
+              <label className={row}>
+                Text
+                <input type="color" className="h-5 w-8 cursor-pointer rounded bg-transparent" value={hexOr(style.color, '#ffffff')} onChange={(e) => patchStyle({ color: e.target.value })} />
+              </label>
+              <label className={row}>
+                Bar
+                <input type="color" className="h-5 w-8 cursor-pointer rounded bg-transparent" value={hexOr(style.background, '#000000')} onChange={(e) => patchStyle({ background: e.target.value })} />
+              </label>
+              <label className={row}>
+                Scroll as a ticker
+                <MiniSwitch on={style.scroll} label="Scroll as a ticker" onChange={(scroll) => patchStyle({ scroll })} />
+              </label>
+            </div>
+          )}
         </div>
-        <label className="flex items-center gap-2 text-[11px] text-zinc-400">
-          <input type="checkbox" checked={style.scroll} onChange={(e) => patchStyle({ scroll: e.target.checked })} />
-          Scroll as a ticker
-        </label>
       </Section>
     </div>
   )
@@ -292,7 +536,7 @@ function useDeviceLabels(): [DeviceLabels, () => void] {
 
 export function ShowPanel(): React.ReactElement {
   const state = useProgramState()
-  const [presentation, setPresentation] = usePresentation()
+  const [presentation, setPresentation] = useDraftPresentation()
   const [devices, reloadCameras] = useDeviceLabels()
   const { videoinput: cameras, audiooutput: speakers, audioinput: mics } = devices
   const [camera, setCamera] = useState('')
@@ -300,7 +544,7 @@ export function ShowPanel(): React.ReactElement {
   const liveCameraAudio = state.camera ? state.cameraAudio ?? '' : cameraAudio
 
   const save = (next: PresentationSettings): void => {
-    void setPresentation(next).catch(report)
+    setPresentation(next)
   }
   const patchProp = (id: string, patch: Partial<ProgramProp>): void => {
     save({ ...presentation, props: presentation.props.map((p) => (p.id === id ? { ...p, ...patch } : p)) })
@@ -363,7 +607,7 @@ export function ShowPanel(): React.ReactElement {
           {presentation.props.map((prop) => {
             const on = state.activePropIds.includes(prop.id)
             return (
-              <li key={prop.id} className="space-y-1.5 rounded border border-surface-border/50 p-2">
+              <li key={prop.id} className="space-y-1.5 rounded p-2">
                 <div className="flex items-center gap-2">
                   <button
                     type="button"

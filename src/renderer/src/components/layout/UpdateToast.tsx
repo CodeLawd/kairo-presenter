@@ -52,7 +52,7 @@ export default function UpdateToast(): React.ReactElement | null {
     <div
       role="status"
       aria-live="polite"
-      className="animate-fade-in absolute bottom-4 right-4 z-50 flex max-w-sm items-start gap-3 rounded-lg border border-surface-border bg-surface-elevated px-3.5 py-3 shadow-xl"
+      className="animate-fade-in absolute bottom-4 right-4 z-50 flex max-w-sm items-start gap-3 rounded-lg bg-surface-elevated px-3.5 py-3 shadow-xl"
     >
       <Download size={15} className="mt-0.5 shrink-0 text-teal-300" aria-hidden="true" />
       <div className="min-w-0 flex-1">

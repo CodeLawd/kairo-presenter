@@ -33,7 +33,7 @@ export function ZoomControl({
     'grid h-6 w-6 shrink-0 place-items-center rounded text-zinc-400 hover:bg-surface-tertiary hover:text-white disabled:opacity-30'
   return (
     <div
-      className="flex shrink-0 items-center gap-1 rounded-md border border-white/10 bg-surface px-1 py-0.5"
+      className="flex shrink-0 items-center gap-1 rounded-md bg-surface px-1 py-0.5"
       role="group"
       aria-label={label}
     >

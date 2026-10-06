@@ -3,7 +3,14 @@ import { Slider as SliderPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
 
-function Slider({
+const Slider = React.forwardRef<
+  React.ElementRef<typeof SliderPrimitive.Root>,
+  React.ComponentProps<typeof SliderPrimitive.Root> & {
+  trackClassName?: string
+  rangeClassName?: string
+  thumbClassName?: string
+}
+>(function Slider({
   className,
   trackClassName,
   rangeClassName,
@@ -13,11 +20,7 @@ function Slider({
   min = 0,
   max = 100,
   ...props
-}: React.ComponentProps<typeof SliderPrimitive.Root> & {
-  trackClassName?: string
-  rangeClassName?: string
-  thumbClassName?: string
-}) {
+}, ref) {
   const _values = React.useMemo(
     () =>
       Array.isArray(value)
@@ -30,6 +33,7 @@ function Slider({
 
   return (
     <SliderPrimitive.Root
+      ref={ref}
       data-slot="slider"
       defaultValue={defaultValue}
       value={value}
@@ -68,6 +72,6 @@ function Slider({
       ))}
     </SliderPrimitive.Root>
   )
-}
+})
 
 export { Slider }

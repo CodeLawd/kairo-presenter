@@ -141,7 +141,7 @@ export function LibrarySection({
   return (
     <div>
       <div className="flex items-center gap-1 px-2 pb-1">
-        <p className="flex-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-600">Library</p>
+        <p className="flex-1 text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Library</p>
         <button
           type="button"
           aria-label="New library"

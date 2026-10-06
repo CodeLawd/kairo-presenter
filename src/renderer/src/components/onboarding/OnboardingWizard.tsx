@@ -121,7 +121,7 @@ export default function OnboardingWizard({
     >
       <div className="absolute inset-0 bg-black/65" aria-hidden="true" />
 
-      <div className="relative flex min-h-[28rem] w-[520px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border border-surface-border bg-surface shadow-2xl animate-spring-in">
+      <div className="relative flex min-h-[28rem] w-[520px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl bg-surface shadow-2xl animate-spring-in">
 
         {/* Progress is a hairline, not a widget — it answers "how much longer"
             and nothing else. */}

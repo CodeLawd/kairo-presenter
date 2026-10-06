@@ -20,6 +20,13 @@
     --tint-rose: 54 32 36;
     --range-track: 63 63 70;
     --text-primary: 244 244 245;
+    /* Grey text, a step brighter than the neutral scale so labels read on
+       charcoal. slate/zinc text-* map here (tailwind.config.js); bg/border don't. */
+    --fg-200: 244 244 245;
+    --fg-300: 226 226 230;
+    --fg-400: 196 196 202;
+    --fg-500: 161 161 170;
+    --fg-600: 130 130 138;
     --neutral-50: 250 250 250;
     --neutral-100: 244 244 245;
     --neutral-200: 228 228 231;
@@ -52,6 +59,11 @@
     --tint-rose: 244 222 226;
     --range-track: 212 212 216;
     --text-primary: 24 24 27;
+    --fg-200: 39 39 42;
+    --fg-300: 63 63 70;
+    --fg-400: 82 82 91;
+    --fg-500: 98 98 107;
+    --fg-600: 82 82 91;
     --neutral-50: 9 9 11;
     --neutral-100: 24 24 27;
     --neutral-200: 39 39 42;
@@ -96,30 +108,10 @@
     color: rgb(var(--text-primary));
   }
 
-  [data-theme='light'] .text-slate-500,
-  [data-theme='light'] .text-zinc-500 {
-    color: #62626b;
-  }
 
-  [data-theme='light'] .text-slate-600,
-  [data-theme='light'] .text-zinc-600 {
-    color: #52525b;
-  }
 
-  [data-theme='light'] .text-slate-400,
-  [data-theme='light'] .text-zinc-400 {
-    color: #52525b;
-  }
 
-  [data-theme='light'] .text-slate-300,
-  [data-theme='light'] .text-zinc-300 {
-    color: #3f3f46;
-  }
 
-  [data-theme='light'] .text-slate-200,
-  [data-theme='light'] .text-zinc-200 {
-    color: #27272a;
-  }
 
   [data-theme='light'] .text-yellow-400 {
     color: #92400e;
@@ -246,7 +238,7 @@
   }
 
   .double-bezel-outer {
-    @apply bg-surface border border-surface-border/60 rounded-md p-0 transition-all duration-300;
+    @apply bg-surface-secondary rounded-md p-0 transition-all duration-300;
   }
 
   .double-bezel-inner {
@@ -261,40 +253,30 @@
     @apply inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-500 px-1.5 py-0.5;
   }
 
+  /* Disabled: a flat neutral fill, not the accent faded to brown. */
   .btn-primary {
     @apply px-3.5 py-1.5 rounded-md bg-teal-600 hover:bg-teal-500 text-white text-sm font-semibold
            transition-[background-color,color,border-color,transform] duration-200 ease-out-expo
            focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/80 focus-visible:ring-offset-2 focus-visible:ring-offset-surface
-           active:brightness-90 disabled:opacity-50 disabled:cursor-not-allowed;
+           active:brightness-90 disabled:cursor-not-allowed disabled:bg-surface-tertiary disabled:text-zinc-500;
   }
 
   .btn-secondary {
-    @apply px-3.5 py-1.5 rounded-md bg-surface-elevated hover:bg-surface-tertiary text-slate-300
-           hover:text-white text-sm font-medium border border-surface-border
+    @apply px-3.5 py-1.5 rounded-md bg-surface-tertiary hover:bg-surface-elevated text-slate-300
+           hover:text-white text-sm font-medium
            transition-[background-color,color,border-color,transform] duration-200 ease-out-expo
            focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/80 focus-visible:ring-offset-2 focus-visible:ring-offset-surface
            active:brightness-90 disabled:opacity-50 disabled:cursor-not-allowed;
   }
 
   .input {
-    @apply w-full px-3 py-2 rounded-md bg-surface border border-surface-border text-white
-           text-sm placeholder:text-slate-500 transition-[border-color,box-shadow] duration-200 ease-out-expo
-           focus-visible:outline-none focus-visible:border-teal-500
-           focus-visible:ring-2 focus-visible:ring-teal-500/30;
+    @apply w-full px-3 py-2 rounded-md bg-surface-tertiary text-white
+           text-sm placeholder:text-slate-500 transition-[background-color,box-shadow] duration-200 ease-out-expo
+           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/40;
   }
 
   .label {
-    @apply block text-[11px] font-medium font-sans text-slate-400 mb-1.5;
-  }
-
-  /* Setup / theme inspectors already use quieter labels; keep the soft
-     overrides so section chrome stays consistent after .label was simplified. */
-  .onboarding-step .label {
-    @apply mb-1.5 font-sans text-[11px] font-medium text-slate-400;
-  }
-
-  .theme-inspector .label {
-    @apply mb-1.5 font-sans text-[11px] font-medium text-slate-400;
+    @apply block text-[11px] font-medium font-sans text-slate-300 mb-1.5;
   }
 
   .range-control {
@@ -332,13 +314,12 @@
     width: 0.625rem;
     height: 0.625rem;
     appearance: none;
-    border: 2px solid rgb(var(--surface-secondary));
     border-radius: 9999px;
-    background: rgb(45 212 191);
+    background: rgb(255 255 255);
   }
 
   .video-seek:focus-visible {
-    outline: 2px solid rgb(45 212 191 / 0.6);
+    outline: 2px solid rgb(255 255 255 / 0.4);
     outline-offset: 4px;
   }
 
@@ -562,6 +543,12 @@
     inset 0 -1.5px 0 rgb(0 0 0 / 0.18);
 }
 
+/* The audience-message ticker, as the screen window animates it (overlay.html). */
+@keyframes pa-ticker {
+  from { transform: translateX(0); }
+  to { transform: translateX(-100%); }
+}
+
 /* "Booting up" — a light band running through muted text. */
 .splash-boot {
   color: transparent;
@@ -634,7 +621,7 @@
 }
 
 .kairo-pp-settings .btn-primary {
-  @apply rounded-none bg-[#007aff] hover:bg-[#0a84ff];
+  @apply rounded-none bg-[#007aff] hover:bg-[#0a84ff] disabled:bg-surface-tertiary disabled:text-zinc-500;
 }
 
 .kairo-pp-settings .label {

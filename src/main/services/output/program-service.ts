@@ -106,6 +106,10 @@ class ProgramService {
     return this.set({ timer: resetTimer(this.state.timer) })
   }
 
+  setOnScreens(layer: 'countdown' | 'clock', on: boolean): ProgramState {
+    return this.set(layer === 'countdown' ? { countdownOnScreens: on } : { clockOnScreens: on })
+  }
+
   // ─── Current / next (stage displays) ────────────────────────────────────────
 
   setSlide(current: ProgramSlideInfo | null, next: ProgramSlideInfo | null = null): void {

@@ -6,13 +6,17 @@ import { Tabs as TabsPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
 
-function Tabs({
+const Tabs = React.forwardRef<
+  React.ElementRef<typeof TabsPrimitive.Root>,
+  React.ComponentProps<typeof TabsPrimitive.Root>
+>(function Tabs({
   className,
   orientation = "horizontal",
   ...props
-}: React.ComponentProps<typeof TabsPrimitive.Root>) {
+}, ref) {
   return (
     <TabsPrimitive.Root
+      ref={ref}
       data-slot="tabs"
       data-orientation={orientation}
       className={cn(
@@ -22,7 +26,7 @@ function Tabs({
       {...props}
     />
   )
-}
+})
 
 const tabsListVariants = cva(
   "group/tabs-list inline-flex h-8 w-fit items-center justify-center rounded-lg p-[3px] text-muted-foreground group-data-[orientation=vertical]/tabs:h-fit group-data-[orientation=vertical]/tabs:flex-col data-[variant=line]:rounded-none",
@@ -39,28 +43,36 @@ const tabsListVariants = cva(
   }
 )
 
-function TabsList({
+const TabsList = React.forwardRef<
+  React.ElementRef<typeof TabsPrimitive.List>,
+  React.ComponentProps<typeof TabsPrimitive.List> &
+  VariantProps<typeof tabsListVariants>
+>(function TabsList({
   className,
   variant = "default",
   ...props
-}: React.ComponentProps<typeof TabsPrimitive.List> &
-  VariantProps<typeof tabsListVariants>) {
+}, ref) {
   return (
     <TabsPrimitive.List
+      ref={ref}
       data-slot="tabs-list"
       data-variant={variant}
       className={cn(tabsListVariants({ variant }), className)}
       {...props}
     />
   )
-}
+})
 
-function TabsTrigger({
+const TabsTrigger = React.forwardRef<
+  React.ElementRef<typeof TabsPrimitive.Trigger>,
+  React.ComponentProps<typeof TabsPrimitive.Trigger>
+>(function TabsTrigger({
   className,
   ...props
-}: React.ComponentProps<typeof TabsPrimitive.Trigger>) {
+}, ref) {
   return (
     <TabsPrimitive.Trigger
+      ref={ref}
       data-slot="tabs-trigger"
       className={cn(
         "relative inline-flex h-[calc(100%-1px)] flex-1 items-center justify-center gap-1.5 rounded-md border border-transparent px-1.5 py-0.5 text-sm font-medium whitespace-nowrap text-foreground/60 transition-all hover:text-foreground focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
@@ -69,19 +81,23 @@ function TabsTrigger({
       {...props}
     />
   )
-}
+})
 
-function TabsContent({
+const TabsContent = React.forwardRef<
+  React.ElementRef<typeof TabsPrimitive.Content>,
+  React.ComponentProps<typeof TabsPrimitive.Content>
+>(function TabsContent({
   className,
   ...props
-}: React.ComponentProps<typeof TabsPrimitive.Content>) {
+}, ref) {
   return (
     <TabsPrimitive.Content
+      ref={ref}
       data-slot="tabs-content"
       className={cn("flex-1 text-sm outline-none", className)}
       {...props}
     />
   )
-}
+})
 
 export { Tabs, TabsList, TabsTrigger, TabsContent, tabsListVariants }

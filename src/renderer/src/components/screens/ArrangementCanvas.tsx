@@ -46,7 +46,7 @@ export function ArrangementCanvas({
   const height = bottom - top
 
   return (
-    <div className="flex h-full w-full items-center justify-center p-10">
+    <div className="flex h-full w-full items-center justify-center p-6">
       <div
         className="relative max-h-full w-full"
         style={{ aspectRatio: `${width} / ${height}`, maxWidth: `min(100%, calc((100vh - 16rem) * ${width / height}))` }}
@@ -62,9 +62,9 @@ export function ArrangementCanvas({
               onClick={() => onPickDisplay(display)}
               title={canBind ? `Show the selected screen on ${display.label || 'this display'}` : undefined}
               className={cn(
-                'absolute flex flex-col items-center justify-center gap-1 overflow-hidden border bg-surface-tertiary p-2 text-center transition-colors',
-                selected ? 'border-2 border-teal-400' : 'border-surface-border',
-                canBind && !selected && 'hover:border-slate-400',
+                'absolute flex flex-col items-center justify-center gap-1 overflow-hidden rounded-md p-2 text-center transition-colors',
+                selected ? 'bg-surface-elevated' : 'bg-surface-tertiary',
+                canBind && !selected && 'hover:bg-surface-elevated',
                 !canBind && 'cursor-default',
               )}
               style={{
@@ -85,11 +85,11 @@ export function ArrangementCanvas({
                   <span
                     key={b.key}
                     className={cn(
-                      'max-w-full truncate px-1.5 py-0.5 text-[10px] font-medium',
+                      'max-w-full truncate rounded px-1.5 py-0.5 text-[10px] font-medium',
                       b.key === selectedKey
-                        ? 'bg-teal-600 text-white'
+                        ? 'bg-slate-200 text-surface'
                         : b.enabled
-                          ? 'bg-surface-border text-slate-200'
+                          ? 'bg-surface-secondary text-slate-200'
                           : 'bg-surface-secondary text-slate-500',
                     )}
                   >

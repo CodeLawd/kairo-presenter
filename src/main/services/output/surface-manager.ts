@@ -7,11 +7,10 @@ import { normalizeOverlaySettings } from '@shared/overlay-defaults'
 import { followsProgram, isRenderedKind, primaryNdiOutputId } from '@shared/overlay-outputs'
 import { NDI_SENDER_NAME, PRODUCT_NAME } from '@shared/brand'
 import {
+  confidenceFor,
   EMPTY_PROGRAM_STATE,
   normalizePresentationSettings,
-  renderLogoHTML,
-  renderMessageHTML,
-  renderPropsHTML,
+  programLayersFor,
   transitionMs,
   type OutputShowFilter,
   type PresentationSettings,
@@ -505,16 +504,12 @@ class SurfaceManager {
 
   private async applyProgram(presentation: PresentationSettings): Promise<void> {
     const state = this.program
-    const message = renderMessageHTML(state.message, presentation.message)
-    const props = renderPropsHTML(presentation.props, state.activePropIds)
-    const logo = renderLogoHTML(presentation.logo, state.logo)
     const camera = state.camera ? { label: state.camera, audioLabel: state.cameraAudio } : null
     const layersFor = (output: OverlayOutput): SurfaceLayers => ({
-      message: output.show.messages ? message : '',
-      props: output.show.overlays ? props : '',
-      logo: output.show.overlays ? logo : '',
+      ...programLayersFor(output, state, presentation),
       // A lobby shows its playlist, never the service camera.
       camera: output.show.backgrounds && !this.lobbies.has(output.id) ? camera : null,
+      info: confidenceFor(output, state, presentation),
     })
     const surfaceWork = this.outputs
       .filter((o) => o.enabled && isRenderedKind(o.kind))
@@ -535,6 +530,7 @@ class SurfaceManager {
         showNext: config.showNext,
         showClock: config.showClock,
         showTimer: config.showTimer,
+        timerStyle: presentation.timer,
       }).catch(() => undefined)
     })
     await Promise.all([...surfaceWork, ...stageWork])

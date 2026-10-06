@@ -45,7 +45,7 @@ export default function StepDone({
           : 'You can finish the rest any time from Settings — nothing here is locked in.'}
       </p>
 
-      <ul className="mt-6 divide-y divide-surface-border/40">
+      <ul className="mt-6">
         {summary.map((line) => (
           <li key={line.step} className="flex items-center gap-3 py-2.5">
             <span

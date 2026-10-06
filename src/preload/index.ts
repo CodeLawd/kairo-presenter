@@ -768,6 +768,7 @@ const program: KairoAPI['program'] = {
     pause: () => ipcRenderer.invoke(PROGRAM.TIMER_PAUSE),
     reset: () => ipcRenderer.invoke(PROGRAM.TIMER_RESET),
   },
+  setOnScreens: (layer, on) => ipcRenderer.invoke(PROGRAM.SET_ON_SCREENS, layer, on),
   pickImage: () => ipcRenderer.invoke(PROGRAM.PICK_IMAGE),
   stageStatus: () => ipcRenderer.invoke(PROGRAM.STAGE_STATUS),
   onStageStatus: (callback) => subscribe(PROGRAM.STAGE_STATUS_CHANGED, callback),

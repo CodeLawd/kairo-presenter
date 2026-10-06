@@ -43,6 +43,52 @@
       .pa-verse-text {
         overflow-wrap: break-word;
       }
+      #pa-info-layer {
+        display: none;
+        font-family: 'Source Sans 3', 'Helvetica Neue', Arial, sans-serif;
+        /* Set per update from the payload's sizes (src/lib/program.ts confidenceSizes). */
+        --info-bar: 72px;
+        --info-message: 60px;
+      }
+      #pa-info-layer.on { display: block; }
+      #pa-info-layer > * { inset: auto; }
+      #pa-info-bar {
+        top: 0;
+        left: 0;
+        right: 0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 20px 48px;
+        color: #fff;
+        font-size: var(--info-bar);
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+        text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
+      }
+      #pa-info-bar.empty { display: none; }
+      #pa-info-bar.backdrop { background: rgba(0, 0, 0, 0.72); text-shadow: none; }
+      #pa-info-timer { margin-left: auto; }
+      #pa-info-timer.paused { opacity: 0.55; }
+      #pa-info-message {
+        top: calc(var(--info-bar) * 1.25 + 40px);
+        left: 40px;
+        right: 40px;
+        padding: 18px 28px;
+        border-radius: 14px;
+        background: #b91c1c;
+        color: #fff;
+        font-size: var(--info-message);
+        font-weight: 700;
+        line-height: 1.15;
+        text-align: center;
+        overflow-wrap: break-word;
+      }
+      #pa-info-layer.pos-bottom #pa-info-bar { top: auto; bottom: 0; }
+      #pa-info-layer.pos-bottom #pa-info-message { top: auto; bottom: calc(var(--info-bar) * 1.25 + 40px); }
+      #pa-info-layer.pos-bottom #pa-info-bar.empty + #pa-info-message { top: auto; bottom: 40px; }
+      #pa-info-message:empty { display: none; }
+      #pa-info-bar.empty + #pa-info-message { top: 40px; }
       @keyframes pa-ticker {
         from { transform: translateX(0); }
         to { transform: translateX(-100%); }
@@ -73,6 +119,10 @@
         <div class="pa-slot" id="pa-text-layer"></div>
         <div class="pa-slot" id="pa-props-layer"></div>
         <div class="pa-slot" id="pa-message-layer"></div>
+        <div class="pa-slot" id="pa-info-layer">
+          <div id="pa-info-bar"><span id="pa-info-clock"></span><span id="pa-info-timer"></span></div>
+          <div id="pa-info-message"></div>
+        </div>
         <div class="pa-slot" id="pa-logo-layer"></div>
       </div>
     </div>
@@ -566,6 +616,74 @@
       };
       window.__setLogo = function (html) {
         swapLayer(layers.logo, html || '', config.transitionMs);
+      };
+
+      // ─── Info layer: countdown, clock, stage message ───────────────────────
+      // Values arrive as data and are written with textContent. Ticks locally
+      // from `endsAt`, so a running countdown needs no further IPC.
+
+      var info = null;
+      var infoTicker = null;
+      function infoPad(n) { return (n < 10 ? '0' : '') + n; }
+      function infoRemaining(timer) {
+        if (timer.endsAt === null) return timer.remainingSec;
+        return Math.ceil((timer.endsAt - Date.now()) / 1000);
+      }
+      function infoFormat(seconds) {
+        var sign = seconds < 0 ? '-' : '';
+        var total = Math.abs(Math.trunc(seconds));
+        var h = Math.floor(total / 3600);
+        var m = Math.floor((total % 3600) / 60);
+        var s = total % 60;
+        return h > 0 ? sign + h + ':' + infoPad(m) + ':' + infoPad(s) : sign + m + ':' + infoPad(s);
+      }
+      function infoSet(id, text) {
+        var node = document.getElementById(id);
+        if (node.textContent !== text) node.textContent = text;
+        return node;
+      }
+      function infoTick() {
+        if (!info) return;
+        if (info.clock) {
+          var now = new Date();
+          var hours = now.getHours();
+          infoSet('pa-info-clock', (hours % 12 || 12) + ':' + infoPad(now.getMinutes()) + (hours < 12 ? ' AM' : ' PM'));
+        } else {
+          infoSet('pa-info-clock', '');
+        }
+        if (info.timer) {
+          // Mirrors timerReadout() in src/lib/program.ts.
+          var timer = info.timer;
+          var raw = infoRemaining(timer);
+          var running = timer.endsAt !== null;
+          var t = infoSet('pa-info-timer', infoFormat(info.style.rollover ? raw : Math.max(0, raw)));
+          var timeUp = timer.durationSec > 0 && (raw < 0 || (raw === 0 && running));
+          t.style.color = timeUp ? info.style.overrunColor : info.style.color;
+          t.classList.toggle('paused', !running && raw !== timer.durationSec);
+        } else {
+          infoSet('pa-info-timer', '');
+        }
+      }
+      window.__setInfo = function (next) {
+        info = next;
+        var layer = document.getElementById('pa-info-layer');
+        layer.classList.toggle('on', !!next);
+        if (next) {
+          layer.classList.toggle('pos-bottom', next.layout.position === 'bottom');
+          layer.style.setProperty('--info-bar', next.sizes.barPx + 'px');
+          layer.style.setProperty('--info-message', next.sizes.messagePx + 'px');
+        }
+        if (infoTicker) clearInterval(infoTicker);
+        infoTicker = null;
+        if (!next) return;
+        var bar = document.getElementById('pa-info-bar');
+        bar.classList.toggle('empty', !next.clock && !next.timer);
+        bar.classList.toggle('backdrop', next.style.backdrop);
+        infoSet('pa-info-message', next.stageMessage || '');
+        infoTick();
+        // A running countdown needs sub-second ticks; the clock alone only changes by the minute.
+        if (next.timer && next.timer.endsAt !== null) infoTicker = setInterval(infoTick, 250);
+        else if (next.clock) infoTicker = setInterval(infoTick, 1000);
       };
 
       // Live camera / capture card, matched by label: device ids are salted

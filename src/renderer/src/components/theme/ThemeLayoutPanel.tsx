@@ -46,7 +46,7 @@ function FieldShell({
   return (
     <div
       className={cn(
-        'flex h-8 items-center gap-2 rounded-md bg-zinc-800 px-2.5 text-sm text-zinc-100',
+        'flex h-8 items-center gap-2 rounded-md bg-surface-tertiary px-2.5 text-[13px] text-zinc-100',
         className
       )}
     >
@@ -229,7 +229,7 @@ function CompactSlider({
         step={step}
         value={value}
         onChange={(event) => onChange(Number(event.target.value))}
-        className="h-1 w-full cursor-pointer appearance-none rounded-full bg-zinc-800 accent-orange-500 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-orange-500"
+        className="h-1 w-full cursor-pointer appearance-none rounded-full bg-surface-elevated [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
         aria-label={label}
       />
     </div>
@@ -273,8 +273,8 @@ export function ThemeLayoutPanel({
     <div className="space-y-5">
       <CollapsibleSection title="Placement" open={placementOpen} onOpenChange={setPlacementOpen}>
         <div>
-          <FieldLabel>Position preset</FieldLabel>
-          <div className="grid grid-cols-2 gap-1 rounded-md bg-zinc-800 p-0.5">
+          <FieldLabel>Position</FieldLabel>
+          <div className="grid grid-cols-2 gap-1 rounded-lg bg-surface p-0.5">
             {(
               [
                 { value: 'lower-third', label: 'Lower third' },
@@ -290,8 +290,8 @@ export function ThemeLayoutPanel({
                   type="button"
                   onClick={() => onApplyPreset(opt.value)}
                   className={cn(
-                    'rounded-sm px-2 py-1.5 text-[11px] font-semibold transition-colors',
-                    active ? 'bg-zinc-700 text-zinc-50' : 'text-zinc-500 hover:text-zinc-300'
+                    'rounded-md px-2 py-1 text-[12px] font-medium transition-colors',
+                    active ? 'bg-surface-elevated text-white' : 'text-zinc-500 hover:text-zinc-300'
                   )}
                 >
                   {opt.label}
@@ -299,15 +299,12 @@ export function ThemeLayoutPanel({
               )
             })}
           </div>
-          <p className="mt-1.5 text-[10px] leading-relaxed text-zinc-500">
-            Presets place both boxes. Drag on the preview, or fine-tune below.
-          </p>
         </div>
 
         <div className={cn('grid gap-2', theme.layout.position === 'full' ? 'grid-cols-1' : 'grid-cols-2')}>
           {theme.layout.position !== 'full' && (
             <CompactSlider
-              label="Preset width"
+              label="Width"
               value={theme.layout.maxWidthPct}
               onChange={onUpdatePresetWidth}
               min={20}
@@ -326,10 +323,9 @@ export function ThemeLayoutPanel({
         </div>
       </CollapsibleSection>
 
-      <div className="h-px bg-zinc-800" />
 
       <CollapsibleSection title="Selected box" open={boxOpen} onOpenChange={setBoxOpen}>
-        <div className="flex gap-1 rounded-md bg-zinc-800 p-0.5">
+        <div className="flex gap-1 rounded-lg bg-surface p-0.5">
           {([
             { id: 'verse' as const, label: overlayLayerLabel(contentKind, 'verse') },
             { id: 'reference' as const, label: overlayLayerLabel(contentKind, 'reference') },
@@ -340,9 +336,9 @@ export function ThemeLayoutPanel({
               disabled={item.id === 'reference' && !theme.reference.show}
               onClick={() => onSelectLayer(item.id)}
               className={cn(
-                'flex-1 rounded-sm px-2 py-1.5 text-[11px] font-semibold transition-colors disabled:opacity-40',
+                'flex-1 rounded-md px-2 py-1 text-[12px] font-medium transition-colors disabled:opacity-40',
                 selectedLayer === item.id
-                  ? 'bg-zinc-700 text-zinc-50'
+                  ? 'bg-surface-elevated text-white'
                   : 'text-zinc-500 hover:text-zinc-300'
               )}
             >
@@ -391,7 +387,6 @@ export function ThemeLayoutPanel({
         </div>
       </CollapsibleSection>
 
-      <div className="h-px bg-zinc-800" />
 
       <CollapsibleSection
         title="Backdrop"

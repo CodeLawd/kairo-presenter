@@ -156,7 +156,7 @@ export function VerseThemePreview({
                 ? "border-white"
                 : isActive
                   ? "border-teal-400"
-                  : "border-surface-border hover:border-slate-500 focus-visible:border-slate-400",
+                  : "border-transparent hover:border-slate-500 focus-visible:border-slate-400",
             )
           : "rounded-none border-0 shadow-none",
       )}

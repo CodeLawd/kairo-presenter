@@ -554,6 +554,8 @@ export interface OverlayOutput {
   playlistId: string
   /** `playlist` source: seconds each image stays up. Videos play to their end. 3–600. */
   slideSec: number
+  /** `ndi` / `screen`: where the countdown, clock and stage message sit, and how big. */
+  confidence: import('./program').ConfidenceLayout
 }
 
 /** Per-output result of one fan-out push. */

@@ -130,7 +130,7 @@ function StatusItem({
       <span className="header-status-label whitespace-nowrap text-[11px] font-medium text-zinc-500">
         {label}
       </span>
-      <span className="pointer-events-none absolute right-0 top-full z-50 mt-2 hidden w-max max-w-72 rounded-md border border-white/10 bg-surface-elevated px-3 py-2 text-xs text-zinc-200 shadow-xl group-hover:block group-focus-within:block">
+      <span className="pointer-events-none absolute right-0 top-full z-50 mt-2 hidden w-max max-w-72 rounded-md bg-surface-elevated px-3 py-2 text-xs text-zinc-200 shadow-xl group-hover:block group-focus-within:block">
         {label}: {detail}
         {action ? <span className="block text-zinc-500">{action}</span> : null}
       </span>

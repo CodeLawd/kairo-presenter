@@ -246,9 +246,9 @@ export function SermonNotesReviewModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="sermon-review-title"
-        className="flex h-[min(860px,calc(100vh-40px))] w-[min(1180px,calc(100vw-40px))] flex-col overflow-hidden rounded-2xl border border-surface-border bg-surface-secondary shadow-2xl shadow-black/50"
+        className="flex h-[min(860px,calc(100vh-40px))] w-[min(1180px,calc(100vw-40px))] flex-col overflow-hidden rounded-2xl bg-surface-secondary shadow-2xl shadow-black/50"
       >
-        <header className="flex items-center justify-between gap-5 border-b border-surface-border px-5 py-3.5">
+        <header className="flex items-center justify-between gap-5 px-5 py-3.5">
           <div className="flex min-w-0 items-center gap-3">
             <ScanSearch size={16} className="shrink-0 text-slate-500" aria-hidden="true" />
             <div className="min-w-0">
@@ -266,14 +266,14 @@ export function SermonNotesReviewModal({
         </header>
 
         <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_310px]">
-          <div className="flex min-h-0 flex-col border-r border-surface-border bg-[#111820]">
-            <div className="flex items-center gap-2.5 border-b border-surface-border/80 px-4 py-2.5">
+          <div className="flex min-h-0 flex-col bg-[#111820]">
+            <div className="flex items-center gap-2.5 px-4 py-2.5">
               <FileText size={14} className="shrink-0 text-slate-500" aria-hidden="true" />
               <Input
                 value={title}
                 onChange={(event) => setTitle(event.target.value)}
                 aria-label="Playlist title"
-                className="h-8 max-w-md border-transparent bg-transparent px-2 text-sm font-semibold text-slate-200 hover:border-surface-border focus:border-teal-500/50"
+                className="h-8 max-w-md border-transparent bg-transparent px-2 text-sm font-semibold text-slate-200 hover:border-transparent focus:border-teal-500/50"
               />
               <div className="ml-auto flex items-center gap-1.5 text-[11px] text-slate-500">
                 {scanning && <Loader size={12} className="animate-spin text-yellow-300" />}
@@ -293,7 +293,7 @@ export function SermonNotesReviewModal({
           </div>
 
           <aside className="flex min-h-0 flex-col bg-surface-secondary">
-            <div className="flex items-center justify-between gap-3 border-b border-surface-border px-4 py-3">
+            <div className="flex items-center justify-between gap-3 px-4 py-3">
               <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
                 Detected
                 <span className="ml-2 tracking-normal tabular-nums text-slate-300">
@@ -316,7 +316,7 @@ export function SermonNotesReviewModal({
               style={{ scrollbarGutter: "stable" }}
             >
               {matchCount === 0 ? (
-                <div className="m-1 rounded-lg border border-dashed border-surface-border px-4 py-6 text-center">
+                <div className="m-1 rounded-lg bg-surface-secondary px-4 py-6 text-center">
                   <p className="text-[13px] font-medium text-slate-300">
                     {scanning ? "Scanning for references…" : "No references found"}
                   </p>
@@ -382,7 +382,7 @@ export function SermonNotesReviewModal({
           </aside>
         </div>
 
-        <footer className="flex items-center justify-between gap-4 border-t border-surface-border bg-surface px-5 py-3.5">
+        <footer className="flex items-center justify-between gap-4 bg-surface px-5 py-3.5">
           <p className="text-xs text-slate-500">
             Highlighted text becomes{" "}
             <span className="font-semibold text-slate-300 tabular-nums">{analysis.items.length}</span>{" "}

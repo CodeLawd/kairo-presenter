@@ -116,3 +116,29 @@ function clamp(value: unknown, min: number, max: number, fallback: number): numb
 export function themeOwnsBackground(theme: OverlayTheme): boolean {
   return theme.background.type !== 'transparent'
 }
+
+/** The theme with no background at all — what a screen with Backgrounds off draws text on. */
+export function withoutBackground(theme: OverlayTheme): OverlayTheme {
+  if (theme.background.type === 'transparent') return theme
+  return { ...theme, background: { ...theme.background, type: 'transparent' } }
+}
+
+/**
+ * The theme a slide goes out with on one output — the single rule the push
+ * (orchestrator) and the operator's preview both use. Backgrounds off: no
+ * background at all. Otherwise the live dock background fills in, unless the
+ * theme has its own; `force` is the dock's own "present this background".
+ */
+export function themeForPush(
+  theme: OverlayTheme,
+  options: {
+    showsBackgrounds: boolean
+    live: { kind: MediaKind; path: string } | null
+    playback?: MediaPlayback
+    force?: boolean
+  },
+): OverlayTheme {
+  if (!options.showsBackgrounds) return withoutBackground(theme)
+  if (!options.live || (!options.force && themeOwnsBackground(theme))) return theme
+  return themeWithLiveMedia(theme, options.live, options.playback)
+}

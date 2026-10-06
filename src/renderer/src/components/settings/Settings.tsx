@@ -129,8 +129,8 @@ function PrefGroup({
         </div>
       ) : null}
       <div className={cn(
-        'divide-y divide-white/[0.07] overflow-hidden',
-        plain ? '' : 'rounded-xl border border-white/[0.06] bg-[#292929]',
+        'overflow-hidden',
+        plain ? '' : 'rounded-xl bg-[#292929]',
       )}>
         {children}
       </div>
@@ -517,7 +517,7 @@ function ProviderKeyRow({
                 <MoreVertical size={15} aria-hidden="true" />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="min-w-[168px] border-white/10 bg-[#2c2c2c] text-white">
+            <DropdownMenuContent align="end" className="min-w-[168px] bg-[#2c2c2c] text-white">
               <DropdownMenuItem onSelect={() => openProviderDocs(docsUrl)}>
                 <ExternalLink size={13} aria-hidden="true" />
                 Get a {name} key
@@ -945,7 +945,7 @@ function AudioSection({
     <div className="space-y-3">
       <section className="space-y-2">
         <h3 className="px-0.5 text-xs font-semibold tracking-tight text-white/60">Input</h3>
-        <div className="overflow-hidden rounded-xl border border-white/[0.06] bg-[#292929]">
+        <div className="overflow-hidden rounded-xl bg-[#292929]">
           <div className="grid grid-cols-[minmax(0,1fr)_5.5rem] gap-3 px-3.5 pb-1 pt-2.5">
             <p className="text-[11px] text-white/35">Name</p>
             <p className="text-[11px] text-white/35">Type</p>
@@ -987,7 +987,7 @@ function AudioSection({
             </ul>
           )}
 
-          <div className="border-t border-white/[0.07] px-3.5 py-3">
+          <div className="px-3.5 py-3">
             <div className="mb-2 flex items-center justify-between gap-3">
               <p className="text-[13px] text-white">Input level</p>
               {listening ? (
@@ -1211,7 +1211,7 @@ function ApiKeysSection({
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center gap-2.5 rounded-xl border border-white/[0.06] bg-surface-secondary px-3.5 py-2.5">
+      <div className="flex items-center gap-2.5 rounded-xl bg-surface-secondary px-3.5 py-2.5">
         <Cloud size={15} className="shrink-0 text-white/40" aria-hidden="true" />
         <p className="min-w-0 flex-1 text-[11px] leading-snug text-white/50">{syncHint}</p>
         <span className="shrink-0 text-[11px] tabular-nums text-white/35">{configuredCount} of 6 set</span>
@@ -1944,7 +1944,7 @@ function GeneralSection({
                   : '#D4A017'
               }
               onChange={(e) => update('lyrics', { glossColor: e.target.value.toUpperCase() })}
-              className="h-7 w-9 cursor-pointer rounded border border-white/10 bg-transparent p-0.5"
+              className="h-7 w-9 cursor-pointer rounded bg-transparent p-0.5"
               aria-label="Gloss color"
             />
             <input
@@ -2238,7 +2238,7 @@ export default function Settings({
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col bg-[#1e1e1e]">
-        <header data-settings-drag className="flex shrink-0 items-center gap-0.5 border-b border-white/[0.06] px-4 py-4">
+        <header data-settings-drag className="flex shrink-0 items-center gap-0.5 px-4 py-4">
           <button
             type="button"
             aria-label="Back"

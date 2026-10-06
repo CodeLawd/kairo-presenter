@@ -123,7 +123,7 @@ export function ServicePanel(): React.ReactElement {
 
   return <>
     {active || error ? (
-      <div className="shrink-0 border-y border-white/[0.06] bg-surface-secondary px-3 py-1.5">
+      <div className="shrink-0 bg-surface-secondary px-3 py-1.5">
         {active ? (
           <div className="flex min-w-0 items-center gap-2">
             {/* The elapsed clock leads: mid-service it is the number the booth
@@ -151,7 +151,7 @@ export function ServicePanel(): React.ReactElement {
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/80" />
         {active && (
-          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl border border-white/10 bg-zinc-950 p-5 text-white shadow-2xl">
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl bg-zinc-950 p-5 text-white shadow-2xl">
             <Dialog.Title className="text-base font-semibold tracking-tight text-zinc-50">Save service</Dialog.Title>
             <Dialog.Description className="mt-1.5 text-[13px] leading-relaxed text-zinc-400">
               Transcription stops and this message is saved. Name it now — leave the name blank and it is filed by date.
@@ -196,7 +196,7 @@ export function ServicePanel(): React.ReactElement {
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/80" />
         {active && (
-          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-xl border border-white/10 bg-zinc-950 p-5 text-white shadow-2xl">
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-xl bg-zinc-950 p-5 text-white shadow-2xl">
             <Dialog.Title className="text-base font-semibold tracking-tight text-zinc-50">Discard this service?</Dialog.Title>
             <Dialog.Description className="mt-1.5 text-[13px] leading-relaxed text-zinc-400">
               The transcript, nuggets and detected scriptures from this service are deleted. This cannot be undone.
@@ -227,9 +227,9 @@ export function ServicePanel(): React.ReactElement {
         {record && (
           <Dialog.Content
             aria-describedby={undefined}
-            className="fixed left-1/2 top-1/2 z-50 flex max-h-[min(85vh,720px)] w-[calc(100%-2rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl border border-white/10 bg-zinc-950 text-white shadow-2xl"
+            className="fixed left-1/2 top-1/2 z-50 flex max-h-[min(85vh,720px)] w-[calc(100%-2rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl bg-zinc-950 text-white shadow-2xl"
           >
-            <header className="shrink-0 border-b border-white/10 px-5 pb-4 pt-5">
+            <header className="shrink-0 px-5 pb-4 pt-5">
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
                   <Dialog.Title className="truncate text-base font-semibold tracking-tight text-zinc-50">{record.title || 'Unnamed service'}</Dialog.Title>
@@ -318,7 +318,7 @@ export function ServicePanel(): React.ReactElement {
                     <p className="py-10 text-center text-[12px] text-zinc-600">No nuggets yet.</p>
                   ) : (
                     record.nuggets.map(n => (
-                      <article key={n.id} className="rounded-lg border border-white/[0.06] bg-surface-secondary px-3.5 py-3">
+                      <article key={n.id} className="rounded-lg bg-surface-secondary px-3.5 py-3">
                         <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-zinc-200">{n.text}</p>
                         <div className="mt-2.5 flex items-center gap-3 text-[10px] text-zinc-500">
                           <span className="capitalize">{n.origin}</span>
@@ -384,7 +384,7 @@ export function ServicePanel(): React.ReactElement {
                 ) : (
                   <ul className="space-y-3">
                     {record.scriptures.map(s => (
-                      <li key={s.id} className="rounded-lg border border-white/[0.06] bg-surface-secondary px-3.5 py-3">
+                      <li key={s.id} className="rounded-lg bg-surface-secondary px-3.5 py-3">
                         <p className="text-[13px] font-medium text-zinc-100">
                           {s.reference}
                           <span className="ml-2 text-[11px] font-normal text-zinc-500">{s.translation}</span>

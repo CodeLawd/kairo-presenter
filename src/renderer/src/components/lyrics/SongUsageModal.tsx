@@ -62,10 +62,10 @@ export function SongUsageModal({ onClose }: { onClose: () => void }): React.Reac
         role="dialog"
         aria-modal="true"
         aria-labelledby="song-usage-title"
-        className="flex max-h-[min(640px,90vh)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-surface-border bg-surface shadow-2xl"
+        className="flex max-h-[min(640px,90vh)] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-surface shadow-2xl"
         onClick={(event) => event.stopPropagation()}
       >
-        <header className="flex items-start gap-3 border-b border-surface-border px-5 py-4">
+        <header className="flex items-start gap-3 px-5 py-4">
           <div className="min-w-0 flex-1">
             <h2 id="song-usage-title" className="text-sm font-semibold text-white">Song usage</h2>
             <p className="mt-0.5 text-[11px] text-white/40">
@@ -77,7 +77,7 @@ export function SongUsageModal({ onClose }: { onClose: () => void }): React.Reac
           </button>
         </header>
 
-        <div className="flex items-end gap-3 border-b border-surface-border px-5 py-3 text-[11px] text-white/50">
+        <div className="flex items-end gap-3 px-5 py-3 text-[11px] text-white/50">
           <label className="flex flex-col gap-1">
             From
             <input type="date" className="input h-8 text-xs" value={from} max={to} onChange={(e) => e.target.value && setFrom(e.target.value)} />
@@ -105,7 +105,7 @@ export function SongUsageModal({ onClose }: { onClose: () => void }): React.Reac
               </thead>
               <tbody>
                 {rows.map((row) => (
-                  <tr key={row.songId} className="border-t border-surface-border/40">
+                  <tr key={row.songId}>
                     <td className="px-5 py-1.5">
                       <div className="truncate text-white/90">{row.title}</div>
                       {row.artist && <div className="truncate text-[10px] text-white/40">{row.artist}</div>}
@@ -119,7 +119,7 @@ export function SongUsageModal({ onClose }: { onClose: () => void }): React.Reac
           )}
         </div>
 
-        <footer className="flex items-center gap-3 border-t border-surface-border px-5 py-3">
+        <footer className="flex items-center gap-3 px-5 py-3">
           <p className="min-w-0 flex-1 truncate text-[10px] text-white/40">
             {saved
               ? `Saved to ${saved}`

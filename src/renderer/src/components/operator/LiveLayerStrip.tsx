@@ -158,11 +158,12 @@ function StripButton({
         aria-label={label}
         className={cn(
           'grid h-full w-full place-items-center rounded-md transition-colors',
+          // Lit = something is on that layer. Clear all is solid red; a layer turns red on hover, because a click takes it down.
           on
             ? danger
               ? 'bg-red-900 text-white hover:bg-red-700'
-              : 'bg-teal-700 text-white hover:bg-red-800'
-            : 'text-slate-600',
+              : 'bg-surface-elevated text-white hover:bg-red-900/60 hover:text-red-200'
+            : 'text-zinc-600',
           'disabled:cursor-default',
         )}
       >

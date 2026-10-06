@@ -56,7 +56,7 @@ import { lookupDetectedScripture } from "./services/scripture/detection-lookup";
 import { scriptureKeyterms } from "./services/stt/keyterms";
 import { resilienceManager } from "./services/resilience";
 import { mediaService } from "./services/media";
-import { themeOwnsBackground, themeWithLiveMedia } from "@shared/media-playback";
+import { themeForPush } from "@shared/media-playback";
 import { surfaceManager, type SurfaceTarget } from "./services/output/surface-manager";
 import { programService } from "./services/output/program-service";
 import type { OutputShowFilter, ProgramSlideInfo } from "@shared/program";
@@ -85,16 +85,20 @@ function ppConnected(): boolean {
   return ppEnabled() && proPresenterService.getStatus().state === "connected";
 }
 
-function withLiveBackground(theme: OverlayTheme, force = false): OverlayTheme {
+/**
+ * `theme` with the dock's live background applied per `themeForPush`: a theme
+ * with its own background outranks the dock (scripture over a running song
+ * keeps the scripture look); lyric themes are forced transparent so they take
+ * it; `force` is the dock's own "present this background" action.
+ */
+function withLiveBackground(theme: OverlayTheme, force = false, showsBackgrounds = true): OverlayTheme {
   const live = mediaService.getLiveItem();
-  if (!live) return theme;
-  // A theme that configures its own background outranks the dock: pushing
-  // scripture over a running song must show the scripture look, not the song's
-  // motion loop. Lyric themes are forced transparent, so they still take it.
-  // `force` is the dock's own "present this background" action, which is the
-  // one case where the staged file IS the content.
-  if (!force && themeOwnsBackground(theme)) return theme;
-  return themeWithLiveMedia(theme, live, mediaService.getPlayback(live.id));
+  return themeForPush(theme, {
+    showsBackgrounds,
+    live,
+    playback: live ? mediaService.getPlayback(live.id) : undefined,
+    force,
+  });
 }
 
 /** Verse content formatted once per push and shared by every destination. */
@@ -1179,7 +1183,7 @@ class Orchestrator {
     if (!surface) {
       return output.kind === "screen" ? surfaceManager.screenState(output.id).reason : "NDI sender unavailable";
     }
-    const theme = withLiveBackground(outputThemeFor(output, kind), kind === "lyrics");
+    const theme = withLiveBackground(outputThemeFor(output, kind), kind === "lyrics", output.show.backgrounds);
     const shown = await surface.showSlide(output.id, content.reference, content.text, theme, content.coloredLines);
     if (!shown) return output.kind === "screen" ? "Screen window is not available" : "NDI sender unavailable";
     await this.cutToVideoInput(output, "Slide");

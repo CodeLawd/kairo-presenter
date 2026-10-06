@@ -197,7 +197,7 @@ export function PlaylistSidebar({
 
         {visiblePassages.length > 0 && (
           <div
-            className="mt-1.5 max-h-40 overflow-y-auto border-t border-surface-border/60 pt-1.5 outline-none"
+            className="mt-1.5 max-h-40 overflow-y-auto pt-1.5 outline-none"
             tabIndex={-1}
             onKeyDown={listShortcuts({
               selectAll: passageSelect.selectAll,
@@ -252,7 +252,7 @@ export function PlaylistSidebar({
         )}
       </div>
 
-      <div className="flex shrink-0 items-center justify-between gap-2 border-t border-surface-border px-3 py-2">
+      <div className="flex shrink-0 items-center gap-0.5 px-3 pb-1 pt-3">
         <h2 className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">
           Playlists
         </h2>
@@ -267,18 +267,13 @@ export function PlaylistSidebar({
         </button>
         <button
           type="button"
-          className="flex h-7 items-center justify-center gap-1 rounded-md bg-surface-tertiary px-2 text-[11px] font-medium text-slate-300 hover:bg-surface-elevated hover:text-white disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400"
+          className="grid h-7 w-7 place-items-center rounded-md text-slate-400 hover:bg-surface-elevated hover:text-white disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400"
           onClick={onCreate}
           disabled={creatingPlaylist}
           aria-label="New playlist"
           title="New playlist"
         >
-          {creatingPlaylist ? (
-            <Loader size={12} className="animate-spin" />
-          ) : (
-            <Plus size={12} />
-          )}
-          New playlist
+          {creatingPlaylist ? <Loader size={13} className="animate-spin" /> : <Plus size={13} />}
         </button>
       </div>
 
@@ -301,7 +296,7 @@ export function PlaylistSidebar({
               key={plan.id}
               className={cn(
                 "group/plan mx-1 rounded-md",
-                selectedPlanId === plan.id && "row-selected",
+                selectedPlanId === plan.id ? "row-selected" : "hover:bg-surface-tertiary",
               )}
             >
               {renamingPlanId === plan.id ? (
@@ -326,7 +321,7 @@ export function PlaylistSidebar({
                   <div className="flex items-center gap-1.5">
                     <button
                       type="button"
-                      className="flex flex-1 items-center justify-center gap-1 rounded-md border border-teal-500/30 bg-tint-teal px-2 py-1.5 text-[11px] font-semibold text-teal-300 hover:bg-tint-teal"
+                      className="flex flex-1 items-center justify-center gap-1 rounded-md bg-surface-elevated px-2 py-1.5 text-[11px] font-semibold text-white hover:bg-zinc-600"
                       onClick={onSaveRename}
                     >
                       <Check size={12} />
@@ -354,43 +349,30 @@ export function PlaylistSidebar({
                     Cancel
                   </button>
                   <button
-                    className="flex-1 rounded-md border border-red-500/25 bg-tint-red px-2 py-1.5 text-[11px] font-semibold text-red-300 hover:bg-tint-red"
+                    className="flex-1 rounded-md bg-tint-red px-2 py-1.5 text-[11px] font-semibold text-red-300 hover:bg-tint-red"
                     onClick={() => onConfirmDelete(plan.id)}
                   >
                     Delete
                   </button>
                 </div>
               ) : (
-                <div className="flex items-center gap-0.5 py-0.5 pl-1.5 pr-1">
+                <div className="flex items-center gap-0.5 pr-1">
                   <button
                     type="button"
                     className={cn(
-                      "flex min-w-0 flex-1 items-center gap-2.5 rounded-md px-1.5 py-2 text-left",
-                      selectedPlanId === plan.id
-                        ? "text-white"
-                        : "text-slate-300 hover:bg-surface-tertiary",
+                      "flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px]",
+                      selectedPlanId === plan.id ? "text-white" : "text-slate-300",
                     )}
                     onClick={() => onOpenPlan(plan)}
                   >
                     <FileText
-                      size={14}
-                      className={cn(
-                        "shrink-0",
-                        selectedPlanId === plan.id
-                          ? "text-teal-300"
-                          : "text-slate-500",
-                      )}
+                      size={13}
+                      className={cn("shrink-0", selectedPlanId === plan.id ? "text-white" : "text-slate-500")}
                       aria-hidden="true"
                     />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[13px] font-medium leading-tight">
-                        {plan.title}
-                      </span>
-                      <span className="mt-0.5 block truncate text-[10px] text-slate-500">
-                        {plan.items.length === 0
-                          ? "Empty"
-                          : `${plan.items.length} item${plan.items.length === 1 ? "" : "s"}`}
-                      </span>
+                    <span className="min-w-0 flex-1 truncate">{plan.title}</span>
+                    <span className="shrink-0 text-[10px] tabular-nums text-zinc-500 group-hover/plan:hidden">
+                      {plan.items.length}
                     </span>
                   </button>
 
@@ -398,7 +380,7 @@ export function PlaylistSidebar({
                     <DropdownMenuTrigger asChild>
                       <button
                         type="button"
-                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-500 opacity-50 transition-opacity hover:bg-surface-tertiary hover:text-slate-200 hover:opacity-100 group-hover/plan:opacity-100 data-[state=open]:bg-surface-tertiary data-[state=open]:opacity-100"
+                        className="hidden h-6 w-6 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-surface-elevated hover:text-white group-hover/plan:flex data-[state=open]:flex"
                         aria-label={`Playlist options for ${plan.title}`}
                         onClick={(event) => event.stopPropagation()}
                       >
@@ -436,25 +418,18 @@ export function PlaylistSidebar({
         </div>
 
         {showItems && (
-          <div className="border-t border-surface-border bg-surface-tertiary">
-            <div className="flex items-center justify-between px-3 py-2">
-              <h3 className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                Items
-                {canReorder && openPlanItems.length > 1 && (
-                  <span className="ml-2 font-medium normal-case tracking-normal text-slate-600">
-                    drag to reorder
-                  </span>
-                )}
-              </h3>
-              <span className="text-[10px] tabular-nums text-slate-500">
+          <div className="mt-2">
+            <div className="flex items-center justify-between px-3 pb-1 pt-2">
+              <h3 className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Items</h3>
+              <span className="text-[10px] tabular-nums text-zinc-500">
                 {filteredItems.length === openPlanItems.length
                   ? openPlanItems.length
                   : `${filteredItems.length}/${openPlanItems.length}`}
               </span>
             </div>
 
-            {openPlanItems.length > 0 && (
-              <div className="px-3 pb-2">
+            {openPlanItems.length > 8 && (
+              <div className="px-2 pb-1.5">
                 <label className="relative block">
                   <Search
                     size={12}
@@ -491,7 +466,7 @@ export function PlaylistSidebar({
               </div>
             ) : (
               <div
-                className="pb-2 outline-none"
+                className="px-1 pb-2 outline-none"
                 tabIndex={-1}
                 onKeyDown={listShortcuts({
                   selectAll: itemSelect.selectAll,
@@ -505,7 +480,7 @@ export function PlaylistSidebar({
                     type="button"
                     draggable={canReorder}
                     className={cn(
-                      "group relative flex w-full items-center gap-1 rounded-md px-2 py-1.5 text-left",
+                      "group relative flex w-full items-center gap-1 rounded-md px-1.5 py-1.5 text-left",
                       !item.available && "opacity-55",
                       itemSelect.isSelected(item.id)
                         ? PICKED_ROW
@@ -524,7 +499,7 @@ export function PlaylistSidebar({
                       else onSelectItem(item.id);
                     }}
                     aria-current={activeItemId === item.id ? "true" : undefined}
-                    title={item.error}
+                    title={item.error ?? (canReorder && openPlanItems.length > 1 ? "Drag to reorder" : undefined)}
                     onDragStart={(event) => {
                       if (!canReorder) return;
                       event.dataTransfer.effectAllowed = "move";
@@ -570,16 +545,16 @@ export function PlaylistSidebar({
                           : "opacity-0",
                       )}
                     />
-                    <span className="w-4 shrink-0 text-[10px] font-mono text-slate-600">
+                    <span className="w-4 shrink-0 text-[10px] tabular-nums text-zinc-500">
                       {index + 1}
                     </span>
-                    <span className="min-w-0 flex-1 truncate text-[12px] font-medium">
+                    <span className="min-w-0 flex-1 truncate text-[12px]">
                       {item.reference}
                     </span>
                     <span
                       className={cn(
-                        "shrink-0 text-[9px] font-bold uppercase tracking-wider",
-                        item.available ? "text-slate-500" : "text-yellow-500/80",
+                        "shrink-0 text-[10px] uppercase",
+                        item.available ? "text-zinc-500" : "text-zinc-600 line-through",
                       )}
                     >
                       {item.translation}
@@ -601,7 +576,7 @@ export function PlaylistSidebar({
       </div>
 
       {showAddTarget && plans.length > 0 && (
-        <div className="shrink-0 border-t border-surface-border bg-surface-tertiary px-3 py-3">
+        <div className="shrink-0 px-3 py-3">
           <label className="flex flex-col gap-1.5 text-[11px] text-slate-500">
             Add searched verses to
             <select
@@ -636,7 +611,7 @@ function PickedBar({
   onClear: () => void;
 }): React.ReactElement {
   return (
-    <div className="mx-2 my-1.5 flex items-center gap-2 rounded-lg border border-surface-border bg-surface-elevated px-2.5 py-1.5 text-[11px]">
+    <div className="mx-2 my-1.5 flex items-center gap-2 rounded-lg bg-surface-elevated px-2.5 py-1.5 text-[11px]">
       <span className="min-w-0 flex-1 truncate text-zinc-300">
         {count} {noun}{count === 1 ? "" : "s"} selected
       </span>

@@ -1,5 +1,6 @@
-import type { CustomOverlayTheme, OverlayContentKind, OverlayTheme } from './ipc'
+import type { CustomOverlayTheme, OverlayContentKind, OverlayOutput, OverlayTheme } from './ipc'
 import { normalizeOverlayTheme } from './overlay-defaults'
+import { setContentOverride, themeForContentKind, withContentPatch } from './overlay-outputs'
 
 function newId(): string {
   return globalThis.crypto?.randomUUID?.() ?? `theme-${Date.now()}-${Math.random().toString(36).slice(2)}`
@@ -87,4 +88,46 @@ export function normalizeThemeLibrary(
     })
   }
   return normalized
+}
+
+// ─── Themes on outputs ─────────────────────────────────────────────────────────
+// Outputs keep a resolved copy of their theme so rendering never depends on the
+// library. These keep those copies in step with the library entry they name.
+
+/** True when `output` shows `theme` for the theme's kind. */
+export function outputUsesTheme(output: OverlayOutput, theme: Pick<CustomOverlayTheme, 'id' | 'kind'>): boolean {
+  return theme.kind === 'lyrics' ? output.lyrics?.themeId === theme.id : output.themeId === theme.id
+}
+
+/** Puts `theme` on `output` for its kind. A lyrics theme turns the lyrics override on. */
+export function assignThemeToOutput(output: OverlayOutput, theme: CustomOverlayTheme): OverlayOutput {
+  if (theme.kind === 'lyrics') {
+    const base = setContentOverride(output, 'lyrics', true)
+    return withContentPatch(base, 'lyrics', {
+      themeId: theme.id,
+      theme: themeForContentKind(structuredClone(theme.theme), 'lyrics'),
+    })
+  }
+  return { ...output, themeId: theme.id, theme: structuredClone(theme.theme) }
+}
+
+/** Lyrics go back to following the scripture theme. Scripture always has a theme, so it is left alone. */
+export function unassignThemeFromOutput(output: OverlayOutput, theme: Pick<CustomOverlayTheme, 'id' | 'kind'>): OverlayOutput {
+  if (theme.kind !== 'lyrics' || !outputUsesTheme(output, theme)) return output
+  return setContentOverride(output, 'lyrics', false)
+}
+
+/** Refreshes every output's copy of `theme` after it was edited. */
+export function syncThemeToOutputs(outputs: readonly OverlayOutput[], theme: CustomOverlayTheme): OverlayOutput[] {
+  return outputs.map((output) => (outputUsesTheme(output, theme) ? assignThemeToOutput(output, theme) : output))
+}
+
+/** After a delete: outputs keep the look they had, as a one-off no longer tied to the library. */
+export function detachThemeFromOutputs(outputs: readonly OverlayOutput[], theme: Pick<CustomOverlayTheme, 'id' | 'kind'>): OverlayOutput[] {
+  return outputs.map((output) => {
+    if (!outputUsesTheme(output, theme)) return output
+    return theme.kind === 'lyrics' && output.lyrics
+      ? { ...output, lyrics: { ...output.lyrics, themeId: null } }
+      : { ...output, themeId: null }
+  })
 }

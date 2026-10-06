@@ -491,7 +491,7 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
             {importMenuOpen && (
               <div
                 role="menu"
-                className="absolute right-0 z-40 mt-1 min-w-[11rem] rounded-lg border border-surface-border bg-surface-elevated p-1"
+                className="absolute right-0 z-40 mt-1 min-w-[11rem] rounded-lg bg-surface-elevated p-1"
               >
                 <button
                   type="button"
@@ -521,7 +521,7 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
       {error && (
         <p
           role="alert"
-          className="shrink-0 border-b border-red-500/20 bg-tint-red px-4 py-2 text-xs text-red-300"
+          className="shrink-0 bg-tint-red px-4 py-2 text-xs text-red-300"
         >
           {error}
         </p>
@@ -586,7 +586,7 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
                             }
                           }}
                           aria-label="Document name"
-                          className="min-w-0 flex-1 rounded border border-surface-border bg-surface px-1.5 py-0.5 text-xs text-zinc-100 outline-none focus:border-teal-500/60"
+                          className="min-w-0 flex-1 rounded border border-transparent bg-surface px-1.5 py-0.5 text-xs text-zinc-100 outline-none focus:border-teal-500/60"
                         />
                       </form>
                     ) : (
@@ -651,7 +651,7 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
                 />
               </div>
 
-              <div className="flex shrink-0 items-center justify-between gap-3 border-t border-surface-border px-3 py-2.5">
+              <div className="flex shrink-0 items-center justify-between gap-3 px-3 py-2.5">
                 <div className="flex items-center gap-1.5">
                   <button
                     type="button"
@@ -719,7 +719,7 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
                       <div
                         role="dialog"
                         aria-label="Slideshow settings"
-                        className="absolute bottom-full left-0 z-30 mb-1.5 w-60 rounded-lg border border-surface-border bg-surface-elevated p-3 shadow-2xl"
+                        className="absolute bottom-full left-0 z-30 mb-1.5 w-60 rounded-lg bg-surface-elevated p-3 shadow-2xl"
                       >
                         <label className="block text-[11px] text-zinc-400">
                           Seconds per page
@@ -791,7 +791,7 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
 
               {current.pages.length > 1 && (
                 <div
-                  className="flex shrink-0 gap-2.5 overflow-x-auto border-t border-surface-border bg-surface px-3 py-3"
+                  className="flex shrink-0 gap-2.5 overflow-x-auto bg-surface px-3 py-3"
                   aria-label="Pages"
                 >
                   {current.pages.map((path, index) => (
@@ -810,7 +810,7 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
                         'group/page relative h-28 shrink-0 overflow-hidden rounded-md border bg-black transition-opacity',
                         page === index
                           ? 'border-teal-400/80 ring-1 ring-teal-400/40'
-                          : 'border-white/[0.06] opacity-60 hover:opacity-100',
+                          : 'border-transparent opacity-60 hover:opacity-100',
                       )}
                     >
                       <img
@@ -840,7 +840,7 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
         <div
           ref={contextMenuRef}
           role="menu"
-          className="fixed z-50 w-40 overflow-hidden rounded border border-surface-border bg-surface-elevated py-1"
+          className="fixed z-50 w-40 overflow-hidden rounded bg-surface-elevated py-1"
           style={{ top: contextMenu.y, left: contextMenu.x }}
         >
           <button
@@ -853,7 +853,7 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
             <Pencil size={13} aria-hidden="true" />
             Rename
           </button>
-          <div className="my-1 border-t border-surface-border/60" />
+          <div className="my-1" />
           <button
             type="button"
             role="menuitem"

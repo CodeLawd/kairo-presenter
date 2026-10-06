@@ -230,27 +230,27 @@ export function OperatorQueueSearch({
       </div>
 
       {bookCompletion && !suggestionsOpen && (
-        <div className="flex items-center justify-between rounded-md border border-surface-border bg-surface-elevated px-2.5 py-1.5 text-[10px] shadow-lg">
+        <div className="flex items-center justify-between rounded-md bg-surface-elevated px-2.5 py-1.5 text-[10px] shadow-lg">
           <span className="text-slate-400">
             Complete{' '}
             <span className="font-semibold text-slate-200">{bookCompletion.book}</span>
           </span>
-          <kbd className="rounded border border-surface-border bg-surface-tertiary px-1.5 py-0.5 font-mono text-[9px] text-teal-300">
+          <kbd className="rounded bg-surface-tertiary px-1.5 py-0.5 font-mono text-[9px] text-teal-300">
             Tab
           </kbd>
         </div>
       )}
 
       {bookCompletions.length > 1 && !suggestionsOpen && (
-        <div className="absolute left-0 right-0 top-[calc(100%+0.15rem)] z-40 overflow-hidden rounded-lg border border-surface-border bg-surface-elevated shadow-2xl">
-          <div className="border-b border-surface-border/70 px-2.5 py-1.5 text-[10px] font-medium text-zinc-500">
+        <div className="absolute left-0 right-0 top-[calc(100%+0.15rem)] z-40 overflow-hidden rounded-lg bg-surface-elevated shadow-2xl">
+          <div className="px-2.5 py-1.5 text-[10px] font-medium text-zinc-500">
             Choose a Bible book
           </div>
           {bookCompletions.map((completion) => (
             <button
               key={completion.book}
               type="button"
-              className="flex w-full items-center justify-between border-b border-surface-border/40 px-2.5 py-2 text-left text-[10px] last:border-b-0 hover:bg-surface-tertiary"
+              className="flex w-full items-center justify-between px-2.5 py-2 text-left text-[10px] hover:bg-surface-tertiary"
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => {
                 const submitted = resolveSubmittedScriptureQuery(completion.value)
@@ -269,7 +269,7 @@ export function OperatorQueueSearch({
         <div
           id="operator-queue-suggestions"
           role="listbox"
-          className="absolute left-0 right-0 top-[calc(100%+0.15rem)] z-40 max-h-56 overflow-y-auto rounded-lg border border-surface-border bg-surface-elevated shadow-2xl"
+          className="absolute left-0 right-0 top-[calc(100%+0.15rem)] z-40 max-h-56 overflow-y-auto rounded-lg bg-surface-elevated shadow-2xl"
         >
           <div className="sticky top-0 flex items-center justify-between bg-surface-elevated px-2.5 py-1.5 text-[10px] font-medium text-zinc-500">
             <span>Scripture matches</span>
@@ -293,7 +293,7 @@ export function OperatorQueueSearch({
               role="option"
               aria-selected={index === activeSuggestion}
               className={cn(
-                'flex w-full items-start gap-2 border-b border-surface-border/40 px-2.5 py-2 text-left last:border-b-0',
+                'flex w-full items-start gap-2 px-2.5 py-2 text-left',
                 index === activeSuggestion
                   ? 'row-selected'
                   : 'hover:bg-surface-tertiary'

@@ -71,10 +71,10 @@ export function ExportSongsModal({ preselect }: { preselect: string[] }): React.
         role="dialog"
         aria-modal="true"
         aria-labelledby="kairo-export-title"
-        className="flex max-h-[min(640px,90vh)] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-surface-border bg-surface shadow-2xl"
+        className="flex max-h-[min(640px,90vh)] w-full max-w-md flex-col overflow-hidden rounded-2xl bg-surface shadow-2xl"
         onClick={(event) => event.stopPropagation()}
       >
-        <header className="flex items-start gap-3 border-b border-surface-border px-5 py-4">
+        <header className="flex items-start gap-3 px-5 py-4">
           <div className="min-w-0 flex-1">
             <h2 id="kairo-export-title" className="text-sm font-semibold text-white">Export songs</h2>
             <p className="mt-0.5 text-[11px] text-white/40">
@@ -91,7 +91,7 @@ export function ExportSongsModal({ preselect }: { preselect: string[] }): React.
           </button>
         </header>
 
-        <div className="space-y-2 border-b border-surface-border px-5 py-3">
+        <div className="space-y-2 px-5 py-3">
           <div className="relative">
             <Search size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-white/35" />
             <input
@@ -140,7 +140,7 @@ export function ExportSongsModal({ preselect }: { preselect: string[] }): React.
           )}
         </ul>
 
-        <footer className="space-y-2.5 border-t border-surface-border px-5 py-3">
+        <footer className="space-y-2.5 px-5 py-3">
           <input
             value={name}
             onChange={(event) => setName(event.target.value)}

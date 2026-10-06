@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { DEFAULT_PRESENTATION_SETTINGS, EMPTY_PROGRAM_STATE, type PresentationSettings, type ProgramState } from '@shared/program'
 import { useSettings } from './useSettings'
 
@@ -7,24 +7,34 @@ export function usePresentation(): [PresentationSettings, (next: PresentationSet
   return useSettings('presentation', DEFAULT_PRESENTATION_SETTINGS)
 }
 
+// One subscription for the whole renderer: every panel, the layer strip and the
+// live preview read the same state, so main's broadcast is received once.
+let programState: ProgramState = EMPTY_PROGRAM_STATE
+const programListeners = new Set<() => void>()
+let stopProgramFeed: (() => void) | null = null
+
+function subscribeProgram(listener: () => void): () => void {
+  programListeners.add(listener)
+  if (!stopProgramFeed) {
+    const publish = (next: ProgramState): void => {
+      programState = next
+      programListeners.forEach((l) => l())
+    }
+    stopProgramFeed = window.api.program.onState(publish)
+    window.api.program.getState().then(publish).catch(() => undefined)
+  }
+  return () => {
+    programListeners.delete(listener)
+    if (programListeners.size === 0 && stopProgramFeed) {
+      stopProgramFeed()
+      stopProgramFeed = null
+    }
+  }
+}
+
 /** Live program state (message, props, logo, camera, timer) pushed from main. */
 export function useProgramState(): ProgramState {
-  const [state, setState] = useState<ProgramState>(EMPTY_PROGRAM_STATE)
-  useEffect(() => {
-    let cancelled = false
-    window.api.program
-      .getState()
-      .then((next) => {
-        if (!cancelled) setState(next)
-      })
-      .catch(() => undefined)
-    const unsubscribe = window.api.program.onState(setState)
-    return () => {
-      cancelled = true
-      unsubscribe()
-    }
-  }, [])
-  return state
+  return useSyncExternalStore(subscribeProgram, () => programState, () => EMPTY_PROGRAM_STATE)
 }
 
 /**

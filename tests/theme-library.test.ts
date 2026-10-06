@@ -1,7 +1,18 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { DEFAULT_OVERLAY_THEME } from '../src/lib/overlay-defaults'
-import { createCustomTheme, normalizeThemeLibrary, nextUntitledThemeName, themesForKind, updateLibraryTheme } from '../src/lib/theme-library'
+import { DEFAULT_OVERLAY_THEME, makeOverlayOutput } from '../src/lib/overlay-defaults'
+import {
+  assignThemeToOutput,
+  createCustomTheme,
+  detachThemeFromOutputs,
+  normalizeThemeLibrary,
+  nextUntitledThemeName,
+  outputUsesTheme,
+  syncThemeToOutputs,
+  themesForKind,
+  unassignThemeFromOutput,
+  updateLibraryTheme,
+} from '../src/lib/theme-library'
 
 test('creates a named custom theme with an independent theme snapshot', () => {
   const source = structuredClone(DEFAULT_OVERLAY_THEME)
@@ -118,4 +129,39 @@ test('plus on Themes names a blank theme without clobbering an existing Untitled
   ]
   assert.equal(nextUntitledThemeName(library, 'scripture'), 'Untitled theme 3')
   assert.equal(nextUntitledThemeName(library, 'lyrics'), 'Untitled theme 2')
+})
+
+test('assigning a scripture theme sets the output theme and id', () => {
+  const theme = createCustomTheme('Warm', DEFAULT_OVERLAY_THEME, 'scripture', 1, 'warm')
+  const output = assignThemeToOutput(makeOverlayOutput('main', 'screen'), theme)
+  assert.equal(output.themeId, 'warm')
+  assert.ok(outputUsesTheme(output, theme))
+  assert.equal(output.lyrics, null)
+})
+
+test('assigning a lyrics theme turns the lyrics override on, unassigning turns it off', () => {
+  const theme = createCustomTheme('Stage', DEFAULT_OVERLAY_THEME, 'lyrics', 1, 'stage')
+  const on = assignThemeToOutput(makeOverlayOutput('main', 'screen'), theme)
+  assert.equal(on.lyrics?.themeId, 'stage')
+  assert.equal(on.lyrics?.theme.background.type, 'transparent')
+  assert.equal(on.themeId, null)
+  assert.equal(unassignThemeFromOutput(on, theme).lyrics, null)
+})
+
+test('syncing an edited theme updates only the outputs that use it', () => {
+  const theme = createCustomTheme('Warm', DEFAULT_OVERLAY_THEME, 'scripture', 1, 'warm')
+  const using = assignThemeToOutput(makeOverlayOutput('a', 'screen'), theme)
+  const other = makeOverlayOutput('b', 'screen')
+  const edited = { ...theme, theme: { ...theme.theme, verse: { ...theme.theme.verse, color: '#ff0000' } } }
+  const [a, b] = syncThemeToOutputs([using, other], edited)
+  assert.equal(a.theme.verse.color, '#ff0000')
+  assert.equal(b, other)
+})
+
+test('deleting a theme leaves outputs with their look but no library link', () => {
+  const theme = createCustomTheme('Warm', DEFAULT_OVERLAY_THEME, 'scripture', 1, 'warm')
+  const using = assignThemeToOutput(makeOverlayOutput('a', 'screen'), theme)
+  const [after] = detachThemeFromOutputs([using], theme)
+  assert.equal(after.themeId, null)
+  assert.deepEqual(after.theme, using.theme)
 })

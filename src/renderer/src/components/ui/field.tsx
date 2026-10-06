@@ -1,3 +1,4 @@
+import * as React from "react"
 "use client"
 
 import { useMemo } from "react"
@@ -7,9 +8,13 @@ import { cn } from "@/lib/utils"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 
-function FieldSet({ className, ...props }: React.ComponentProps<"fieldset">) {
+const FieldSet = React.forwardRef<
+  React.ElementRef<"fieldset">,
+  React.ComponentProps<"fieldset">
+>(function FieldSet({ className, ...props }, ref) {
   return (
     <fieldset
+      ref={ref}
       data-slot="field-set"
       className={cn(
         "flex flex-col gap-4 has-[>[data-slot=checkbox-group]]:gap-3 has-[>[data-slot=radio-group]]:gap-3",
@@ -18,15 +23,19 @@ function FieldSet({ className, ...props }: React.ComponentProps<"fieldset">) {
       {...props}
     />
   )
-}
+})
 
-function FieldLegend({
+const FieldLegend = React.forwardRef<
+  React.ElementRef<"legend">,
+  React.ComponentProps<"legend"> & { variant?: "legend" | "label" }
+>(function FieldLegend({
   className,
   variant = "legend",
   ...props
-}: React.ComponentProps<"legend"> & { variant?: "legend" | "label" }) {
+}, ref) {
   return (
     <legend
+      ref={ref}
       data-slot="field-legend"
       data-variant={variant}
       className={cn(
@@ -36,11 +45,15 @@ function FieldLegend({
       {...props}
     />
   )
-}
+})
 
-function FieldGroup({ className, ...props }: React.ComponentProps<"div">) {
+const FieldGroup = React.forwardRef<
+  React.ElementRef<"div">,
+  React.ComponentProps<"div">
+>(function FieldGroup({ className, ...props }, ref) {
   return (
     <div
+      ref={ref}
       data-slot="field-group"
       className={cn(
         "group/field-group @container/field-group flex w-full flex-col gap-5 data-[slot=checkbox-group]:gap-3 *:data-[slot=field-group]:gap-4",
@@ -49,7 +62,7 @@ function FieldGroup({ className, ...props }: React.ComponentProps<"div">) {
       {...props}
     />
   )
-}
+})
 
 const fieldVariants = cva(
   "group/field flex w-full gap-2 data-[invalid=true]:text-destructive",
@@ -69,13 +82,17 @@ const fieldVariants = cva(
   }
 )
 
-function Field({
+const Field = React.forwardRef<
+  React.ElementRef<"div">,
+  React.ComponentProps<"div"> & VariantProps<typeof fieldVariants>
+>(function Field({
   className,
   orientation = "vertical",
   ...props
-}: React.ComponentProps<"div"> & VariantProps<typeof fieldVariants>) {
+}, ref) {
   return (
     <div
+      ref={ref}
       role="group"
       data-slot="field"
       data-orientation={orientation}
@@ -83,11 +100,15 @@ function Field({
       {...props}
     />
   )
-}
+})
 
-function FieldContent({ className, ...props }: React.ComponentProps<"div">) {
+const FieldContent = React.forwardRef<
+  React.ElementRef<"div">,
+  React.ComponentProps<"div">
+>(function FieldContent({ className, ...props }, ref) {
   return (
     <div
+      ref={ref}
       data-slot="field-content"
       className={cn(
         "group/field-content flex flex-1 flex-col gap-0.5 leading-snug",
@@ -96,14 +117,18 @@ function FieldContent({ className, ...props }: React.ComponentProps<"div">) {
       {...props}
     />
   )
-}
+})
 
-function FieldLabel({
+const FieldLabel = React.forwardRef<
+  React.ElementRef<typeof Label>,
+  React.ComponentProps<typeof Label>
+>(function FieldLabel({
   className,
   ...props
-}: React.ComponentProps<typeof Label>) {
+}, ref) {
   return (
     <Label
+      ref={ref}
       data-slot="field-label"
       className={cn(
         "group/field-label peer/field-label flex w-fit gap-2 leading-snug group-data-[disabled=true]/field:opacity-50 has-data-checked:border-primary/30 has-data-checked:bg-primary has-[>[data-slot=field]]:rounded-lg has-[>[data-slot=field]]:border has-[>[data-slot=field]]:not-has-[:disabled,[data-disabled]]:hover:bg-muted has-[>[data-slot=field]]:has-[:focus-visible]:border-ring has-[>[data-slot=field]]:has-[:focus-visible]:ring-3 has-[>[data-slot=field]]:has-[:focus-visible]:ring-ring/50 *:data-[slot=field]:p-2.5 dark:has-data-checked:border-primary/20 dark:has-data-checked:bg-primary",
@@ -113,11 +138,15 @@ function FieldLabel({
       {...props}
     />
   )
-}
+})
 
-function FieldTitle({ className, ...props }: React.ComponentProps<"div">) {
+const FieldTitle = React.forwardRef<
+  React.ElementRef<"div">,
+  React.ComponentProps<"div">
+>(function FieldTitle({ className, ...props }, ref) {
   return (
     <div
+      ref={ref}
       data-slot="field-label"
       className={cn(
         "flex w-fit items-center gap-2 text-sm font-medium group-data-[disabled=true]/field:opacity-50",
@@ -126,11 +155,15 @@ function FieldTitle({ className, ...props }: React.ComponentProps<"div">) {
       {...props}
     />
   )
-}
+})
 
-function FieldDescription({ className, ...props }: React.ComponentProps<"p">) {
+const FieldDescription = React.forwardRef<
+  React.ElementRef<"p">,
+  React.ComponentProps<"p">
+>(function FieldDescription({ className, ...props }, ref) {
   return (
     <p
+      ref={ref}
       data-slot="field-description"
       className={cn(
         "text-left text-sm leading-normal font-normal text-muted-foreground group-has-data-horizontal/field:text-balance [[data-variant=legend]+&]:-mt-1.5",
@@ -141,17 +174,21 @@ function FieldDescription({ className, ...props }: React.ComponentProps<"p">) {
       {...props}
     />
   )
-}
+})
 
-function FieldSeparator({
+const FieldSeparator = React.forwardRef<
+  React.ElementRef<"div">,
+  React.ComponentProps<"div"> & {
+  children?: React.ReactNode
+}
+>(function FieldSeparator({
   children,
   className,
   ...props
-}: React.ComponentProps<"div"> & {
-  children?: React.ReactNode
-}) {
+}, ref) {
   return (
     <div
+      ref={ref}
       data-slot="field-separator"
       data-content={!!children}
       className={cn(
@@ -171,16 +208,19 @@ function FieldSeparator({
       )}
     </div>
   )
-}
+})
 
-function FieldError({
+const FieldError = React.forwardRef<
+  React.ElementRef<"div">,
+  React.ComponentProps<"div"> & {
+  errors?: Array<{ message?: string } | undefined>
+}
+>(function FieldError({
   className,
   children,
   errors,
   ...props
-}: React.ComponentProps<"div"> & {
-  errors?: Array<{ message?: string } | undefined>
-}) {
+}, ref) {
   const content = useMemo(() => {
     if (children) {
       return children
@@ -214,6 +254,7 @@ function FieldError({
 
   return (
     <div
+      ref={ref}
       role="alert"
       data-slot="field-error"
       className={cn("text-sm font-normal text-destructive", className)}
@@ -222,7 +263,7 @@ function FieldError({
       {content}
     </div>
   )
-}
+})
 
 export {
   Field,

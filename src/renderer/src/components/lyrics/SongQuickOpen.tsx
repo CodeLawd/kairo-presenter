@@ -244,8 +244,8 @@ export function SongQuickOpen({ songs, onClose, onOpen }: SongQuickOpenProps): R
       role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
       <div className="flex w-full max-w-5xl items-start justify-center gap-3" onKeyDown={handleKeyDown}>
       <section role="dialog" aria-modal="true" aria-label="Search song library"
-        className="flex w-[30rem] shrink-0 flex-col overflow-hidden rounded-xl border border-white/10 bg-[#1c1c1e] animate-spring-in motion-reduce:animate-none">
-        <div className="flex h-12 shrink-0 items-center gap-2.5 border-b border-white/[0.08] px-3.5">
+        className="flex w-[30rem] shrink-0 flex-col overflow-hidden rounded-xl bg-[#1c1c1e] animate-spring-in motion-reduce:animate-none">
+        <div className="flex h-12 shrink-0 items-center gap-2.5 px-3.5">
           <Search size={17} className="shrink-0 text-zinc-500" aria-hidden="true" />
           <input ref={inputRef} value={query} onChange={(event) => setQuery(event.target.value)}
             placeholder="Search titles, artists or lyrics" aria-label="Search songs and lyrics"
@@ -354,7 +354,7 @@ export function SongQuickOpen({ songs, onClose, onOpen }: SongQuickOpenProps): R
                     Search the web for “{query.trim()}”
                   </span>
                 </span>
-                <kbd className="shrink-0 rounded border border-white/10 bg-surface-tertiary px-1.5 py-0.5 text-[10px] text-zinc-500">⌘↵</kbd>
+                <kbd className="shrink-0 rounded bg-surface-tertiary px-1.5 py-0.5 text-[10px] text-zinc-500">⌘↵</kbd>
               </button>
             )}
 
@@ -365,7 +365,7 @@ export function SongQuickOpen({ songs, onClose, onOpen }: SongQuickOpenProps): R
             )}
           </div>
 
-          <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-t border-white/[0.07] px-3.5 py-2 text-[11px] text-zinc-500">
+          <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 px-3.5 py-2 text-[11px] text-zinc-500">
             <span><kbd className="font-sans text-zinc-400">↑↓</kbd> move</span>
             <span><kbd className="font-sans text-zinc-400">↵</kbd> open</span>
             <span><kbd className="font-sans text-zinc-400">⌘↵</kbd> add to setlist</span>
@@ -380,7 +380,7 @@ export function SongQuickOpen({ songs, onClose, onOpen }: SongQuickOpenProps): R
       {previewOpen && activeRow && (
         <aside
           aria-label="Song preview"
-          className="flex h-[min(520px,68vh)] w-[28rem] shrink-0 flex-col overflow-hidden rounded-xl border border-white/10 bg-[#1d1d1d] ring-1 ring-black/60 animate-spring-in motion-reduce:animate-none"
+          className="flex h-[min(520px,68vh)] w-[28rem] shrink-0 flex-col overflow-hidden rounded-xl bg-[#1d1d1d] ring-1 ring-black/60 animate-spring-in motion-reduce:animate-none"
         >
               <div ref={previewRef} className="min-h-0 flex-1 overflow-y-auto px-5 py-4 select-text" aria-live="polite">
                 {activeRow?.kind === 'online' ? (
@@ -445,7 +445,7 @@ export function SongQuickOpen({ songs, onClose, onOpen }: SongQuickOpenProps): R
                   </div>
                 )}
               </div>
-          <div className="flex shrink-0 items-center justify-end gap-2 border-t border-white/[0.07] px-4 py-2.5">
+          <div className="flex shrink-0 items-center justify-end gap-2 px-4 py-2.5">
             <div className="flex items-center gap-2">
               <button
                 type="button"

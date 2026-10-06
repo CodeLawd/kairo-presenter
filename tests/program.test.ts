@@ -6,6 +6,8 @@ import {
   formatTimer,
   normalizePresentationSettings,
   normalizeShowFilter,
+  timerReadout,
+  formatClock,
   pauseTimer,
   presentationMediaPaths,
   renderLogoHTML,
@@ -125,8 +127,19 @@ test('the logo layer is empty when off and a colour without an image', () => {
   assert.ok(!plain.includes('<img'))
 })
 
-test('show filters default to everything on and keep explicit offs', () => {
-  assert.deepEqual(Object.values(normalizeShowFilter(undefined)), [true, true, true, true, true, true])
+test('show filters default room layers on, confidence layers off', () => {
+  assert.deepEqual(normalizeShowFilter(undefined), {
+    scripture: true,
+    lyrics: true,
+    documents: true,
+    backgrounds: true,
+    messages: true,
+    overlays: true,
+    countdown: false,
+    clock: false,
+    stageMessage: false,
+  })
+  assert.equal(normalizeShowFilter({ countdown: true }).countdown, true)
   assert.equal(normalizeShowFilter({ lyrics: false }).lyrics, false)
 })
 
@@ -150,3 +163,27 @@ test("the program preload sends on the channel main listens to", async () => {
   // Sandboxed preload: a shared import would become a chunk it cannot require.
   assert.ok(!/from '@shared\//.test(preload));
 });
+
+test('timer style defaults to roll over on and keeps valid choices', () => {
+  assert.equal(normalizePresentationSettings(undefined).timer.rollover, true)
+  const style = normalizePresentationSettings({ timer: { rollover: false, color: '#ffffff', backdrop: true } }).timer
+  assert.equal(style.rollover, false)
+  assert.equal(style.color, '#ffffff')
+  assert.equal(style.backdrop, true)
+})
+
+test('timerReadout agrees on time-up and pause for every surface', () => {
+  const running = { durationSec: 60, endsAt: 61_000, remainingSec: 60 }
+  assert.deepEqual(timerReadout(running, 1_000, true), { seconds: 60, timeUp: false, paused: false })
+  assert.deepEqual(timerReadout(running, 61_000, true), { seconds: 0, timeUp: true, paused: false })
+  assert.deepEqual(timerReadout(running, 73_000, false), { seconds: 0, timeUp: true, paused: false })
+  const paused = { durationSec: 60, endsAt: null, remainingSec: 30 }
+  assert.deepEqual(timerReadout(paused, 0, true), { seconds: 30, timeUp: false, paused: true })
+  const zero = { durationSec: 0, endsAt: null, remainingSec: 0 }
+  assert.equal(timerReadout(zero, 0, true).timeUp, false)
+})
+
+test('formatClock reads like the screens', () => {
+  assert.equal(formatClock(new Date(2026, 0, 1, 21, 5)), '9:05 PM')
+  assert.equal(formatClock(new Date(2026, 0, 1, 0, 30)), '12:30 AM')
+})

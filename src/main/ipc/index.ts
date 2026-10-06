@@ -991,6 +991,9 @@ function registerProgramHandlers(): void {
   handle(PROGRAM.TIMER_START, () => programService.startTimer());
   handle(PROGRAM.TIMER_PAUSE, () => programService.pauseTimer());
   handle(PROGRAM.TIMER_RESET, () => programService.resetTimer());
+  handle(PROGRAM.SET_ON_SCREENS, (_event, layer: unknown, on: unknown) =>
+    programService.setOnScreens(layer === 'clock' ? 'clock' : 'countdown', on === true),
+  );
   handle(PROGRAM.STAGE_STATUS, () => surfaceManager.stageStatus());
   surfaceManager.onStageStatus((status) => broadcast(PROGRAM.STAGE_STATUS_CHANGED, status));
   handle(PROGRAM.PICK_IMAGE, async () => {

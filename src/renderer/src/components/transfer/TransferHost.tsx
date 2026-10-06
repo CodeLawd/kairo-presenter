@@ -44,10 +44,10 @@ export function TransferHost(): React.ReactElement {
         <div
           role="status"
           className={cn(
-            'fixed bottom-5 left-1/2 z-[70] flex max-w-md -translate-x-1/2 items-center gap-2.5 rounded-xl border px-3.5 py-2.5 text-[13px] shadow-2xl animate-fade-in',
+            'fixed bottom-5 left-1/2 z-[70] flex max-w-md -translate-x-1/2 items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-[13px] shadow-2xl animate-fade-in',
             notice.tone === 'ok'
-              ? 'border-white/10 bg-surface-elevated text-white'
-              : 'border-red-500/30 bg-surface-elevated text-red-300',
+              ? 'bg-surface-elevated text-white'
+              : 'bg-surface-elevated text-red-300',
           )}
         >
           {notice.tone === 'ok' ? (

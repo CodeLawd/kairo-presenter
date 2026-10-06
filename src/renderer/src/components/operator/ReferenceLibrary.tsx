@@ -37,7 +37,7 @@ export function ReferenceLibrary({ detected, passages, planTitle, listening, onC
 
   return (
     <section aria-label="Passage library" className="flex h-full min-h-0 min-w-0 flex-col bg-surface-secondary">
-      <div className="flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-white/[0.07] px-3 py-2">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 py-2">
         <div className="flex items-center gap-1" role="group" aria-label="Passage source">
           {([
             ['detected', 'Detected', detected.length],
@@ -60,7 +60,7 @@ export function ReferenceLibrary({ detected, passages, planTitle, listening, onC
           <div className="relative w-40 min-w-0 flex-1 max-w-56">
             <Search size={13} aria-hidden="true" className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-zinc-500" />
             <input aria-label="Find a passage" placeholder="Find a passage…" value={query} onChange={(event) => setQuery(event.target.value)}
-              className="h-7 w-full rounded-md border border-white/[0.07] bg-surface pl-7 pr-7 text-xs text-zinc-200 placeholder:text-zinc-600 focus:border-teal-500/50 focus:outline-none focus:ring-1 focus:ring-teal-500/30" />
+              className="h-7 w-full rounded-md border border-transparent bg-surface pl-7 pr-7 text-xs text-zinc-200 placeholder:text-zinc-600 focus:border-teal-500/50 focus:outline-none focus:ring-1 focus:ring-teal-500/30" />
             {query && <button type="button" aria-label="Clear passage search" onClick={() => setQuery('')} className="absolute right-1 top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded text-zinc-400 hover:text-white focus-visible:outline focus-visible:outline-teal-400"><X size={12} /></button>}
           </div>
           {onCollapse && (
@@ -84,7 +84,7 @@ export function ReferenceLibrary({ detected, passages, planTitle, listening, onC
               <li key={row.id}>
                 <button type="button" disabled={row.busy} onClick={row.present} aria-label={`Present ${row.reference}`} aria-current={row.live ? 'true' : undefined}
                   className={cn('group flex min-h-10 w-full items-center gap-3 rounded-md border px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-400/70 disabled:cursor-wait disabled:opacity-50',
-                    row.live ? 'border-teal-500/15 bg-tint-teal text-teal-100' : 'border-transparent text-zinc-300 hover:bg-surface-tertiary hover:text-zinc-100')}>
+                    row.live ? 'border-transparent bg-tint-teal text-teal-100' : 'border-transparent text-zinc-300 hover:bg-surface-tertiary hover:text-zinc-100')}>
                   <span aria-hidden="true" className="w-5 shrink-0 text-center text-[10px] tabular-nums text-zinc-600">{String(index + 1).padStart(2, '0')}</span>
                   <span className="shrink-0 text-[13px] font-medium tabular-nums">{row.reference}</span>
                   <span className="min-w-0 flex-1 truncate text-xs text-zinc-500">{row.detail}</span>

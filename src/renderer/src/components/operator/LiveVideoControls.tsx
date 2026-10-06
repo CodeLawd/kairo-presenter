@@ -72,7 +72,7 @@ export function LiveVideoControls({
         className="video-seek"
         style={{
           background: ready
-            ? `linear-gradient(to right, rgb(45 212 191) 0%, rgb(45 212 191) ${(shown / duration) * 100}%, rgb(63 63 70) ${(shown / duration) * 100}%, rgb(63 63 70) 100%)`
+            ? `linear-gradient(to right, rgb(228 228 231) 0%, rgb(228 228 231) ${(shown / duration) * 100}%, rgb(63 63 70) ${(shown / duration) * 100}%, rgb(63 63 70) 100%)`
             : 'rgb(63 63 70)',
         }}
       />
@@ -119,7 +119,7 @@ export function LiveVideoControls({
             className={cn(
               'grid h-7 w-7 place-items-center rounded-md transition-colors',
               loop
-                ? 'bg-teal-500/15 text-teal-300'
+                ? 'bg-surface-elevated text-white'
                 : 'text-zinc-500 hover:bg-surface-elevated hover:text-zinc-200',
             )}
           >
@@ -152,8 +152,8 @@ function TransportButton({
       className={cn(
         'grid h-7 w-7 place-items-center rounded-md transition-colors',
         primary
-          ? 'bg-surface-elevated text-teal-300 hover:bg-zinc-700'
-          : 'text-zinc-400 hover:bg-surface-elevated hover:text-white',
+          ? 'text-white hover:bg-surface-elevated'
+          : 'text-zinc-300 hover:bg-surface-elevated hover:text-white',
       )}
     >
       {children}

@@ -35,7 +35,7 @@ export default function AccountGate(): React.ReactElement {
 
   return (
     <div className="relative flex h-screen w-screen items-center justify-center overflow-hidden bg-surface animate-fade-in">
-      <div className="relative w-[24.5rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-surface-border bg-surface-secondary shadow-2xl animate-spring-in">
+      <div className="relative w-[24.5rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl bg-surface-secondary shadow-2xl animate-spring-in">
 
         <div className="relative px-7 pb-7 pt-8">
           <div className="mb-6 flex justify-center">

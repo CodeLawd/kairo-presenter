@@ -22,6 +22,7 @@ import {
   setContentOverride,
   withContentPatch,
 } from "../src/lib/overlay-outputs";
+import { themeForPush, withoutBackground } from "../src/lib/media-playback";
 
 const legacy = {
   mode: "auto" as const,
@@ -485,4 +486,24 @@ test("playlist fields are clamped, and only a screen can run its own playlist", 
   assert.equal(ndi.source, "program");
   assert.equal(ndi.playlistId, "");
   assert.equal(normalizeOverlayOutputs([{ ...makeOverlayOutput("s", "screen"), source: "bogus" }], legacy)[0].source, "program");
+});
+
+test("withoutBackground drops any background so text sits on black", () => {
+  const theme = {
+    ...DEFAULT_OVERLAY_THEME,
+    background: { ...DEFAULT_OVERLAY_THEME.background, type: "video" as const, mediaPath: "/clip.mp4" },
+  };
+  assert.equal(withoutBackground(theme).background.type, "transparent");
+  assert.equal(withoutBackground(theme).verse, theme.verse);
+});
+
+test("themeForPush: backgrounds off strips, own background wins unless forced", () => {
+  const live = { kind: "video" as const, path: "/loop.mp4" };
+  const owned = { ...DEFAULT_OVERLAY_THEME, background: { ...DEFAULT_OVERLAY_THEME.background, type: "color" as const } };
+  const bare = { ...DEFAULT_OVERLAY_THEME, background: { ...DEFAULT_OVERLAY_THEME.background, type: "transparent" as const } };
+  assert.equal(themeForPush(owned, { showsBackgrounds: false, live }).background.type, "transparent");
+  assert.equal(themeForPush(owned, { showsBackgrounds: true, live }).background.type, "color");
+  assert.equal(themeForPush(owned, { showsBackgrounds: true, live, force: true }).background.mediaPath, "/loop.mp4");
+  assert.equal(themeForPush(bare, { showsBackgrounds: true, live }).background.type, "video");
+  assert.equal(themeForPush(bare, { showsBackgrounds: true, live: null }), bare);
 });

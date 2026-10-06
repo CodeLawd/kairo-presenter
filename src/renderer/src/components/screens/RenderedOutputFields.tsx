@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
-import { cn } from '@/lib/utils'
+import { SegmentedControl } from '@/components/shared/SegmentedControl'
 import { useSettings } from '@/hooks/useSettings'
 import type { MediaPlaylist, OverlayOutput } from '@shared/ipc'
 import {
   DEFAULT_PRESENTATION_SETTINGS,
-  OUTPUT_SHOW_KEYS,
+  PLAYLIST_SHOW_KEYS,
   outputShowLabel,
+  type OutputShowFilter,
 } from '@shared/program'
 
 // ─── Inspector fields for outputs Kairo renders itself (screen / ndi) ─────────
@@ -41,52 +42,40 @@ export function ScreenSourceFields({ output, onChange }: { output: OverlayOutput
   const lobby = output.source === 'playlist'
   const missing = lobby && output.playlistId !== '' && !playlists.some((p) => p.id === output.playlistId)
   return (
-    <div className="space-y-3">
-      <div className="grid grid-cols-2 gap-px border border-surface-border bg-surface-border" role="radiogroup" aria-label="Source">
-        {([
-          ['program', 'The service'],
-          ['playlist', 'Its own playlist'],
-        ] as const).map(([value, label]) => (
-          <button
-            key={value}
-            type="button"
-            role="radio"
-            aria-checked={output.source === value}
-            onClick={() => onChange({ source: value })}
-            className={cn(
-              'py-1.5 text-[11px] font-medium transition-colors',
-              output.source === value ? 'bg-teal-600 text-white' : 'bg-surface-secondary text-slate-400 hover:text-slate-200',
-            )}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+    <>
+      <FieldRow label="Content" htmlFor={`${output.id}-source`}>
+        <select
+          id={`${output.id}-source`}
+          className="input w-full"
+          value={output.source}
+          onChange={(e) => onChange({ source: e.target.value as OverlayOutput['source'] })}
+        >
+          <option value="program">Follows the service</option>
+          <option value="playlist">Plays its own playlist</option>
+        </select>
+      </FieldRow>
 
       {lobby ? (
         <>
-          <div className="space-y-1.5">
-            <label htmlFor={`${output.id}-playlist`} className="block text-[11px] font-medium text-slate-400">Playlist</label>
+          <FieldRow
+            label="Playlist"
+            htmlFor={`${output.id}-playlist`}
+            hint={playlists.length === 0 ? 'Make a playlist in the Media dock first.' : undefined}
+          >
             <select
               id={`${output.id}-playlist`}
               className="input w-full"
               value={missing ? 'missing' : output.playlistId}
               onChange={(e) => onChange({ playlistId: e.target.value })}
             >
-              <option value="">— choose a media playlist —</option>
+              <option value="">Choose a playlist</option>
               {missing && <option value="missing" disabled>Deleted playlist</option>}
               {playlists.map((p) => (
                 <option key={p.id} value={p.id}>{p.name} ({p.itemIds.length})</option>
               ))}
             </select>
-            {playlists.length === 0 && (
-              <p className="text-[10px] leading-snug text-slate-500">Make a playlist in the Media dock first.</p>
-            )}
-          </div>
-          <div className="space-y-1.5">
-            <label htmlFor={`${output.id}-slide-sec`} className="block text-[11px] font-medium text-slate-400">
-              Each image stays up for
-            </label>
+          </FieldRow>
+          <FieldRow label="Image length" htmlFor={`${output.id}-slide-sec`} hint="Videos play to their end.">
             <div className="flex items-center gap-2">
               <input
                 id={`${output.id}-slide-sec`}
@@ -97,54 +86,146 @@ export function ScreenSourceFields({ output, onChange }: { output: OverlayOutput
                 value={output.slideSec}
                 onChange={(e) => onChange({ slideSec: Math.max(3, Math.min(600, Number(e.target.value) || 8)) })}
               />
-              <span className="text-[11px] text-slate-500">seconds · videos play to their end</span>
+              <span className="text-[12px] text-slate-500">seconds</span>
             </div>
-          </div>
-          <p className="text-[10px] leading-snug text-slate-500">
-            Scripture, lyrics, documents, backgrounds and Clear never reach this screen. Messages, the
-            logo and props still do unless turned off below.
-          </p>
+          </FieldRow>
         </>
       ) : (
-        <label className="flex items-start gap-2 text-[11px] leading-snug text-slate-400">
-          <input
-            type="checkbox"
-            className="mt-0.5 accent-teal-500"
-            checked={output.aspect === 'fill'}
-            onChange={(e) => onChange({ aspect: e.target.checked ? 'fill' : 'letterbox' })}
-          />
-          Fill the display’s shape — no black bars on 4:3 or ultrawide. The Theme preview stays 16:9.
-        </label>
+        <FieldRow label="Fit" htmlFor={`${output.id}-fit`}>
+          <select
+            id={`${output.id}-fit`}
+            className="input w-full"
+            value={output.aspect}
+            onChange={(e) => onChange({ aspect: e.target.value as OverlayOutput['aspect'] })}
+          >
+            <option value="letterbox">16:9 with black bars</option>
+            <option value="fill">Fill the display</option>
+          </select>
+        </FieldRow>
       )}
+    </>
+  )
+}
+
+/** Label on the left, control on the right — one line per setting, like ProPresenter. */
+export function FieldRow({
+  label,
+  htmlFor,
+  hint,
+  children,
+}: {
+  label: string
+  htmlFor?: string
+  hint?: string
+  children: React.ReactNode
+}): React.ReactElement {
+  return (
+    <div className="grid grid-cols-[120px_minmax(0,1fr)] items-start gap-x-4">
+      <label htmlFor={htmlFor} className="pt-2 text-[12px] text-slate-400">{label}</label>
+      <div className="space-y-1">
+        {children}
+        {hint && <p className="text-[11px] leading-snug text-slate-500">{hint}</p>}
+      </div>
     </div>
   )
 }
 
-/** Which kinds of content this output shows. */
-export function ShowFilterFields({ output, onChange }: { output: OverlayOutput; onChange: Patch }): React.ReactElement {
-  // A lobby only ever shows its playlist plus the program layers.
-  const keys = output.source === 'playlist'
-    ? OUTPUT_SHOW_KEYS.filter((k) => k === 'messages' || k === 'overlays')
-    : OUTPUT_SHOW_KEYS
+/** Layers grouped the way the Looks grid reads, top to bottom. */
+export const LOOK_GROUPS: Array<{ title: string; keys: Array<keyof OutputShowFilter> }> = [
+  { title: 'Slides', keys: ['scripture', 'lyrics', 'documents'] },
+  { title: 'Media', keys: ['backgrounds'] },
+  { title: 'Layers', keys: ['messages', 'overlays'] },
+  { title: 'Confidence', keys: ['countdown', 'clock', 'stageMessage'] },
+]
+
+/** Whether `key` can be turned on for this output at all. */
+export function lookKeyApplies(output: OverlayOutput, key: keyof OutputShowFilter): boolean {
+  return output.source !== 'playlist' || PLAYLIST_SHOW_KEYS.includes(key)
+}
+
+/** One output's layers as a checklist — the column of the Looks grid for that output. */
+export function LookFields({ output, onChange }: { output: OverlayOutput; onChange: Patch }): React.ReactElement {
   return (
-    <div className="flex flex-wrap gap-1">
-      {keys.map((key) => {
-        const on = output.show[key]
+    <div className="space-y-4">
+      {LOOK_GROUPS.map((group) => {
+        const keys = group.keys.filter((key) => lookKeyApplies(output, key))
+        if (keys.length === 0) return null
         return (
-          <button
-            key={key}
-            type="button"
-            aria-pressed={on}
-            onClick={() => onChange({ show: { ...output.show, [key]: !on } })}
-            className={cn(
-              'border px-2 py-0.5 text-[10px] transition-colors',
-              on ? 'border-teal-600 bg-tint-teal text-teal-300' : 'border-surface-border bg-surface-secondary text-slate-500 line-through',
+          <div key={group.title} className="space-y-1">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">{group.title}</p>
+            {keys.map((key) => (
+              <label
+                key={key}
+                className="flex items-center justify-between rounded-md px-2 py-1.5 text-[12px] text-slate-300 hover:bg-surface-tertiary"
+              >
+                {outputShowLabel(key)}
+                <input
+                  type="checkbox"
+                  className="accent-teal-500"
+                  checked={output.show[key]}
+                  onChange={(e) => onChange({ show: { ...output.show, [key]: e.target.checked } })}
+                />
+              </label>
+            ))}
+            {group.title === 'Confidence' && keys.some((key) => output.show[key]) && (
+              <ConfidenceLayoutFields output={output} onChange={onChange} />
             )}
-          >
-            {outputShowLabel(key)}
-          </button>
+          </div>
         )
       })}
+    </div>
+  )
+}
+
+/** Where the countdown, clock and stage message sit on this screen, and how big. */
+function ConfidenceLayoutFields({ output, onChange }: { output: OverlayOutput; onChange: Patch }): React.ReactElement {
+  const layout = output.confidence
+  return (
+    <div className="space-y-2 px-2 pt-2">
+      <Segmented
+        label="Position"
+        value={layout.position}
+        options={[
+          ['top', 'Top'],
+          ['bottom', 'Bottom'],
+        ]}
+        onChange={(position) => onChange({ confidence: { ...layout, position } })}
+      />
+      <Segmented
+        label="Size"
+        value={layout.size}
+        options={[
+          ['small', 'Small'],
+          ['medium', 'Medium'],
+          ['large', 'Large'],
+        ]}
+        onChange={(size) => onChange({ confidence: { ...layout, size } })}
+      />
+    </div>
+  )
+}
+
+function Segmented<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string
+  value: T
+  options: Array<[T, string]>
+  onChange: (value: T) => void
+}): React.ReactElement {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-[12px] text-slate-300">{label}</span>
+      <SegmentedControl
+        label={label}
+        value={value}
+        options={options.map(([v, text]) => ({ value: v, label: text }))}
+        onChange={onChange}
+        className="w-56 bg-surface-secondary"
+      />
     </div>
   )
 }
@@ -180,7 +261,7 @@ export function NdiSoundField(): React.ReactElement {
         Send program sound with every NDI feed — background videos and the camera’s audio input.
       </label>
       {supported === false && (
-        <p className="text-[10px] leading-snug text-amber-400">
+        <p className="text-[11px] leading-snug text-slate-500">
           This machine’s NDI library can only send video. Sound needs the NDI 6 runtime Kairo ships for
           your platform.
         </p>

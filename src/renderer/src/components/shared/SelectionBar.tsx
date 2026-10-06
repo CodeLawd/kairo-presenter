@@ -26,7 +26,7 @@ export function SelectionBar({
     <div
       data-no-marquee
       className={cn(
-        'z-30 rounded-xl border border-surface-border bg-surface-elevated px-3 py-2.5 shadow-2xl',
+        'z-30 rounded-xl bg-surface-elevated px-3 py-2.5 shadow-2xl',
         className,
       )}
       role="region"

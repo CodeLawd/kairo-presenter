@@ -88,7 +88,7 @@ export function DisplayPicker({
         </select>
         <button
           type="button"
-          className="btn-secondary flex items-center gap-1 px-2 py-2 text-[11px]"
+          className="btn-secondary flex shrink-0 items-center gap-1.5 px-3 text-[12px]"
           onClick={() => void window.api.displays.identify()}
           title="Show each display’s name on the display itself"
         >
@@ -97,7 +97,7 @@ export function DisplayPicker({
         </button>
       </div>
       {bound?.hostsMainWindow && (
-        <p className="text-[11px] leading-snug text-amber-400">
+        <p className="text-[11px] leading-snug text-slate-500">
           Kairo’s controls are on this display, so it opens as a rehearsal window instead of full
           screen.
         </p>

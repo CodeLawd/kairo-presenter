@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react'
-import { AlertCircle, Check, CircleDashed, Loader, X } from '@/icons'
+import { Check, Circle, CircleDashed, Loader, X } from '@/icons'
 import { cn } from '@/lib/utils'
 import { findNdiOutput } from '@shared/overlay-outputs'
 import type { NdiStatus, OverlayOutput, PPLook } from '@shared/ipc'
@@ -169,24 +169,13 @@ export default function SetupChecklist({
   const ready = blocking === 0
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-2">
-        <span
-          className={cn(
-            'rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider',
-            ready ? 'bg-tint-teal text-teal-300' : 'bg-tint-amber text-amber-300',
-          )}
-        >
-          {ready ? 'Ready to send' : `${blocking} to fix`}
-        </span>
-        {pendingManual > 0 && (
-          <span className="text-[10px] text-slate-500">
-            {pendingManual} to confirm in ProPresenter
-          </span>
-        )}
-      </div>
+    <div className="space-y-4">
+      <p className="text-[12px] text-slate-400">
+        {ready ? 'Everything is ready.' : `${blocking} ${blocking === 1 ? 'thing' : 'things'} to fix.`}
+        {pendingManual > 0 && ` ${pendingManual} to confirm in ProPresenter.`}
+      </p>
 
-      <ol className="space-y-1.5">
+      <ol className="space-y-1">
         {steps.map((step) => (
           <StepRow
             key={step.id}
@@ -196,10 +185,10 @@ export default function SetupChecklist({
         ))}
       </ol>
 
-      <div className="flex items-center gap-2 border-t border-surface-border/60 pt-3">
+      <div className="flex items-center gap-3">
         <button
           type="button"
-          className="btn-secondary px-3 py-1.5 text-[11px] disabled:opacity-40"
+          className="btn-secondary px-3 py-1.5 text-[12px] disabled:opacity-40"
           onClick={onSendTest}
           disabled={testStatus === 'testing'}
         >
@@ -208,19 +197,17 @@ export default function SetupChecklist({
         {testStatus !== 'idle' && (
           <span
             className={cn(
-              'flex items-center gap-1 text-[10px]',
-              testStatus === 'testing' && 'text-yellow-400',
-              testStatus === 'ok' && 'text-teal-400',
-              testStatus === 'fail' && 'text-red-400',
+              'flex items-center gap-1 text-[11px]',
+              testStatus === 'fail' ? 'text-red-400' : 'text-slate-400',
             )}
           >
-            {testStatus === 'testing' && <Loader size={10} className="animate-spin" aria-hidden="true" />}
+            {testStatus === 'testing' && <Loader size={11} className="animate-spin" aria-hidden="true" />}
             {testMsg}
           </span>
         )}
       </div>
-      <p className="text-[10px] leading-snug text-slate-600">
-        A test verse fires every enabled output at once — walk the building and check each screen.
+      <p className="text-[11px] leading-snug text-slate-500">
+        Sends to every screen at once, so you can walk the room and check each one.
       </p>
     </div>
   )
@@ -240,20 +227,11 @@ function StepRow({
     <>
       <StepIcon state={step.state} />
       <span className="min-w-0 flex-1">
-        <span
-          className={cn(
-            'text-[11px] font-semibold',
-            done && 'text-slate-400',
-            step.state === 'blocked' && 'text-red-300',
-            step.state === 'todo' && 'text-amber-300',
-            step.state === 'manual' && 'text-slate-200',
-            step.state === 'skipped' && 'text-slate-500',
-          )}
-        >
+        <span className={cn('block text-[12px]', done || step.state === 'skipped' ? 'text-slate-500' : 'text-slate-100')}>
           {step.label}
         </span>
         {showHint && (
-          <span className="mt-0.5 block text-[10px] leading-snug text-slate-500">{step.hint}</span>
+          <span className="mt-0.5 block text-[11px] leading-snug text-slate-500">{step.hint}</span>
         )}
       </span>
     </>
@@ -268,7 +246,7 @@ function StepRow({
           type="button"
           onClick={() => onToggle(step.state !== 'ok')}
           aria-pressed={done}
-          className="flex w-full items-start gap-2 rounded-lg p-1 text-left transition-colors hover:bg-surface-secondary"
+          className="flex w-full items-start gap-3 rounded-lg bg-surface-secondary px-3 py-2.5 text-left transition-colors hover:bg-surface-tertiary"
         >
           {body}
         </button>
@@ -276,15 +254,13 @@ function StepRow({
     )
   }
 
-  return <li className="flex items-start gap-2 p-1">{body}</li>
+  return <li className="flex items-start gap-3 rounded-lg bg-surface-secondary px-3 py-2.5">{body}</li>
 }
 
 function StepIcon({ state }: { state: StepState }): React.ReactElement {
-  const shared = 'mt-px shrink-0'
-  if (state === 'ok') return <Check size={12} className={cn(shared, 'text-teal-400')} aria-label="done" />
-  if (state === 'blocked') return <X size={12} className={cn(shared, 'text-red-400')} aria-label="blocked" />
-  if (state === 'todo') {
-    return <AlertCircle size={12} className={cn(shared, 'text-amber-400')} aria-label="to do" />
-  }
-  return <CircleDashed size={12} className={cn(shared, 'text-slate-500')} aria-label="not confirmed" />
+  const shared = 'mt-0.5 shrink-0'
+  if (state === 'ok') return <Check size={13} className={cn(shared, 'text-slate-500')} aria-label="done" />
+  if (state === 'blocked') return <X size={13} className={cn(shared, 'text-red-400')} aria-label="blocked" />
+  if (state === 'todo') return <Circle size={13} className={cn(shared, 'text-slate-300')} aria-label="to do" />
+  return <CircleDashed size={13} className={cn(shared, 'text-slate-500')} aria-label="not confirmed" />
 }

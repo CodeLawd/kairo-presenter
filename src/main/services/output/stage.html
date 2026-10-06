@@ -42,7 +42,6 @@
       }
       #clock { font-size: 76px; font-weight: 600; color: #e5e7eb; }
       #timer { font-size: 76px; font-weight: 700; color: #5eead4; }
-      #timer.overrun { color: #f87171; }
       #timer.paused { opacity: 0.55; }
       #message {
         position: absolute;
@@ -144,10 +143,14 @@
         setText(el('clock'), (hours % 12 || 12) + ':' + pad(now.getMinutes()) + (hours < 12 ? ' AM' : ' PM'));
         if (!state) return;
         var t = el('timer');
-        var left = remaining(state.timer);
-        setText(t, formatTimer(left));
-        t.classList.toggle('overrun', left < 0);
-        t.classList.toggle('paused', state.timer.endsAt === null && left !== state.timer.durationSec);
+        // Mirrors timerReadout() in src/lib/program.ts.
+        var style = state.timerStyle;
+        var raw = remaining(state.timer);
+        var running = state.timer.endsAt !== null;
+        setText(t, formatTimer(style.rollover ? raw : Math.max(0, raw)));
+        var timeUp = state.timer.durationSec > 0 && (raw < 0 || (raw === 0 && running));
+        t.style.color = timeUp ? style.overrunColor : style.color;
+        t.classList.toggle('paused', !running && raw !== state.timer.durationSec);
       }
 
       // Every value arrives as data and is written with textContent — nothing

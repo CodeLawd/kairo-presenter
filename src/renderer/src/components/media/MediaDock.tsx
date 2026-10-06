@@ -745,7 +745,7 @@ export default function MediaDock(): React.ReactElement | null {
 
           {/* Collections — resizable, like a Finder sidebar */}
           <div
-            className="relative flex shrink-0 flex-col overflow-y-auto border-r border-surface-border bg-surface-secondary py-2"
+            className="relative flex shrink-0 flex-col overflow-y-auto bg-surface-secondary py-2"
             style={{ width: sidebarWidth }}
           >
             <SidebarHeading>Library</SidebarHeading>
@@ -862,8 +862,8 @@ export default function MediaDock(): React.ReactElement | null {
                       aria-label={soundOn ? 'Mute video sound' : 'Play video sound'}
                       title={soundOn ? 'Video sound is on — click to mute' : 'Video sound is off — click to play it'}
                       className={cn(
-                        'grid h-6 w-6 place-items-center border transition-colors',
-                        soundOn ? 'border-surface-border text-slate-200 hover:bg-surface-tertiary' : 'border-surface-border text-slate-500 hover:text-slate-200',
+                        'grid h-6 w-6 place-items-center rounded transition-colors',
+                        soundOn ? 'text-slate-200 hover:bg-surface-tertiary' : 'text-slate-500 hover:text-slate-200',
                       )}
                     >
                       {soundOn ? <Volume2 size={12} aria-hidden="true" /> : <VolumeX size={12} aria-hidden="true" />}
@@ -890,7 +890,7 @@ export default function MediaDock(): React.ReactElement | null {
               <button
                 type="button"
                 onClick={() => void window.api.media.rescan()}
-                className="grid h-[26px] w-[26px] place-items-center rounded-none border border-surface-border text-slate-400 hover:text-white"
+                className="grid h-[26px] w-[26px] place-items-center rounded-none text-slate-400 hover:text-white"
                 aria-label="Rescan folder"
                 title="Rescan folder"
               >
@@ -899,7 +899,7 @@ export default function MediaDock(): React.ReactElement | null {
               <button
                 type="button"
                 onClick={() => setOpen(false)}
-                className="grid h-[26px] w-[26px] place-items-center rounded-none border border-surface-border text-slate-400 hover:text-white"
+                className="grid h-[26px] w-[26px] place-items-center rounded-none text-slate-400 hover:text-white"
                 aria-label="Close media panel"
                 title="Close media panel — playback continues"
               >
@@ -1030,7 +1030,7 @@ export default function MediaDock(): React.ReactElement | null {
                   type="button"
                   onClick={() => void addMediaToPlaylist(selection.id)}
                   disabled={addingMedia}
-                  className="flex aspect-video w-full flex-col items-center justify-center gap-1.5 border border-surface-border bg-surface-secondary text-slate-500 hover:bg-surface-tertiary hover:text-slate-200 disabled:opacity-50"
+                  className="flex aspect-video w-full flex-col items-center justify-center gap-1.5 bg-surface-secondary text-slate-500 hover:bg-surface-tertiary hover:text-slate-200 disabled:opacity-50"
                 >
                   <Plus size={18} aria-hidden="true" />
                   <span className="text-xs font-medium">
@@ -1104,8 +1104,9 @@ function DragHandle({ onPointerDown, onKeyDown, height, maximum }: {
       aria-valuemin={MIN_HEIGHT} aria-valuemax={maximum} aria-valuenow={height}
       title="Drag to resize · Arrow keys adjust · Enter closes"
       onPointerDown={onPointerDown} onKeyDown={onKeyDown}
-      className="group flex h-2.5 shrink-0 cursor-ns-resize touch-none items-center justify-center hover:bg-surface-secondary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-teal-400">
-      <span className="h-0.5 w-8 rounded-full bg-surface-border group-hover:bg-teal-400" />
+      // Same 6px gutter as the one beside the live rail; the grip only shows on hover.
+      className="group flex h-1.5 shrink-0 cursor-ns-resize touch-none items-center justify-center focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-teal-400">
+      <span className="h-0.5 w-8 rounded-full bg-transparent transition-colors group-hover:bg-slate-400" />
     </div>
   )
 }
@@ -1240,7 +1241,7 @@ function SidebarRowMenu({
     <div
       ref={rootRef}
       role="menu"
-      className="fixed z-[80] w-[180px] overflow-hidden border border-surface-border bg-surface-elevated py-1"
+      className="fixed z-[80] w-[180px] overflow-hidden bg-surface-elevated py-1"
       style={{ left, top }}
       onClick={(event) => event.stopPropagation()}
     >
@@ -1651,7 +1652,7 @@ function BackgroundMenu({
     <div
       ref={rootRef}
       role="menu"
-      className="fixed z-[80] w-[180px] overflow-hidden rounded-xl border border-surface-border bg-surface-elevated py-1 shadow-2xl"
+      className="fixed z-[80] w-[180px] overflow-hidden rounded-xl bg-surface-elevated py-1 shadow-2xl"
       style={{ left, top }}
     >
       <button
@@ -1751,7 +1752,7 @@ function ItemMenu({
     <div
       ref={rootRef}
       role="menu"
-      className="fixed z-[80] max-h-[calc(100vh-16px)] w-[252px] max-w-[calc(100vw-16px)] overflow-x-hidden overflow-y-auto overscroll-contain rounded-xl border border-surface-border bg-surface-elevated py-1 shadow-2xl"
+      className="fixed z-[80] max-h-[calc(100vh-16px)] w-[252px] max-w-[calc(100vw-16px)] overflow-x-hidden overflow-y-auto overscroll-contain rounded-xl bg-surface-elevated py-1 shadow-2xl"
       style={{ left: position.left, top: position.top }}
     >
       <MenuItem icon={<Pencil size={12} />} label="Rename" onClick={() => run(onRename)} />
@@ -1775,7 +1776,7 @@ function ItemMenu({
           role="menuitemcheckbox"
           aria-checked={playback.loop}
           onClick={() => onPlaybackChange({ loop: !playback.loop })}
-          className="flex w-full items-center gap-2 border-t border-surface-border/80 px-3 py-2 text-left text-xs text-slate-200 hover:bg-surface-tertiary"
+          className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-200 hover:bg-surface-tertiary"
         >
           <Repeat size={12} className={playback.loop ? 'text-teal-300' : 'text-slate-500'} aria-hidden="true" />
           <span className="flex-1">Loop</span>
@@ -1783,7 +1784,7 @@ function ItemMenu({
         </button>
       )}
 
-      <div className="border-t border-surface-border/80 px-3 py-2.5">
+      <div className="px-3 py-2.5">
         <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
           Adjust color
         </p>
@@ -1814,7 +1815,7 @@ function ItemMenu({
       </div>
 
       {playlists.length > 0 && (
-        <div className="border-t border-surface-border/80 py-1">
+        <div className="py-1">
           <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
             Add to playlist
           </p>
@@ -1835,7 +1836,7 @@ function ItemMenu({
         <button
           type="button"
           onClick={() => { onRemoveFromPlaylist(); onClose() }}
-          className="block w-full border-t border-surface-border/80 px-3 py-2 text-left text-xs text-slate-300 hover:bg-surface-tertiary hover:text-red-400"
+          className="block w-full px-3 py-2 text-left text-xs text-slate-300 hover:bg-surface-tertiary hover:text-red-400"
         >
           Remove from playlist
         </button>
@@ -1844,7 +1845,7 @@ function ItemMenu({
       <button
         type="button"
         onClick={() => run(onDelete)}
-        className="flex w-full items-center gap-2 border-t border-surface-border/80 px-3 py-2 text-left text-xs text-red-400 hover:bg-tint-red"
+        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-red-400 hover:bg-tint-red"
       >
         <Trash2 size={12} aria-hidden="true" />
         Delete from folder…
@@ -1936,7 +1937,7 @@ function LiveTransportButton({
       onPointerDown={(event) => event.stopPropagation()}
       title={paused ? 'Play' : 'Pause'}
       aria-label={paused ? 'Play video' : 'Pause video'}
-      className="grid h-6 w-6 place-items-center border border-surface-border text-slate-200 hover:bg-surface-tertiary"
+      className="grid h-6 w-6 place-items-center text-slate-200 hover:bg-surface-tertiary"
     >
       {paused
         ? <Play size={11} fill="currentColor" aria-hidden="true" />
@@ -1990,7 +1991,7 @@ function EmptyState({ onChoose }: { onChoose: () => void }): React.ReactElement 
   return (
     <div className="flex flex-1 items-center justify-center p-6">
       <div className="flex max-w-[460px] flex-col items-center gap-3 text-center">
-        <div className="grid h-11 w-11 place-items-center border border-surface-border bg-surface-secondary">
+        <div className="grid h-11 w-11 place-items-center bg-surface-secondary">
           <Folder size={20} className="text-slate-400" aria-hidden="true" />
         </div>
         <p className="text-[15px] font-semibold text-white">Choose your backgrounds folder</p>

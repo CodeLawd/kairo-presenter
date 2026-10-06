@@ -77,7 +77,7 @@ function MissingBindingsSummary({
   })
   if (missing.length === 0) return null
   return (
-    <div className="flex items-start gap-2.5 rounded-xl border border-yellow-500/20 bg-tint-yellow px-3.5 py-3">
+    <div className="flex items-start gap-2.5 rounded-xl bg-tint-yellow px-3.5 py-3">
       <AlertTriangle size={14} className="mt-0.5 shrink-0 text-yellow-500" aria-hidden="true" />
       <p className="text-[11px] leading-relaxed text-yellow-300">
         <span className="font-semibold">Unavailable in ProPresenter:</span> {missing.length} saved binding{missing.length === 1 ? '' : 's'} no longer appear in the catalogue. They are kept until you clear or replace them.
@@ -90,7 +90,7 @@ function SavedBindings({ bindings }: { bindings: PPResourceBindings }): React.Re
   const saved = RESOURCE_BINDING_ROLES.filter((role) => Boolean(bindings[role.key]))
   if (saved.length === 0) return null
   return (
-    <div className="rounded-xl border border-surface-border/60 bg-surface-secondary px-3.5 py-3" aria-label="Saved ProPresenter bindings">
+    <div className="rounded-xl bg-surface-secondary px-3.5 py-3" aria-label="Saved ProPresenter bindings">
       <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-600">Saved bindings</p>
       <div className="mt-2 space-y-1.5">
         {saved.map((role) => (
@@ -182,7 +182,7 @@ function CompactSettingsBindings({
         </button>
       </div>
 
-      <div className="divide-y divide-white/[0.06]">
+      <div>
         {SETTINGS_BINDING_ROLES.map((role) => {
           const resources = catalogue.resources
             .filter((resource) => resource.kind === role.kind)
@@ -352,7 +352,7 @@ export default function ResourceCatalogue({ mode }: { mode: ResourceCatalogueMod
       </div>
 
       {!connected && (
-        <div className="flex items-start gap-2.5 rounded-xl border border-surface-border/60 bg-surface-secondary px-3.5 py-3">
+        <div className="flex items-start gap-2.5 rounded-xl bg-surface-secondary px-3.5 py-3">
           <WifiOff size={14} className="mt-0.5 shrink-0 text-slate-500" aria-hidden="true" />
           <p className="text-[11px] leading-relaxed text-slate-500">
             Connect ProPresenter to browse its resources. Saved bindings are still shown below and will not be erased while it is offline.
@@ -369,7 +369,7 @@ export default function ResourceCatalogue({ mode }: { mode: ResourceCatalogueMod
       />
 
       {catalogue.warnings.length > 0 && (
-        <div className="flex items-start gap-2.5 rounded-xl border border-yellow-500/20 bg-tint-yellow px-3.5 py-3">
+        <div className="flex items-start gap-2.5 rounded-xl bg-tint-yellow px-3.5 py-3">
           <AlertTriangle size={14} className="mt-0.5 shrink-0 text-yellow-500" aria-hidden="true" />
           <p className="text-[11px] leading-relaxed text-yellow-300">
             {catalogue.warnings.length} resource type{catalogue.warnings.length === 1 ? '' : 's'} could not be read. The rest of the catalogue is still available.
@@ -382,7 +382,7 @@ export default function ResourceCatalogue({ mode }: { mode: ResourceCatalogueMod
       )}
 
       {loadError ? (
-        <div className="rounded-xl border border-rose-500/20 bg-tint-rose px-4 py-5">
+        <div className="rounded-xl bg-tint-rose px-4 py-5">
           <p className="text-sm font-semibold text-rose-300">Could not load ProPresenter resources</p>
           <p className="mt-1 text-xs leading-relaxed text-slate-500">{loadError}</p>
           <button type="button" className="btn-secondary mt-3 inline-flex items-center gap-1.5 px-3 py-2 text-xs" onClick={() => void loadCatalogue(true)}>
@@ -390,11 +390,11 @@ export default function ResourceCatalogue({ mode }: { mode: ResourceCatalogueMod
           </button>
         </div>
       ) : loading && catalogue.resources.length === 0 ? (
-        <div className="flex min-h-28 items-center justify-center rounded-xl border border-dashed border-surface-border/70 text-xs text-slate-500">
+        <div className="flex min-h-28 items-center justify-center rounded-xl bg-surface-secondary text-xs text-slate-500">
           <Loader size={14} className="mr-2 animate-spin" aria-hidden="true" /> Loading ProPresenter resources…
         </div>
       ) : connected && catalogue.resources.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-surface-border/70 px-4 py-6 text-center">
+        <div className="rounded-xl bg-surface-secondary px-4 py-6 text-center">
           <p className="text-sm font-semibold text-slate-400">No ProPresenter resources found</p>
           <p className="mt-1 text-xs text-slate-600">Try Refresh after opening a library or enabling the ProPresenter API.</p>
         </div>
@@ -412,9 +412,9 @@ export default function ResourceCatalogue({ mode }: { mode: ResourceCatalogueMod
               />
             </label>
             <div className="flex flex-wrap gap-1.5" aria-label="Filter ProPresenter resources by type">
-              <button type="button" className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold ${kind === 'all' ? 'border-transparent chip-selected' : 'border-surface-border/60 text-slate-500 hover:text-slate-300'}`} onClick={() => setKind('all')} aria-pressed={kind === 'all'}>All</button>
+              <button type="button" className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${kind === 'all' ? 'chip-selected' : 'bg-surface-secondary text-slate-500 hover:text-slate-300'}`} onClick={() => setKind('all')} aria-pressed={kind === 'all'}>All</button>
               {KIND_LABELS.filter(({ kind: value }) => catalogue.resources.some((resource) => resource.kind === value)).map(({ kind: value, label }) => (
-                <button key={value} type="button" className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold ${kind === value ? 'border-transparent chip-selected' : 'border-surface-border/60 text-slate-500 hover:text-slate-300'}`} onClick={() => setKind(value)} aria-pressed={kind === value}>{label}</button>
+                <button key={value} type="button" className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${kind === value ? 'chip-selected' : 'bg-surface-secondary text-slate-500 hover:text-slate-300'}`} onClick={() => setKind(value)} aria-pressed={kind === value}>{label}</button>
               ))}
             </div>
           </div>
@@ -422,7 +422,7 @@ export default function ResourceCatalogue({ mode }: { mode: ResourceCatalogueMod
           <div className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
             <div className="min-w-0 space-y-2" aria-label="ProPresenter resource results">
               {filteredResources.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-surface-border/70 px-4 py-6 text-center">
+                <div className="rounded-xl bg-surface-secondary px-4 py-6 text-center">
                   <p className="text-xs font-semibold text-slate-400">No matching resources</p>
                   <p className="mt-1 text-[11px] text-slate-600">Clear the search or choose another resource type.</p>
                 </div>
@@ -433,7 +433,7 @@ export default function ResourceCatalogue({ mode }: { mode: ResourceCatalogueMod
                   <button
                     type="button"
                     key={resourceKey}
-                    className={`flex w-full items-center gap-3 rounded-xl border p-2.5 text-left transition-colors ${isSelected ? 'border-white/20 row-selected' : 'border-surface-border/50 bg-surface-secondary hover:border-surface-border hover:bg-surface-secondary'}`}
+                    className={`flex w-full items-center gap-3 rounded-xl p-2.5 text-left transition-colors ${isSelected ? 'row-selected' : 'bg-surface-secondary hover:bg-surface-tertiary'}`}
                     onClick={() => setSelectedKey(resourceKey)}
                     aria-pressed={isSelected}
                     data-resource-id={resource.id}

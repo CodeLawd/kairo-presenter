@@ -30,7 +30,7 @@ export function BoothToolbox({
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-surface-secondary">
       <div
-        className="flex shrink-0 items-stretch border-b border-surface-border bg-surface-secondary"
+        className="flex shrink-0 items-stretch bg-surface-secondary"
         role="tablist"
         aria-label="Presentation tools"
       >
@@ -47,7 +47,7 @@ export function BoothToolbox({
               className={cn(
                 'relative flex h-9 flex-1 flex-col items-center justify-center gap-0.5 text-[10px] font-medium last:border-r-0',
                 selected
-                  ? 'text-teal-400'
+                  ? 'text-white'
                   : 'text-zinc-500 hover:bg-surface-tertiary hover:text-zinc-300',
               )}
             >
@@ -55,7 +55,7 @@ export function BoothToolbox({
               <span>{label}</span>
               {selected && (
                 <span
-                  className="pointer-events-none absolute inset-x-0 bottom-0 h-0.5 bg-teal-500"
+                  className="pointer-events-none absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-white"
                   aria-hidden="true"
                 />
               )}

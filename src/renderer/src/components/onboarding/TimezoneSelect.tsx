@@ -129,7 +129,7 @@ export default function TimezoneSelect({
           ref={listRef}
           id={`${id}-listbox`}
           role="listbox"
-          className="absolute left-0 right-0 top-[calc(100%+0.35rem)] z-50 max-h-60 overflow-y-auto rounded-lg border border-surface-border bg-surface-elevated py-1 shadow-2xl"
+          className="absolute left-0 right-0 top-[calc(100%+0.35rem)] z-50 max-h-60 overflow-y-auto rounded-lg bg-surface-elevated py-1 shadow-2xl"
         >
           {results.length === 0 ? (
             <li className="px-3 py-2 text-[12px] text-slate-500">No timezone matches that.</li>

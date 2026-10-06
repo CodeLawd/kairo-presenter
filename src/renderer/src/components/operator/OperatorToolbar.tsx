@@ -163,7 +163,7 @@ export default function OperatorToolbar(): React.ReactElement {
         >
           <Keyboard size={14} />
         </button>
-        <div className="pointer-events-none absolute right-0 top-full z-30 mt-1 hidden w-max rounded-lg border border-surface-border bg-surface p-2.5 shadow-xl group-hover:block group-focus-within:block">
+        <div className="pointer-events-none absolute right-0 top-full z-30 mt-1 hidden w-max rounded-lg bg-surface p-2.5 shadow-xl group-hover:block group-focus-within:block">
           <dl className="grid grid-cols-[auto_auto] items-center gap-x-3 gap-y-1.5 text-[10px]">
             {SHORTCUT_LEGEND.map(([keys, action]) => (
               <Fragment key={keys}>

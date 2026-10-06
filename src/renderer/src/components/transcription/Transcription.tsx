@@ -171,7 +171,7 @@ function HighlightedText({
               <mark className="bg-tint-teal text-teal-200 rounded px-0.5 not-italic">
                 {run.text}
               </mark>
-              <span className="ml-1 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-tint-teal text-teal-300 border border-teal-500/30 align-middle leading-none">
+              <span className="ml-1 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-tint-teal text-teal-300 align-middle leading-none">
                 <BookOpen size={9} />
                 {run.reference}
               </span>
@@ -286,7 +286,7 @@ function AutoPresentToast({
         return (
           <div
             key={item.suggestionId}
-            className="px-3.5 py-3 rounded-xl border border-surface-border bg-surface-elevated shadow-2xl space-y-2.5 relative overflow-hidden"
+            className="px-3.5 py-3 rounded-xl bg-surface-elevated shadow-2xl space-y-2.5 relative overflow-hidden"
           >
             {/* Absolute countdown progress bar on bottom edge */}
             <div
@@ -311,7 +311,7 @@ function AutoPresentToast({
               </button>
               <button
                 onClick={() => onDismiss(item.suggestionId)}
-                className="px-2.5 py-1.5 rounded-lg bg-surface-elevated border border-surface-border text-slate-400 hover:text-white text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50"
+                className="px-2.5 py-1.5 rounded-lg bg-surface-elevated text-slate-400 hover:text-white text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50"
                 aria-label={`Dismiss auto projection for ${item.reference}`}
               >
                 <X size={12} aria-hidden="true" />
@@ -495,7 +495,7 @@ function ControlsBar({
           <ChevronDown size={13} className={cn('transition-transform', exportOpen && 'rotate-180')} />
         </button>
         {exportOpen && (
-          <div className="absolute right-0 mt-1 w-40 rounded-lg bg-surface-elevated border border-surface-border shadow-xl z-20 overflow-hidden">
+          <div className="absolute right-0 mt-1 w-40 rounded-lg bg-surface-elevated shadow-xl z-20 overflow-hidden">
             <button
               className="w-full px-4 py-2.5 text-sm text-left text-slate-300 hover:bg-surface-tertiary hover:text-white transition-colors"
               onClick={() => { onExport('text'); setExportOpen(false) }}
@@ -554,7 +554,7 @@ function StatsFooter({ wordCount, sessionMs, averageConfidence, isConnected, ses
     : `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 
   return (
-    <div className="flex items-center gap-5 pt-3 border-t border-surface-border text-xs text-slate-500 flex-wrap">
+    <div className="flex items-center gap-5 pt-3 text-xs text-slate-500 flex-wrap">
       <Stat label="Words" value={wordCount.toLocaleString()} />
       <Stat label="Duration" value={duration} />
       <Stat
@@ -601,10 +601,10 @@ function ScrollLockButton({
       onClick={onClick}
       title={locked ? 'Scroll locked — click to unlock' : 'Auto-scrolling — click to lock'}
       className={cn(
-        'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors border',
+        'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors',
         locked
-          ? 'bg-tint-yellow border-yellow-500/30 text-yellow-400 hover:bg-tint-yellow'
-          : 'bg-surface-elevated border-surface-border text-slate-400 hover:text-white hover:border-slate-500'
+          ? 'bg-tint-yellow text-yellow-400 hover:bg-tint-yellow'
+          : 'bg-surface-elevated text-slate-400 hover:bg-surface-tertiary hover:text-white'
       )}
     >
       <Icon size={12} />
@@ -972,7 +972,7 @@ export default function Transcription(): React.ReactElement {
           <p className="page-subtitle">Live speech-to-text · powered by Deepgram Nova-3</p>
         </div>
         {isTranscribing && (
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-tint-teal border border-teal-500/30">
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-tint-teal">
             <Circle size={8} className="text-teal-500 fill-teal-500 animate-pulse" />
             <span className="text-xs font-semibold text-teal-400 uppercase tracking-wide">Live</span>
           </div>
@@ -997,7 +997,7 @@ export default function Transcription(): React.ReactElement {
 
       {/* ── Error banner ─────────────────────────────────────────────────────── */}
       {audioError && (
-        <div className="flex-shrink-0 flex items-start gap-2 px-4 py-3 rounded-lg bg-tint-red border border-red-500/30 text-red-400 text-sm">
+        <div className="flex-shrink-0 flex items-start gap-2 px-4 py-3 rounded-lg bg-tint-red text-red-400 text-sm">
           <AlertTriangle size={15} className="flex-shrink-0 mt-0.5" />
           <span>{audioError}</span>
         </div>

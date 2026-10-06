@@ -186,7 +186,7 @@ export function ScriptureLatencyPanel(): React.JSX.Element {
 
   return (
     <div>
-      <div className="flex divide-x divide-white/[0.07] border-b border-white/[0.07]">
+      <div className="flex">
         <Stat label="Typical" value={ms(percentile(times, 50))} hint="Half of verses were faster" />
         <Stat label="Slow" value={ms(percentile(times, 95))} hint="Only 1 in 20 was slower" />
         <Stat label="Presented" value={String(presented)} hint={`of ${records.length} detected`} />
@@ -230,7 +230,7 @@ export function ScriptureLatencyPanel(): React.JSX.Element {
             : 'Nothing matches this filter.'}
         </p>
       ) : (
-        <ul className="max-h-[320px] divide-y divide-white/[0.05] overflow-y-auto border-t border-white/[0.07]">
+        <ul className="max-h-[320px] overflow-y-auto">
           {visible.map((record) => (
             <TraceRow key={record.trace.correlationId} record={record} />
           ))}

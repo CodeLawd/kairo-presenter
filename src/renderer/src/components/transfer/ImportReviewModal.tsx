@@ -161,11 +161,11 @@ export function ImportReviewModal({ preview }: { preview: TransferPreview }): Re
         role="dialog"
         aria-modal="true"
         aria-labelledby="kairo-import-title"
-        className="flex max-h-[min(640px,90vh)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-surface-border bg-surface shadow-2xl"
+        className="flex max-h-[min(640px,90vh)] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-surface shadow-2xl"
         onClick={(event) => event.stopPropagation()}
       >
-        <header className="flex items-start gap-3 border-b border-surface-border px-5 py-4">
-          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-teal-500/25 bg-tint-teal text-teal-300">
+        <header className="flex items-start gap-3 px-5 py-4">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-tint-teal text-teal-300">
             <KindIcon size={16} aria-hidden="true" />
           </span>
           <div className="min-w-0 flex-1">
@@ -187,7 +187,7 @@ export function ImportReviewModal({ preview }: { preview: TransferPreview }): Re
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
           {preview.playlist ? (
             <div className="space-y-3">
-              <div className="rounded-xl border border-white/[0.06] bg-surface-secondary px-3.5 py-3">
+              <div className="rounded-xl bg-surface-secondary px-3.5 py-3">
                 <p className="text-[13px] font-medium text-white">{preview.playlist.title}</p>
                 <p className="mt-0.5 text-[11px] text-white/40">
                   Scripture playlist · {preview.playlist.itemCount} passage
@@ -213,7 +213,7 @@ export function ImportReviewModal({ preview }: { preview: TransferPreview }): Re
           ) : (
             <>
               {allAlreadyHere ? (
-                <p className="rounded-xl border border-teal-500/20 bg-tint-teal px-3.5 py-2.5 text-[12px] leading-relaxed text-teal-200/90">
+                <p className="rounded-xl bg-tint-teal px-3.5 py-2.5 text-[12px] leading-relaxed text-teal-200/90">
                   {duplicates.length === 1 ? 'This song is' : `All ${duplicates.length} songs are`} already in
                   your library, so there’s nothing new to add. Choose <span className="font-medium">Replace</span> to
                   overwrite your copies with these, or <span className="font-medium">Keep both</span> to add them again.
@@ -228,7 +228,7 @@ export function ImportReviewModal({ preview }: { preview: TransferPreview }): Re
               </p>
 
               {preview.setlist ? (
-                <label className="flex cursor-pointer items-center gap-2.5 rounded-xl border border-white/[0.06] bg-surface-secondary px-3.5 py-2.5">
+                <label className="flex cursor-pointer items-center gap-2.5 rounded-xl bg-surface-secondary px-3.5 py-2.5">
                   <input
                     type="checkbox"
                     checked={createSetlist}
@@ -254,7 +254,7 @@ export function ImportReviewModal({ preview }: { preview: TransferPreview }): Re
                 </div>
               ) : null}
 
-              <ul className="divide-y divide-white/[0.05] overflow-hidden rounded-xl border border-white/[0.06]">
+              <ul className="overflow-hidden rounded-xl">
                 {preview.songs.map((song) => {
                   const choice = choices[song.id]
                   const setChoice = (next: SongImportChoice): void =>
@@ -321,7 +321,7 @@ export function ImportReviewModal({ preview }: { preview: TransferPreview }): Re
           {error ? <p role="alert" className="text-[12px] text-red-400">{error}</p> : null}
         </div>
 
-        <footer className="flex items-center justify-end gap-2 border-t border-surface-border px-5 py-3">
+        <footer className="flex items-center justify-end gap-2 px-5 py-3">
           <button type="button" className="btn-secondary px-3.5 py-1.5 text-sm" onClick={close} disabled={busy}>
             Cancel
           </button>
