@@ -78,7 +78,7 @@ function paintMatches(
     const to = Math.min(range.to, maxPosition)
     if (from < to) {
       transaction.addMark(from, to, markType.create({
-        color: "#facc15",
+        color: "#CAD5E2",
         reference: normalizedReferenceLabel(match),
         active: index === activeIndex,
       }))
@@ -266,7 +266,7 @@ export function SermonNotesReviewModal({
         </header>
 
         <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_310px]">
-          <div className="flex min-h-0 flex-col bg-[#111820]">
+          <div className="flex min-h-0 flex-col bg-surface">
             <div className="flex items-center gap-2.5 px-4 py-2.5">
               <FileText size={14} className="shrink-0 text-slate-500" aria-hidden="true" />
               <Input
@@ -286,7 +286,7 @@ export function SermonNotesReviewModal({
               className="min-h-0 flex-1 overflow-y-auto px-5 py-5"
               style={{ scrollbarGutter: "stable" }}
             >
-              <div className="mx-auto min-h-full max-w-3xl overflow-hidden rounded-sm bg-[#f7f4ea] ring-1 ring-black/15 [&_mark]:rounded-none [&_mark]:bg-yellow-300 [&_mark]:px-0.5 [&_mark]:text-slate-950 [&_mark[data-active=true]]:bg-amber-400">
+              <div className="mx-auto min-h-full max-w-3xl overflow-hidden rounded-sm bg-paper ring-1 ring-black/15 [&_mark]:rounded-none [&_mark]:bg-[#CAD5E2] [&_mark]:px-0.5 [&_mark]:text-slate-950 [&_mark[data-active=true]]:bg-amber-400">
                 <EditorContent editor={editor} className="sermon-notes-editor min-h-full" />
               </div>
             </div>

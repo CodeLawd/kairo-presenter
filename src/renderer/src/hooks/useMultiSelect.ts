@@ -140,5 +140,5 @@ export function listShortcuts({
 }
 
 /** How a row that is part of a multi-selection looks — the macOS list blue. */
-export const PICKED_ROW = 'bg-[#0A84FF]/25 text-white'
+export const PICKED_ROW = 'bg-tint-teal text-white'
 

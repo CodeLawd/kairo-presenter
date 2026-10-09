@@ -32,7 +32,7 @@ const InputOTPGroup = React.forwardRef<
   React.ElementRef<"div">,
   React.ComponentProps<"div">
 >(function InputOTPGroup({ className, ...props }, ref) {
-  return <div ref={ref} data-slot="input-otp-group" className={cn("flex items-center gap-1.5", className)} {...props} />
+  return <div ref={ref} data-slot="input-otp-group" className={cn("flex items-center gap-2", className)} {...props} />
 })
 
 const InputOTPSlot = React.forwardRef<
@@ -54,8 +54,10 @@ const InputOTPSlot = React.forwardRef<
       data-slot="input-otp-slot"
       data-active={isActive}
       className={cn(
-        "relative flex h-11 w-10 items-center justify-center rounded-lg bg-surface text-[17px] font-medium tabular-nums text-white transition-all outline-none",
-        "data-[active=true]:border-teal-500 data-[active=true]:ring-2 data-[active=true]:ring-teal-500/30 data-[active=true]:z-10",
+        // Elevated fill so the boxes read on every surface they sit on (the
+        // setup dialog, the sign-in card, the Account settings card).
+        "relative flex h-12 w-11 items-center justify-center rounded-lg bg-surface-elevated text-[20px] font-semibold tabular-nums text-white transition-[box-shadow,background-color] duration-150 outline-none",
+        "data-[active=true]:z-10 data-[active=true]:ring-2 data-[active=true]:ring-teal-500",
         className
       )}
       {...props}

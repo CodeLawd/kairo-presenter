@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Wordmark } from "@/components/brand/Wordmark";
+import { Logo } from "@/components/brand/Logo";
 import {
   getSession,
   mintAccessToken,
@@ -75,7 +75,7 @@ export function SiteHeader(): React.ReactElement {
       )}
     >
       <div className={cx(wrap, "flex h-[62px] items-center gap-[26px]")}>
-        <Wordmark href="#top" />
+        <Logo href="#top" priority />
         <nav className="hidden gap-[22px] sm:flex" aria-label="Sections">
           {NAV.map((item) => (
             <a

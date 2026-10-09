@@ -30,13 +30,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import AccountSection from './AccountSection'
+import AccountSection, { AccountAvatar } from './AccountSection'
+import { requestCoachTour } from '@/components/onboarding/CoachTour'
 import PasswordInput from '@/components/ui/password-input'
 import { useSecretDraft } from '@/components/ui/secret-key-field'
 import { Switch } from '@/components/ui/switch'
 import { Slider } from '@/components/ui/slider'
 import { useAppStore, type SettingsSectionId } from '@/stores/useAppStore'
-import { listAudioInputDevices, resolveCaptureDeviceId } from '@/audio/devices'
+import { inputKindLabel, listAudioInputDevices, resolveCaptureDeviceId } from '@/audio/devices'
 import { applyAppTheme } from '@/lib/appTheme'
 import { parseProPresenterPort } from '@/lib/propresenter-port'
 import { normalizeOverlaySettings } from '@shared/overlay-defaults'
@@ -88,21 +89,15 @@ const INTEGRATION_SECTIONS: ReadonlySet<Section> = new Set(['propresenter'])
 
 const NAV_ICON_BG: Record<Section, string> = {
   propresenter: 'bg-[#3B6FD9]',
-  audio: 'bg-[#E8833A]',
-  apikeys: 'bg-[#C9A227]',
+  audio: 'bg-[#4F6888]',
+  apikeys: 'bg-[#565449]',
   scripture: 'bg-[#5BA85A]',
   overlay: 'bg-[#4A9EBF]',
   shortcuts: 'bg-[#527C78]',
   general: 'bg-[#8E8E93]',
-  account: 'bg-[#E07A3D]',
+  account: 'bg-[#565449]',
 }
 
-function accountInitials(name: string | undefined): string {
-  const parts = (name ?? '').trim().split(/\s+/).filter(Boolean)
-  if (parts.length === 0) return '?'
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
-  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase()
-}
 
 
 // ─── Helper: Settings group (no heavy bezel frames) ───────────────────────────
@@ -130,7 +125,7 @@ function PrefGroup({
       ) : null}
       <div className={cn(
         'overflow-hidden',
-        plain ? '' : 'rounded-xl bg-[#292929]',
+        plain ? '' : 'rounded-xl bg-surface-tertiary',
       )}>
         {children}
       </div>
@@ -246,7 +241,7 @@ function Toggle({
       checked={checked}
       disabled={disabled}
       onCheckedChange={onChange}
-      className="data-[state=checked]:bg-[#007AFF]"
+      className="data-[state=checked]:bg-teal-500"
     />
   )
 }
@@ -279,7 +274,7 @@ function LevelMeter({ level, active }: { level: AudioLevel | null; active: boole
                 ? clip
                   ? 'bg-[#FF453A]'
                   : warn
-                    ? 'bg-[#FFD60A]'
+                    ? 'bg-amber-400'
                     : 'bg-[#30D158]'
                 : 'bg-surface-elevated',
             )}
@@ -290,13 +285,6 @@ function LevelMeter({ level, active }: { level: AudioLevel | null; active: boole
   )
 }
 
-function inputKindLabel(device: AudioDevice): string {
-  const label = device.label.toLowerCase()
-  if (/(iphone|ipad|airpods|continuity)/.test(label)) return 'Continuity'
-  if (/(virtual|teams|zoom|blackhole|loopback|aggregate|cable)/.test(label)) return 'Virtual'
-  if (/(built-in|macbook|imac|internal)/.test(label)) return 'Built-in'
-  return 'External'
-}
 
 // ─── Helper: Connection dot ───────────────────────────────────────────────────
 
@@ -413,8 +401,8 @@ function KeyStatus({
   const dot: Record<typeof tone, string> = {
     ok: 'bg-[#30D158]',
     fail: 'bg-[#FF453A]',
-    pending: 'bg-[#0A84FF]',
-    warn: 'bg-[#FFD60A]',
+    pending: 'bg-teal-500',
+    warn: 'bg-amber-400',
     idle: 'bg-surface-border',
   }
   return (
@@ -441,6 +429,7 @@ function ProviderKeyRow({
   fieldName,
   'aria-label': ariaLabel,
   test,
+  onSave,
 }: {
   provider: ProviderId
   name: string
@@ -455,6 +444,8 @@ function ProviderKeyRow({
   fieldName: string
   'aria-label': string
   test?: { status: TestStatus; message: string; onClick: () => void }
+  /** Saves right from the row — a pasted key should not depend on a button at the page's foot. */
+  onSave?: () => void
 }): React.ReactElement {
   const editing = secret.replacing
   const hasDraft = secret.draft.trim().length > 0
@@ -517,7 +508,7 @@ function ProviderKeyRow({
                 <MoreVertical size={15} aria-hidden="true" />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="min-w-[168px] bg-[#2c2c2c] text-white">
+            <DropdownMenuContent align="end" className="min-w-[168px] bg-surface-tertiary text-white">
               <DropdownMenuItem onSelect={() => openProviderDocs(docsUrl)}>
                 <ExternalLink size={13} aria-hidden="true" />
                 Get a {name} key
@@ -543,6 +534,12 @@ function ProviderKeyRow({
               type="password"
               value={secret.draft}
               onChange={(e) => secret.setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && hasDraft && onSave) {
+                  e.preventDefault()
+                  onSave()
+                }
+              }}
               onCopy={(e) => e.preventDefault()}
               onCut={(e) => e.preventDefault()}
               placeholder={placeholder}
@@ -564,6 +561,11 @@ function ProviderKeyRow({
                 Test
               </button>
             ) : null}
+            {onSave && hasDraft ? (
+              <button type="button" className="btn-primary h-8 px-3 py-0 text-[12px]" onClick={onSave}>
+                Save
+              </button>
+            ) : null}
             <button
               type="button"
               className="h-7 px-2 text-[12px] text-white/50 hover:text-white"
@@ -576,7 +578,7 @@ function ProviderKeyRow({
             {configured ? 'Replaces the saved key when you press Save. ' : 'Saved when you press Save. '}
             <button
               type="button"
-              className="text-[#0A84FF] hover:text-[#409CFF]"
+              className="text-teal-400 hover:text-teal-300"
               onClick={() => openProviderDocs(docsUrl)}
             >
               Get a key ↗
@@ -615,7 +617,7 @@ function SaveBar({
     <div className="flex justify-end pt-1">
       <button
         className={cn(
-          'inline-flex items-center gap-1.5 rounded-md bg-[#3a3a3a] px-3.5 py-1.5 text-[13px] font-medium text-white transition-colors hover:bg-[#454545] disabled:opacity-40 disabled:hover:bg-[#3a3a3a]',
+          'inline-flex items-center gap-1.5 rounded-md bg-surface-elevated px-3.5 py-1.5 text-[13px] font-medium text-white transition-colors hover:bg-surface-border disabled:opacity-40 disabled:hover:bg-surface-elevated',
           saved && 'bg-[#2f6b3a] hover:bg-[#2f6b3a] disabled:opacity-100 disabled:hover:bg-[#2f6b3a]',
         )}
         disabled={disabled && !saved}
@@ -945,7 +947,7 @@ function AudioSection({
     <div className="space-y-3">
       <section className="space-y-2">
         <h3 className="px-0.5 text-xs font-semibold tracking-tight text-white/60">Input</h3>
-        <div className="overflow-hidden rounded-xl bg-[#292929]">
+        <div className="overflow-hidden rounded-xl bg-surface-tertiary">
           <div className="grid grid-cols-[minmax(0,1fr)_5.5rem] gap-3 px-3.5 pb-1 pt-2.5">
             <p className="text-[11px] text-white/35">Name</p>
             <p className="text-[11px] text-white/35">Type</p>
@@ -973,7 +975,7 @@ function AudioSection({
                       onClick={() => update('audio', { deviceId: device.id })}
                       className={cn(
                         'grid w-full grid-cols-[minmax(0,1fr)_5.5rem] items-center gap-3 rounded-md px-2 py-[7px] text-left text-[13px]',
-                        selected ? 'bg-[#3d3d3d] text-white' : 'text-white/90 hover:bg-surface-tertiary',
+                        selected ? 'bg-surface-elevated text-white' : 'text-white/90 hover:bg-surface-tertiary',
                       )}
                     >
                       <span className="truncate">{device.label}</span>
@@ -1195,6 +1197,7 @@ function ApiKeysSection({
         if (isConfigured) markClear(clearKey, section)
       },
       onUndoRemove: () => unmarkClear(clearKey, section),
+      onSave: () => void handleSave(),
     }
   }
 
@@ -1241,7 +1244,12 @@ function ApiKeysSection({
                   type="button"
                   role="radio"
                   aria-checked={active}
-                  onClick={() => update('stt', { llmProvider: id })}
+                  onClick={() => {
+                    update('stt', { llmProvider: id })
+                    // A choice, not a draft: keep it the moment it is made.
+                    // Blank secret fields in the stored copy mean "unchanged".
+                    void window.api.settings.set('stt', { ...storedStt, llmProvider: id })
+                  }}
                   className={cn(
                     'rounded-md px-3 py-1 text-[12px] font-medium transition-colors',
                     active ? 'bg-surface-border text-white shadow-sm' : 'text-white/45 hover:text-white/75',
@@ -1370,18 +1378,17 @@ function ScriptureSection({
     update('scripture', { defaultTranslation: translation })
   }
 
-  // Grouped by what selecting the option does, not by source: a downloaded
-  // pack keeps its API-capable registry entry, so `access` can't say "on disk".
-  const translationGroups = [
-    { label: 'Ready to use', items: translations.filter((t) => t.available) },
-    { label: 'Download to use offline', items: translations.filter((t) => !t.available && t.downloadable) },
-    { label: 'Unavailable', items: translations.filter((t) => !t.available && !t.downloadable) },
-  ]
+  // Only Bibles that work right now. Downloads live in the Bible library below;
+  // a saved default that is no longer readable stays listed so the box is never blank.
+  const readyTranslations = translations.filter((t) => t.available)
+  const savedMissing = readyTranslations.some((t) => t.id === sc.defaultTranslation)
+    ? null
+    : translations.find((t) => t.id === sc.defaultTranslation) ?? null
 
   return (
     <div className="space-y-5">
       <PrefGroup title="Default Bible">
-        <PrefRow label="Translation" hint={translationsLoading ? 'Checking available Bibles…' : 'Used for new searches and auto-detection'}>
+        <PrefRow label="Translation" hint={translationsLoading ? 'Checking available Bibles…' : 'Used for new searches and auto-detection. Add more in Bible library below.'}>
           <select
             className={PREF_SELECT}
             value={sc.defaultTranslation}
@@ -1389,21 +1396,16 @@ function ScriptureSection({
             onChange={(e) => { void selectTranslation(e.target.value as ScriptureTranslation) }}
             aria-label="Default bible translation"
           >
-            {translationGroups.map((group) =>
-              group.items.length === 0 ? null : (
-                <optgroup key={group.label} label={group.label}>
-                  {group.items.map((translation) => (
-                    <option
-                      key={translation.id}
-                      value={translation.id}
-                      disabled={!translation.available && !translation.downloadable}
-                    >
-                      {translation.id} — {translation.name}
-                    </option>
-                  ))}
-                </optgroup>
-              ),
+            {savedMissing && (
+              <option value={savedMissing.id} disabled>
+                {savedMissing.id} — {savedMissing.name} (not installed)
+              </option>
             )}
+            {readyTranslations.map((translation) => (
+              <option key={translation.id} value={translation.id}>
+                {translation.id} — {translation.name}
+              </option>
+            ))}
           </select>
         </PrefRow>
         <PrefRow label="Verse numbers" hint="Include numbers on slides">
@@ -1644,7 +1646,7 @@ function OverlaySection({
 // ─── Software update ──────────────────────────────────────────────────────────
 
 const UPDATE_BTN =
-  'inline-flex items-center gap-1.5 rounded-md bg-[#3a3a3a] px-3 py-1.5 text-[12px] font-medium text-white transition-colors hover:bg-[#454545] disabled:cursor-default disabled:opacity-40'
+  'inline-flex items-center gap-1.5 rounded-md bg-surface-elevated px-3 py-1.5 text-[12px] font-medium text-white transition-colors hover:bg-surface-border disabled:cursor-default disabled:opacity-40'
 
 /**
  * Reads 'idle' with no action in dev and in unpackaged builds, because the main
@@ -1941,7 +1943,7 @@ function GeneralSection({
               value={
                 /^#[0-9a-fA-F]{6}$/.test(settings.lyrics?.glossColor || '')
                   ? settings.lyrics.glossColor
-                  : '#D4A017'
+                  : '#AABED7'
               }
               onChange={(e) => update('lyrics', { glossColor: e.target.value.toUpperCase() })}
               className="h-7 w-9 cursor-pointer rounded bg-transparent p-0.5"
@@ -1949,9 +1951,9 @@ function GeneralSection({
             />
             <input
               type="text"
-              value={settings.lyrics?.glossColor || '#D4A017'}
+              value={settings.lyrics?.glossColor || '#AABED7'}
               onChange={(e) => update('lyrics', { glossColor: e.target.value })}
-              placeholder="#D4A017"
+              placeholder="#AABED7"
               className={cn(PREF_INPUT, 'flex-1 text-left')}
               aria-label="Gloss color hex"
             />
@@ -1965,7 +1967,7 @@ function GeneralSection({
               style={{
                 color: /^#[0-9a-fA-F]{6}$/.test(settings.lyrics?.glossColor || '')
                   ? settings.lyrics.glossColor
-                  : '#D4A017',
+                  : '#AABED7',
               }}
             >
               (The arm of the Lord does great things)
@@ -2153,18 +2155,19 @@ export default function Settings({
   })
   const currentNav = SECTION_NAV.find((s) => s.id === activeSection) ?? SECTION_NAV[0]
   const firstIntegration = navItems.find((item) => INTEGRATION_SECTIONS.has(item.id))?.id
-  const displayName = session.user?.name?.trim() || 'Account'
-  const displayMeta = session.org?.name || session.user?.email || 'Signed in'
+  const displayName = session.user?.name?.trim() || session.user?.email || 'Account'
+  const displayMeta =
+    session.state === 'stale' ? 'Offline' : session.org?.name || session.user?.email || 'Signed in'
   const canBack = histIndex > 0
   const canForward = histIndex < historyRef.current.length - 1
 
   return (
-    <div className="kairo-pp-settings flex h-full w-full overflow-hidden rounded-xl bg-[#1e1e1e] text-white">
-      <aside data-settings-drag className="flex w-[212px] shrink-0 flex-col bg-[#323232]">
+    <div className="kairo-pp-settings flex h-full w-full overflow-hidden rounded-xl bg-surface-secondary text-white">
+      <aside data-settings-drag className="flex w-[212px] shrink-0 flex-col bg-surface-rail">
         <MacTrafficLights onClose={onClose} />
 
         <div className="px-3 pb-2.5">
-          <label className="flex h-8 items-center gap-1.5 rounded-md bg-[#1c1c1c] px-2">
+          <label className="flex h-8 items-center gap-1.5 rounded-md bg-surface px-2">
             <Search size={11} className="shrink-0 text-white/35" aria-hidden="true" />
             <input
               value={navQuery}
@@ -2181,12 +2184,10 @@ export default function Settings({
           onClick={() => selectSection('account')}
           className={cn(
             'mx-2 mb-2 flex items-center gap-2.5 rounded-md px-2 py-1.5 text-left',
-            activeSection === 'account' ? 'bg-[#454545]' : 'hover:bg-surface-tertiary',
+            activeSection === 'account' ? 'bg-surface-elevated' : 'hover:bg-surface-tertiary',
           )}
         >
-          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#E07A3D] text-[11px] font-semibold text-white">
-            {accountInitials(session.user?.name)}
-          </span>
+          <AccountAvatar session={session} size={32} />
           <span className="min-w-0 flex-1">
             <span className="block truncate text-[13px] font-medium leading-tight text-white">
               {displayName}
@@ -2215,7 +2216,7 @@ export default function Settings({
                   onClick={() => selectSection(id)}
                   className={cn(
                     'flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-left text-[13px] text-white',
-                    active ? 'bg-[#454545]' : 'hover:bg-surface-tertiary',
+                    active ? 'bg-surface-elevated' : 'hover:bg-surface-tertiary',
                   )}
                   aria-current={active ? 'page' : undefined}
                   aria-label={`${label} settings: ${hint}`}
@@ -2237,7 +2238,7 @@ export default function Settings({
         </nav>
       </aside>
 
-      <div className="flex min-w-0 flex-1 flex-col bg-[#1e1e1e]">
+      <div className="flex min-w-0 flex-1 flex-col bg-surface-secondary">
         <header data-settings-drag className="flex shrink-0 items-center gap-0.5 px-4 py-4">
           <button
             type="button"
@@ -2362,6 +2363,10 @@ export default function Settings({
                         useBootstrapStore.getState().setOnboarding(state)
                         onClose?.()
                       })
+                    }}
+                    onShowTips={() => {
+                      onClose?.()
+                      requestCoachTour()
                     }}
                   />
                 )}

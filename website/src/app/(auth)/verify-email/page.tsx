@@ -1,15 +1,19 @@
 'use client'
 
+import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { Suspense, useEffect, useState } from 'react'
 import { AuthSplit } from '@/components/auth/AuthSplit'
+import { btnPrimary, btnSecondary } from '@/components/auth/styles'
 import { api, ApiError } from '@/lib/api'
 
 const BRAND = {
-  kind: 'quote',
-  quote: <>Your church&rsquo;s Kairo account is nearly ready.</>,
-  attribution: 'Kairo presentation software',
-} as const
+  quote: (
+    <>
+      Almost there. <span className="font-semibold">See you Sunday.</span>
+    </>
+  ),
+}
 
 function VerifyEmailPageContent(): React.ReactElement {
   const params = useSearchParams()
@@ -34,18 +38,26 @@ function VerifyEmailPageContent(): React.ReactElement {
   return (
     <AuthSplit
       title={
-        state === 'working' ? 'Confirming…' : state === 'done' ? 'Email confirmed' : 'Link expired'
+        state === 'working' ? 'Confirming…' : state === 'done' ? 'Email confirmed' : 'That link didn’t work'
       }
       blurb={
         state === 'done'
-          ? 'Thanks — your address is confirmed. You can close this page and go back to Kairo.'
+          ? 'Your address is confirmed. Head back to the Kairo app, or open your church’s dashboard here.'
           : state === 'failed'
-            ? (error ?? 'Ask for a new link from the app.')
-            : 'One moment.'
+            ? `${error ?? 'This link no longer works.'} Sign in and we’ll send you a fresh code.`
+            : 'Checking your link. This only takes a moment.'
       }
       brand={BRAND}
     >
-      {null}
+      {state === 'done' ? (
+        <Link className={btnPrimary} href="/dashboard">
+          Open dashboard
+        </Link>
+      ) : state === 'failed' ? (
+        <Link className={btnSecondary} href="/login">
+          Sign in
+        </Link>
+      ) : null}
     </AuthSplit>
   )
 }

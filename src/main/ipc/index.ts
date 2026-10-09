@@ -7,7 +7,7 @@ import { songUsageService } from "../services/song-usage";
 import { TRANSFER, type TransferCommitRequest, type TransferExportRequest } from "@shared/kairo-bundle";
 import { transferService } from "../services/transfer";
 import { documentsService } from "../services/documents";
-import { ipcMain, BrowserWindow, clipboard, dialog, shell } from "electron";
+import { ipcMain, BrowserWindow, clipboard, dialog, powerMonitor, shell } from "electron";
 import type { OpenDialogOptions } from "electron";
 import log from "electron-log/main";
 import type {
@@ -1460,6 +1460,9 @@ function registerAccountHandlers(): void {
   });
 
   ipcMain.handle(IPC.ACCOUNT.SYNC_ORG_SECRETS, async () => {
+    // Fired when the window gains focus: also the moment to try a stale
+    // session again, rather than waiting for the next scheduled retry.
+    cloudSession.reconnect();
     await cloudSession.pullOrgSecrets();
   });
 }
@@ -1553,6 +1556,8 @@ export function registerIpcHandlers(): void {
   // Restores a stored sign-in and starts the quiet refresh loop. Never awaited:
   // the account is not allowed to delay startup by so much as a frame.
   cloudSession.start();
+  // Waking from sleep is the usual moment a laptop's network comes back.
+  powerMonitor.on("resume", () => cloudSession.reconnect());
   void mediaService.scan().catch((err) => {
     log.warn("[Media] Initial scan failed", (err as Error).message);
   });

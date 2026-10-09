@@ -1,7 +1,8 @@
 import { isGlossLine } from './lyrics-translate'
 
 /** Factory default — slightly darker yellow / gold for bilingual glosses. */
-export const DEFAULT_GLOSS_COLOR = '#D4A017'
+/** The translated line's colour by default — a light palette blue, not the retired gold. */
+export const DEFAULT_GLOSS_COLOR = '#AABED7'
 
 /**
  * Resolves the paint color for one lyric line.

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { ServiceRecords } from '../src/lib/service-archive'
-import { extractNuggetQuotes, serviceTextExport } from '../src/lib/service-records'
+import { extractNuggetQuotes, serviceTalkTimeMs, serviceTextExport } from '../src/lib/service-records'
 import type { SermonPlan, TranscriptResult } from '../src/lib/ipc'
 import { MemoryStorage, transcriptSegment } from './fixtures'
 
@@ -223,4 +223,34 @@ test('discarding the open service leaves nothing behind', () => {
   assert.deepEqual(records.snapshot().services.map(s => s.title), ['Kept'])
   records.create()
   assert.ok(records.active())
+})
+
+test('the service clock counts talk time: it stops while paused and banks pauses at the end', () => {
+  const base = { createdAt: 0, endedAt: null }
+  assert.equal(serviceTalkTimeMs({ ...base }, 60_000), 60_000)
+  // Paused at 40s: still 40s at 90s.
+  assert.equal(serviceTalkTimeMs({ ...base, pausedMs: 0, pausedAt: 40_000 }, 90_000), 40_000)
+  // Resumed after a 50s pause: 60s of talk at 110s.
+  assert.equal(serviceTalkTimeMs({ ...base, pausedMs: 50_000, pausedAt: null }, 110_000), 60_000)
+  // Ended: an open pause no longer grows.
+  assert.equal(serviceTalkTimeMs({ createdAt: 0, endedAt: 100_000, pausedMs: 20_000, pausedAt: null }, 500_000), 80_000)
+
+  const records = new ServiceRecords(new MemoryStorage(), async () => '[]')
+  records.create()
+  records.setRunning(true)
+  assert.equal(records.active()!.pausedAt ?? null, null)
+  records.setRunning(false)
+  const pausedAt = records.active()!.pausedAt
+  assert.equal(typeof pausedAt, 'number')
+  // Repeated status reports do not move the pause start.
+  records.setRunning(false)
+  assert.equal(records.active()!.pausedAt, pausedAt)
+  records.setRunning(true)
+  assert.equal(records.active()!.pausedAt, null)
+  assert.ok((records.active()!.pausedMs ?? 0) >= 0)
+  records.setRunning(false)
+  const id = records.active()!.id
+  records.end({ title: 'Evening' })
+  const ended = records.snapshot().services.find((item) => item.id === id)!
+  assert.equal(ended.pausedAt, null)
 })

@@ -2,7 +2,7 @@ import { createAudioCapture } from '@/audio/capture'
 import { IMPORT_OPTIONS, isImportKind } from '@shared/import-menu'
 import { requestImport } from '@/hooks/useImportRequest'
 import Documents from '@/components/documents/Documents'
-import { useState, useEffect, useRef, type PointerEvent } from 'react'
+import { useState, useEffect, useRef, useCallback, type PointerEvent } from 'react'
 import { AlertTriangle, RefreshCw, X } from '@/icons'
 import AppShell, { WorkspaceRail } from '@/components/layout/AppShell'
 import { DesktopTooltip } from '@/components/layout/DesktopTooltip'
@@ -24,6 +24,7 @@ import { usePassagesSync } from '@/stores/usePassages'
 import { LoadingScreen } from '@/bootstrap/LoadingScreen'
 import ScreenConfiguration from '@/components/screens/ScreenConfiguration'
 import OnboardingWizard from '@/components/onboarding/OnboardingWizard'
+import CoachTour, { COACH_TOURS, COACH_TOUR_EVENT, coachTourFor, type CoachStep } from '@/components/onboarding/CoachTour'
 import AccountGate from '@/components/account/AccountGate'
 import {
   SPLASH_MIN_VISIBLE_MS,
@@ -346,12 +347,31 @@ export default function App(): React.ReactElement {
   // that follows a new account.
   const accountGateOpen = ready && shouldOfferAccountGate(accountSession)
 
-  // Setup only ever appears over a fully loaded, signed-in app, and only until
-  // it is answered — a finished or dismissed wizard never comes back on its own.
-  const onboardingOpen =
-    ready &&
-    !accountGateOpen &&
-    shouldOfferOnboarding({ state: onboarding, dismissedThisSession: onboardingDismissed })
+  // First run, once per install: setup opens before the account wall — the tour
+  // comes first and the account is created inside it. A finished or dismissed
+  // wizard never comes back on its own; after that, signed-out launches get the
+  // plain sign-in wall.
+  const offerOnboarding =
+    ready && shouldOfferOnboarding({ state: onboarding, dismissedThisSession: onboardingDismissed })
+  // Finishing setup marks it complete before the closing welcome is shown, so
+  // once the wizard is up it stays mounted until it dismisses itself.
+  const [onboardingHeld, setOnboardingHeld] = useState(false)
+  // A few "where things are" tips, once, right after setup closes.
+  const [coachSteps, setCoachSteps] = useState<CoachStep[] | null>(null)
+  const closeCoach = useCallback(() => setCoachSteps(null), [])
+  // "Show tips again" in Settings → Account replays the Operator walk-round.
+  useEffect(() => {
+    const replay = (): void => {
+      setRoute('operator')
+      setCoachSteps(COACH_TOURS.operator)
+    }
+    window.addEventListener(COACH_TOUR_EVENT, replay)
+    return () => window.removeEventListener(COACH_TOUR_EVENT, replay)
+  }, [])
+  useEffect(() => {
+    if (offerOnboarding) setOnboardingHeld(true)
+  }, [offerOnboarding])
+  const onboardingOpen = offerOnboarding || (onboardingHeld && ready && !onboardingDismissed)
 
   // Cross-fade: the loader stays mounted, transparent, for one transition.
   useEffect(() => {
@@ -426,18 +446,34 @@ export default function App(): React.ReactElement {
     )
   }
 
+  // First child of either tree, keyed, so the same wizard survives sign-in.
+  const onboardingWizard = onboardingOpen && (
+    <OnboardingWizard
+      key="onboarding"
+      onDismiss={(next, options) => {
+        setOnboardingDismissed(true)
+        setOnboardingHeld(false)
+        if (next) setRoute(next)
+        if (options?.coach !== false) setCoachSteps(coachTourFor(next))
+      }}
+    />
+  )
+
   if (accountGateOpen) {
     return (
       <div className="relative h-screen w-screen overflow-hidden bg-surface text-white select-none">
+        {onboardingWizard}
         <CloudSubscriptions />
         {loaderMounted && <LoadingScreen progress={progress} showProgress={false} fadingOut />}
-        <AccountGate />
+        {!onboardingOpen && <AccountGate />}
       </div>
     )
   }
 
   return (
     <div className="relative flex h-screen flex-col overflow-hidden bg-surface text-white select-none animate-fade-in">
+      {onboardingWizard}
+      {coachSteps && <CoachTour steps={coachSteps} onDone={closeCoach} />}
       <AudioPipeline />
       <DesktopTooltip />
       <TracksPlayer />
@@ -542,11 +578,6 @@ export default function App(): React.ReactElement {
         />
       )}
 
-      {onboardingOpen && (
-        <OnboardingWizard
-          onDismiss={() => setOnboardingDismissed(true)}
-        />
-      )}
 
       {/* Screens — screen configuration, apart from themes */}
       {screensWindow && (

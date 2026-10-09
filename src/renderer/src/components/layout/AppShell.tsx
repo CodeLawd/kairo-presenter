@@ -12,14 +12,11 @@ import {
   Play,
   Radio,
   Settings,
-  Volume2,
-  Cloud,
 } from '@/icons'
 import type { NavRoute } from '@/App'
+import { AccountRailButton, AudioRailButton } from './RailPopovers'
 import { useAppStore } from '@/stores/useAppStore'
-import { useAccountStore } from '@/stores/useAccountStore'
 import { useMediaDockStore } from '@/stores/useMediaDockStore'
-import { describeSessionState } from '@shared/cloud/auth-state'
 import { useTracksPlaybackStore } from '@/stores/useTracksPlaybackStore'
 import { clearLiveAll } from '@/lib/clear-live-output'
 import { useBootstrapStore } from '@/bootstrap/useBootstrapStore'
@@ -73,6 +70,10 @@ export function WorkspaceRail({
           )
         })}
       </div>
+      <div className="flex flex-col items-center gap-1 pb-1">
+        <AudioRailButton />
+        <AccountRailButton />
+      </div>
       <button
         type="button"
         onClick={onOpenSettings}
@@ -93,10 +94,6 @@ interface AppShellProps {
   onProPresenterStatus?: () => void
   /** Route-specific controls rendered inline in the top bar (see OperatorToolbar). */
   toolbar?: React.ReactNode
-}
-
-function useCloudStatus(): ReturnType<typeof describeSessionState> {
-  return describeSessionState(useAccountStore((s) => s.session))
 }
 
 function StatusItem({
@@ -202,7 +199,7 @@ export default function AppShell({
   onProPresenterStatus,
   toolbar,
 }: AppShellProps): React.ReactElement {
-  const { ppState, audioCapturing, audioDeviceName, liveOutputLabel, isTranscribing } =
+  const { ppState, liveOutputLabel, isTranscribing } =
     useAppStore()
   const houseTrack = useTracksPlaybackStore((state) => {
     const live = state.library.items.find((item) => item.id === state.library.liveId)
@@ -214,7 +211,6 @@ export default function AppShell({
   // header once it is switched on in Settings.
   const showPp = useBootstrapStore((s) => propresenterEnabled(s.settings))
   const screens = useScreensStatus()
-  const cloud = useCloudStatus()
   const mediaOpen = useMediaDockStore((s) => s.open)
   const toggleMedia = useMediaDockStore((s) => s.toggle)
   const mediaLiveId = useMediaDockStore((s) => s.liveItemId)
@@ -266,18 +262,6 @@ export default function AppShell({
           onClick={onProPresenterStatus}
           action={ppState === 'connected' ? 'Open ProPresenter settings' : 'Click to connect'}
         />}
-        <StatusItem
-          label="Account"
-          detail={cloud.detail}
-          state={cloud.tone === 'good' ? 'ready' : cloud.tone === 'warn' ? 'warning' : 'offline'}
-          icon={Cloud}
-        />
-        <StatusItem
-          label="Audio"
-          detail={audioDeviceName ?? (audioCapturing ? 'Capturing' : 'Idle')}
-          state={audioCapturing ? 'active' : 'offline'}
-          icon={Volume2}
-        />
       </div>
 
       <div className="header-live flex shrink-0 items-center gap-1 pl-2">
@@ -304,7 +288,7 @@ export default function AppShell({
           }
         >
           <MediaLibrary size={15} weight={mediaOpen ? 'fill' : 'regular'} aria-hidden="true" />
-          <span className="hidden min-[1200px]:inline">Media</span>
+          <span>Media</span>
           {mediaLiveId && (
             <span
               className="absolute right-1 top-1 size-1.5 rounded-full bg-teal-400"
@@ -329,7 +313,7 @@ export default function AppShell({
         )}
         <div
           className={[
-            'header-live-label flex h-7 min-w-0 max-w-[10rem] items-center gap-1.5 px-2 text-[11px] font-medium',
+            'header-live-label flex h-7 min-w-0 max-w-[16rem] items-center gap-1.5 px-2 text-[11px] font-medium',
             isLive ? 'text-rose-400' : 'text-zinc-500',
           ].join(' ')}
           title={
@@ -348,7 +332,7 @@ export default function AppShell({
             ].join(' ')}
             aria-hidden="true"
           />
-          <span className="min-w-0 truncate">{liveDetail ?? 'Live'}</span>
+          <span className="header-live-text min-w-0 truncate">{liveDetail ?? 'Live'}</span>
         </div>
         <button
           type="button"

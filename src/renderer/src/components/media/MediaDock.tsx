@@ -304,8 +304,6 @@ export default function MediaDock(): React.ReactElement | null {
   // ── Actions ────────────────────────────────────────────────────────────────
 
   /** Clicking a background IS the push — no confirm step, one gesture mid-song. */
-  /** The last push reached no screen — the live bar must not claim "On screen". */
-  const [offAir, setOffAir] = useState(false)
   const [presentation, savePresentation] = useSettings('presentation', DEFAULT_PRESENTATION_SETTINGS)
   const soundOn = presentation.audio.enabled
   const toggleSound = (): void => {
@@ -317,11 +315,9 @@ export default function MediaDock(): React.ReactElement | null {
     setBusyId(item.id)
     setError(null)
     try {
-      const { applied, reason } = await window.api.media.push(item.id)
-      setOffAir(!applied)
-      if (!applied) {
-        setError(`Not on screen — ${reason ?? 'no screen took it'}.`)
-      }
+      // With no screen on, the background is still live — the operator's
+      // preview shows it — so there is nothing to warn about here.
+      await window.api.media.push(item.id)
     } catch (err) {
       setError((err as Error).message)
     } finally {
@@ -331,7 +327,6 @@ export default function MediaDock(): React.ReactElement | null {
 
   const clearBackground = useCallback(async (): Promise<void> => {
     setError(null)
-    setOffAir(false)
     try {
       await window.api.media.clear()
       useAppStore.setState({ liveDocumentPreview: null })
@@ -843,10 +838,9 @@ export default function MediaDock(): React.ReactElement | null {
 
               {liveItem && (
                 <div className="flex min-w-0 items-center gap-2">
-                  <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', offAir ? 'bg-amber-400' : 'bg-teal-500')} aria-hidden="true" />
+                  <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-live" aria-hidden="true" />
                   <span className="min-w-0 truncate text-[11px] text-slate-400">
-                    {offAir ? 'Not on screen' : liveItem.kind === 'video' && library.livePaused ? 'Paused' : 'On screen'}
-                    {' · '}
+                    {liveItem.kind === 'video' && library.livePaused && <>Paused{' · '}</>}
                     <span className="font-medium text-slate-200">{liveItem.name}</span>
                   </span>
                   {liveItem.kind === 'video' && (
@@ -912,15 +906,6 @@ export default function MediaDock(): React.ReactElement | null {
               <p className="mx-5 mt-2 flex items-start gap-1.5 border-l-2 border-amber-400 bg-surface-secondary px-2.5 py-1.5 text-[11px] leading-snug text-slate-300">
                 <AlertTriangle size={11} className="mt-px shrink-0 text-amber-400" aria-hidden="true" />
                 <span className="flex-1">{library.error ?? error}</span>
-                {offAir && !library.error && (
-                  <button
-                    type="button"
-                    className="shrink-0 font-medium text-slate-100 underline-offset-2 hover:underline"
-                    onClick={() => useAppStore.getState().openScreens()}
-                  >
-                    Open Screens
-                  </button>
-                )}
               </p>
             )}
 
@@ -1362,7 +1347,7 @@ function InlineNameInput({
             onMouseDown={(event) => event.preventDefault()}
             onClick={commit}
             disabled={!value.trim()}
-            className="flex flex-1 items-center justify-center gap-1 bg-teal-600 px-2 py-1 text-[10px] font-semibold text-white hover:bg-teal-500 disabled:opacity-40"
+            className="flex flex-1 items-center justify-center gap-1 bg-teal-500 px-2 py-1 text-[10px] font-semibold text-on-accent hover:bg-teal-600 disabled:opacity-40"
           >
             <Check size={11} aria-hidden="true" />
             Save
@@ -1545,7 +1530,7 @@ function MediaCard({
           picked
             ? 'border-white'
             : live
-              ? 'border-teal-400'
+              ? 'border-live'
               : 'border-transparent hover:border-slate-600',
           busy && 'opacity-70'
         )}

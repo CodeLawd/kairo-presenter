@@ -26,7 +26,7 @@ export default function StepShell({
     <div className="onboarding-step flex flex-1 flex-col animate-fade-in">
       {(brand || mark) && (
         <div className={cn('mb-5', brand && 'flex items-center gap-3')}>
-          {brand && <KairoMark size="sm" />}
+          {brand && <KairoMark size="sm" variant="mark" />}
           {mark}
         </div>
       )}

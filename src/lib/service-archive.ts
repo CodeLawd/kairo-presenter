@@ -94,8 +94,23 @@ export class ServiceRecords {
     this.db.store = { activeId: record.id, services: [record, ...this.db.get('services')] }
     this.publish()
   }
-  /** Transcription start/stop — does not pause or resume the service itself. */
+  /**
+   * Transcription start/stop. The service stays open either way; what changes
+   * is its clock — a stop opens a pause, a start closes it and banks the time.
+   */
   setRunning(running: boolean): void {
+    const record = this.active()
+    if (record) {
+      const paused = record.pausedAt != null
+      if (running && paused) {
+        this.update(record.id, item => {
+          item.pausedMs = (item.pausedMs ?? 0) + Math.max(0, Date.now() - (item.pausedAt ?? Date.now()))
+          item.pausedAt = null
+        })
+      } else if (!running && !paused) {
+        this.update(record.id, item => { item.pausedAt = Date.now() })
+      }
+    }
     if (!running) void this.analyze()
   }
   /**
@@ -118,6 +133,11 @@ export class ServiceRecords {
       if (details.note) item.notes = [...item.notes.filter(n => n.id !== details.note!.id), structuredClone(details.note)]
       item.status = 'ended'
       item.endedAt = Date.now()
+      // Bank a pause still open at the end so the saved duration is talk time.
+      if (item.pausedAt != null) {
+        item.pausedMs = (item.pausedMs ?? 0) + Math.max(0, item.endedAt - item.pausedAt)
+        item.pausedAt = null
+      }
       item.upload = { ...idleUpload(), status: 'queued' }
     })
     this.db.set('activeId', null)

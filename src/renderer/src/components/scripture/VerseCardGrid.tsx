@@ -121,7 +121,7 @@ export function VerseCardGrid({
             {/* A lone passage needs no heading — its slide already shows the reference. */}
             {(rows.length > 1 || row.note) && (
               <div className="flex flex-wrap items-baseline gap-2 px-0.5">
-                <p className={cn("truncate text-xs font-semibold", rowIsLive ? "text-teal-300" : "text-slate-300")}>
+                <p className={cn("truncate text-xs font-semibold", rowIsLive ? "text-live" : "text-slate-300")}>
                   {row.reference}
                 </p>
                 {row.note && (

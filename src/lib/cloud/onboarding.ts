@@ -11,36 +11,36 @@ import type { AppSettings, OnboardingState, OnboardingStepId } from '../ipc'
 import { setupUsesPropresenter } from '../pp-connect-gate'
 
 /**
- * Wizard order. `account` sits first because the rest can be synced once signed
- * in; `output` comes before ProPresenter because its answer decides whether the
- * ProPresenter steps are asked at all.
+ * First run, once per install: the tour, then the account (signed-out
+ * operators create or sign into one here), then this computer's screens.
+ * The church name comes from sign-up; integrations stay in Settings.
  */
-export const ONBOARDING_STEPS: readonly OnboardingStepId[] = [
-  'account',
-  'output',
-  'propresenter',
-  'propresenterResources',
-  'apiKeys',
-  'church',
-] as const
+export const ONBOARDING_STEPS: readonly OnboardingStepId[] = ['welcome', 'account', 'output']
 
-const PROPRESENTER_STEPS: readonly OnboardingStepId[] = ['propresenter', 'propresenterResources']
-
-/**
- * The steps this setup is walked through. A setup whose outputs never touch
- * ProPresenter is not asked for a ProPresenter host — derived from the outputs
- * the Output step writes, so there is no separate answer to keep in sync.
- */
 export function onboardingSteps(
-  settings: Pick<AppSettings, 'overlay'> & Partial<Pick<AppSettings, 'propresenterResources'>>,
+  _settings: Pick<AppSettings, 'overlay'> & Partial<Pick<AppSettings, 'propresenterResources'>>,
 ): OnboardingStepId[] {
-  if (setupUsesPropresenter(settings.overlay, settings.propresenterResources?.ndiVideoInputId)) {
-    return [...ONBOARDING_STEPS]
+  return [...ONBOARDING_STEPS]
+}
+
+/** Heal old saved positions while preserving the operator's completion decision. */
+export function normalizeOnboardingState(raw: unknown): OnboardingState {
+  const value = raw && typeof raw === 'object' ? raw as Partial<OnboardingState> : {}
+  const steps = (list: unknown): OnboardingStepId[] => Array.isArray(list)
+    ? ONBOARDING_STEPS.filter((step) => list.includes(step)) : []
+  return {
+    completedSteps: steps(value.completedSteps),
+    skippedSteps: steps(value.skippedSteps),
+    currentStep: ONBOARDING_STEPS.includes(value.currentStep as OnboardingStepId)
+      ? value.currentStep as OnboardingStepId : 'welcome',
+    completedAt: typeof value.completedAt === 'number' && Number.isFinite(value.completedAt)
+      ? value.completedAt : null,
+    source: value.source === 'legacy' ? 'legacy' : 'fresh',
   }
-  return ONBOARDING_STEPS.filter((step) => !PROPRESENTER_STEPS.includes(step))
 }
 
 export function onboardingStepLabel(step: OnboardingStepId): string {
+  if (step === 'welcome') return 'Welcome'
   if (step === 'account') return 'Account'
   if (step === 'propresenter') return 'ProPresenter'
   if (step === 'propresenterResources') return 'ProPresenter resources'
@@ -52,7 +52,7 @@ export function onboardingStepLabel(step: OnboardingStepId): string {
 export const DEFAULT_ONBOARDING_STATE: OnboardingState = {
   completedSteps: [],
   skippedSteps: [],
-  currentStep: 'account',
+  currentStep: 'welcome',
   completedAt: null,
   source: 'fresh',
 }
@@ -71,7 +71,8 @@ export function isStepComplete(step: OnboardingStepId, settings: AppSettings): b
       (value) => typeof value === 'string' && value.trim() !== '',
     )
   }
-  if (step === 'output') return settings.overlay.outputs.some((output) => output.enabled)
+  if (step === 'output') return settings.overlay.outputs.some((output) =>
+    output.enabled && output.kind === 'screen' && typeof output.displayId === 'number')
   if (step === 'apiKeys') {
     const configured = (settings as AppSettings & {
       secretsConfigured?: { bible?: boolean; deepgram?: boolean }
@@ -186,26 +187,28 @@ export function resetOnboarding(state: OnboardingState): OnboardingState {
   return { ...DEFAULT_ONBOARDING_STATE, source: state.source }
 }
 
-/**
- * The state an existing install starts from. A fully configured one is marked
- * finished on the spot, so the wizard is never shown to it.
- */
+/** Seed older installs without making a working setup repeat the introduction. */
 export function seedOnboardingFromSettings(
   settings: AppSettings,
   now = Date.now(),
 ): OnboardingState {
-  // The resource browser is opt-in for existing installs. Marking it skipped
-  // keeps an upgrade from opening a new screen or interrupting a partly
-  // configured operator; `resetOnboarding()` starts the current flow again.
-  const completedSteps = deriveCompletedSteps(settings).filter((step) => step !== 'propresenterResources')
+  const completedSteps = deriveCompletedSteps(settings)
+  if (completedSteps.length === 0 && !settings.propresenter.host.trim() &&
+      !isStepComplete('apiKeys', settings) && !isStepComplete('church', settings)) {
+    return { ...DEFAULT_ONBOARDING_STATE, completedSteps: [], skippedSteps: [] }
+  }
+  // Someone already running services skips the tour, and their sign-in is the
+  // launch gate's job, not setup's.
   const state: OnboardingState = {
     ...DEFAULT_ONBOARDING_STATE,
     source: 'legacy',
     completedSteps,
-    // Nothing about an existing install can prove an account, and there is no
-    // account to prove in phase 1 — treat it as answered so a working setup is
-    // not held open by the one step it cannot satisfy.
-    skippedSteps: ['account', 'propresenterResources'],
+    skippedSteps: ['welcome', 'account'],
+  }
+  // Pre-wizard installs with a working integration should not be interrupted.
+  if (!state.completedSteps.includes('output') && settings.propresenter.host.trim() &&
+      settings.overlay.outputs.some((output) => output.enabled && output.kind !== 'screen')) {
+    state.completedSteps.push('output')
   }
   const resume = nextIncompleteStep(state)
   // Nothing left to answer: the install is already set up, so the wizard is

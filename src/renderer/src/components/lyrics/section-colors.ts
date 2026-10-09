@@ -2,21 +2,30 @@ import type { LyricsSectionType } from '@shared/ipc'
 
 /**
  * One colour per section type, shared by the song view and the editor so a
- * chorus reads as the same green everywhere. Apple system colours (dark
- * appearance) — distinct at a glance, none of them the amber that means "live".
+ * chorus reads as the same red everywhere. ProPresenter-style group colours:
+ * deep enough that `SECTION_TEXT` on a solid fill reads at 5:1 or better, since
+ * every use is a solid bar or chip carrying the label.
  *
  * Colour follows the type, like ProPresenter groups: every verse is blue, the
  * label ("Verse 2") tells them apart.
  */
 export const SECTION_COLOR: Record<LyricsSectionType, string> = {
-  verse: '#0A84FF',
-  chorus: '#30D158',
-  'pre-chorus': '#64D2FF',
-  bridge: '#BF5AF2',
-  tag: '#FFD60A',
-  intro: '#98989D',
-  outro: '#5E5CE6',
-  ending: '#FF375F',
+  verse: '#3B63D9',
+  chorus: '#C8372D',
+  'pre-chorus': '#0E7490',
+  bridge: '#7C3AED',
+  tag: '#A15C07',
+  intro: '#565449',
+  outro: '#4F46E5',
+  ending: '#BE123C',
+}
+
+/** Text on a section-coloured fill (brand paper). */
+export const SECTION_TEXT = '#FFFBF4'
+
+/** Solid fill + text for a section label chip or bar. */
+export function sectionFill(type: LyricsSectionType): { backgroundColor: string; color: string } {
+  return { backgroundColor: sectionColor(type), color: SECTION_TEXT }
 }
 
 /** `#RRGGBB` at the given opacity, for borders and tints. */

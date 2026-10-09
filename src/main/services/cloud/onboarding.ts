@@ -4,7 +4,7 @@ import log from 'electron-log/main'
 import type { OnboardingState, OnboardingStepId } from '@shared/ipc'
 import {
   DEFAULT_ONBOARDING_STATE,
-  ONBOARDING_STEPS,
+  normalizeOnboardingState,
   completeStep,
   finishOnboarding,
   resetOnboarding,
@@ -55,7 +55,7 @@ class OnboardingService {
   }
 
   getState(): OnboardingState {
-    return normalize(onboardingStore.get('onboarding'))
+    return normalizeOnboardingState(onboardingStore.get('onboarding'))
   }
 
   completeStep(step: OnboardingStepId): OnboardingState {
@@ -93,25 +93,6 @@ class OnboardingService {
       }
     }
     return state
-  }
-}
-
-/** A store file edited by hand — or written by an older build — must not crash the wizard. */
-function normalize(raw: unknown): OnboardingState {
-  const value = raw && typeof raw === 'object' ? (raw as Partial<OnboardingState>) : {}
-  const steps = (list: unknown): OnboardingStepId[] =>
-    Array.isArray(list)
-      ? ONBOARDING_STEPS.filter((step) => (list as unknown[]).includes(step))
-      : []
-  const current = ONBOARDING_STEPS.includes(value.currentStep as OnboardingStepId)
-    ? (value.currentStep as OnboardingStepId)
-    : DEFAULT_ONBOARDING_STATE.currentStep
-  return {
-    completedSteps: steps(value.completedSteps),
-    skippedSteps: steps(value.skippedSteps),
-    currentStep: current,
-    completedAt: typeof value.completedAt === 'number' ? value.completedAt : null,
-    source: value.source === 'legacy' ? 'legacy' : 'fresh',
   }
 }
 

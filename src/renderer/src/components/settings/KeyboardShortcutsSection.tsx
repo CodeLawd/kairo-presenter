@@ -15,7 +15,7 @@ export default function KeyboardShortcutsSection({ bindings, onSave }: {
     <p className="text-[13px] leading-relaxed text-white/55">Shortcuts work while Kairo is focused. Click a binding and press a key combination. Live commands pause while typing or using a dialog.</p>
     {['Navigation', 'Live commands'].map(group => <section key={group} className="space-y-2">
       <h3 className="text-xs font-semibold text-white/60">{group}</h3>
-      <div className="rounded-xl bg-[#292929]">
+      <div className="rounded-xl bg-surface-tertiary">
         {SHORTCUT_COMMANDS.filter(command => command.group === group).map(command => <div key={command.id} className="flex items-center justify-between gap-3 px-4 py-3">
           <span className="text-[13px] text-white/90">{command.label}</span>
           <div className="flex items-center gap-2">

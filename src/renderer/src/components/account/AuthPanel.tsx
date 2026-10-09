@@ -4,7 +4,8 @@ import { createSingleFlight, MIN_PASSWORD_LENGTH, validateSignUp } from '@shared
 import { useAccountStore } from '@/stores/useAccountStore'
 import PasswordInput from '@/components/ui/password-input'
 
-type Mode = 'signIn' | 'signUp'
+export type AuthMode = 'signIn' | 'signUp'
+type Mode = AuthMode
 
 /**
  * Email + password, used by both the setup wizard and the account gate.
@@ -14,9 +15,12 @@ type Mode = 'signIn' | 'signUp'
 export default function AuthPanel({
   initialMode = 'signIn',
   onDone,
+  onModeChange,
 }: {
   initialMode?: Mode
   onDone?: () => void
+  /** Told when the operator switches between creating an account and signing in. */
+  onModeChange?: (mode: Mode) => void
 }): React.ReactElement {
   const setSession = useAccountStore((s) => s.setSession)
   const [mode, setMode] = useState<Mode>(initialMode)
@@ -173,7 +177,9 @@ export default function AuthPanel({
             type="button"
             className="text-slate-300 transition-colors hover:text-white focus-visible:outline-none focus-visible:text-white disabled:opacity-50"
             onClick={() => {
-              setMode(mode === 'signUp' ? 'signIn' : 'signUp')
+              const next = mode === 'signUp' ? 'signIn' : 'signUp'
+              setMode(next)
+              onModeChange?.(next)
               setError(null)
               setNotice(null)
             }}

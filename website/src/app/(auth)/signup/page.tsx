@@ -4,20 +4,19 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Suspense, useState } from 'react'
 import { AuthSplit } from '@/components/auth/AuthSplit'
+import { GoogleButton } from '@/components/auth/GoogleButton'
 import { PasswordField } from '@/components/auth/PasswordField'
 import { btnPrimary, input, label, msg, msgError } from '@/components/auth/styles'
 import { api, ApiError } from '@/lib/api'
 import { seedAccessToken } from '@/lib/session'
 
 const BRAND = {
-  kind: 'quote',
   quote: (
     <>
-      Set up your church. <span className="font-semibold">Bring your team in when you&rsquo;re ready.</span>
+      Set up once. <span className="font-semibold">Bring the team in when you&rsquo;re ready.</span>
     </>
   ),
-  attribution: 'Kairo presentation software',
-} as const
+}
 
 function SignUpPageContent(): React.ReactElement {
   const router = useRouter()
@@ -28,6 +27,11 @@ function SignUpPageContent(): React.ReactElement {
   const [orgName, setOrgName] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const returnTo = params.get('returnTo')
+  // Google sign-up skips the form, and Google has already confirmed the
+  // address — onboarding moves past the email step on its own.
+  const onboarding = returnTo ? `/onboarding?returnTo=${encodeURIComponent(returnTo)}` : '/onboarding'
 
   const submit = async (event: React.FormEvent): Promise<void> => {
     event.preventDefault()
@@ -43,8 +47,7 @@ function SignUpPageContent(): React.ReactElement {
       seedAccessToken(result.accessToken)
       // A new account is unverified and its org is bare, so setup comes first.
       // Anyone who arrived mid-flow keeps their destination through it.
-      const returnTo = params.get('returnTo')
-      router.push(returnTo ? `/onboarding?returnTo=${encodeURIComponent(returnTo)}` : '/onboarding')
+      router.push(onboarding)
     } catch (failure) {
       setError(failure instanceof ApiError ? failure.message : 'Something went wrong.')
     } finally {
@@ -54,18 +57,23 @@ function SignUpPageContent(): React.ReactElement {
 
   return (
     <AuthSplit
-      title="Create your account"
-      blurb="Start with your details. You can finish setting up your church afterward."
+      title="Set up Kairo for your church"
+      blurb="Free during early access. Next you’ll confirm your email and add your service times."
       brand={BRAND}
       footer={
         <p className="m-0">
           Already have an account?{' '}
-          <Link className="text-paper underline-offset-2 hover:underline" href="/login">
+          <Link
+            className="font-medium text-paper underline-offset-2 hover:underline"
+            href={returnTo ? `/login?returnTo=${encodeURIComponent(returnTo)}` : '/login'}
+          >
             Sign in
           </Link>
         </p>
       }
     >
+      <GoogleButton returnTo={onboarding} />
+
       <form className="flex flex-col gap-5" onSubmit={submit}>
         <div>
           <label className={label} htmlFor="name">
@@ -76,7 +84,7 @@ function SignUpPageContent(): React.ReactElement {
             className={input}
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="Joshua Alexander"
+            placeholder="Jordan Lee"
             autoComplete="name"
             required
           />
@@ -125,12 +133,14 @@ function SignUpPageContent(): React.ReactElement {
           required
         />
 
-        <p className={`${msg} ${msgError}`} aria-live="polite">
-          {error}
-        </p>
+        {error ? (
+          <p className={`${msg} ${msgError}`} role="alert">
+            {error}
+          </p>
+        ) : null}
 
         <button className={btnPrimary} type="submit" disabled={busy}>
-          {busy ? 'Creating…' : 'Create account'}
+          {busy ? 'Creating account…' : 'Create account'}
         </button>
       </form>
     </AuthSplit>
@@ -143,7 +153,7 @@ function SignUpPageContent(): React.ReactElement {
  */
 export default function SignUpPage(): React.ReactElement {
   return (
-    <Suspense fallback={<AuthSplit title="Create your account" brand={BRAND}>{null}</AuthSplit>}>
+    <Suspense fallback={<AuthSplit title="Set up Kairo for your church" brand={BRAND}>{null}</AuthSplit>}>
       <SignUpPageContent />
     </Suspense>
   )

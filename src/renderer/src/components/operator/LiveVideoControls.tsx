@@ -72,8 +72,8 @@ export function LiveVideoControls({
         className="video-seek"
         style={{
           background: ready
-            ? `linear-gradient(to right, rgb(228 228 231) 0%, rgb(228 228 231) ${(shown / duration) * 100}%, rgb(63 63 70) ${(shown / duration) * 100}%, rgb(63 63 70) 100%)`
-            : 'rgb(63 63 70)',
+            ? `linear-gradient(to right, rgb(var(--neutral-200)) 0%, rgb(var(--neutral-200)) ${(shown / duration) * 100}%, rgb(var(--range-track)) ${(shown / duration) * 100}%, rgb(var(--range-track)) 100%)`
+            : 'rgb(var(--range-track))',
         }}
       />
 

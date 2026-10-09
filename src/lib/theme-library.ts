@@ -1,5 +1,6 @@
 import type { CustomOverlayTheme, OverlayContentKind, OverlayOutput, OverlayTheme } from './ipc'
-import { normalizeOverlayTheme } from './overlay-defaults'
+import { DEFAULT_OVERLAY_SETTINGS, normalizeOverlayTheme } from './overlay-defaults'
+import { applyLayoutPreset } from './overlay-boxes'
 import { setContentOverride, themeForContentKind, withContentPatch } from './overlay-outputs'
 
 function newId(): string {
@@ -130,4 +131,135 @@ export function detachThemeFromOutputs(outputs: readonly OverlayOutput[], theme:
       ? { ...output, lyrics: { ...output.lyrics, themeId: null } }
       : { ...output, themeId: null }
   })
+}
+
+// ─── Built-in themes ──────────────────────────────────────────────────────────
+
+export const BUILT_IN_THEMES: Array<{
+  id: string
+  name: string
+  kind: OverlayContentKind
+  theme: OverlayTheme
+}> = [
+  { id: 'broadcast', name: 'Broadcast', kind: 'scripture', theme: DEFAULT_OVERLAY_SETTINGS.theme },
+  {
+    id: 'warm-paper',
+    name: 'Warm paper',
+    kind: 'scripture',
+    theme: applyLayoutPreset(
+      {
+        ...DEFAULT_OVERLAY_SETTINGS.theme,
+        background: { ...DEFAULT_OVERLAY_SETTINGS.theme.background, type: 'color', color: '#e8dfcf' },
+        verse: {
+          ...DEFAULT_OVERLAY_SETTINGS.theme.verse,
+          fontFamily: "Georgia, 'Times New Roman', serif",
+          color: '#201d19',
+          align: 'left',
+          shadow: { ...DEFAULT_OVERLAY_SETTINGS.theme.verse.shadow, enabled: false },
+        },
+        reference: { ...DEFAULT_OVERLAY_SETTINGS.theme.reference, color: '#8b4b32', position: 'above' },
+        layout: { ...DEFAULT_OVERLAY_SETTINGS.theme.layout, backdropBox: false },
+      },
+      'center',
+      72
+    ),
+  },
+  {
+    id: 'midnight',
+    name: 'Midnight',
+    kind: 'scripture',
+    theme: applyLayoutPreset(
+      {
+        ...DEFAULT_OVERLAY_SETTINGS.theme,
+        background: { ...DEFAULT_OVERLAY_SETTINGS.theme.background, type: 'gradient', color: '#07111f', color2: '#18324b', angleDeg: 135 },
+        reference: { ...DEFAULT_OVERLAY_SETTINGS.theme.reference, color: '#AABED7' },
+        layout: { ...DEFAULT_OVERLAY_SETTINGS.theme.layout, backdropBox: false },
+      },
+      'center',
+      76
+    ),
+  },
+
+  // ── Lyrics ────────────────────────────────────────────────────────────────
+  // Lyric slides are read at a glance from the back of a room, so these start
+  // full-frame with a transparent background — the motion background belongs to
+  // ProPresenter's media layer underneath, not baked into our frame.
+  {
+    id: 'lyrics-stage',
+    name: 'Stage lyrics',
+    kind: 'lyrics',
+    theme: applyLayoutPreset(
+      {
+        ...DEFAULT_OVERLAY_SETTINGS.theme,
+        background: { ...DEFAULT_OVERLAY_SETTINGS.theme.background, type: 'transparent' },
+        verse: {
+          ...DEFAULT_OVERLAY_SETTINGS.theme.verse,
+          fontSizePx: 96,
+          fontWeight: 700,
+          align: 'center',
+          verticalAlign: 'middle',
+          lineHeight: 1.25,
+        },
+        reference: { ...DEFAULT_OVERLAY_SETTINGS.theme.reference, show: false },
+        layout: {
+          ...DEFAULT_OVERLAY_SETTINGS.theme.layout,
+          backdropBox: false,
+          autoFitText: true,
+        },
+      },
+      'full',
+      92
+    ),
+  },
+  {
+    id: 'lyrics-lower',
+    name: 'Lyrics lower third',
+    kind: 'lyrics',
+    theme: applyLayoutPreset(
+      {
+        ...DEFAULT_OVERLAY_SETTINGS.theme,
+        background: { ...DEFAULT_OVERLAY_SETTINGS.theme.background, type: 'transparent' },
+        verse: {
+          ...DEFAULT_OVERLAY_SETTINGS.theme.verse,
+          fontSizePx: 64,
+          fontWeight: 600,
+          align: 'center',
+          verticalAlign: 'bottom',
+        },
+        reference: { ...DEFAULT_OVERLAY_SETTINGS.theme.reference, show: false },
+        layout: { ...DEFAULT_OVERLAY_SETTINGS.theme.layout, autoFitText: true },
+      },
+      'lower-third',
+      84
+    ),
+  },
+]
+
+/** Built-in starters for one content kind. */
+export function builtInThemesForKind(kind: OverlayContentKind): typeof BUILT_IN_THEMES {
+  return BUILT_IN_THEMES.filter((item) => item.kind === kind)
+}
+
+/**
+ * A library nobody has shaped yet: empty, or only the single default theme the
+ * first launch writes ("My current theme", unchanged).
+ */
+export function isUntouchedThemeLibrary(library: readonly CustomOverlayTheme[]): boolean {
+  if (library.length === 0) return true
+  if (library.length !== 1) return false
+  const only = library[0]
+  return only.kind === 'scripture' && only.name === 'My current theme' &&
+    JSON.stringify(normalizeOverlayTheme(only.theme)) === JSON.stringify(normalizeOverlayTheme(DEFAULT_OVERLAY_SETTINGS.theme))
+}
+
+/**
+ * A new install's library: every built-in as a real theme. The untouched
+ * default becomes "Broadcast" in place, keeping its id so screens that point
+ * at it still do.
+ */
+export function seedBuiltInThemes(library: readonly CustomOverlayTheme[], now = Date.now()): CustomOverlayTheme[] {
+  const reuseId = library[0]?.id
+  return BUILT_IN_THEMES.map((item, index) =>
+    createCustomTheme(item.name, item.theme, item.kind, now + index, index === 0 && reuseId ? reuseId : undefined),
+  )
 }

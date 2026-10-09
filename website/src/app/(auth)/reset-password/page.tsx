@@ -8,10 +8,12 @@ import { btnPrimary, msg, msgError } from '@/components/auth/styles'
 import { api, ApiError } from '@/lib/api'
 
 const BRAND = {
-  kind: 'quote',
-  quote: <>A reset signs out every device. Sign in again on each one.</>,
-  attribution: 'Kairo presentation software',
-} as const
+  quote: (
+    <>
+      Locked out happens. <span className="font-semibold">Your library is right where you left it.</span>
+    </>
+  ),
+}
 
 function ResetPasswordPageContent(): React.ReactElement {
   const router = useRouter()
@@ -46,18 +48,22 @@ function ResetPasswordPageContent(): React.ReactElement {
         title="Password changed"
         // A reset signs every device out — say so, or the Kairo computer
         // dropping out looks like a fault.
-        blurb="Every device signed into this account has been signed out. Sign in again on each one."
+        blurb="Every device on this account has been signed out, including the Kairo computer. Sign in again on each one before your next service."
         brand={BRAND}
       >
         <button className={btnPrimary} type="button" onClick={() => router.push('/login')}>
-          Sign in
+          Sign in with your new password
         </button>
       </AuthSplit>
     )
   }
 
   return (
-    <AuthSplit title="Choose a new password" brand={BRAND}>
+    <AuthSplit
+      title="Choose a new password"
+      blurb="Changing it signs out every device on this account, including the Kairo computer."
+      brand={BRAND}
+    >
       <form className="flex flex-col gap-5" onSubmit={submit}>
         <PasswordField
           id="password"
@@ -70,12 +76,14 @@ function ResetPasswordPageContent(): React.ReactElement {
           required
         />
 
-        <p className={`${msg} ${msgError}`} aria-live="polite">
-          {error}
-        </p>
+        {error ? (
+          <p className={`${msg} ${msgError}`} role="alert">
+            {error}
+          </p>
+        ) : null}
 
         <button className={btnPrimary} type="submit" disabled={busy}>
-          {busy ? 'Saving…' : 'Change password'}
+          {busy ? 'Saving…' : 'Save new password'}
         </button>
       </form>
     </AuthSplit>

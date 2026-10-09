@@ -1,32 +1,15 @@
 import assert from 'node:assert/strict'
-import fs from 'node:fs'
-import path from 'node:path'
 import test from 'node:test'
 
-import type { AppSettings, OnboardingState } from '../src/lib/ipc'
+import type { AppSettings } from '../src/lib/ipc'
 import { EMPTY_PP_RESOURCE_BINDINGS } from '../src/lib/propresenter-resources'
 import {
-  DEFAULT_ONBOARDING_STATE,
-  ONBOARDING_STEPS,
-  completeStep,
-  deriveCompletedSteps,
-  finishOnboarding,
-  isOnboardingFinished,
-  isStepComplete,
-  nextIncompleteStep,
-  nextStep,
-  onboardingSteps,
-  previousStep,
-  onboardingProgress,
-  onboardingSummary,
-  resetOnboarding,
-  seedOnboardingFromSettings,
-  setCurrentStep,
-  shouldOfferOnboarding,
-  skipStep,
+  DEFAULT_ONBOARDING_STATE, completeStep, finishOnboarding, isOnboardingFinished,
+  isStepComplete, nextIncompleteStep, nextStep, onboardingSteps, previousStep,
+  onboardingProgress, resetOnboarding, seedOnboardingFromSettings, setCurrentStep,
+  shouldOfferOnboarding, skipStep, normalizeOnboardingState,
 } from '../src/lib/cloud/onboarding'
 
-const ROOT = path.resolve(import.meta.dirname, '..')
 
 function settings(overrides: Partial<AppSettings> = {}): AppSettings {
   return {
@@ -70,218 +53,88 @@ function configuredSettings(): AppSettings {
   })
 }
 
-test('a blank install has nothing done', () => {
-  assert.deepEqual(deriveCompletedSteps(settings()), [])
-  assert.equal(nextIncompleteStep(DEFAULT_ONBOARDING_STATE), 'account')
-  assert.equal(isOnboardingFinished(DEFAULT_ONBOARDING_STATE), false)
+test('first run walks from the tour to the account to this computer\'s screens', () => {
+  assert.deepEqual(onboardingSteps(settings()), ['welcome', 'account', 'output'])
+  assert.deepEqual(onboardingSteps(configuredSettings()), ['welcome', 'account', 'output'])
+  const first = DEFAULT_ONBOARDING_STATE
+  assert.equal(first.currentStep, 'welcome')
+  assert.equal(nextStep(first), 'account')
+  const account = setCurrentStep(first, 'account')
+  assert.equal(nextStep(account), 'output')
+  assert.equal(previousStep(account), 'welcome')
+  assert.equal(nextStep(setCurrentStep(account, 'output')), null)
 })
 
-test('account is never derived from settings — only answered', () => {
-  assert.equal(isStepComplete('account', configuredSettings()), false)
+test('legacy saved steps resume at welcome without reopening completed onboarding', () => {
+  for (const currentStep of ['church', 'propresenter', 'propresenterResources', 'apiKeys'] as const) {
+    const state = normalizeOnboardingState({ ...DEFAULT_ONBOARDING_STATE, currentStep, completedAt: 123 })
+    assert.equal(state.currentStep, 'welcome')
+    assert.equal(state.completedAt, 123)
+    assert.equal(shouldOfferOnboarding({ state, dismissedThisSession: false }), false)
+  }
 })
 
-test('the account step uses the same entry gate as the app for restored offline sessions', () => {
-  const wizard = fs.readFileSync(
-    path.join(ROOT, 'src/renderer/src/components/onboarding/OnboardingWizard.tsx'),
-    'utf8',
-  )
-
-  assert.match(wizard, /canEnterApp\(s\.session\)/)
-})
-
-test('an output step needs an ENABLED output, not merely a configured one', () => {
-  assert.equal(
-    isStepComplete('output', settings({ overlay: { outputs: [{ enabled: false }] } as never })),
-    false,
-  )
-  assert.equal(
-    isStepComplete('output', settings({ overlay: { outputs: [{ enabled: true }] } as never })),
-    true,
-  )
-})
-
-test('either a Bible key or a transcription key satisfies the API-key step', () => {
-  const bible = settings({ stt: { ...settings().stt, bibleApiKey: 'k' } })
-  const deepgram = settings({ stt: { ...settings().stt, apiKey: 'k' } })
-  assert.equal(isStepComplete('apiKeys', bible), true)
-  assert.equal(isStepComplete('apiKeys', deepgram), true)
-})
-
-test('output comes before ProPresenter, and resources sit directly after the connection step', () => {
-  assert.deepEqual([...ONBOARDING_STEPS], [
-    'account',
-    'output',
-    'propresenter',
-    'propresenterResources',
-    'apiKeys',
-    'church',
-  ])
-})
-
-test('a setup that goes straight to a screen is never asked for ProPresenter', () => {
-  const screenOnly = settings({
-    overlay: { outputs: [{ enabled: true, kind: 'screen', ppVideoInputUuid: '' }] } as never,
-  })
-  assert.deepEqual(onboardingSteps(screenOnly), ['account', 'output', 'apiKeys', 'church'])
-  assert.equal(onboardingSummary(screenOnly).some((line) => line.step === 'propresenter'), false)
-
-  const both = settings({
-    overlay: {
-      outputs: [
-        { enabled: true, kind: 'screen', ppVideoInputUuid: '' },
-        { enabled: true, kind: 'stage', ppVideoInputUuid: '' },
-      ],
-    } as never,
-  })
-  assert.deepEqual(onboardingSteps(both), [...ONBOARDING_STEPS])
-})
-
-test('ProPresenter resources step is complete when any binding is configured', () => {
-  const configured = settings({
-    propresenterResources: { ...EMPTY_PP_RESOURCE_BINDINGS, scriptureThemeId: 'theme-1' },
-  })
-  assert.equal(isStepComplete('propresenterResources', configured), true)
-  assert.equal(isStepComplete('propresenterResources', settings()), false)
-})
-
-test('ProPresenter resources step can be skipped when discovery is unavailable', () => {
-  let atResources = completeStep(DEFAULT_ONBOARDING_STATE, 'account')
-  atResources = completeStep(atResources, 'propresenter')
-  atResources = setCurrentStep(atResources, 'propresenterResources')
-  const skipped = skipStep(atResources, 'propresenterResources')
-  assert.deepEqual(skipped.skippedSteps, ['propresenterResources'])
-  assert.equal(nextIncompleteStep(skipped), 'output')
-})
-
-test('a fully configured existing install never sees the wizard', () => {
-  const full = configuredSettings()
-  full.church = { name: 'Grace Chapel', timezone: 'Africa/Lagos', role: 'Operator', serviceTimes: [] }
-
-  const state = seedOnboardingFromSettings(full, 1_000)
-  assert.equal(state.source, 'legacy')
-  assert.equal(isOnboardingFinished(state), true)
-  assert.equal(shouldOfferOnboarding({ state, dismissedThisSession: false }), false)
-})
-
-test('a partly configured install resumes at the one step it is missing', () => {
-  const state = seedOnboardingFromSettings(configuredSettings(), 1_000)
-  assert.deepEqual(state.completedSteps, ['output', 'propresenter', 'apiKeys'])
-  // Account cannot be derived, so it is answered as skipped rather than left
-  // holding a working setup open.
-  assert.deepEqual(state.skippedSteps, ['account', 'propresenterResources'])
-  assert.equal(state.currentStep, 'church')
-  assert.equal(isOnboardingFinished(state), false)
-})
-
-test('answering every step leaves nothing outstanding — but only Finish ends the wizard', () => {
-  let state: OnboardingState = DEFAULT_ONBOARDING_STATE
-  for (const step of ONBOARDING_STEPS) state = completeStep(state, step)
-  assert.equal(nextIncompleteStep(state), null)
-  // Recording answers never closes the wizard on the operator's behalf.
-  assert.equal(state.completedAt, null)
-  assert.equal(finishOnboarding(state, 2_000).completedAt, 2_000)
-})
-
-test('answering a step never moves the operator off it', () => {
-  const answered = completeStep(DEFAULT_ONBOARDING_STATE, 'account')
-  assert.equal(answered.currentStep, 'account')
-  assert.equal(skipStep(answered, 'account').currentStep, 'account')
-})
-
-test('walking back and continuing goes one step along, not to the first gap', () => {
-  // Steps 2-4 answered, operator walks back to step 1: Continue must show step
-  // 2, not skip past everything answered and land on step 5.
-  let state: OnboardingState = DEFAULT_ONBOARDING_STATE
-  state = completeStep(state, 'output')
-  state = completeStep(state, 'propresenter')
-  state = completeStep(state, 'propresenterResources')
-  state = skipStep(state, 'apiKeys')
-  state = setCurrentStep(state, 'account')
-
-  assert.equal(nextStep(state), 'output')
-  assert.equal(previousStep(state), null)
-
-  state = setCurrentStep(state, nextStep(state)!)
-  assert.equal(state.currentStep, 'output')
-  assert.equal(nextStep(state), 'propresenter')
-  assert.equal(previousStep(state), 'account')
-
-  state = setCurrentStep(state, nextStep(state)!)
-  assert.equal(state.currentStep, 'propresenter')
-  assert.equal(nextStep(state), 'propresenterResources')
-  assert.equal(previousStep(state), 'output')
-})
-
-test('the last step has nowhere further to go', () => {
-  const last = setCurrentStep(DEFAULT_ONBOARDING_STATE, 'church')
-  assert.equal(nextStep(last), null)
-  assert.equal(previousStep(last), 'apiKeys')
-})
-
-test('skipping counts as resolved but not as done', () => {
-  const state = skipStep(DEFAULT_ONBOARDING_STATE, 'apiKeys')
-  assert.deepEqual(state.skippedSteps, ['apiKeys'])
-  assert.equal(state.completedSteps.includes('apiKeys'), false)
+test('welcome is answered by the operator rather than derived from settings', () => {
+  assert.equal(isStepComplete('welcome', configuredSettings()), false)
+  const state = completeStep(DEFAULT_ONBOARDING_STATE, 'welcome')
+  assert.equal(state.currentStep, 'welcome')
+  assert.equal(nextIncompleteStep(state), 'account')
   assert.equal(onboardingProgress(state).resolved, 1)
-  assert.equal(state.currentStep, 'account')
 })
 
-test('completing a step that was skipped earlier clears the skip', () => {
-  const skipped = skipStep(DEFAULT_ONBOARDING_STATE, 'apiKeys')
-  const done = completeStep(skipped, 'apiKeys')
-  assert.deepEqual(done.skippedSteps, [])
-  assert.deepEqual(done.completedSteps, ['apiKeys'])
+test('screen readiness requires a bound enabled Kairo screen', () => {
+  assert.equal(isStepComplete('output', configuredSettings()), false)
+  assert.equal(isStepComplete('output', settings({ overlay: { outputs: [{ kind: 'screen', enabled: true, displayId: null }] } as never })), false)
+  assert.equal(isStepComplete('output', settings({ overlay: { outputs: [{ kind: 'screen', enabled: true, displayId: 2 }] } as never })), true)
 })
 
-test('finishing twice keeps the first completion time', () => {
-  const first = finishOnboarding(DEFAULT_ONBOARDING_STATE, 100)
-  assert.equal(finishOnboarding(first, 900).completedAt, 100)
+test('an existing configured standalone install does not see first-run setup', () => {
+  const full = configuredSettings()
+  full.overlay = { outputs: [{ kind: 'screen', enabled: true, displayId: 2 }] } as never
+  full.church.name = 'Grace Chapel'
+  assert.equal(isOnboardingFinished(seedOnboardingFromSettings(full, 1000)), true)
 })
 
-test('a dismissed wizard stays down for the session', () => {
-  assert.equal(
-    shouldOfferOnboarding({ state: DEFAULT_ONBOARDING_STATE, dismissedThisSession: true }),
-    false,
-  )
-  assert.equal(
-    shouldOfferOnboarding({ state: DEFAULT_ONBOARDING_STATE, dismissedThisSession: false }),
-    true,
-  )
+test('optional setup can be skipped, finished, and replayed without changing settings', () => {
+  let state = completeStep(DEFAULT_ONBOARDING_STATE, 'welcome')
+  state = completeStep(state, 'account')
+  state = skipStep(state, 'output')
+  assert.equal(nextIncompleteStep(state), null)
+  assert.equal(state.completedAt, null)
+  state = finishOnboarding(state, 100)
+  assert.equal(finishOnboarding(state, 200).completedAt, 100)
+  assert.equal(resetOnboarding(state).currentStep, 'welcome')
+  assert.equal(resetOnboarding(state).completedAt, null)
 })
 
-test('running setup again reopens the wizard without forgetting the install is legacy', () => {
-  const finished = seedOnboardingFromSettings(configuredSettings(), 1_000)
-  const reset = resetOnboarding(finished)
-  assert.equal(reset.completedAt, null)
-  assert.equal(reset.source, 'legacy')
-  assert.deepEqual(reset.completedSteps, [])
+test('invalid stored progress is normalized and valid progress survives', () => {
+  assert.deepEqual(normalizeOnboardingState(null), DEFAULT_ONBOARDING_STATE)
+  const state = normalizeOnboardingState({ currentStep: 'output', completedSteps: ['welcome', 'apiKeys', 'unknown'], skippedSteps: ['account', 'church'], source: 'legacy' })
+  assert.deepEqual(state.completedSteps, ['welcome'])
+  assert.deepEqual(state.skippedSteps, ['account'])
+  assert.equal(state.currentStep, 'output')
+  assert.equal(state.source, 'legacy')
 })
 
-test('the closing summary reports what the machine will actually do', () => {
-  const configured = configuredSettings()
-  configured.overlay = {
-    outputs: [
-      { enabled: true, kind: 'library', name: 'Main screen' },
-      { enabled: false, kind: 'message', name: 'Lobby' },
-    ],
-  } as never
-  configured.church = { name: 'Grace Chapel', timezone: 'Africa/Lagos', role: '', serviceTimes: [] }
-
-  const summary = onboardingSummary(configured)
-  assert.deepEqual(summary.map((line) => line.step), ['propresenter', 'output', 'apiKeys', 'church'])
-  assert.equal(summary[0].detail, '192.168.1.164:57563')
-  // Counted, not listed: output names overflow any layout they are put in.
-  assert.equal(summary[1].detail, '1 turned on')
-  assert.equal(summary[2].detail, 'API.Bible')
-  assert.equal(summary[3].detail, 'Grace Chapel')
-  assert.ok(summary.every((line) => line.done))
+test('migration also leaves a working legacy ProPresenter install closed', () => {
+  const full = configuredSettings()
+  full.church.name = 'Grace Chapel'
+  assert.equal(isOnboardingFinished(seedOnboardingFromSettings(full, 1000)), true)
 })
 
-test('an untouched install summarises as unset rather than as blank', () => {
-  // Nothing is on yet, so nothing goes through ProPresenter — no PP line.
-  const summary = onboardingSummary(settings())
-  assert.deepEqual(summary.map((line) => line.done), [false, false, false])
-  assert.equal(summary[0].detail, 'None turned on')
-  assert.equal(summary[1].detail, 'None — offline Bibles only')
-  assert.equal(summary[2].detail, 'Not named')
+test('a fresh install begins at welcome when the first-launch migration runs', () => {
+  const blank = settings({ overlay: { outputs: [{ kind: 'screen', enabled: true, displayId: null }] } as never })
+  const state = seedOnboardingFromSettings(blank, 1000)
+  assert.equal(state.currentStep, 'welcome')
+  assert.equal(state.source, 'fresh')
+  assert.equal(state.completedAt, null)
+})
+
+test('a partly set-up older install skips the tour and sign-in and resumes at screens', () => {
+  const partial = settings({ church: { name: 'Grace Chapel', timezone: '', role: '', serviceTimes: [] } })
+  const state = seedOnboardingFromSettings(partial, 1000)
+  assert.equal(state.source, 'legacy')
+  assert.deepEqual(state.skippedSteps, ['welcome', 'account'])
+  assert.equal(state.currentStep, 'output')
+  assert.equal(state.completedAt, null)
 })

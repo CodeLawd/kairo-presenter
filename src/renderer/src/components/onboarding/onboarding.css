@@ -1,0 +1,143 @@
+/* First-run onboarding — modelled on ProPresenter's welcome window: a title bar,
+   a tour of large slides with dot paging, then a few setup pages with a progress
+   bar. Flat and solid: surface tokens only, no shadows, no translucency, and
+   separation by fill and spacing rather than borders. */
+
+/* Onboarding text is a softer white (#ECECE9) than the app's paper; light theme
+   keeps its ink. Everything that reads as "white text" in the dialog — body
+   colour, the brightest grey steps, text-white, headlines — follows --ob-text.
+   CTA fills keep the accent so the button still stands out from the copy. */
+/* Shared easing for the motion primitives below, wherever they are used. */
+:root { --ease: cubic-bezier(.16, 1, .3, 1); }
+
+.onboarding-dialog { --ob-text: 236 236 233; --ob-text-deep: 181 181 172; --text-primary: var(--ob-text); --fg-200: var(--ob-text); color: rgb(var(--ob-text)); }
+[data-theme='light'] .onboarding-dialog { --ob-text: 17 18 13; --ob-text-deep: 86 84 73; }
+.onboarding-dialog .text-white:not(.btn-primary) { color: rgb(var(--ob-text)); }
+
+.onboarding-scrim { animation: ob-fade .25s ease-out both; }
+.onboarding-dialog { --ease: cubic-bezier(.16, 1, .3, 1); width: 1000px; max-width: 100%; height: min(680px, calc(100dvh - 40px)); display: flex; flex-direction: column; overflow: hidden; border-radius: 12px; background: rgb(var(--surface)); outline: none; animation: ob-dialog .45s var(--ease) both; }
+.onboarding-titlebar { display: flex; align-items: center; gap: 10px; flex-shrink: 0; padding: 12px 20px; background: rgb(var(--surface-header)); }
+.onboarding-body { position: relative; flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; }
+.onboarding-footer { position: relative; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 16px; flex-shrink: 0; padding: 14px 20px; background: rgb(var(--surface-header)); }
+.onboarding-progress { position: absolute; left: 0; right: 0; top: 0; height: 3px; background: rgb(var(--control-accent)); transform-origin: left; transform: scaleX(var(--progress, 0)); transition: transform .7s var(--ease); animation: ob-fill .8s var(--ease) both; }
+.onboarding-cta { min-width: 220px; justify-content: center; padding-top: 8px; padding-bottom: 8px; }
+.onboarding-dialog :is(.btn-primary, .btn-secondary):not(:disabled):active { transform: scale(.97); }
+.onboarding-text-button { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: rgb(var(--fg-400)); transition: color .15s; }
+.onboarding-text-button svg { transition: transform .25s var(--ease); }
+.onboarding-text-button:hover { color: rgb(var(--text-primary)); }
+.onboarding-text-button:hover svg { transform: translateX(-3px); }
+.onboarding-text-button:disabled { opacity: .4; }
+.onboarding-dialog :is(button,input,select,a):focus-visible { outline: 2px solid rgb(var(--control-accent)); outline-offset: 3px; }
+.onboarding-error { animation: ob-shake .35s ease-in-out; }
+
+/* ─── Motion primitives ───────────────────────────────────────────────────────
+   `--dir` (1 forward, -1 back) is set on the page or stage; `--i` staggers
+   siblings; `--base` delays a group; `--dist` sets travel (art travels further
+   than text, which reads as depth). */
+.ob-in { animation: ob-in .6s var(--ease) both; animation-delay: calc(var(--base, 0ms) + var(--i, 0) * 55ms); }
+.ob-rise { animation: ob-rise .5s var(--ease) both; animation-delay: calc(var(--base, 0ms) + var(--i, 0) * 55ms); }
+.ob-pop { animation: ob-pop .45s var(--ease) both; animation-delay: calc(var(--base, 0ms) + var(--i, 0) * 60ms); }
+.ob-select { animation: ob-select .4s ease-out both; animation-delay: var(--base, 0ms); }
+.ob-caret { display: inline-block; width: 1px; height: 1.05em; margin-left: 1px; vertical-align: text-bottom; background: rgb(var(--control-accent)); animation: ob-blink 1s steps(1) infinite; }
+
+@keyframes ob-fade { from { opacity: 0; } }
+@keyframes ob-dialog { from { opacity: 0; transform: translateY(10px) scale(.97); } }
+@keyframes ob-in { from { opacity: 0; transform: translate3d(calc(var(--dir, 1) * var(--dist, 28px)), 0, 0); } }
+@keyframes ob-out { to { opacity: 0; transform: translate3d(calc(var(--dir, 1) * -40px), 0, 0); } }
+@keyframes ob-rise { from { opacity: 0; transform: translateY(10px); } }
+@keyframes ob-pop { from { opacity: 0; transform: scale(.9); } }
+@keyframes ob-line { from { transform: scaleY(0); } }
+@keyframes ob-fill { from { transform: scaleX(0); } }
+@keyframes ob-select { from { background-color: transparent; color: inherit; } }
+@keyframes ob-blink { 50% { opacity: 0; } }
+@keyframes ob-shake { 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+
+/* ─── Tour ──────────────────────────────────────────────────────────────────── */
+.onboarding-stage { display: grid; height: 100%; }
+.onboarding-stage > * { grid-area: 1 / 1; }
+.onboarding-slide { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 48px; align-items: center; min-height: 100%; padding: 48px 48px 16px; }
+.onboarding-slide.is-leaving { pointer-events: none; animation: ob-out .3s cubic-bezier(.4, 0, 1, 1) both; }
+/* ProPresenter-style headline: the text colour shading darker left to right.
+   Sized to the text (fit-content) so the full sweep lands on the words. */
+.onboarding-headline, .onboarding-subhead { width: fit-content; max-width: 100%; background: linear-gradient(90deg, rgb(var(--ob-text)) 0%, rgb(var(--ob-text-deep)) 100%); -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-fill-color: transparent; }
+.onboarding-headline { font-size: clamp(44px, 6vw, 72px); font-weight: 700; line-height: 1.05; padding-bottom: 0.04em; letter-spacing: -0.035em; }
+.onboarding-subhead { margin-top: 8px; font-size: clamp(22px, 2.6vw, 30px); font-weight: 500; line-height: 1.15; padding-bottom: 0.08em; letter-spacing: -0.02em; }
+.onboarding-dots { display: flex; justify-content: center; align-items: center; gap: 8px; padding: 6px 0 20px; }
+.onboarding-dot { width: 8px; height: 8px; border-radius: 9999px; background: rgb(var(--surface-elevated)); transition: width .4s var(--ease), background-color .25s; }
+.onboarding-dot:hover { background: rgb(var(--fg-500)); }
+.onboarding-dot[aria-current='true'] { width: 24px; background: rgb(var(--text-primary)); }
+
+/* Illustrations: borderless mock windows, layered by fill. */
+.onboarding-slide-art { --dist: 64px; display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.onboarding-window { overflow: hidden; border-radius: 10px; background: rgb(var(--surface-secondary)); font-size: 11px; color: rgb(var(--fg-300)); }
+.onboarding-window-bar { display: flex; align-items: center; gap: 6px; padding: 9px 12px 5px; }
+.onboarding-window-bar > i { width: 8px; height: 8px; border-radius: 9999px; background: rgb(var(--surface-elevated)); }
+.onboarding-window-side { padding: 6px 8px 10px; background: rgb(var(--surface-tertiary)); border-radius: 0 8px 0 0; }
+.onboarding-callout { --dist: 20px; display: flex; align-items: center; gap: 12px; font-size: 14px; line-height: 1.3; color: rgb(var(--fg-300)); }
+.onboarding-callout b { color: rgb(var(--text-primary)); font-weight: 600; }
+.onboarding-callout::before { content: ''; align-self: stretch; width: 2px; flex-shrink: 0; background: rgb(var(--control-accent)); transform-origin: top; animation: ob-line .5s var(--ease) both; animation-delay: inherit; }
+.onboarding-audience-slide { display: flex; flex-direction: column; align-items: center; justify-content: center; aspect-ratio: 16 / 9; border-radius: 4px; background: #232B31; color: rgb(var(--ob-text)); text-align: center; }
+
+/* ─── Setup pages: centred heading, rows as filled cards ───────────────────── */
+.onboarding-setup { display: flex; flex-direction: column; align-items: center; max-width: 720px; margin: 0 auto; padding: 44px 32px 32px; }
+.onboarding-setup-title { font-size: 28px; font-weight: 400; letter-spacing: -0.02em; color: rgb(var(--text-primary)); text-align: center; }
+.onboarding-group { display: flex; flex-direction: column; gap: 8px; width: 100%; margin-top: 32px; }
+.onboarding-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 24px; align-items: center; padding: 20px 24px; border-radius: 10px; background: rgb(var(--surface-secondary)); transition: background-color .2s; }
+/* Animated rows are stacking contexts; lift the focused one so its popover (timezone list) paints above later siblings. */
+.onboarding-row:focus-within { position: relative; z-index: 2; background: rgb(var(--surface-tertiary)); }
+.onboarding-row .input, .onboarding-row select { background: rgb(var(--surface)); }
+
+/* ─── Welcome: the closing moment ───────────────────────────────────────────
+   The mark comes into focus, a band of shade crosses it (masked to the mark —
+   a light glint would vanish on the off-white mark),
+   the title's letters rise in one by one and a wave of light runs across them,
+   then the ready line, quick starts and CTA. */
+.onboarding-welcome { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100%; padding: 40px 32px; }
+.onboarding-welcome-mark { position: relative; display: grid; place-items: center; animation: ob-focus 1.1s var(--ease) both; }
+.onboarding-welcome-mark::after { content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(115deg, transparent 0%, transparent 38%, rgb(var(--surface) / .6) 50%, transparent 62%, transparent 100%);
+  background-size: 300% 100%; background-position: 100% 0;
+  -webkit-mask: var(--mark-url) center / contain no-repeat; mask: var(--mark-url) center / contain no-repeat;
+  animation: ob-glint 1.1s cubic-bezier(.45, 0, .2, 1) .75s both; }
+.onboarding-welcome-title { margin-top: 32px; font-size: clamp(40px, 5.4vw, 64px); font-weight: 700; line-height: 1.1; letter-spacing: -0.035em; text-align: center; }
+/* Each word clips its letters, so they rise into view from a baseline. */
+.ob-word { display: inline-block; overflow: hidden; vertical-align: top; padding: 0 .02em .1em; margin-bottom: -.1em; }
+.ob-letter { display: inline-block; white-space: pre;
+  background: linear-gradient(90deg, rgb(var(--ob-text)), rgb(var(--ob-text-deep)));
+  background-size: calc(var(--n) * 100%) 100%; background-position: calc(var(--k) / (var(--n) - 1) * 100%) 0;
+  -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-fill-color: transparent;
+  animation: ob-letter-in .9s var(--ease) both, ob-letter-wave .6s ease-in-out none;
+  animation-delay: calc(.55s + var(--k) * 38ms), calc(1.55s + var(--k) * 45ms); }
+.onboarding-quickstart { display: flex; flex-direction: column; align-items: flex-start; padding: 18px; border-radius: 10px; background: rgb(var(--surface-secondary)); text-align: left; transition: background-color .2s, transform .25s var(--ease); }
+.onboarding-quickstart:hover { background: rgb(var(--surface-tertiary)); transform: translateY(-2px); }
+.onboarding-quickstart:active { transform: translateY(0) scale(.98); }
+.onboarding-quickstart-arrow { opacity: 0; transform: translateX(-4px); transition: opacity .2s, transform .25s var(--ease); }
+.onboarding-quickstart:hover .onboarding-quickstart-arrow, .onboarding-quickstart:focus-visible .onboarding-quickstart-arrow { opacity: 1; transform: none; }
+
+@keyframes ob-focus { from { opacity: 0; transform: scale(.88); filter: blur(12px); } }
+@keyframes ob-glint { from { background-position: 100% 0; } to { background-position: 0% 0; } }
+@keyframes ob-letter-in { from { opacity: 0; transform: translateY(105%) rotate(6deg); filter: blur(4px); } }
+@keyframes ob-letter-wave { 50% { filter: brightness(1.45); transform: translateY(-.05em); } }
+
+/* ─── Coach tour: spotlight tips over the real UI after setup ────────────────
+   The dimming is a scrim (the one allowed translucency); the cutout glides
+   between targets and the card pops in beside each one. Clicks pass through to
+   the app, so the highlighted control still works. */
+.coach-root { --ease: cubic-bezier(.16, 1, .3, 1); position: fixed; inset: 0; z-index: 80; pointer-events: none; animation: ob-fade .3s ease-out both; }
+.coach-spot { position: fixed; border-radius: 10px; outline: 1.5px solid rgb(var(--fg-500)); box-shadow: 0 0 0 9999px rgb(0 0 0 / .62);
+  transition: left .45s var(--ease), top .45s var(--ease), width .45s var(--ease), height .45s var(--ease); }
+.coach-card { position: fixed; pointer-events: auto; padding: 16px; border-radius: 10px; background: rgb(var(--surface-elevated)); animation: ob-pop .35s var(--ease) .12s both; }
+
+@media (max-width: 820px) {
+  .onboarding-slide { grid-template-columns: 1fr; padding: 32px 28px 16px; }
+  .onboarding-slide-art { display: none; }
+  .onboarding-row { grid-template-columns: 1fr; gap: 10px; }
+  .onboarding-cta { min-width: 0; }
+  .onboarding-welcome .grid { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-scrim, .onboarding-dialog, .onboarding-dialog *, .onboarding-dialog *::before { animation: none !important; transition: none !important; }
+  .onboarding-slide.is-leaving { display: none; }
+  .onboarding-welcome-mark::after { display: none; }
+  .coach-root, .coach-spot, .coach-card { animation: none !important; transition: none !important; }
+}

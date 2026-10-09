@@ -586,7 +586,7 @@ export function ShowPanel(): React.ReactElement {
         <div className="flex items-center gap-2">
           <button
             type="button"
-            className={cn('flex-1 rounded px-3 py-1.5 text-xs font-medium', state.logo ? 'bg-teal-600 text-white' : 'btn-secondary')}
+            className={cn('flex-1 rounded px-3 py-1.5 text-xs font-medium', state.logo ? 'bg-teal-500 text-on-accent' : 'btn-secondary')}
             aria-pressed={state.logo}
             onClick={() => void window.api.program.setLogo(!state.logo).catch(report)}
           >
@@ -611,7 +611,7 @@ export function ShowPanel(): React.ReactElement {
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    className={cn('flex-1 truncate rounded px-2 py-1 text-left text-xs', on ? 'bg-teal-600 text-white' : 'bg-surface-tertiary text-zinc-300')}
+                    className={cn('flex-1 truncate rounded px-2 py-1 text-left text-xs', on ? 'bg-teal-500 text-on-accent' : 'bg-surface-tertiary text-zinc-300')}
                     aria-pressed={on}
                     onClick={() => void window.api.program.setProp(prop.id, !on).catch(report)}
                   >

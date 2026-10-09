@@ -1,6 +1,6 @@
-import { IconArrow } from './icons'
-import { FACTS } from './content'
-import { btn, btnGhost, btnPrimary, cx, thin, wrap } from './primitives'
+import { IconArrow } from "./icons";
+import { FACTS } from "./content";
+import { btn, btnGhost, btnPrimary, cx, thin, wrap } from "./primitives";
 
 /**
  * The hero sits on a warm CSS field rather than a photograph — see the note
@@ -23,7 +23,7 @@ export function Hero(): React.ReactElement {
         <div
           className={cx(
             wrap,
-            'relative z-10 py-[clamp(56px,8vw,96px)] text-center',
+            "relative z-10 py-[clamp(56px,8vw,96px)] text-center",
           )}
         >
           <p className="m-0 font-mono text-[11px] uppercase tracking-[0.22em] text-accent">
@@ -31,11 +31,13 @@ export function Hero(): React.ReactElement {
           </p>
 
           <h1 className="mx-auto mt-[18px] max-w-[17ch] font-display text-[clamp(42px,6.6vw,86px)] font-extrabold leading-[1.02] tracking-[-0.045em]">
-            <span className={thin}>Your pastor says the verse.</span> It&rsquo;s already on screen.
+            <span className={thin}>Your pastor says the verse.</span> It&rsquo;s
+            already on screen.
           </h1>
 
-          <p className="mx-auto mt-6 max-w-[42ch] font-display text-[clamp(17px,2.1vw,24px)] font-light leading-[1.4] tracking-[-0.02em] text-[#8d918f]">
-            Kairo hears the reference — even a paraphrase — and has the slide waiting{' '}
+          <p className="mx-auto mt-6 max-w-[42ch] font-display text-[clamp(17px,2.1vw,24px)] font-light leading-[1.4] tracking-[-0.02em] text-[#939086]">
+            Kairo hears the reference — even a paraphrase — and has the slide
+            waiting{" "}
             <b className="font-bold text-paper">before you could type it</b>.
           </p>
 
@@ -50,9 +52,9 @@ export function Hero(): React.ReactElement {
 
           <p className="mt-[26px] font-mono text-[11px] tracking-[0.04em] text-mute">
             Free in early access
-            <i className="mx-[0.6em] not-italic text-[#2f3332]">·</i>
+            <i className="mx-[0.6em] not-italic text-[#33332B]">·</i>
             macOS and Windows
-            <i className="mx-[0.6em] not-italic text-[#2f3332]">·</i>
+            <i className="mx-[0.6em] not-italic text-[#33332B]">·</i>
             ProPresenter 7 and NDI
           </p>
         </div>
@@ -64,7 +66,7 @@ export function Hero(): React.ReactElement {
         <ul
           className={cx(
             wrap,
-            'my-0 flex list-none flex-wrap justify-center gap-x-[clamp(24px,5vw,72px)] gap-y-2 py-[15px] pl-0 sm:justify-between',
+            "my-0 flex list-none flex-wrap justify-center gap-x-[clamp(24px,5vw,72px)] gap-y-2 py-[15px] pl-0 sm:justify-between",
           )}
         >
           {FACTS.map((fact) => (
@@ -78,5 +80,5 @@ export function Hero(): React.ReactElement {
         </ul>
       </div>
     </>
-  )
+  );
 }

@@ -21,7 +21,7 @@ export const DEFAULT_SETTINGS: SettingsWithSecretsStatus = {
     contextWindowSize: 90,
     offlineDownloadBibleIds: [],
   },
-  lyrics: { braveApiKey: '', googleTranslateApiKey: '', glossColor: '#D4A017' },
+  lyrics: { braveApiKey: '', googleTranslateApiKey: '', glossColor: '#AABED7' },
   display: { theme: 'dark', fontSize: 16, transcriptionFontSize: 18 },
   overlay: DEFAULT_OVERLAY_SETTINGS,
   themeLibrary: [],

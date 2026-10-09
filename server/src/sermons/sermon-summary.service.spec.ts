@@ -81,3 +81,37 @@ describe('SermonSummaryService — DeepSeek failures', () => {
     expect(body.reasoning_effort).toBe('low')
   })
 })
+
+describe('automatic review', () => {
+  const originalFetch = global.fetch
+  afterEach(() => { global.fetch = originalFetch })
+  const draft = { headline: 'Grace', bigIdea: 'Trust God.', keyPoints: [], memorableQuotes: [], takeaways: [], keyScriptures: [], callToAction: 'Trust him this week.' }
+
+  it('returns the reviewed recap using the draft and transcript as evidence', async () => {
+    const requests: { messages: { content: string }[] }[] = []
+    const reviewed = { ...draft, bigIdea: 'God’s grace gives us confidence to trust him.' }
+    global.fetch = (async (_url, init) => {
+      requests.push(JSON.parse(init!.body as string))
+      return new Response(JSON.stringify({ choices: [{ message: {
+        content: JSON.stringify(requests.length === 1 ? draft : reviewed),
+      }, finish_reason: 'stop' }] }))
+    }) as typeof fetch
+    const result = await new SermonSummaryService(secretsWithDeepSeek(), testConfig()).generate(INPUT)
+    expect(result.summary).toEqual(reviewed)
+    expect(requests).toHaveLength(2)
+    expect(requests[1].messages[1].content).toContain(JSON.stringify(draft))
+    expect(requests[1].messages[1].content).toContain('<transcript>\na transcript\n</transcript>')
+  })
+
+  it('rejects an unchecked draft when review fails', async () => {
+    let calls = 0
+    global.fetch = (async () => {
+      calls++
+      return calls === 1
+        ? new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(draft) } }] }))
+        : new Response('unavailable', { status: 503 })
+    }) as typeof fetch
+    await expect(new SermonSummaryService(secretsWithDeepSeek(), testConfig()).generate(INPUT))
+      .rejects.toMatchObject({ code: 'provider', retryable: true })
+  })
+})

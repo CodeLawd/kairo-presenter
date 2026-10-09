@@ -25,7 +25,8 @@ import {
 } from "@shared/pa-media-range";
 import { PA_MEDIA_URL_PREFIX } from "@shared/overlay-template";
 import { openKairoFiles, registerIpcHandlers } from "./ipc";
-import { initDatabase, store } from "./db";
+import { initDatabase, migrations, store } from "./db";
+import { secretsConfiguredFromSettings } from "@shared/cloud/org-secrets";
 import { lyricsService } from "./services/lyrics";
 import { workspaceService } from "./services/workspace";
 import { scriptureService } from "./services/scripture";
@@ -294,7 +295,7 @@ function createWindow(): void {
     // Opaque on every platform: a booth screen should look the same whatever
     // is behind the window, and the desktop bleeding through reads as noise.
     // Matches --surface so there is no flash before the first paint.
-    backgroundColor: "#161616",
+    backgroundColor: "#11120D",
     webPreferences: {
       preload: join(__dirname, "../preload/index.js"),
       sandbox: false,
@@ -424,6 +425,28 @@ if (!is.dev) {
 }
 if (process.platform !== "darwin") openKairoFromOutside(kairoPathsIn(process.argv.slice(1)));
 
+/**
+ * Once: an install left on NKJV it cannot read — no local pack and no
+ * API.Bible key — moves to KJV, which ships with Kairo. Anyone who can actually
+ * read NKJV keeps it.
+ */
+function migrateUnreadableNkjvDefault(): void {
+  if (migrations.get("kjvDefaultV1")) return;
+  try {
+    const scripture = store.get("scripture");
+    const readable =
+      scriptureService.getLocalBiblePackStatus("NKJV").installed ||
+      secretsConfiguredFromSettings(store.store).bible;
+    if (scripture.defaultTranslation.toUpperCase() === "NKJV" && !readable) {
+      store.set("scripture", { ...scripture, defaultTranslation: "KJV" });
+      log.info("[Scripture] Default moved from unreadable NKJV to bundled KJV");
+    }
+  } catch (err) {
+    log.warn("[Scripture] KJV default migration skipped", (err as Error).message);
+  }
+  migrations.set("kjvDefaultV1", true);
+}
+
 app.whenReady().then(async () => {
   electronApp.setAppUserModelId("com.kairo.app");
   setupApplicationMenu();
@@ -440,6 +463,7 @@ app.whenReady().then(async () => {
   await workspaceService.applyDefaultMediaFolder();
   lyricsService.open();
   scriptureService.open();
+  migrateUnreadableNkjvDefault();
   scriptureService.setDefaultTranslation(
     store.get("scripture").defaultTranslation,
   );

@@ -76,10 +76,14 @@ Services are not imported by the renderer directly — expose their output throu
 
 ## Tailwind palette
 
-Custom colors:
-- `surface` / `surface-secondary` / `surface-tertiary` / `surface-elevated` / `surface-border` — dark background layers
-- `teal-{50-950}` — primary accent (teal)
-- `navy-{50-950}` — secondary accent (dark blue)
+Brand palette: ink `#11120D` (primary), paper `#FFFBF4` (white), stone `#565449` (muted), CTA `#6C91C2`.
+Every UI color is a token in `src/renderer/src/index.css` (dark + light), blended from these four — don't add raw hex for chrome.
+- `surface` / `surface-secondary` / `surface-tertiary` / `surface-rail` / `surface-header` / `surface-elevated` / `surface-border` — background layers
+- `teal-{50-950}` — legacy name for the accent: white (paper) in dark, ink in light, via `--accent-*` vars. CTAs are `bg-teal-500 text-on-accent hover:bg-teal-600`
+- `live` / `bg-tint-live` — `#6C91C2`, used ONLY for what is on screen (live slide/media/page outline, live row). Picked/selected stays white, so the two never look alike
+- `ink`, `paper`, `stone` — the raw brand colors; Tailwind `white` is paper
+- `amber-*` / `yellow-*` are remapped to the neutral accent too — the old warm gold is retired; `tint-amber` / `tint-yellow` are neutral washes. Red (errors) and green (ok) stay semantic
+- `tint-*` — solid accent/status washes
 
 Reusable component classes defined in `index.css` `@layer components`: `.card`, `.btn-primary`, `.btn-secondary`, `.input`, `.label`, `.page-header`, `.page-subtitle`, `.badge-connected`, `.badge-disconnected`.
 

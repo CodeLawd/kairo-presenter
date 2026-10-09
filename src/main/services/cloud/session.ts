@@ -41,11 +41,13 @@ const REFRESH_TOKEN_NAME = 'refresh-token'
 /** Quiet background refresh — the operator never sees this happen. */
 const REFRESH_INTERVAL_MS = 10 * 60 * 1000
 /**
- * After a failed refresh, stop trying for half an hour. Retrying every ten
- * minutes on a machine with no internet is noise in the log and battery on a
- * laptop, and the answer is not going to change until the network does.
+ * After a failed refresh, retry on a widening schedule rather than going quiet
+ * for half an hour: the commonest "offline" is the API (or the network) coming
+ * up a few seconds after Kairo, and a booth should be back online as soon as
+ * it can be. It settles at five minutes, so a machine with no internet is
+ * still only a quiet retry now and then.
  */
-const REFRESH_BACKOFF_MS = 30 * 60 * 1000
+const OFFLINE_RETRY_MS = [5_000, 15_000, 30_000, 60_000, 120_000, 300_000]
 /**
  * Floor between vault reads. The pull is event-driven — launch, sign-in, and
  * window focus — so this only exists to swallow bursts (alt-tabbing, a window
@@ -93,6 +95,9 @@ export class CloudSessionService {
   private refreshTimer: ReturnType<typeof setInterval> | null = null
   private pairingAbort = false
   private nextRefreshAllowedAt = 0
+  /** Failed refreshes in a row, for the retry schedule; reset on success. */
+  private offlineAttempts = 0
+  private offlineRetry: ReturnType<typeof setTimeout> | null = null
   private deviceId = ''
   /** False until the first pull attempt finishes — blocks push from wiping the vault. */
   private secretsHydrated = false
@@ -132,9 +137,8 @@ export class CloudSessionService {
     if (token) {
       this.snapshot = { ...this.snapshot, state: 'stale' }
       // Deliberately not awaited: a slow API must not delay the first paint.
-      void this.refreshAccessToken().then((ok) => {
-        if (ok) void this.loadSession().then(() => this.pullOrgSecrets())
-      })
+      // Coming back from 'stale' reloads the session, here and on every retry.
+      void this.refreshAccessToken()
     }
     this.refreshTimer ??= setInterval(
       () => {
@@ -144,9 +148,18 @@ export class CloudSessionService {
     )
   }
 
+  /** Try now — after the machine wakes, or when someone asks. Cheap if already online. */
+  reconnect(): void {
+    if (this.snapshot.state !== 'stale') return
+    this.nextRefreshAllowedAt = 0
+    void this.refreshAccessToken()
+  }
+
   stop(): void {
     if (this.refreshTimer) clearInterval(this.refreshTimer)
     this.refreshTimer = null
+    if (this.offlineRetry) clearTimeout(this.offlineRetry)
+    this.offlineRetry = null
     this.pairingAbort = true
   }
 
@@ -337,7 +350,14 @@ export class CloudSessionService {
       this.store.write(REFRESH_TOKEN_NAME, result.refreshToken)
       this.api.setAccessToken(result.accessToken)
       this.nextRefreshAllowedAt = 0
+      this.offlineAttempts = 0
+      if (this.offlineRetry) clearTimeout(this.offlineRetry)
+      this.offlineRetry = null
+      // Back from offline (or a launch that has not loaded it yet): a token
+      // alone is not a session — reload who and which church, then the keys.
+      const reconnecting = this.snapshot.state === 'stale' || !this.snapshot.user
       this.emitSession({ ...this.snapshot, state: 'active', lastSyncedAt: Date.now() })
+      if (reconnecting) void this.loadSession().then(() => this.pullOrgSecrets())
       return result.accessToken
     } catch (error) {
       const { status, message } = toApiError(error)
@@ -349,10 +369,17 @@ export class CloudSessionService {
         this.emitSession({ ...EMPTY_SESSION })
         return null
       }
-      // Offline: stay signed in, stop hammering, say nothing to the operator.
-      this.nextRefreshAllowedAt = Date.now() + REFRESH_BACKOFF_MS
+      // Offline: stay signed in and try again soon, then less often.
+      const delay = OFFLINE_RETRY_MS[Math.min(this.offlineAttempts, OFFLINE_RETRY_MS.length - 1)]
+      this.offlineAttempts += 1
+      this.nextRefreshAllowedAt = Date.now() + delay
+      if (this.offlineRetry) clearTimeout(this.offlineRetry)
+      this.offlineRetry = setTimeout(() => {
+        this.offlineRetry = null
+        void this.refreshAccessToken()
+      }, delay)
       this.emitSession({ ...this.snapshot, state: 'stale' })
-      log.info('[Cloud] Working offline', { reason: message })
+      log.info('[Cloud] Working offline', { reason: message, retryInMs: delay })
       return null
     }
   }

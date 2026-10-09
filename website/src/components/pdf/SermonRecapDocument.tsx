@@ -197,7 +197,7 @@ export function SermonRecapPreview({
   return (
     <article
       aria-busy={generating}
-      className="relative w-full overflow-hidden rounded-xl bg-white shadow-[0_24px_60px_-32px_rgba(0,0,0,0.9)]"
+      className="relative w-full overflow-hidden rounded-xl bg-white shadow-[0_24px_60px_-32px_rgba(17, 18, 13,0.9)]"
     >
       {generating ? (
         <div aria-hidden className="absolute inset-x-0 top-0 z-10 h-0.5 overflow-hidden">
@@ -216,7 +216,7 @@ export function SermonRecapPreview({
           aria-hidden
           className="pointer-events-none absolute inset-0 overflow-hidden rounded-xl"
         >
-          <div className="absolute inset-x-0 top-0 h-[200%] motion-safe:animate-recap-scan bg-[linear-gradient(to_bottom,transparent_0%,transparent_44%,rgba(245,158,11,0.08)_50%,transparent_56%,transparent_100%)]" />
+          <div className="absolute inset-x-0 top-0 h-[200%] motion-safe:animate-recap-scan bg-[linear-gradient(to_bottom,transparent_0%,transparent_44%,rgba(108, 145, 194,0.08)_50%,transparent_56%,transparent_100%)]" />
         </div>
       ) : null}
     </article>

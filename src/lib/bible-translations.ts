@@ -150,7 +150,8 @@ export const BIBLE_TRANSLATIONS: readonly BibleTranslationDefinition[] = [
 ]
 
 /** The default translation for fresh installs. Change in one place. */
-export const DEFAULT_TRANSLATION_ID = 'NKJV'
+/** KJV ships with Kairo, so a new install can show scripture with no download or key. */
+export const DEFAULT_TRANSLATION_ID = 'KJV'
 
 /** Ids shipped inside resources/bible.db — derived, never hand-listed. */
 export const BUNDLED_TRANSLATION_IDS: readonly string[] = BIBLE_TRANSLATIONS.filter(

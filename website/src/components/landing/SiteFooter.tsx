@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { Wordmark } from "@/components/brand/Wordmark";
+import { Logo } from "@/components/brand/Logo";
 import { IconArrow } from "./icons";
 import { btn, btnGhost, cx, wrap } from "./primitives";
+import Image from "next/image";
 
 /**
  * Columns of real destinations only.
@@ -40,7 +41,8 @@ export function SiteFooter(): React.ReactElement {
         <div className="grid gap-x-[clamp(32px,6vw,96px)] gap-y-[clamp(36px,5vw,52px)] min-[760px]:grid-cols-[minmax(0,1.4fr)_repeat(2,minmax(0,1fr))]">
           {/* Identity and the one thing we want from a reader down here. */}
           <div>
-            <Wordmark href="#top" />
+            <Logo href="#top" />
+
             <p className="m-0 mt-4 max-w-[30ch] text-[14.5px] leading-[1.6] text-mute">
               Scripture on the screen before you could type it. A desktop app
               for church tech teams.

@@ -1,26 +1,6 @@
-import { Fragment, useCallback, useEffect, useState } from 'react'
-import { Keyboard, ListMusic } from '@/icons'
-import { useAppStore } from '@/stores/useAppStore'
+import { Fragment, useEffect } from 'react'
+import { Keyboard } from '@/icons'
 import { useBootstrapStore } from '@/bootstrap/useBootstrapStore'
-import { Switch } from '@/components/ui/switch'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import type { LivePlanState } from '@shared/ipc'
-
-/** Radix Select rejects an empty item value, so "no playlist" needs a sentinel. */
-const NO_LIVE_PLAN = 'none'
-
-const EMPTY_LIVE_PLAN: LivePlanState = {
-  planId: null,
-  title: null,
-  itemCount: 0,
-  unavailableCount: 0,
-}
 
 const SHORTCUT_LEGEND: Array<[string, string]> = [
   ['Space', 'Send focused verse'],
@@ -30,130 +10,23 @@ const SHORTCUT_LEGEND: Array<[string, string]> = [
   ['Ctrl+A', 'Toggle automation'],
 ]
 
-function formatElapsed(totalSeconds: number): string {
-  const h = Math.floor(totalSeconds / 3600)
-  const m = Math.floor((totalSeconds % 3600) / 60)
-  const s = totalSeconds % 60
-  return [h, m, s].map((part) => String(part).padStart(2, '0')).join(':')
-}
-
 /** Sermon plans are named after the imported file, so titles arrive snake_cased. */
 export function displayPlanTitle(title: string): string {
   return title.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim()
 }
 
 /**
- * Operator controls share the title bar on wide windows and move to the
- * shell's second row when the available width is smaller.
+ * The Operator's slot in the title bar: just the shortcut legend. Automation
+ * lives on the Detected heading; the reference playlist is chosen on the
+ * Scripture tab ("Use for this service"). The live-plan subscription stays
+ * here so that choice is reflected wherever the Operator reads it.
  */
 export default function OperatorToolbar(): React.ReactElement {
-  const { isTranscribing, sessionStartTime, autoModeEnabled, confidenceThreshold, setAutoMode } =
-    useAppStore()
-  // Both come from the shared snapshot, so returning to Operator never blanks
-  // the playlist selector while a fresh read resolves.
-  const plans = useBootstrapStore((s) => s.sermonPlans)
-  const livePlan = useBootstrapStore((s) => s.livePlan) ?? EMPTY_LIVE_PLAN
   const setLivePlan = useBootstrapStore((s) => s.setLivePlan)
-  const [elapsedSeconds, setElapsedSeconds] = useState(0)
-
-  useEffect(() => {
-    if (!isTranscribing) {
-      setElapsedSeconds(0)
-      return
-    }
-    const tick = (): void => {
-      const diff = Math.floor((Date.now() - sessionStartTime) / 1000)
-      setElapsedSeconds(diff >= 0 ? diff : 0)
-    }
-    tick()
-    const interval = setInterval(tick, 1000)
-    return () => clearInterval(interval)
-  }, [isTranscribing, sessionStartTime])
-
-  // Playlists edited on the Scripture tab are published to the shared snapshot,
-  // so this only needs the live push subscription.
   useEffect(() => window.api.scripture.onLivePlanChange(setLivePlan), [setLivePlan])
-
-  const handleSelectLivePlan = useCallback((value: string): void => {
-    window.api.scripture
-      .setLivePlan(value === NO_LIVE_PLAN ? null : value)
-      .then(setLivePlan)
-      .catch(console.error)
-  }, [])
-
-  const handleToggleAutoMode = useCallback(
-    (next: boolean): void => {
-      window.api.scripture
-        .setAutoMode(next)
-        .then(() => setAutoMode(next, confidenceThreshold))
-        .catch(console.error)
-    },
-    [confidenceThreshold, setAutoMode],
-  )
-
-  const hasPlans = plans.length > 0
 
   return (
     <div className="operator-toolbar flex h-7 min-w-0 items-center gap-2">
-      <span
-        className={[
-          'shrink-0 font-mono text-[11px] tabular-nums',
-          isTranscribing ? 'text-teal-400' : 'text-zinc-600',
-        ].join(' ')}
-        title="Session elapsed time"
-      >
-        {formatElapsed(elapsedSeconds)}
-      </span>
-
-      <Select
-        value={livePlan.planId ?? NO_LIVE_PLAN}
-        onValueChange={handleSelectLivePlan}
-        disabled={!hasPlans}
-      >
-
-        <SelectTrigger
-          style={{ width: 'var(--header-playlist-width, 208px)' }}
-          className="h-7 overflow-hidden border-0 bg-surface-tertiary text-[11px] shadow-none *:data-[slot=select-value]:min-w-0 hover:bg-surface-elevated focus:ring-0"
-          aria-label="Live reference playlist"
-          title={
-            hasPlans
-              ? livePlan.planId
-                ? `Reference playlist: ${displayPlanTitle(plans.find(plan => plan.id === livePlan.planId)?.title ?? livePlan.title ?? '')}`
-                : 'Verses from this playlist project instantly, without a Bible lookup'
-              : 'Import sermon notes on the Scripture tab to create a playlist'
-          }
-        >
-          <ListMusic size={13} className="text-zinc-500" aria-hidden="true" />
-          <SelectValue placeholder={hasPlans ? 'No reference playlist' : 'No playlists'} />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value={NO_LIVE_PLAN}>No reference playlist</SelectItem>
-          {plans.map((plan) => (
-            <SelectItem key={plan.id} value={plan.id}>
-              {displayPlanTitle(plan.title)}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-
-      {livePlan.unavailableCount > 0 && (
-        <span
-          className="size-1.5 shrink-0 rounded-full bg-amber-400"
-          title={`${livePlan.unavailableCount} playlist item(s) have no verse text — they cannot be matched by reading.`}
-        />
-      )}
-
-      <div
-        className="flex h-7 shrink-0 items-center gap-2 pl-3 text-[11px] text-zinc-500"
-        title="Press Ctrl+A to toggle"
-      >
-        <span className="whitespace-nowrap">Automation</span>
-        <Switch
-          checked={autoModeEnabled}
-          onCheckedChange={handleToggleAutoMode}
-          aria-label="Toggle automation"
-        />
-      </div>
 
       <div className="group relative shrink-0">
         <button
@@ -163,7 +36,7 @@ export default function OperatorToolbar(): React.ReactElement {
         >
           <Keyboard size={14} />
         </button>
-        <div className="pointer-events-none absolute right-0 top-full z-30 mt-1 hidden w-max rounded-lg bg-surface p-2.5 shadow-xl group-hover:block group-focus-within:block">
+        <div className="pointer-events-none absolute left-0 top-full z-30 mt-1 hidden w-max rounded-lg bg-surface p-2.5 shadow-xl group-hover:block group-focus-within:block">
           <dl className="grid grid-cols-[auto_auto] items-center gap-x-3 gap-y-1.5 text-[10px]">
             {SHORTCUT_LEGEND.map(([keys, action]) => (
               <Fragment key={keys}>

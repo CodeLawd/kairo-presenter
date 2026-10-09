@@ -115,15 +115,15 @@ export function LiveOutputRail({
   const previewHeight = Math.round((previewWidth * 9) / 16);
 
   return (
-    // pl-1.5: a gutter of the workspace background, so the rail reads as its
-    // own panel next to the middle column instead of running into it.
-    <div className="relative flex min-h-0 shrink-0 pl-1.5">
+    // No gutter: the rail's lighter panel tone already sets it apart from the
+    // dark middle column, so the two meet edge to edge.
+    <div className="relative flex min-h-0 shrink-0">
       {onResizeStart && (
         <button
           type="button"
           aria-label="Resize live output preview panel"
           title="Drag to resize live output preview"
-          className="absolute inset-y-0 left-0 z-10 w-1.5 cursor-col-resize bg-transparent outline-none hover:bg-tint-teal focus-visible:bg-tint-teal"
+          className="absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize bg-transparent outline-none hover:bg-tint-teal focus-visible:bg-tint-teal"
           onPointerDown={onResizeStart}
           onKeyDown={onResizeKeyDown}
         />
@@ -135,7 +135,7 @@ export function LiveOutputRail({
         className={`flex min-h-0 w-full flex-col overflow-hidden bg-surface ${className}`}
         style={{ width }}
       >
-        <div className="min-h-0 shrink-0 bg-[#0e0e0e]">
+        <div className="min-h-0 shrink-0 bg-surface-secondary" data-tour="live-preview">
           <div className="flex items-baseline justify-between gap-2 px-3 py-1.5">
             <p className="text-[11px] font-medium text-zinc-400">Live</p>
           </div>

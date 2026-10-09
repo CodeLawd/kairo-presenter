@@ -232,6 +232,7 @@ export type SettingsWithSecretsStatus = AppSettings & {
 // ─── Onboarding ───────────────────────────────────────────────────────────────
 
 export type OnboardingStepId =
+  | 'welcome'
   | 'account'
   | 'propresenter'
   | 'propresenterResources'

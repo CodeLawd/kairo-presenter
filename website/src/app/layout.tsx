@@ -59,7 +59,7 @@ export default function RootLayout({
       className={cn(barlow.variable, manrope.variable, jetbrainsMono.variable, inter.variable, "font-sans", geist.variable)}
     >
       <head>
-        <meta name="theme-color" content="#000000" />
+        <meta name="theme-color" content="#11120D" />
       </head>
       <body>{children}</body>
     </html>

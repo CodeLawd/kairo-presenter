@@ -162,7 +162,7 @@ function SermonRow({
         'active:scale-[0.985] motion-reduce:active:scale-100',
         compact ? 'px-3 py-3' : 'px-2 py-3.5',
         open
-          ? 'bg-primary/[0.09] text-foreground shadow-[inset_0_0_0_1px_rgba(245,158,11,0.18)]'
+          ? 'bg-primary/[0.09] text-foreground shadow-[inset_0_0_0_1px_rgba(108, 145, 194,0.18)]'
           : 'text-muted-foreground hover:bg-white/[0.035] hover:text-foreground',
       )}
     >
@@ -519,7 +519,7 @@ export function SermonList(): React.ReactElement {
             <div
               aria-hidden
               className={cn(
-                'pointer-events-none absolute right-0 z-10 w-[2px] rounded-full bg-primary shadow-[0_0_12px_rgba(245,158,11,0.45)]',
+                'pointer-events-none absolute right-0 z-10 w-[2px] rounded-full bg-primary shadow-[0_0_12px_rgba(108, 145, 194,0.45)]',
                 slide && 'transition-[top,height] duration-300 ease-out motion-reduce:transition-none',
               )}
               style={{ top: bar.top, height: bar.height }}
@@ -677,8 +677,8 @@ export function SermonList(): React.ReactElement {
                           key={option.key}
                           type="button"
                           className={cn(
-                            'flex items-center gap-2 rounded-md px-1.5 py-1.5 text-left text-sm outline-none hover:bg-accent',
-                            filter.range === option.key && 'bg-accent/60',
+                            'flex items-center gap-2 rounded-md px-1.5 py-1.5 text-left text-sm outline-none hover:bg-secondary',
+                            filter.range === option.key && 'bg-secondary/60',
                           )}
                           onClick={() => {
                             setFilter((current) => ({ ...current, range: option.key }))
@@ -698,8 +698,8 @@ export function SermonList(): React.ReactElement {
                         <button
                           type="button"
                           className={cn(
-                            'flex items-center gap-2 rounded-md px-1.5 py-1.5 text-left text-sm outline-none hover:bg-accent',
-                            !filter.speaker && 'bg-accent/60',
+                            'flex items-center gap-2 rounded-md px-1.5 py-1.5 text-left text-sm outline-none hover:bg-secondary',
+                            !filter.speaker && 'bg-secondary/60',
                           )}
                           onClick={() => {
                             setFilter((current) => ({ ...current, speaker: '' }))
@@ -714,8 +714,8 @@ export function SermonList(): React.ReactElement {
                             key={name}
                             type="button"
                             className={cn(
-                              'flex items-center gap-2 rounded-md px-1.5 py-1.5 text-left text-sm outline-none hover:bg-accent',
-                              filter.speaker === name && 'bg-accent/60',
+                              'flex items-center gap-2 rounded-md px-1.5 py-1.5 text-left text-sm outline-none hover:bg-secondary',
+                              filter.speaker === name && 'bg-secondary/60',
                             )}
                             onClick={() => {
                               setFilter((current) => ({ ...current, speaker: name }))

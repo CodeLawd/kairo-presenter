@@ -4,7 +4,7 @@ import { Dialog } from 'radix-ui'
 import { X } from '@/icons'
 import { useBootstrapStore } from '@/bootstrap/useBootstrapStore'
 import { cn, downloadFile } from '@/lib/utils'
-import { serviceTextExport, type ServiceRecord, type ServiceSnapshot } from '@shared/service-records'
+import { serviceTalkTimeMs, serviceTextExport, type ServiceRecord, type ServiceSnapshot } from '@shared/service-records'
 
 export const useServiceRecords = create<ServiceSnapshot & { loaded: boolean; set: (value: ServiceSnapshot) => void }>(set => ({
   activeId: null, services: [], loaded: false, set: value => set({ ...value, loaded: true }),
@@ -18,8 +18,8 @@ function formatServiceDuration(ms: number): string {
   return [h, m, s].map(part => String(part).padStart(2, '0')).join(':')
 }
 
-function serviceDurationMs(record: Pick<ServiceRecord, 'createdAt' | 'endedAt'>, now = Date.now()): number {
-  return (record.endedAt ?? now) - record.createdAt
+function serviceDurationMs(record: Pick<ServiceRecord, 'createdAt' | 'endedAt' | 'pausedMs' | 'pausedAt'>, now = Date.now()): number {
+  return serviceTalkTimeMs(record, now)
 }
 
 type ReviewTab = 'nuggets' | 'transcript' | 'notes' | 'scriptures'
@@ -98,14 +98,14 @@ export function ServicePanel(): React.ReactElement {
       setElapsedLabel('00:00:00')
       return
     }
-    const createdAt = active.createdAt
-    const endedAt = active.endedAt
-    const tick = (): void => setElapsedLabel(formatServiceDuration(serviceDurationMs({ createdAt, endedAt })))
+    const { createdAt, endedAt, pausedMs, pausedAt } = active
+    const tick = (): void => setElapsedLabel(formatServiceDuration(serviceDurationMs({ createdAt, endedAt, pausedMs, pausedAt })))
     tick()
-    if (endedAt != null) return
+    // Paused or ended: the clock stands still, so there is nothing to tick.
+    if (endedAt != null || pausedAt != null) return
     const interval = setInterval(tick, 1000)
     return () => clearInterval(interval)
-  }, [active?.id, active?.createdAt, active?.endedAt])
+  }, [active?.id, active?.createdAt, active?.endedAt, active?.pausedMs, active?.pausedAt])
   // The save form opens blank for an unnamed service and pre-filled when the
   // operator already gave the service a name in an earlier end attempt.
   useEffect(() => {
@@ -119,32 +119,38 @@ export function ServicePanel(): React.ReactElement {
     setBusy(true); setError('')
     try { await action() } catch (e) { setError(e instanceof Error ? e.message : String(e)) } finally { setBusy(false) }
   }
-  const liveLabel = active ? (active.title || 'Unnamed service') : ''
+  const liveLabel = active ? (active.title || 'Untitled service') : ''
+  const paused = active?.pausedAt != null
 
   return <>
     {active || error ? (
-      <div className="shrink-0 bg-surface-secondary px-3 py-1.5">
+      <div className="shrink-0 px-4 pb-2">
         {active ? (
-          <div className="flex min-w-0 items-center gap-2">
-            {/* The elapsed clock leads: mid-service it is the number the booth
-                glances at, and the name is often still a placeholder. */}
-            <span className="shrink-0 font-mono text-[11px] tabular-nums text-zinc-300" title="Service duration">{elapsedLabel}</span>
-            <span className="text-zinc-700" aria-hidden>·</span>
+          // The session at a glance: recording light + talk time, the name, and
+          // the two things you can do with it. The clock stops while paused.
+          <div className="flex min-w-0 items-center gap-3 rounded-lg bg-surface-tertiary py-1.5 pl-3 pr-1.5">
+            <span className="flex shrink-0 items-center gap-2" title={paused ? 'Paused — the clock is stopped' : 'Recording'}>
+              <span
+                aria-hidden="true"
+                className={cn('size-2 rounded-full', paused ? 'bg-zinc-500' : 'bg-red-500 motion-safe:animate-pulse')}
+              />
+              <span className={cn('font-mono text-[13px] tabular-nums', paused ? 'text-zinc-500' : 'text-zinc-100')}>{elapsedLabel}</span>
+              <span className="sr-only">{paused ? 'Paused' : 'Recording'}</span>
+            </span>
             <p
-              className={cn('min-w-0 flex-1 truncate text-[11px] leading-tight', active.title ? 'text-zinc-400' : 'italic text-zinc-600')}
+              className={cn('min-w-0 flex-1 truncate text-[12px]', active.title ? 'text-zinc-300' : 'text-zinc-500')}
               title={active.speaker ? `${liveLabel} · ${active.speaker}` : liveLabel}
             >
               {liveLabel}
-              {active.speaker ? <span className="text-zinc-600"> · {active.speaker}</span> : null}
+              {active.speaker ? <span className="text-zinc-500"> · {active.speaker}</span> : null}
             </p>
-            <div className="flex shrink-0 items-center gap-0.5 text-[10px]">
-              <button type="button" className="rounded px-1.5 py-0.5 text-zinc-500 hover:bg-surface-tertiary hover:text-zinc-200" onClick={() => setViewId(active.id)}>Review</button>
-              <button type="button" disabled={busy} className="rounded px-1.5 py-0.5 text-zinc-500 hover:bg-surface-tertiary hover:text-zinc-200 disabled:opacity-40" onClick={() => setConfirmEnd(true)}>End</button>
+            <div className="flex shrink-0 items-center gap-1">
+              <button type="button" className="h-7 rounded-md px-2.5 text-[11px] font-medium text-zinc-300 transition-colors hover:bg-surface-elevated hover:text-white" onClick={() => setViewId(active.id)}>Review</button>
+              <button type="button" disabled={busy} className="h-7 rounded-md bg-surface-elevated px-2.5 text-[11px] font-medium text-zinc-100 transition-colors hover:bg-surface-border disabled:opacity-40" onClick={() => setConfirmEnd(true)}>End service</button>
             </div>
           </div>
         ) : null}
-        {active?.analysisError && <p role="status" className="mt-1.5 text-[10px] text-amber-400">Nugget selection: {active.analysisError}</p>}
-        {error && <p role="alert" className="mt-1.5 text-[10px] text-red-400">{error}</p>}
+        {error && <p role="alert" className="mt-1.5 text-[11px] text-red-400">{error}</p>}
       </div>
     ) : null}
     <Dialog.Root open={confirmEnd && Boolean(active)} onOpenChange={open => { if (!open && !busy) setConfirmEnd(false) }}>

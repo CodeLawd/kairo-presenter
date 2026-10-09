@@ -85,8 +85,8 @@ export function OverviewFilters({
                 key={option.key}
                 type="button"
                 className={cn(
-                  'flex items-center gap-2 rounded-md px-1.5 py-1 text-left text-sm outline-none hover:bg-accent hover:text-accent-foreground',
-                  choice === option.key && 'bg-accent/60',
+                  'flex items-center gap-2 rounded-md px-1.5 py-1 text-left text-sm outline-none hover:bg-secondary hover:text-secondary-foreground',
+                  choice === option.key && 'bg-secondary/60',
                 )}
                 onClick={() => setRange(option.key)}
               >
@@ -97,8 +97,8 @@ export function OverviewFilters({
             <button
               type="button"
               className={cn(
-                'flex items-center gap-2 rounded-md px-1.5 py-1 text-left text-sm outline-none hover:bg-accent hover:text-accent-foreground',
-                choice === 'day' && 'bg-accent/60',
+                'flex items-center gap-2 rounded-md px-1.5 py-1 text-left text-sm outline-none hover:bg-secondary hover:text-secondary-foreground',
+                choice === 'day' && 'bg-secondary/60',
               )}
               onClick={() => setDay(value.from && value.from === value.to ? value.from : today)}
             >
@@ -122,8 +122,8 @@ export function OverviewFilters({
             <button
               type="button"
               className={cn(
-                'flex items-center gap-2 rounded-md px-1.5 py-1 text-left text-sm outline-none hover:bg-accent hover:text-accent-foreground',
-                choice === 'custom' && 'bg-accent/60',
+                'flex items-center gap-2 rounded-md px-1.5 py-1 text-left text-sm outline-none hover:bg-secondary hover:text-secondary-foreground',
+                choice === 'custom' && 'bg-secondary/60',
               )}
               onClick={() => {
                 const bounds = boundsForRange('7d')

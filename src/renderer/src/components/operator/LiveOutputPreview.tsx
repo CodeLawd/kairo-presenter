@@ -34,6 +34,7 @@ import type {
 import type { LiveOutputPayload } from "@shared/live-output";
 import { propresenterEnabled } from "@shared/pp-connect-gate";
 import { useBootstrapStore } from "@/bootstrap/useBootstrapStore";
+import { makeProjectorOutput } from "@shared/overlay-defaults";
 
 // ─── Per-kind preview fidelity ─────────────────────────────────────────────────
 // Only `ndi` and `screen` are rendered by this app, so only they can be shown WYSIWYG. The
@@ -87,9 +88,19 @@ export function LiveOutputPreview({
     outputs.find((output) => output.kind !== "library") ??
     outputs[0] ??
     null;
+  // No screen on (a new install, or every screen switched off): the program is
+  // still live, so draw it the way the main screen would — its own theme if it
+  // exists, the default Projector otherwise. The operator always sees what
+  // they sent.
+  const fallback = useMemo<OverlayOutput>(() => {
+    const screen = overlay.outputs.find((output) => output.kind === "screen") ?? makeProjectorOutput(0);
+    return { ...screen, enabled: true };
+  }, [overlay.outputs]);
+  const view = selected ?? fallback;
+  const previewOnly = !selected;
 
   const documentPreview = useAppStore(state => state.liveDocumentPreview);
-  const showDocument = documentPreview && (!selected || (isRenderedKind(selected.kind) && selected.show.documents));
+  const showDocument = documentPreview && isRenderedKind(view.kind) && view.show.documents;
   const [mediaTime, setMediaTime] = useState(EMPTY_TIME);
   const [seekTo, setSeekTo] = useState<{ token: number; seconds: number } | null>(null);
 
@@ -111,17 +122,17 @@ export function LiveOutputPreview({
   }, [mediaTime.duration]);
 
   const showTransport =
-    !!selected && isRenderedKind(selected.kind) && selected.show.backgrounds && liveMedia?.item.kind === "video";
+    isRenderedKind(view.kind) && view.show.backgrounds && liveMedia?.item.kind === "video";
   const program = useProgramState();
   const [presentation] = usePresentation();
-  const rendered = !!selected && isRenderedKind(selected.kind);
+  const rendered = isRenderedKind(view.kind);
   const layers = useMemo(
-    () => (rendered && selected ? programLayersFor(selected, program, presentation) : null),
-    [rendered, selected, program, presentation],
+    () => (rendered ? programLayersFor(view, program, presentation) : null),
+    [rendered, view, program, presentation],
   );
   const info = useMemo(
-    () => (rendered && selected ? confidenceFor(selected, program, presentation) : null),
-    [rendered, selected, program, presentation],
+    () => (rendered ? confidenceFor(view, program, presentation) : null),
+    [rendered, view, program, presentation],
   );
   const drawn = !!info || !!(layers && (layers.props || layers.message || layers.logo));
 
@@ -129,7 +140,7 @@ export function LiveOutputPreview({
     <div>
       <div className="relative" style={{ width, height }}>
         {showDocument ? <div className="flex h-full w-full flex-col overflow-hidden bg-black"><DocumentSlidePreview doc={documentPreview.doc} page={documentPreview.page} playback={documentPreview.playback} /></div> : <PreviewBody
-          output={selected}
+          output={view}
           result={result}
           content={content}
           contentKind={contentKind}
@@ -170,27 +181,39 @@ export function LiveOutputPreview({
           preview does — the label names what you are looking at, and opening it
           is how you look at something else. */}
       <div className="flex items-center justify-between gap-3 bg-surface-secondary px-3 py-2">
-        <div className="relative min-w-0 w-full max-w-64 rounded-md bg-surface-elevated transition-colors hover:bg-zinc-700 focus-within:ring-2 focus-within:ring-teal-400/60">
-          <select
-            className="w-full cursor-pointer appearance-none truncate bg-transparent px-2.5 py-2 pr-8 text-xs font-semibold text-zinc-100 outline-none disabled:cursor-default disabled:text-zinc-500"
-            value={selected?.id ?? ''}
-            onChange={(e) => onSelectOutput(e.target.value)}
-            disabled={outputs.length === 0}
-            aria-label="Preview output"
-          >
-            {outputs.length === 0 && <option value="">No screens on</option>}
-            {outputs.map((output) => (
-              <option key={output.id} value={output.id}>
-                {output.name}
-              </option>
-            ))}
-          </select>
-          <ChevronDown
-            size={12}
-            aria-hidden="true"
-            className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400"
-          />
-        </div>
+        {previewOnly ? (
+          // Nothing is going to a screen yet — say so plainly, and offer the fix.
+          <div className="flex min-w-0 items-center gap-2.5">
+            <span className="truncate text-xs font-semibold text-zinc-300">Preview only</span>
+            <button
+              type="button"
+              className="shrink-0 rounded-md px-2 py-1 text-[11px] font-medium text-zinc-400 transition-colors hover:bg-surface-elevated hover:text-white"
+              onClick={() => useAppStore.getState().openScreens()}
+            >
+              Turn on a screen
+            </button>
+          </div>
+        ) : (
+          <div className="relative min-w-0 w-full max-w-64 rounded-md bg-surface-elevated transition-colors hover:bg-surface-border focus-within:ring-2 focus-within:ring-teal-400/60">
+            <select
+              className="w-full cursor-pointer appearance-none truncate bg-transparent px-2.5 py-2 pr-8 text-xs font-semibold text-zinc-100 outline-none"
+              value={selected?.id ?? ''}
+              onChange={(e) => onSelectOutput(e.target.value)}
+              aria-label="Preview output"
+            >
+              {outputs.map((output) => (
+                <option key={output.id} value={output.id}>
+                  {output.name}
+                </option>
+              ))}
+            </select>
+            <ChevronDown
+              size={12}
+              aria-hidden="true"
+              className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400"
+            />
+          </div>
+        )}
 
         {toolbar}
       </div>
@@ -463,7 +486,7 @@ function EmptyFrame({
 }): React.ReactElement {
   return (
     <div
-      className="flex flex-col items-center justify-center bg-zinc-950 px-3 text-center text-zinc-600"
+      className="flex flex-col items-center justify-center bg-black px-3 text-center text-zinc-600"
       style={{ width, height }}
     >
       <Icon size={20} className="mb-2 text-slate-600" />

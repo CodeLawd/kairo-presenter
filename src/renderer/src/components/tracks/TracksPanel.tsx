@@ -162,8 +162,8 @@ export function TracksPanel(): React.ReactElement {
                         className="mt-1.5 h-1 w-full cursor-pointer appearance-none rounded-full bg-zinc-700 accent-teal-400 disabled:cursor-default [&::-webkit-slider-thumb]:h-2.5 [&::-webkit-slider-thumb]:w-2.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-teal-400"
                         style={{
                           background: ready
-                            ? `linear-gradient(to right, rgb(45 212 191) 0%, rgb(45 212 191) ${(shown / duration) * 100}%, rgb(63 63 70) ${(shown / duration) * 100}%, rgb(63 63 70) 100%)`
-                            : 'rgb(63 63 70)',
+                            ? `linear-gradient(to right, rgb(var(--control-accent)) 0%, rgb(var(--control-accent)) ${(shown / duration) * 100}%, rgb(var(--range-track)) ${(shown / duration) * 100}%, rgb(var(--range-track)) 100%)`
+                            : 'rgb(var(--range-track))',
                         }}
                       />
                     )}

@@ -305,7 +305,7 @@ function AutoPresentToast({
             <div className="flex gap-1.5">
               <button
                 onClick={() => onPresentNow(item.suggestionId)}
-                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-500 text-white text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400 focus-visible:ring-offset-1 focus-visible:ring-offset-teal-950"
+                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-500 hover:bg-teal-600 text-on-accent text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400 focus-visible:ring-offset-1 focus-visible:ring-offset-teal-950"
               >
                 <Send size={10} aria-hidden="true" /> Present Now
               </button>

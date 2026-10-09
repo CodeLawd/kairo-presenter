@@ -31,6 +31,8 @@ import {
   themesForKind,
   unassignThemeFromOutput,
   updateLibraryTheme,
+  BUILT_IN_THEMES,
+  builtInThemesForKind,
 } from '@shared/theme-library'
 import { applyLayoutPreset, placeReferenceAgainstVerse, clampOverlayBox } from '@shared/overlay-boxes'
 import { ScaledOverlayPreview } from '@/components/overlay/ScaledOverlayPreview'
@@ -184,113 +186,6 @@ function LabeledSegmented<T extends string>({
       />
     </div>
   )
-}
-
-// ─── Built-in themes ──────────────────────────────────────────────────────────
-
-const BUILT_IN_THEMES: Array<{
-  id: string
-  name: string
-  kind: OverlayContentKind
-  theme: OverlayTheme
-}> = [
-  { id: 'broadcast', name: 'Broadcast', kind: 'scripture', theme: DEFAULT_OVERLAY_SETTINGS.theme },
-  {
-    id: 'warm-paper',
-    name: 'Warm paper',
-    kind: 'scripture',
-    theme: applyLayoutPreset(
-      {
-        ...DEFAULT_OVERLAY_SETTINGS.theme,
-        background: { ...DEFAULT_OVERLAY_SETTINGS.theme.background, type: 'color', color: '#e8dfcf' },
-        verse: {
-          ...DEFAULT_OVERLAY_SETTINGS.theme.verse,
-          fontFamily: "Georgia, 'Times New Roman', serif",
-          color: '#201d19',
-          align: 'left',
-          shadow: { ...DEFAULT_OVERLAY_SETTINGS.theme.verse.shadow, enabled: false },
-        },
-        reference: { ...DEFAULT_OVERLAY_SETTINGS.theme.reference, color: '#8b4b32', position: 'above' },
-        layout: { ...DEFAULT_OVERLAY_SETTINGS.theme.layout, backdropBox: false },
-      },
-      'center',
-      72
-    ),
-  },
-  {
-    id: 'midnight',
-    name: 'Midnight',
-    kind: 'scripture',
-    theme: applyLayoutPreset(
-      {
-        ...DEFAULT_OVERLAY_SETTINGS.theme,
-        background: { ...DEFAULT_OVERLAY_SETTINGS.theme.background, type: 'gradient', color: '#07111f', color2: '#18324b', angleDeg: 135 },
-        reference: { ...DEFAULT_OVERLAY_SETTINGS.theme.reference, color: '#f2a36f' },
-        layout: { ...DEFAULT_OVERLAY_SETTINGS.theme.layout, backdropBox: false },
-      },
-      'center',
-      76
-    ),
-  },
-
-  // ── Lyrics ────────────────────────────────────────────────────────────────
-  // Lyric slides are read at a glance from the back of a room, so these start
-  // full-frame with a transparent background — the motion background belongs to
-  // ProPresenter's media layer underneath, not baked into our frame.
-  {
-    id: 'lyrics-stage',
-    name: 'Stage lyrics',
-    kind: 'lyrics',
-    theme: applyLayoutPreset(
-      {
-        ...DEFAULT_OVERLAY_SETTINGS.theme,
-        background: { ...DEFAULT_OVERLAY_SETTINGS.theme.background, type: 'transparent' },
-        verse: {
-          ...DEFAULT_OVERLAY_SETTINGS.theme.verse,
-          fontSizePx: 96,
-          fontWeight: 700,
-          align: 'center',
-          verticalAlign: 'middle',
-          lineHeight: 1.25,
-        },
-        reference: { ...DEFAULT_OVERLAY_SETTINGS.theme.reference, show: false },
-        layout: {
-          ...DEFAULT_OVERLAY_SETTINGS.theme.layout,
-          backdropBox: false,
-          autoFitText: true,
-        },
-      },
-      'full',
-      92
-    ),
-  },
-  {
-    id: 'lyrics-lower',
-    name: 'Lyrics lower third',
-    kind: 'lyrics',
-    theme: applyLayoutPreset(
-      {
-        ...DEFAULT_OVERLAY_SETTINGS.theme,
-        background: { ...DEFAULT_OVERLAY_SETTINGS.theme.background, type: 'transparent' },
-        verse: {
-          ...DEFAULT_OVERLAY_SETTINGS.theme.verse,
-          fontSizePx: 64,
-          fontWeight: 600,
-          align: 'center',
-          verticalAlign: 'bottom',
-        },
-        reference: { ...DEFAULT_OVERLAY_SETTINGS.theme.reference, show: false },
-        layout: { ...DEFAULT_OVERLAY_SETTINGS.theme.layout, autoFitText: true },
-      },
-      'lower-third',
-      84
-    ),
-  },
-]
-
-/** Built-in starters for one content kind. */
-function builtInsForKind(kind: OverlayContentKind): typeof BUILT_IN_THEMES {
-  return BUILT_IN_THEMES.filter((item) => item.kind === kind)
 }
 
 // ─── Main page ──────────────────────────────────────────────────────────────────
@@ -542,7 +437,7 @@ export default function ThemeEditor(): React.ReactElement {
   const screens = overlay.outputs.filter((o) => o.kind === 'screen' || o.kind === 'ndi')
   const tabs: InspectorTab[] = kind === 'lyrics' ? ['type', 'layout'] : ['background', 'type', 'layout']
   const activeTab = tabs.includes(tab) ? tab : tabs[0]
-  const templates = builtInsForKind(kind)
+  const templates = builtInThemesForKind(kind)
 
   return (
     <div className="grid h-full grid-cols-[220px_minmax(0,1fr)_320px] overflow-hidden bg-surface">

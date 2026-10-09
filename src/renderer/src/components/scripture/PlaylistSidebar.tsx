@@ -42,6 +42,9 @@ export interface PlaylistSidebarProps {
   renameDraft: string;
   pendingDeletePlanId: string | null;
   creatingPlaylist: boolean;
+  /** Extract a playlist from sermon notes (PDF, Word…). */
+  onImportNotes: () => void;
+  importingNotes: boolean;
   showAddTarget: boolean;
   /** How many verses the last search produced, for the Library row. */
   searchResultCount: number;
@@ -82,6 +85,8 @@ export function PlaylistSidebar({
   renameDraft,
   pendingDeletePlanId,
   creatingPlaylist,
+  onImportNotes,
+  importingNotes,
   showAddTarget,
   searchResultCount,
   viewingSearch,
@@ -256,15 +261,30 @@ export function PlaylistSidebar({
         <h2 className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">
           Playlists
         </h2>
-        <button
-          type="button"
-          className="ml-auto grid h-7 w-7 place-items-center rounded-md text-slate-400 hover:bg-surface-elevated hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400"
-          onClick={() => void importKairo()}
-          aria-label="Import playlist"
-          title="Import a .kairo playlist"
-        >
-          <Download size={12} />
-        </button>
+        {/* Both ways a playlist arrives: from sermon notes, or a shared .kairo file. */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className="ml-auto grid h-7 w-7 place-items-center rounded-md text-slate-400 hover:bg-surface-elevated hover:text-white disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400"
+              aria-label="Import"
+              title="Import"
+              disabled={importingNotes}
+            >
+              {importingNotes ? <Loader size={12} className="animate-spin" /> : <Download size={12} />}
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-[200px]">
+            <DropdownMenuItem onSelect={onImportNotes}>
+              <FileText size={13} />
+              Import sermon notes…
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => void importKairo()}>
+              <Download size={13} />
+              Import .kairo playlist…
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <button
           type="button"
           className="grid h-7 w-7 place-items-center rounded-md text-slate-400 hover:bg-surface-elevated hover:text-white disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400"

@@ -1,5 +1,6 @@
 const fs = require('node:fs')
 const path = require('node:path')
+const { execFileSync } = require('node:child_process')
 
 const ARCH_NAMES = {
   0: 'ia32',
@@ -50,5 +51,14 @@ exports.default = async function afterPack(context) {
         fs.rmSync(full, { recursive: true, force: true })
       }
     }
+  }
+
+  // Unsigned Mac builds (no Developer ID yet): electron-builder skips signing
+  // entirely, and Apple Silicon reports an app with no signature as "damaged".
+  // An ad-hoc signature turns that into the ordinary "unidentified developer"
+  // prompt the user can approve. Real signing replaces this when CSC_LINK is set.
+  if (platform === 'darwin' && process.env.KAIRO_ADHOC_SIGN === '1') {
+    const app = path.join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`)
+    execFileSync('codesign', ['--force', '--deep', '--sign', '-', app], { stdio: 'inherit' })
   }
 }

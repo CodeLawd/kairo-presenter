@@ -21,7 +21,7 @@ const RESOLVER_LABEL: Record<ScriptureResolver, string> = {
 }
 
 const STATUS: Record<TraceStatus, { label: string; tone: string }> = {
-  active: { label: 'In progress', tone: 'text-[#0A84FF]' },
+  active: { label: 'In progress', tone: 'text-teal-400' },
   presented: { label: 'Presented', tone: 'text-[#30D158]' },
   cancelled: { label: 'Cancelled', tone: 'text-white/40' },
   superseded: { label: 'Replaced', tone: 'text-white/40' },
@@ -119,7 +119,7 @@ function TraceRow({ record }: { record: ScriptureTraceRecord }): React.JSX.Eleme
                     <span
                       className={cn(
                         'block h-full rounded-full',
-                        stage.deliberate ? 'bg-surface-border' : slowest ? 'bg-amber-400' : 'bg-[#0A84FF]',
+                        stage.deliberate ? 'bg-surface-border' : slowest ? 'bg-amber-400' : 'bg-teal-500',
                       )}
                       style={{ width: `${Math.max(2, (stage.value / longest) * 100)}%` }}
                     />

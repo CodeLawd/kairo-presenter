@@ -165,3 +165,22 @@ test('deleting a theme leaves outputs with their look but no library link', () =
   assert.equal(after.themeId, null)
   assert.deepEqual(after.theme, using.theme)
 })
+
+test('a new install is seeded with every built-in; a shaped library is left alone', async () => {
+  const { BUILT_IN_THEMES, isUntouchedThemeLibrary, normalizeThemeLibrary, seedBuiltInThemes } = await import('../src/lib/theme-library')
+  const { DEFAULT_OVERLAY_SETTINGS } = await import('../src/lib/overlay-defaults')
+  const placeholder = normalizeThemeLibrary(undefined, DEFAULT_OVERLAY_SETTINGS.theme)
+  assert.equal(isUntouchedThemeLibrary([]), true)
+  assert.equal(isUntouchedThemeLibrary(placeholder), true)
+
+  const seeded = seedBuiltInThemes(placeholder, 1000)
+  assert.deepEqual(seeded.map((t) => t.name), BUILT_IN_THEMES.map((t) => t.name))
+  // The placeholder becomes Broadcast in place, so screens pointing at it still do.
+  assert.equal(seeded[0].id, placeholder[0].id)
+  assert.equal(seeded[0].name, 'Broadcast')
+  assert.deepEqual(seeded.filter((t) => t.kind === 'lyrics').map((t) => t.name), ['Stage lyrics', 'Lyrics lower third'])
+
+  const renamed = [{ ...placeholder[0], name: 'Sunday' }]
+  assert.equal(isUntouchedThemeLibrary(renamed), false)
+  assert.equal(isUntouchedThemeLibrary(seeded), false)
+})

@@ -2,12 +2,12 @@
 export const PRODUCT_NAME = 'Kairo'
 export const PRODUCT_TAGLINE = 'Scripture  |  Lyrics  |  Presentation'
 
+/** The palette: ink is primary, paper the white, stone muted, CTA blue marks live. */
 export const BRAND = {
-  primary: '#F59E0B',
-  dark: '#111827',
-  softBackground: '#FFF9ED',
-  mutedText: '#8A7A63',
-  white: '#FFFFFF',
+  primary: '#11120D',
+  white: '#FFFBF4',
+  muted: '#565449',
+  live: '#6C91C2',
 } as const
 
 /** NDI sender shown in ProPresenter’s video-input list. */

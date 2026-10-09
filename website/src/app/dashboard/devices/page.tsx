@@ -99,7 +99,7 @@ function DevicePortrait({
         className="pointer-events-none absolute inset-1 rounded-full blur-lg"
         style={{
           background: lit
-            ? 'radial-gradient(closest-side, rgba(245,158,11,0.28), transparent 74%)'
+            ? 'radial-gradient(closest-side, rgba(108, 145, 194,0.28), transparent 74%)'
             : 'transparent',
         }}
         aria-hidden
@@ -111,36 +111,36 @@ function DevicePortrait({
       >
         <defs>
           <linearGradient id={screen} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={lit ? '#3a2a12' : '#161412'} />
-            <stop offset="100%" stopColor={lit ? '#1a140c' : '#0c0b0a'} />
+            <stop offset="0%" stopColor={lit ? '#21292E' : '#14150F'} />
+            <stop offset="100%" stopColor={lit ? '#181C1B' : '#11120D'} />
           </linearGradient>
           <radialGradient id={glow} cx="50%" cy="42%" r="58%">
-            <stop offset="0%" stopColor="rgba(245,158,11,0.55)" />
-            <stop offset="100%" stopColor="rgba(245,158,11,0)" />
+            <stop offset="0%" stopColor="rgba(108, 145, 194,0.55)" />
+            <stop offset="100%" stopColor="rgba(108, 145, 194,0)" />
           </radialGradient>
         </defs>
         {isLaptop ? (
           <>
-            <rect x="34" y="10" width="132" height="86" rx="10" fill="#1c1a18" stroke="rgba(247,246,242,0.16)" />
+            <rect x="34" y="10" width="132" height="86" rx="10" fill="#1A1A15" stroke="rgba(255, 251, 244,0.16)" />
             <rect x="40" y="16" width="120" height="72" rx="4" fill={`url(#${screen})`} />
             {lit ? <rect x="40" y="16" width="120" height="72" rx="4" fill={`url(#${glow})`} /> : null}
-            <circle cx="100" cy="13.4" r="1.15" fill="rgba(247,246,242,0.28)" />
+            <circle cx="100" cy="13.4" r="1.15" fill="rgba(255, 251, 244,0.28)" />
             <path
               d="M24 100h152c5.5 0 8 3.2 8 6.5V110H16v-3.5c0-3.3 2.5-6.5 8-6.5z"
-              fill="#2a2724"
-              stroke="rgba(247,246,242,0.08)"
+              fill="#272821"
+              stroke="rgba(255, 251, 244,0.08)"
             />
-            <rect x="88" y="102.5" width="24" height="2.4" rx="1.2" fill="rgba(247,246,242,0.16)" />
-            <ellipse cx="100" cy="118" rx="46" ry="3.4" fill="#000" opacity="0.38" />
+            <rect x="88" y="102.5" width="24" height="2.4" rx="1.2" fill="rgba(255, 251, 244,0.16)" />
+            <ellipse cx="100" cy="118" rx="46" ry="3.4" fill="#11120D" opacity="0.38" />
           </>
         ) : (
           <>
-            <rect x="38" y="8" width="124" height="88" rx="10" fill="#1c1a18" stroke="rgba(247,246,242,0.16)" />
+            <rect x="38" y="8" width="124" height="88" rx="10" fill="#1A1A15" stroke="rgba(255, 251, 244,0.16)" />
             <rect x="44" y="14" width="112" height="74" rx="4" fill={`url(#${screen})`} />
             {lit ? <rect x="44" y="14" width="112" height="74" rx="4" fill={`url(#${glow})`} /> : null}
-            <rect x="96" y="96" width="8" height="14" rx="1.5" fill="#2a2724" />
-            <rect x="78" y="110" width="44" height="4" rx="2" fill="#2a2724" />
-            <ellipse cx="100" cy="120" rx="40" ry="3" fill="#000" opacity="0.38" />
+            <rect x="96" y="96" width="8" height="14" rx="1.5" fill="#272821" />
+            <rect x="78" y="110" width="44" height="4" rx="2" fill="#272821" />
+            <ellipse cx="100" cy="120" rx="40" ry="3" fill="#11120D" opacity="0.38" />
           </>
         )}
       </svg>

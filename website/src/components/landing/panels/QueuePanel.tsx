@@ -30,7 +30,7 @@ export function QueuePanel({ live }: { live: boolean }): React.ReactElement {
           >
             <span className="text-[13.5px] text-dim">{ref}</span>
             {i === 0 ? (
-              <span className="rounded-full bg-accent px-3 py-1 font-display text-[11px] font-semibold text-[#231703]">
+              <span className="rounded-full bg-accent px-3 py-1 font-display text-[11px] font-semibold text-[#11120D]">
                 Send
               </span>
             ) : null}

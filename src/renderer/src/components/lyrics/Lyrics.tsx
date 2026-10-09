@@ -4,7 +4,7 @@ import { leavesTarget } from '@/lib/drag'
 import { PICKED_ROW, listShortcuts, selectGesture, useMultiSelect, type SelectGesture } from '@/hooks/useMultiSelect'
 import { MarqueeSelect } from '@/components/shared/MarqueeSelect'
 import { SelectionBar } from '@/components/shared/SelectionBar'
-import { SLIDE_LABEL_CHOICES, sectionColor } from '@/components/lyrics/section-colors'
+import { SLIDE_LABEL_CHOICES, sectionColor, sectionFill } from '@/components/lyrics/section-colors'
 import { runSetlistCommand, songIdFromDrag, startSongDrag, useSetlistStore, SONG_DRAG_TYPE } from '@/stores/useSetlist'
 import { startLibraryItemDrag, useLibrary } from '@/stores/useLibraries'
 import { DEFAULT_LIBRARY_ID, itemsInLibrary, libraryCounts as countByLibrary } from '@shared/libraries'
@@ -270,8 +270,8 @@ function SectionBadge({ type }: { type: LyricsSectionType }): React.ReactElement
     : type.charAt(0).toUpperCase() + type.slice(1)
   return (
     <span
-      className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border shrink-0"
-      style={{ color: sectionColor(type), backgroundColor: sectionColor(type, 0.12), borderColor: sectionColor(type, 0.35) }}
+      className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider shrink-0"
+      style={sectionFill(type)}
     >
       {label}
     </span>
@@ -335,8 +335,7 @@ function SectionSlideGrid({
 
   return (
     <section
-      className="-mx-2 space-y-1.5 rounded-xl px-2 py-1.5 transition-colors duration-150"
-      style={isDestination ? { backgroundColor: sectionColor(section.type, 0.07) } : undefined}
+      className={cn('-mx-2 space-y-1.5 rounded-xl px-2 py-1 transition-colors duration-150', isDestination && 'bg-surface-secondary')}
       // Anywhere in the section that is not a card: join it, at the end.
       onDragOver={(event) => {
         if (reorderBusy || !slideDrag || chunks.length === 0 || !event.dataTransfer.types.includes(SLIDE_DRAG_TYPE)) return
@@ -354,18 +353,13 @@ function SectionSlideGrid({
         if (Number.isInteger(from) && !reorderBusy) onReorder(from, lastSlide, 'after')
       }}
     >
-      <div className="flex items-baseline gap-2">
-        <h3
-          className="inline-flex items-center gap-1.5 text-xs font-semibold tracking-tight"
-          style={{ color }}
-        >
-          <span className="size-2 shrink-0 self-center rounded-full" style={{ backgroundColor: color }} aria-hidden="true" />
+      {/* Cards carry the section label on their bar; an empty section has
+          no cards, so it keeps a heading to stay visible and droppable. */}
+      {chunks.length === 0 && (
+        <h3 className="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium" style={sectionFill(section.type)}>
           {section.label}
         </h3>
-        <span className="text-[11px] tabular-nums text-slate-600">
-          {chunks.length} slide{chunks.length !== 1 ? 's' : ''}
-        </span>
-      </div>
+      )}
 
       <div
         className="grid gap-2"
@@ -434,18 +428,15 @@ function SectionSlideGrid({
                 if (selecting) { onSelectSlide(zeroBased, 'toggle'); return }
                 onPushSlide(zeroBased)
               }}
-              style={{
-                // The section's colour frames every one of its slides; live
-                // (amber) and picked (white) override it.
-                borderColor: isLive || isPicked ? undefined : sectionColor(section.type, 0.55),
-                overflow: 'visible',
-              }}
+              // A ProPresenter-style card: the slide, then a solid bar in the
+              // section's colour carrying its label. The 2px frame stays neutral
+              // so it can mark live (accent) and picked (white).
               className={cn(
-                'group relative w-full aspect-video rounded-none overflow-hidden',
-                'bg-black border-2 text-left cursor-default',
-                isLive && 'border-teal-400',
+                'group relative w-full rounded-md',
+                'border-2 text-left cursor-default',
+                isLive && 'border-live',
                 isPicked && !isLive && 'border-white',
-                !isLive && !isPicked && 'border-transparent hover:brightness-125',
+                !isLive && !isPicked && 'border-surface-border hover:border-stone',
                 isPushing && 'opacity-70',
                 // The card being carried stays in place, faded, so the gap it
                 // leaves is visible while the insertion bar shows where it goes.
@@ -473,7 +464,9 @@ function SectionSlideGrid({
                 </span>
               )}
 
-              <div className="absolute inset-0 overflow-hidden rounded-none flex flex-col items-center justify-center px-3.5 gap-0.5">
+              <div className="overflow-hidden rounded-[4px]">
+              <div className="relative aspect-video bg-black">
+              <div className="absolute inset-0 overflow-hidden flex flex-col items-center justify-center px-3.5 gap-0.5">
                 {lineCount > 0 ? (
                   lines.map((line, j) => (
                     <p
@@ -512,10 +505,18 @@ function SectionSlideGrid({
                   <p className="text-[11px] text-white/20 italic">Empty</p>
                 )}
               </div>
+              </div>
 
-              <span className="absolute bottom-1.5 right-2 text-[9px] font-bold tabular-nums tracking-wider text-white/25 group-hover:text-teal-400/70 transition-colors">
-                {slideNo}
-              </span>
+              {/* Label bar: the section name on its first slide (like a
+                  ProPresenter group), the slide number on every one. */}
+              <div
+                className="flex items-center gap-2 px-2"
+                style={{ ...sectionFill(section.type), height: `${Math.round(22 * scale)}px`, fontSize: `${Math.round(12 * scale)}px` }}
+              >
+                <span className="min-w-0 flex-1 truncate font-medium">{i === 0 ? section.label : ''}</span>
+                <span className="shrink-0 text-[0.85em] font-semibold tabular-nums opacity-70">{slideNo}</span>
+              </div>
+              </div>
             </button>
           )
         })}
@@ -767,12 +768,11 @@ function SectionEditBlock({
       onDragOver={(e) => onDragOver(e, index)}
       onDrop={() => onDrop(index)}
       style={isDragTarget ? undefined : {
-        // Same colour as the section's slides in the song view.
-        borderColor: sectionColor(section.type, 0.45),
+        // Same colour as the section's slide bars in the song view.
         boxShadow: `inset 3px 0 0 ${sectionColor(section.type)}`,
       }}
       className={cn(
-        'overflow-hidden rounded-none transition-colors duration-150',
+        'overflow-hidden rounded-md transition-colors duration-150',
         isDragTarget
           ? 'bg-surface-elevated'
           : 'bg-surface-secondary'
@@ -780,8 +780,7 @@ function SectionEditBlock({
     >
       {/* Section header row */}
       <div
-        className="flex items-center gap-2 border-b px-3 py-2"
-        style={{ backgroundColor: sectionColor(section.type, 0.06), borderColor: sectionColor(section.type, 0.18) }}
+        className="flex items-center gap-2 bg-surface-tertiary px-3 py-2"
       >
         <div
           draggable
@@ -806,12 +805,8 @@ function SectionEditBlock({
             const opt = SECTION_TYPE_OPTS.find((o) => o.value === t)
             onUpdate(section._key, { type: t, label: opt?.label ?? t })
           }}
-          className="appearance-none text-[11px] font-bold uppercase tracking-wider cursor-pointer focus-visible:outline-none rounded px-1.5 py-0.5 border"
-          style={{
-            color: sectionColor(section.type),
-            backgroundColor: sectionColor(section.type, 0.12),
-            borderColor: sectionColor(section.type, 0.35),
-          }}
+          className="appearance-none text-[11px] font-bold uppercase tracking-wider cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 rounded px-1.5 py-0.5"
+          style={sectionFill(section.type)}
           title="Change section type"
         >
           {SECTION_TYPE_OPTS.map((o) => (
@@ -3396,7 +3391,7 @@ export default function Lyrics(): React.ReactElement {
           <Button variant="ghost" size="icon-sm" onClick={() => setShowImport(true)} aria-label="Import songs" title="Import songs">
             <Upload />
           </Button>
-          <Button size="sm" onClick={handleNewSong} title="New song">
+          <Button size="sm" onClick={handleNewSong} title="New song" data-tour="lyrics-new">
             <Plus data-icon="inline-start" /> New
           </Button>
         </div>,
@@ -3981,14 +3976,9 @@ export default function Lyrics(): React.ReactElement {
                             type="button"
                             disabled={pickedSlides.size === 0 || reorderBusy}
                             onClick={() => void handleLabelSlides(choice)}
-                            className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-[filter] hover:brightness-125 disabled:opacity-35"
-                            style={{
-                              color: sectionColor(choice.type),
-                              backgroundColor: sectionColor(choice.type, 0.12),
-                              borderColor: sectionColor(choice.type, 0.35),
-                            }}
+                            className="inline-flex items-center rounded px-2.5 py-1 text-[11px] font-semibold transition-[filter] hover:brightness-110 disabled:opacity-35"
+                            style={sectionFill(choice.type)}
                           >
-                            <span className="size-1.5 rounded-full" style={{ backgroundColor: sectionColor(choice.type) }} aria-hidden="true" />
                             {choice.label}
                           </button>
                         ))}

@@ -11,29 +11,30 @@
    --animate-pulse-dot -> animate-pulse-dot
    ============================================================ */
 @theme {
-  /* Surfaces, darkest to lightest */
-  --color-ink: #000000;
-  --color-panel: #121010;
-  --color-panel-2: #171513;
-  --color-inset: #1d1a17;
+  /* Surfaces, darkest to lightest — the Kairo palette: ink #11120D (primary),
+     paper #FFFBF4 (white), stone #565449 (muted), blue #6C91C2 (accent). The
+     steps between are blends of those, the same as the desktop app's. */
+  --color-ink: #11120D;
+  --color-panel: #1F1F19;
+  --color-panel-2: #24241E;
+  --color-inset: #272720;
 
-  /* Text, brightest to dimmest.
-     Every step clears 4.5:1 on --color-ink, and each is ~1.35x separated from
-     its neighbour so the hierarchy still reads. Anything set over the hero
-     gradient has to move one step brighter than it would sit on black — the
-     gradient lifts the background to roughly #3a2e21 under the nav. */
-  --color-paper: #f7f6f2;  /* 19.4:1 */
-  --color-dim: #a5a8a6;    /*  8.8:1 — and 5.5:1 over the gradient */
-  --color-mute: #8b908d;   /*  6.5:1 */
-  --color-faint: #767b78;  /*  4.9:1 */
+  /* Text, brightest to dimmest — ratios on --color-ink (and on --color-panel).
+     Every step clears 4.5:1 on both, and each is far enough from its
+     neighbour that the hierarchy still reads. Over the hero's blue field, use
+     one step brighter than you would on plain ink. */
+  --color-paper: #FFFBF4;  /* 18.2:1 (16.1) */
+  --color-dim: #CCC9C1;    /* 11.4:1 (10.0) */
+  --color-mute: #ABA89F;   /*  7.9:1 (7.0) */
+  --color-faint: #8C8980;  /*  5.4:1 (4.7) */
 
   /* Hairlines */
-  --color-line: rgba(247, 246, 242, 0.09);
-  --color-line-soft: rgba(247, 246, 242, 0.055);
+  --color-line: rgba(255, 251, 244, 0.09);
+  --color-line-soft: rgba(255, 251, 244, 0.055);
 
-  /* Accents */
-  --color-accent: #F59E0B;
-  --color-accent-dim: #D97706;
+  /* Accent: the palette blue. Primary buttons are paper with ink text. */
+  --color-accent: #6C91C2;
+  --color-accent-dim: #4F6888;
 
   --animate-pulse-dot: pulse-dot 1.9s ease-in-out infinite;
   --animate-bounce-bar: bounce-bar 1.4s ease-in-out infinite;
@@ -41,6 +42,11 @@
   --animate-recap-scan: recap-scan 5.5s linear infinite;
   --animate-recap-bar: recap-bar 1.7s ease-in-out infinite;
   --animate-mark-breathe: mark-breathe 2.4s ease-in-out infinite;
+  --animate-verse-in: verse-in 0.7s cubic-bezier(0.22, 0.8, 0.28, 1) both;
+  --animate-word-in: word-in 0.32s ease-out both;
+  --animate-live-flash: live-flash 1.4s ease-out both;
+  --animate-chip-in: chip-in 0.45s cubic-bezier(0.34, 1.4, 0.64, 1) both;
+  --animate-scene-rise: scene-rise 0.9s cubic-bezier(0.22, 0.8, 0.28, 1) both;
 
   @keyframes pulse-dot {
     0%, 100% { opacity: 1; }
@@ -62,6 +68,29 @@
   @keyframes recap-scan {
     0% { transform: translate3d(0, 0, 0); }
     100% { transform: translate3d(0, -50%, 0); }
+  }
+  /* The auth scene: a verse settling onto the projection screen. */
+  @keyframes verse-in {
+    from { opacity: 0; filter: blur(8px); transform: translateY(8px) scale(0.985); }
+    to { opacity: 1; filter: blur(0); transform: none; }
+  }
+  @keyframes word-in {
+    from { opacity: 0; filter: blur(3px); transform: translateY(3px); }
+    to { opacity: 1; filter: blur(0); transform: none; }
+  }
+  /* The live outline flares when something is sent, then settles. */
+  @keyframes live-flash {
+    0% { opacity: 0; }
+    12% { opacity: 1; }
+    100% { opacity: 0; }
+  }
+  @keyframes chip-in {
+    from { opacity: 0; transform: translateY(6px) scale(0.92); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes scene-rise {
+    from { opacity: 0; transform: translateY(16px); }
+    to { opacity: 1; transform: none; }
   }
   @keyframes recap-bar {
     0% { transform: translateX(-120%); }
@@ -87,7 +116,7 @@
 
   ::selection {
     background: var(--color-accent);
-    color: #231703;
+    color: #11120D;
   }
 
   :focus-visible {
@@ -113,17 +142,17 @@
    this too; it uses `field` now. */
 @utility starfield {
   background-image:
-    radial-gradient(1.4px 1.4px at 12% 22%, rgba(247, 246, 242, 0.5), transparent),
-    radial-gradient(1.2px 1.2px at 78% 14%, rgba(247, 246, 242, 0.42), transparent),
-    radial-gradient(1px 1px at 32% 48%, rgba(247, 246, 242, 0.3), transparent),
-    radial-gradient(1.6px 1.6px at 88% 42%, rgba(247, 246, 242, 0.34), transparent),
-    radial-gradient(1px 1px at 55% 8%, rgba(247, 246, 242, 0.3), transparent),
-    radial-gradient(1.2px 1.2px at 6% 62%, rgba(247, 246, 242, 0.24), transparent),
-    radial-gradient(1px 1px at 66% 66%, rgba(247, 246, 242, 0.22), transparent),
-    radial-gradient(1.3px 1.3px at 42% 30%, rgba(247, 246, 242, 0.28), transparent),
-    radial-gradient(900px 420px at 50% -8%, rgba(245, 158, 11, 0.10), transparent 70%);
-  mask-image: linear-gradient(180deg, #000 0%, #000 55%, transparent 100%);
-  -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 55%, transparent 100%);
+    radial-gradient(1.4px 1.4px at 12% 22%, rgba(255, 251, 244, 0.5), transparent),
+    radial-gradient(1.2px 1.2px at 78% 14%, rgba(255, 251, 244, 0.42), transparent),
+    radial-gradient(1px 1px at 32% 48%, rgba(255, 251, 244, 0.3), transparent),
+    radial-gradient(1.6px 1.6px at 88% 42%, rgba(255, 251, 244, 0.34), transparent),
+    radial-gradient(1px 1px at 55% 8%, rgba(255, 251, 244, 0.3), transparent),
+    radial-gradient(1.2px 1.2px at 6% 62%, rgba(255, 251, 244, 0.24), transparent),
+    radial-gradient(1px 1px at 66% 66%, rgba(255, 251, 244, 0.22), transparent),
+    radial-gradient(1.3px 1.3px at 42% 30%, rgba(255, 251, 244, 0.28), transparent),
+    radial-gradient(900px 420px at 50% -8%, rgba(108, 145, 194, 0.10), transparent 70%);
+  mask-image: linear-gradient(180deg, #11120D 0%, #11120D 55%, transparent 100%);
+  -webkit-mask-image: linear-gradient(180deg, #11120D 0%, #11120D 55%, transparent 100%);
 }
 
 /* ============================================================
@@ -132,27 +161,27 @@
    Deliberately CSS rather than a photograph. Kairo's product is
    invisible — audio in, a verse on a screen — so there is nothing
    honest to photograph, and stock worship imagery reads as a
-   customer base that does not exist yet. A warm field grades to
+   customer base that does not exist yet. The field grades to
    --color-accent by construction, ships no bytes, and survives a
    rebrand. Swap in a real photo here when there is one to use.
    ============================================================ */
 @utility field {
   background-image:
-    radial-gradient(115% 74% at 50% -10%, rgba(245, 158, 11, 0.26), transparent 60%),
-    radial-gradient(72% 54% at 12% 2%, rgba(217, 119, 6, 0.16), transparent 66%),
-    radial-gradient(64% 50% at 90% 10%, rgba(247, 246, 242, 0.06), transparent 68%),
-    radial-gradient(100% 56% at 50% 0%, rgba(29, 26, 23, 0.45), transparent 72%);
-  mask-image: linear-gradient(180deg, #000 0%, #000 52%, transparent 100%);
-  -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 52%, transparent 100%);
+    radial-gradient(115% 74% at 50% -10%, rgba(108, 145, 194, 0.26), transparent 60%),
+    radial-gradient(72% 54% at 12% 2%, rgba(79, 104, 136, 0.16), transparent 66%),
+    radial-gradient(64% 50% at 90% 10%, rgba(255, 251, 244, 0.06), transparent 68%),
+    radial-gradient(100% 56% at 50% 0%, rgba(17, 18, 13, 0.45), transparent 72%);
+  mask-image: linear-gradient(180deg, #11120D 0%, #11120D 52%, transparent 100%);
+  -webkit-mask-image: linear-gradient(180deg, #11120D 0%, #11120D 52%, transparent 100%);
 }
 
 /* The quieter variant under the closing CTA, so the two do not compete. */
 @utility field-soft {
   background-image:
-    radial-gradient(110% 70% at 50% 110%, rgba(245, 158, 11, 0.10), transparent 64%),
-    radial-gradient(70% 50% at 82% 96%, rgba(247, 246, 242, 0.035), transparent 72%);
-  mask-image: linear-gradient(0deg, #000 0%, #000 56%, transparent 100%);
-  -webkit-mask-image: linear-gradient(0deg, #000 0%, #000 56%, transparent 100%);
+    radial-gradient(110% 70% at 50% 110%, rgba(108, 145, 194, 0.10), transparent 64%),
+    radial-gradient(70% 50% at 82% 96%, rgba(255, 251, 244, 0.035), transparent 72%);
+  mask-image: linear-gradient(0deg, #11120D 0%, #11120D 56%, transparent 100%);
+  -webkit-mask-image: linear-gradient(0deg, #11120D 0%, #11120D 56%, transparent 100%);
 }
 
 /* Film grain over the field. Without it the gradients band on wide screens. */
@@ -166,10 +195,10 @@
 
 /* Faint horizon curve sitting behind a section heading. */
 @utility arc {
-  border-top: 1px solid rgba(247, 246, 242, 0.075);
+  border-top: 1px solid rgba(255, 251, 244, 0.075);
   border-radius: 50%;
-  mask-image: radial-gradient(60% 90% at 50% 0%, #000 30%, transparent 72%);
-  -webkit-mask-image: radial-gradient(60% 90% at 50% 0%, #000 30%, transparent 72%);
+  mask-image: radial-gradient(60% 90% at 50% 0%, #11120D 30%, transparent 72%);
+  -webkit-mask-image: radial-gradient(60% 90% at 50% 0%, #11120D 30%, transparent 72%);
 }
 
 /* Divider rule that dissolves at both ends. */
@@ -265,46 +294,47 @@
   --radius: 0.625rem;
 }
 
-/* Site is dark by default. Keep marketing --color-accent (amber) working by
-   mapping shadcn primary to the same brand colour. */
+/* Site is dark by default. shadcn's tokens use the same palette as the
+   desktop app: primary actions are paper with ink text, the blue is the ring. */
 :root,
 .dark {
-  --background: #000000;
-  --foreground: #f7f6f2;
-  --card: #121010;
-  --card-foreground: #f7f6f2;
-  --popover: #121010;
-  --popover-foreground: #f7f6f2;
-  --primary: #f59e0b;
-  --primary-foreground: #231703;
-  --secondary: #171513;
-  --secondary-foreground: #f7f6f2;
-  --muted: #1d1a17;
-  --muted-foreground: #8b908d;
-  --accent: #171513;
-  --accent-foreground: #f7f6f2;
+  --background: #11120D;
+  --foreground: #FFFBF4;
+  --card: #1F1F19;
+  --card-foreground: #FFFBF4;
+  --popover: #24241E;
+  --popover-foreground: #FFFBF4;
+  --primary: #FFFBF4;
+  --primary-foreground: #11120D;
+  --secondary: #24241E;
+  --secondary-foreground: #FFFBF4;
+  --muted: #272720;
+  --muted-foreground: #ABA89F;
+  --accent: #24241E;
+  --accent-foreground: #FFFBF4;
   --destructive: oklch(0.704 0.191 22.216);
-  --border: rgba(247, 246, 242, 0.09);
-  --input: rgba(247, 246, 242, 0.12);
-  --ring: #f59e0b;
-  --chart-1: #f59e0b;
-  --chart-2: #d97706;
-  --chart-3: #a5a8a6;
-  --chart-4: #767b78;
-  --chart-5: #1d1a17;
-  --sidebar: #121010;
-  --sidebar-foreground: #f7f6f2;
-  --sidebar-primary: #f59e0b;
-  --sidebar-primary-foreground: #231703;
-  --sidebar-accent: #171513;
-  --sidebar-accent-foreground: #f7f6f2;
-  --sidebar-border: rgba(247, 246, 242, 0.09);
-  --sidebar-ring: #f59e0b;
+  --border: rgba(255, 251, 244, 0.09);
+  --input: rgba(255, 251, 244, 0.12);
+  --ring: #6C91C2;
+  --chart-1: #6C91C2;
+  --chart-2: #4F6888;
+  --chart-3: #A29F96;
+  --chart-4: #565449;
+  --chart-5: #272720;
+  --sidebar: #1F1F19;
+  --sidebar-foreground: #FFFBF4;
+  --sidebar-primary: #FFFBF4;
+  --sidebar-primary-foreground: #11120D;
+  --sidebar-accent: #24241E;
+  --sidebar-accent-foreground: #FFFBF4;
+  --sidebar-border: rgba(255, 251, 244, 0.09);
+  --sidebar-ring: #6C91C2;
 }
 
-/* Landing utilities (`bg-accent`, `text-accent`) must stay amber — shadcn's
-   `--color-accent` map above would otherwise steal the brand token. */
+/* Landing utilities (`bg-accent`, `text-accent`) are the brand blue — shadcn's
+   `--color-accent` map above would otherwise steal the brand token. Dashboard
+   hovers use `secondary`, not `accent`, for exactly this reason. */
 @theme {
-  --color-accent: #f59e0b;
-  --color-accent-dim: #d97706;
+  --color-accent: #6C91C2;
+  --color-accent-dim: #4F6888;
 }

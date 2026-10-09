@@ -157,7 +157,7 @@ export function QueueDock({
 
           <button
             type="button"
-            className="flex items-center gap-1.5 rounded-md bg-teal-500 px-2.5 py-1.5 text-[11px] font-semibold text-[#111827] hover:bg-teal-400 disabled:opacity-40"
+            className="flex items-center gap-1.5 rounded-md bg-teal-500 px-2.5 py-1.5 text-[11px] font-semibold text-on-accent hover:bg-teal-600 disabled:opacity-40"
             onClick={onSendSelected}
             disabled={
               !cards[activeCardIndex] ||

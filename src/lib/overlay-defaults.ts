@@ -157,7 +157,7 @@ export function makeOverlayOutput(
  */
 export const PROJECTOR_OUTPUT_ID = 'projector'
 
-function makeProjectorOutput(order: number): OverlayOutput {
+export function makeProjectorOutput(order: number): OverlayOutput {
   return makeOverlayOutput(PROJECTOR_OUTPUT_ID, 'screen', { name: 'Projector', order })
 }
 

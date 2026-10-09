@@ -6,6 +6,8 @@ import type { AppConfig, SermonReasoningEffort } from '../config/env'
 import { OrgSecretsService } from '../orgs/org-secrets.service'
 import {
   buildSummaryPrompt,
+  buildSummaryReviewPrompt,
+  SUMMARY_REVIEW_SYSTEM_PROMPT,
   JSON_OUTPUT_INSTRUCTION,
   SERMON_SUMMARY_JSON_SCHEMA,
   SUMMARY_SYSTEM_PROMPT,
@@ -115,9 +117,12 @@ export class SermonSummaryService {
     // One classifier for both providers: the caller only needs to know whether
     // another attempt is worth making.
     try {
-      return vault.anthropicApiKey
-        ? await this.viaAnthropic(vault.anthropicApiKey, prompt, input.transcriptText)
-        : await this.viaDeepSeek(vault.deepseekApiKey, prompt, input.transcriptText)
+      const request = (userPrompt: string, systemPrompt: string): Promise<SummaryResult> =>
+        vault.anthropicApiKey
+          ? this.viaAnthropic(vault.anthropicApiKey, userPrompt, input.transcriptText, systemPrompt)
+          : this.viaDeepSeek(vault.deepseekApiKey, userPrompt, input.transcriptText, systemPrompt)
+      const draft = await request(prompt, SUMMARY_SYSTEM_PROMPT)
+      return await request(buildSummaryReviewPrompt(input, draft.summary), SUMMARY_REVIEW_SYSTEM_PROMPT)
     } catch (error) {
       throw this.toSummaryError(error)
     }
@@ -127,6 +132,7 @@ export class SermonSummaryService {
     apiKey: string,
     prompt: string,
     transcriptText: string,
+    systemPrompt: string,
   ): Promise<SummaryResult> {
     const client = new Anthropic({ apiKey, maxRetries: 1, timeout: REQUEST_TIMEOUT_MS })
     const model = this.config.sermons.model
@@ -138,7 +144,7 @@ export class SermonSummaryService {
     const stream = client.messages.stream({
       model,
       max_tokens: MAX_OUTPUT_TOKENS,
-      system: SUMMARY_SYSTEM_PROMPT,
+      system: systemPrompt,
       output_config: {
         effort,
         format: {
@@ -182,6 +188,7 @@ export class SermonSummaryService {
     apiKey: string,
     prompt: string,
     transcriptText: string,
+    systemPrompt: string,
   ): Promise<SummaryResult> {
     const model = this.config.sermons.deepseekModel
     const reasoningEffort = DEEPSEEK_EFFORT[this.config.sermons.reasoningEffort]
@@ -203,7 +210,7 @@ export class SermonSummaryService {
         messages: [
           // The shape goes in the prompt here: DeepSeek has no structured-output
           // schema, and its json_object mode also requires the word "json".
-          { role: 'system', content: `${SUMMARY_SYSTEM_PROMPT}\n\n${JSON_OUTPUT_INSTRUCTION}` },
+          { role: 'system', content: `${systemPrompt}\n\n${JSON_OUTPUT_INSTRUCTION}` },
           { role: 'user', content: prompt },
         ],
       }),

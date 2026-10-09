@@ -37,6 +37,10 @@ export interface ServiceRecord {
   endedAt: number | null
   /** Service is open until ended. Transcription pause does not change this. */
   status: 'live' | 'ended'
+  /** Time spent paused so far, so the clock shows talk time, not wall time. */
+  pausedMs?: number
+  /** When the current pause began; null/absent while listening. */
+  pausedAt?: number | null
   transcript: TranscriptResult[]
   scriptures: ScriptureSuggestion[]
   notes: SermonPlan[]
@@ -50,6 +54,19 @@ export interface ServiceRecord {
    */
   upload: ServiceUploadState
 }
+/**
+ * How long the service has been listening: wall time minus every pause,
+ * including one still in progress — so the clock stands still while paused.
+ */
+export function serviceTalkTimeMs(
+  record: Pick<ServiceRecord, 'createdAt' | 'endedAt' | 'pausedMs' | 'pausedAt'>,
+  now = Date.now(),
+): number {
+  const end = record.endedAt ?? now
+  const openPause = record.pausedAt != null && record.endedAt == null ? now - record.pausedAt : 0
+  return Math.max(0, end - record.createdAt - (record.pausedMs ?? 0) - openPause)
+}
+
 export interface ServiceSnapshot { activeId: string | null; services: ServiceRecord[] }
 export const SERVICE_CHANNEL = 'services:command'
 export const SERVICE_CHANGED = 'services:changed'

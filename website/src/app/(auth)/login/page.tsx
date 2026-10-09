@@ -4,20 +4,19 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Suspense, useState } from 'react'
 import { AuthSplit } from '@/components/auth/AuthSplit'
+import { GoogleButton } from '@/components/auth/GoogleButton'
 import { PasswordField } from '@/components/auth/PasswordField'
 import { btnPrimary, input, label, linkBtn, msg, msgError, msgOk } from '@/components/auth/styles'
 import { api, ApiError } from '@/lib/api'
 import { getSession, seedAccessToken } from '@/lib/session'
 
 const BRAND = {
-  kind: 'quote',
   quote: (
     <>
       Be ready for what&rsquo;s planned. <span className="font-semibold">And what isn&rsquo;t.</span>
     </>
   ),
-  attribution: 'Kairo presentation software',
-} as const
+}
 
 function LoginPageContent(): React.ReactElement {
   const router = useRouter()
@@ -34,6 +33,7 @@ function LoginPageContent(): React.ReactElement {
     event.preventDefault()
     setBusy(true)
     setError(null)
+    setNotice(null)
     try {
       const result = await api<{ accessToken: string }>('/v1/auth/login', {
         method: 'POST',
@@ -62,7 +62,7 @@ function LoginPageContent(): React.ReactElement {
 
   const forgot = async (): Promise<void> => {
     if (!email) {
-      setError('Enter your email address first')
+      setError('Enter your email above, then choose “Forgot password?” again.')
       return
     }
     await api('/v1/auth/forgot-password', { method: 'POST', body: { email } }).catch(() => null)
@@ -72,28 +72,23 @@ function LoginPageContent(): React.ReactElement {
 
   return (
     <AuthSplit
-      title="Sign in"
-      blurb="Sign in to manage your church's Kairo account."
+      title="Welcome back"
+      blurb="Sign in to manage your church, your team, and the computers running Kairo."
       brand={BRAND}
       footer={
-        <>
-          <p className="m-0">
-            Don&rsquo;t have an account?{' '}
-            <Link className="text-paper underline-offset-2 hover:underline" href="/signup">
-              Create one
-            </Link>
-          </p>
-          <p className="m-0 mt-3">
-            <a
-              className={linkBtn}
-              href={`/v1/auth/google?returnTo=${encodeURIComponent(returnTo)}`}
-            >
-              Continue with Google
-            </a>
-          </p>
-        </>
+        <p className="m-0">
+          New to Kairo?{' '}
+          <Link
+            className="font-medium text-paper underline-offset-2 hover:underline"
+            href={params.get('returnTo') ? `/signup?returnTo=${encodeURIComponent(returnTo)}` : '/signup'}
+          >
+            Create an account
+          </Link>
+        </p>
       }
     >
+      <GoogleButton returnTo={returnTo} />
+
       <form className="flex flex-col gap-5" onSubmit={submit}>
         <div>
           <label className={label} htmlFor="email">
@@ -121,14 +116,16 @@ function LoginPageContent(): React.ReactElement {
           required
           labelAccessory={
             <button className={linkBtn} type="button" onClick={() => void forgot()} disabled={busy}>
-              Forgot password
+              Forgot password?
             </button>
           }
         />
 
-        <p className={`${msg} ${error ? msgError : msgOk}`} aria-live="polite">
-          {error ?? notice}
-        </p>
+        {error || notice ? (
+          <p className={`${msg} ${error ? msgError : msgOk}`} role={error ? 'alert' : 'status'}>
+            {error ?? notice}
+          </p>
+        ) : null}
 
         <button className={btnPrimary} type="submit" disabled={busy}>
           {busy ? 'Signing in…' : 'Sign in'}
@@ -144,7 +141,7 @@ function LoginPageContent(): React.ReactElement {
  */
 export default function LoginPage(): React.ReactElement {
   return (
-    <Suspense fallback={<AuthSplit title="Sign in" brand={BRAND}>{null}</AuthSplit>}>
+    <Suspense fallback={<AuthSplit title="Welcome back" brand={BRAND}>{null}</AuthSplit>}>
       <LoginPageContent />
     </Suspense>
   )

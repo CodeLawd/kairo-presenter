@@ -6,13 +6,14 @@ import {
 } from "@shared/keyboard-shortcuts";
 import { ReferenceLibrary } from "./ReferenceLibrary";
 import { ServicePanel, useServiceRecords } from "./ServicePanel";
+import { DeepgramKeyDialog } from "./DeepgramKeyDialog";
+import { Switch } from "@/components/ui/switch";
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
   BookOpen,
   X,
   Play,
   Pause,
-  Volume2,
   AlertTriangle,
   ArrowDown,
   ChevronLeft,
@@ -68,10 +69,8 @@ import type {
   ScriptureSuggestion,
   SermonScriptureItem,
   PendingAutoPresent,
-  ServiceHealth,
   TranscriptResult,
   ResilienceStatus,
-  ScriptureTraceRecord,
 } from "@shared/ipc";
 import { useBootstrapStore } from "@/bootstrap/useBootstrapStore";
 import { OperatorQueueSearch } from "@/components/operator/OperatorQueueSearch";
@@ -97,17 +96,19 @@ const TRIGGER_PHRASES = [
 const OPERATOR_CARD_WIDTH = 200;
 const OPERATOR_CARD_HEIGHT = Math.round((OPERATOR_CARD_WIDTH * 9) / 16);
 
-function detectionCaption(
-  suggestion: ScriptureSuggestion,
-  flags: { isLive: boolean; isReading: boolean; isUpNext: boolean },
-): string | null {
-  if (suggestion.planMatch) {
-    const origin = suggestion.planMatch === "quote" ? "From sermon · matched reading" : "From sermon";
-    return flags.isLive ? origin : flags.isReading ? `${origin} · Reading` : flags.isUpNext ? `${origin} · Up next` : origin;
-  }
-  if (flags.isLive) return null;
-  if (flags.isReading) return "Reading";
-  if (flags.isUpNext) return "Up next";
+type DetectionState = "live" | "reading" | "next" | null;
+
+/** The one state a detected verse card shows, strongest first. */
+function detectionState(flags: { isLive: boolean; isReading: boolean; isUpNext: boolean }): DetectionState {
+  if (flags.isLive) return "live";
+  if (flags.isReading) return "reading";
+  if (flags.isUpNext) return "next";
+  return null;
+}
+
+/** Where the verse came from, when there is no stronger state to show. */
+function detectionSource(suggestion: ScriptureSuggestion): string | null {
+  if (suggestion.planMatch) return suggestion.planMatch === "quote" ? "Sermon · matched" : "From sermon";
   if (suggestion.preloadedNext) return "Preloaded";
   return null;
 }
@@ -285,6 +286,10 @@ function resultToSegment(r: TranscriptResult): DisplaySegment {
 
 export default function Operator(): React.ReactElement {
   const bootstrapSettings = useBootstrapStore((state) => state.settings);
+  // Transcription runs on Deepgram; without a key there is nothing to listen with.
+  const hasDeepgram = useBootstrapStore((state) => Boolean(state.settings.secretsConfigured?.deepgram));
+  // Asked for at the moment it matters: pressing Start without a key.
+  const [keyPromptOpen, setKeyPromptOpen] = useState(false);
   const livePlan = useBootstrapStore((state) => state.livePlan);
   const sermonPlans = useBootstrapStore((state) => state.sermonPlans);
   const {
@@ -311,7 +316,6 @@ export default function Operator(): React.ReactElement {
   const [pipelineBusy, setPipelineBusy] = useState(false);
   const [nuggetsOpen, setNuggetsOpen] = useState(false);
   const [interimText, setInterimText] = useState("");
-  const [lastLatency, setLastLatency] = useState<ScriptureTraceRecord | null>(null);
   const transcriptScrollRef = useContentAutoScroll(
     "bottom",
     JSON.stringify([segments.map(({ id, text }) => [id, text]), interimText]),
@@ -324,19 +328,6 @@ export default function Operator(): React.ReactElement {
       // Nugget capture still works for this session when storage is unavailable.
     }
   }, [legacyNuggets]);
-
-  useEffect(() => {
-    let mounted = true;
-    const refresh = async (): Promise<void> => {
-      try {
-        const [latest] = await window.api.scripture.recentTraces(1);
-        if (mounted) setLastLatency(latest ?? null);
-      } catch { /* diagnostics never interrupt a service */ }
-    };
-    void refresh();
-    const timer = window.setInterval(refresh, 2_000);
-    return () => { mounted = false; window.clearInterval(timer); };
-  }, []);
 
   const removeNugget = (id: string): void => {
     if (!activeService) {
@@ -685,9 +676,6 @@ export default function Operator(): React.ReactElement {
   // Queue search — Cmd/Ctrl+K focuses the combobox inside OperatorQueueSearch.
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // System Health state
-  const [health, setHealth] = useState<ServiceHealth[]>([]);
-
   // Resilience Status state
   const [resilienceStatus, setResilienceStatus] =
     useState<ResilienceStatus | null>(null);
@@ -775,7 +763,6 @@ export default function Operator(): React.ReactElement {
   useEffect(() => {
     const { orchestrator } = useBootstrapStore.getState();
     if (orchestrator) {
-      setHealth(orchestrator.health);
       setIsTranscribing(orchestrator.running);
       setAutoMode(orchestrator.autoMode, confidenceThreshold);
     }
@@ -873,7 +860,6 @@ export default function Operator(): React.ReactElement {
     );
 
     const unsubStatus = window.api.orchestrator.onStatus((status) => {
-      setHealth(status.health);
       if (!status.running) {
         setInterimText("");
         setPendingAuto([]);
@@ -1244,8 +1230,19 @@ export default function Operator(): React.ReactElement {
     }
   };
 
+  // Nothing to read and no service under way: Start sits centred in the
+  // transcript; otherwise the header carries Pause / Resume.
+  const transcriptIdle =
+    segments.length === 0 && !interimText && !activeService && !isTranscribing;
+
   const handleTogglePipeline = async () => {
     if (pipelineBusyRef.current) return;
+    // Starting without a Deepgram key would open a service that hears nothing;
+    // ask for the key instead.
+    if (!isTranscribing && !hasDeepgram) {
+      setKeyPromptOpen(true);
+      return;
+    }
     pipelineBusyRef.current = true;
     setPipelineBusy(true);
     setServiceError("");
@@ -1392,30 +1389,44 @@ export default function Operator(): React.ReactElement {
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
 
-  const getServiceStatus = (
-    serviceName: string,
-  ): "ok" | "degraded" | "error" | "unknown" => {
-    const service = health.find((h) => h.service === serviceName);
-    return service ? service.status : "unknown";
-  };
-
   const ppReconnectCountdown = resilienceStatus?.ppReconnectCountdown ?? 0;
 
-  const ppStatus = resilienceStatus
-    ? ppReconnectCountdown > 0
-      ? "error"
-      : resilienceStatus.overallHealth === "CRITICAL"
-        ? "error"
-        : "ok"
-    : getServiceStatus("propresenter");
-
-  // Did the last push reach the screens — separate from whether PP is up (D8).
-  const outputHealth = getServiceStatus("output");
   // ProPresenter status only appears once the integration is switched on.
   const usesPropresenter = useBootstrapStore((s) => propresenterEnabled(s.settings));
 
   const sttHealth = resilienceStatus?.health.find((h) => h.service === "stt");
 
+
+  // Starting is guarded by a 5-second countdown so a stray click can be undone
+  // before the microphone opens. Pausing stays instant.
+  const START_COUNTDOWN = 5;
+  const [startCountdown, setStartCountdown] = useState<number | null>(null);
+  const toggleRef = useRef(handleTogglePipeline);
+  toggleRef.current = handleTogglePipeline;
+  useEffect(() => {
+    if (startCountdown === null) return;
+    if (startCountdown === 0) {
+      setStartCountdown(null);
+      void toggleRef.current();
+      return;
+    }
+    const timer = window.setTimeout(() => setStartCountdown((n) => (n === null ? null : n - 1)), 1000);
+    return () => window.clearTimeout(timer);
+  }, [startCountdown]);
+  useEffect(() => {
+    if (startCountdown === null) return;
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") { event.preventDefault(); setStartCountdown(null); }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [startCountdown]);
+  /** Start / Resume go through the countdown; Pause acts at once; a second press cancels. */
+  const pressListen = (): void => {
+    if (isTranscribing) { void handleTogglePipeline(); return; }
+    if (!hasDeepgram) { setKeyPromptOpen(true); return; }
+    setStartCountdown((n) => (n === null ? START_COUNTDOWN : null));
+  };
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-surface">
       {resilienceStatus?.recoverySessionAvailable && (
@@ -1477,34 +1488,6 @@ export default function Operator(): React.ReactElement {
         </div>
       )}
 
-      {lastLatency && (
-        <div className="flex items-center gap-2 px-6 py-1.5 text-[10px] text-white/40">
-          <span className="font-semibold text-white/60">Last scripture</span>
-          <span>{lastLatency.trace.reference}</span>
-          <span className="font-mono tabular-nums text-white/55">
-            {lastLatency.metrics.operatorVisibleMs !== undefined
-              ? `${Math.round(lastLatency.metrics.operatorVisibleMs)}ms to Kairo`
-              : lastLatency.trace.status}
-          </span>
-          {lastLatency.metrics.slowestStage && (
-            <span>Slowest: {lastLatency.metrics.slowestStage.name}</span>
-          )}
-          {usesPropresenter && (
-            <span className={ppStatus === "ok" ? "text-emerald-400" : "text-amber-400"}>
-              ProPresenter: {ppStatus === "ok" ? "Connected" : "Unavailable"}
-            </span>
-          )}
-          {outputHealth && outputHealth !== "unknown" && (
-            <span
-              className={outputHealth === "ok" ? "text-emerald-400" : "text-amber-400"}
-              title={health.find((h) => h.service === "output")?.lastError}
-            >
-              Output: {outputHealth === "ok" ? "All on screen" : outputHealth === "degraded" ? "Partial" : "Not shown"}
-            </span>
-          )}
-        </div>
-      )}
-
       <BoothWorkspace
         rail={
           <LiveOutputRail
@@ -1554,7 +1537,7 @@ export default function Operator(): React.ReactElement {
                               className={cn(
                                 "group flex items-start gap-2 rounded-md border px-2.5 py-2 transition-colors",
                                 isLive
-                                  ? "border-teal-500/40 bg-tint-teal"
+                                  ? "border-transparent bg-tint-live"
                                   : "border-transparent hover:bg-surface",
                               )}
                             >
@@ -1568,7 +1551,7 @@ export default function Operator(): React.ReactElement {
                                 <p
                                   className={cn(
                                     "truncate text-[11px] font-semibold",
-                                    isLive ? "text-teal-300" : "text-slate-300",
+                                    isLive ? "text-live" : "text-slate-300",
                                   )}
                                 >
                                   {entry.reference}
@@ -1630,12 +1613,13 @@ export default function Operator(): React.ReactElement {
                   resizePanelByKeyboard("left", 16);
               }}
             />
-            <div className="relative z-20 flex shrink-0 flex-wrap items-center justify-between gap-2 px-3 py-2">
-              <div className="flex min-w-0 items-center gap-2">
-                <span className="text-[11px] font-medium text-zinc-300">
+            <div className="relative z-20 flex h-11 shrink-0 items-center justify-between gap-2 pl-4 pr-2.5">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <span className="truncate text-[12px] font-semibold text-zinc-200">
                   Transcript
                 </span>
-                <span className="flex items-center gap-1.5 text-[10px] text-zinc-500">
+                {/* With a service open, its row below carries the status. */}
+                {!activeService && <span className="flex shrink-0 items-center gap-1.5 text-[11px] text-zinc-500">
                   <span
                     aria-hidden="true"
                     className={cn(
@@ -1652,9 +1636,9 @@ export default function Operator(): React.ReactElement {
                       ? "Reconnecting"
                       : "Listening"
                     : "Paused"}
-                </span>
+                </span>}
               </div>
-              <div className="flex items-center gap-1.5">
+              <div className="flex shrink-0 items-center gap-1">
                 <button
                   type="button"
                   onClick={() => setNuggetsOpen((open) => !open)}
@@ -1674,25 +1658,26 @@ export default function Operator(): React.ReactElement {
                   />
                   {nuggets.length > 0 && <span className="tabular-nums">{nuggets.length}</span>}
                 </button>
-                <button
+                {!transcriptIdle && <button
                   type="button"
-                  onClick={() => void handleTogglePipeline()}
+                  onClick={pressListen}
                   disabled={pipelineBusy}
-                  title={isTranscribing ? "Pause transcription" : "Start transcription"}
+                  title={isTranscribing ? "Pause transcription" : "Resume transcription"}
+                  data-tour="transcript-start"
                   className={cn(
-                    "flex h-7 items-center gap-1.5 rounded-md px-2 text-[11px] font-medium transition-colors disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/60",
+                    "flex h-7 items-center gap-1.5 rounded-md pl-2 pr-2.5 text-[11px] font-semibold transition-colors disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/60 active:scale-[0.97]",
                     isTranscribing
-                      ? "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
-                      : "bg-teal-500 text-[#111827] hover:bg-teal-400",
+                      ? "bg-surface-tertiary text-zinc-200 hover:bg-surface-elevated"
+                      : "bg-teal-500 text-on-accent hover:bg-teal-600",
                   )}
                 >
                   {isTranscribing ? (
-                    <Pause size={10} aria-hidden="true" />
+                    <Pause size={11} weight="fill" aria-hidden="true" />
                   ) : (
-                    <Play size={10} aria-hidden="true" />
+                    <Play size={11} weight="fill" aria-hidden="true" />
                   )}
-                  {isTranscribing ? "Pause" : "Start"}
-                </button>
+                  {isTranscribing ? "Pause" : startCountdown !== null ? `Cancel · ${startCountdown}` : "Resume"}
+                </button>}
               </div>
               {nuggetsOpen && (
                 <div
@@ -1774,6 +1759,11 @@ export default function Operator(): React.ReactElement {
               )}
             </div>
             <ServicePanel />
+            <DeepgramKeyDialog
+              open={keyPromptOpen}
+              onOpenChange={setKeyPromptOpen}
+              onSaved={() => setStartCountdown(START_COUNTDOWN)}
+            />
             {resilienceStatus &&
               (sttHealth?.status === "degraded" ||
                 sttHealth?.status === "error") && (
@@ -1789,10 +1779,7 @@ export default function Operator(): React.ReactElement {
               ref={transcriptScrollRef}
               className={cn(
                 "min-w-0 min-h-0 flex-1 overflow-y-auto px-4 py-4 font-sans text-[14px] leading-[1.75] text-zinc-300 antialiased select-text break-words",
-                segments.length === 0 &&
-                  !interimText &&
-                  !activeService &&
-                  !isTranscribing
+                segments.length === 0 && !interimText
                   ? "flex flex-col"
                   : "space-y-2",
               )}
@@ -1844,83 +1831,71 @@ export default function Operator(): React.ReactElement {
               )}
               {segments.length === 0 &&
                 !interimText &&
-                (!activeService && !isTranscribing ? (
+                (transcriptIdle ? (
                   // No button here on purpose: Start lives in the panel header,
                   // and one live control is easier to find than two.
-                  <div className="mx-auto flex w-full max-w-[17rem] flex-1 flex-col items-center justify-center px-6 text-center">
-                    <div className="grid size-9 place-items-center rounded-full text-zinc-600">
-                      <Mic size={15} aria-hidden />
+                  // Start lives here, centred, while there is nothing to read;
+                  // the header takes over with Pause / Resume once it begins.
+                  <div className="mx-auto flex w-full max-w-[15rem] flex-1 flex-col items-center justify-center text-center">
+                    <div className="grid size-11 place-items-center rounded-full bg-surface-tertiary text-zinc-400">
+                      <Mic size={17} aria-hidden />
                     </div>
-                    <p className="mt-3 text-[12px] leading-relaxed text-zinc-500">
-                      Hit <span className="font-medium text-zinc-300">Start</span> when
-                      the message begins. Name the service when you end it.
-                    </p>
+                    <p className="mt-4 text-[13px] font-medium text-zinc-300">Ready when you are</p>
+                    {startCountdown === null ? (
+                      <>
+                        <p className="mt-1 text-[12px] leading-relaxed text-zinc-500">Start when the message begins.</p>
+                        <button
+                          type="button"
+                          onClick={pressListen}
+                          disabled={pipelineBusy}
+                          title="Start transcription"
+                          data-tour="transcript-start"
+                          className="btn-primary mt-5 inline-flex items-center gap-2 px-5 py-2 active:scale-[0.97]"
+                        >
+                          <Play size={12} weight="fill" aria-hidden="true" />
+                          Start listening
+                        </button>
+                      </>
+                    ) : (
+                      <StartCountdown seconds={startCountdown} total={START_COUNTDOWN} onCancel={() => setStartCountdown(null)} />
+                    )}
                   </div>
                 ) : (
-                  <p className="font-mono text-xs italic text-zinc-400">
-                    {isTranscribing
-                      ? "Listening for speech…"
-                      : "Transcription paused."}
-                  </p>
+                  <div className="flex flex-1 flex-col items-center justify-center text-center">
+                    {isTranscribing ? (
+                      <>
+                        <span className="flex h-4 items-end gap-[3px]" aria-hidden="true">
+                          {[0, 1, 2, 3].map((bar) => (
+                            <span key={bar} className="w-[3px] rounded-full bg-zinc-500 motion-safe:animate-[listening_1.1s_ease-in-out_infinite]" style={{ animationDelay: `${bar * 0.15}s`, height: "40%" }} />
+                          ))}
+                        </span>
+                        <p className="mt-3 text-[13px] font-medium text-zinc-300">Listening…</p>
+                        <p className="mt-1 text-[12px] text-zinc-500">Words appear here as they’re spoken.</p>
+                      </>
+                    ) : (
+                      <>
+                        <Pause size={16} weight="fill" className="text-zinc-500" aria-hidden="true" />
+                        <p className="mt-3 text-[13px] font-medium text-zinc-300">Paused</p>
+                        <p className="mt-1 text-[12px] text-zinc-500">Press Resume to keep listening.</p>
+                      </>
+                    )}
+                  </div>
                 ))}
               </div>
 
-              {/* Vertical audio level rail — same height as the transcript */}
-              <div className="flex w-7 shrink-0 flex-col items-center gap-2 bg-surface py-2.5">
-                <Volume2
-                  size={12}
-                  className={isTranscribing ? "text-teal-400" : "text-zinc-600"}
-                  aria-hidden
-                />
-                <span
-                  className={cn(
-                    "size-1.5 rounded-full",
-                    (audioLevel?.clipping ?? false) ? "bg-[#FF453A]" : "bg-surface-border",
-                  )}
-                  title={(audioLevel?.clipping ?? false) ? "Clipping" : "No clipping"}
-                />
-                <div
-                  className="flex w-[8px] flex-1 flex-col-reverse gap-[2px]"
-                  role="meter"
-                  aria-label="Input level"
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-valuenow={Math.round((audioLevel?.rms ?? 0) * 100)}
-                >
-                  {Array.from({ length: 18 }, (_, i) => {
-                    const rms = Math.min(audioLevel?.rms ?? 0, 1)
-                    const lit = rms >= (i + 1) / 18
-                    const warn = i >= 13 && i < 16
-                    const clip = i >= 16
-                    return (
-                      <div
-                        key={i}
-                        className={cn(
-                          "min-h-0 w-full flex-1 rounded-none",
-                          lit
-                            ? clip
-                              ? "bg-[#FF453A]"
-                              : warn
-                                ? "bg-[#FFD60A]"
-                                : "bg-[#30D158]"
-                            : "bg-surface-elevated",
-                        )}
-                      />
-                    )
-                  })}
-                </div>
-                <span
-                  className="font-mono text-[9px] tabular-nums text-zinc-500"
-                  title={`Input level ${Math.round((audioLevel?.rms ?? 0) * 100)}%`}
-                >
-                  {Math.round((audioLevel?.rms ?? 0) * 100)}%
-                </span>
-              </div>
+              {/* Input level: a slim rail the height of the transcript —
+                  green, then amber, then red as it nears clipping. */}
+              <InputLevelMeter
+                level={audioLevel?.rms ?? 0}
+                clipping={audioLevel?.clipping ?? false}
+                active={isTranscribing}
+              />
+
             </div>
           </section>
 
           {/* CENTER COLUMN: scripture detection workspace */}
-          <section className="flex min-w-0 flex-1 flex-col bg-[#141414]">
+          <section className="flex min-w-0 flex-1 flex-col bg-surface" data-tour="detected">
             {serviceError && (
               <p role="alert" className="px-4 py-2 text-xs text-red-400">
                 {serviceError}
@@ -1948,7 +1923,20 @@ export default function Operator(): React.ReactElement {
                   </span>
                 )}
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-3">
+                {/* Automation sits with what it acts on: detected verses. */}
+                <label
+                  className="flex items-center gap-2 text-[11px] font-medium text-zinc-400"
+                  title="Show confident single verses automatically · Ctrl+A"
+                  data-tour="automation"
+                >
+                  Automation
+                  <Switch
+                    checked={autoModeEnabled}
+                    onCheckedChange={() => void handleToggleAutoMode()}
+                    aria-label="Toggle automation"
+                  />
+                </label>
                 {heldSuggestions.length > 0 && (
                   <button
                     type="button"
@@ -1977,7 +1965,12 @@ export default function Operator(): React.ReactElement {
               <div className="flex w-full min-w-0 flex-col space-y-5">
                 {suggestionSections.current.map((group) => {
                   const followState = followStateRef.current;
-                  const following = followState?.passageId === group.id;
+                  // Follow-along (Reading / Up next) only means something on the
+                  // passage that is on screen; elsewhere it reads as "live".
+                  const groupLive = group.suggestions.some(
+                    (item) => activeProjection?.reference === item.reference,
+                  );
+                  const following = groupLive && followState?.passageId === group.id;
                   return (
                     <section
                       key={group.id}
@@ -1988,14 +1981,15 @@ export default function Operator(): React.ReactElement {
                           <h3 className="truncate text-[13px] font-semibold text-zinc-100">
                             {group.reference}
                           </h3>
-                          <span className="shrink-0 text-[10px] tabular-nums text-zinc-600">
-                            {group.suggestions.length} verses
-                          </span>
-                          {following && (
-                            <span className="shrink-0 text-[10px] font-medium text-teal-400">
-                              Following
-                            </span>
-                          )}
+                          {following && (() => {
+                            const reading = group.suggestions.find((item) => item.passageIndex === followState?.currentIndex);
+                            const verse = reading?.reference.split(":").pop();
+                            return (
+                              <span className="shrink-0 rounded-full bg-teal-500 px-2 py-0.5 text-[10px] font-semibold text-on-accent">
+                                {verse ? `Reading v${verse}` : "Following"}
+                              </span>
+                            );
+                          })()}
                         </div>
                         <div className="flex shrink-0 items-center">
                           <button
@@ -2041,26 +2035,26 @@ export default function Operator(): React.ReactElement {
                           gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${OPERATOR_CARD_WIDTH}px), 1fr))`,
                         }}
                       >
-                        {group.suggestions.map((s) => {
+                        {group.suggestions.map((s, cardIndex) => {
                           const isReading =
+                            following &&
                             followState !== null &&
                             followState.passageId === s.passageId &&
                             followState.currentIndex === s.passageIndex;
                           const isUpNext =
+                            following &&
                             followState !== null &&
                             followState.passageId === s.passageId &&
                             followState.currentIndex + 1 === s.passageIndex;
                           const isLive =
                             activeProjection?.reference === s.reference;
-                          const caption = detectionCaption(s, {
-                            isLive,
-                            isReading,
-                            isUpNext,
-                          });
+                          const state = detectionState({ isLive, isReading, isUpNext });
+                          const source = detectionSource(s);
                           return (
                             <article
                               key={s.id}
-                              className="group/card relative min-w-0"
+                              className="group/card relative min-w-0 motion-safe:animate-[detect-card-in_.45s_cubic-bezier(.16,1,.3,1)_both]"
+                              style={{ animationDelay: `${Math.min(cardIndex, 6) * 60}ms` }}
                             >
                               <VerseThemePreview
                                 result={{
@@ -2075,9 +2069,9 @@ export default function Operator(): React.ReactElement {
                                 responsive
                                 width={OPERATOR_CARD_WIDTH}
                                 height={OPERATOR_CARD_HEIGHT}
-                                isActive={
-                                  isReading || selectedSuggestionId === s.id
-                                }
+                                // One white outline only: the selected card
+                                // (where Enter sends). Reading is its label.
+                                isActive={selectedSuggestionId === s.id && !isLive}
                                 isFocused={
                                   isReading ||
                                   isUpNext ||
@@ -2119,18 +2113,26 @@ export default function Operator(): React.ReactElement {
                                   <X size={12} />
                                 </button>
                               </div>
-                              {caption && (
-                                <p
-                                  className={cn(
-                                    "mt-1 truncate text-center text-[10px]",
-                                    isReading
-                                      ? "text-amber-300"
-                                      : "text-zinc-500",
-                                  )}
-                                >
-                                  {caption}
-                                </p>
-                              )}
+                              {/* Which verse this is, exactly, and what it is doing. */}
+                              <div className="mt-1.5 flex min-w-0 items-center justify-between gap-2">
+                                <span className={cn("truncate text-[11px] font-semibold tabular-nums", state === "live" || state === "reading" ? "text-zinc-100" : "text-zinc-400")}>
+                                  {s.reference}
+                                </span>
+                                <span key={state ?? "none"} className="shrink-0 motion-safe:animate-[detect-state-in_.3s_ease-out_both]">
+                                  {state === "live" ? (
+                                    <span className="flex items-center gap-1 text-[10px] font-semibold text-live">
+                                      <span className="size-1.5 rounded-full bg-live" aria-hidden="true" />
+                                      On screen
+                                    </span>
+                                  ) : state === "reading" ? (
+                                    <span className="rounded-full bg-teal-500 px-1.5 py-px text-[10px] font-semibold text-on-accent">Reading</span>
+                                  ) : state === "next" ? (
+                                    <span className="rounded-full px-1.5 py-px text-[10px] font-medium text-zinc-300 ring-1 ring-inset ring-surface-border">Up next</span>
+                                  ) : source ? (
+                                    <span className="text-[10px] text-zinc-500">{source}</span>
+                                  ) : null}
+                                </span>
+                              </div>
                             </article>
                           );
                         })}
@@ -2157,7 +2159,7 @@ export default function Operator(): React.ReactElement {
             </div>
 
             <aside
-              className="relative shrink-0 overflow-hidden bg-surface-secondary transition-[height] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
+              className="relative shrink-0 overflow-hidden bg-surface-tertiary transition-[height] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
               style={{ height: referenceCollapsed ? 36 : referenceHeight }}
             >
               {!referenceCollapsed && <button
@@ -2175,7 +2177,7 @@ export default function Operator(): React.ReactElement {
                 <button
                   type="button"
                   onClick={() => setReferenceCollapsed(false)}
-                  className="flex h-9 w-full items-center justify-between px-4 text-[11px] font-medium text-zinc-500 transition-colors hover:bg-surface-secondary hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-teal-400/60"
+                  className="flex h-9 w-full items-center justify-between px-4 text-[11px] font-medium text-zinc-500 transition-colors hover:bg-surface-elevated hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-teal-400/60"
                   aria-label="Expand passage library"
                   title="Expand passage library"
                 >
@@ -2217,4 +2219,85 @@ export default function Operator(): React.ReactElement {
       </BoothWorkspace>
     </div>
   );
+}
+
+const METER_SEGMENTS = 24
+
+/**
+ * The input level as a slim vertical rail beside the transcript: a clip light
+ * on top, rounded segments that fill from the bottom (green, amber near the top,
+ * red at the very top), and the mic at the foot. The exact level is on hover.
+ */
+function InputLevelMeter({ level, clipping, active }: {
+  level: number
+  clipping: boolean
+  active: boolean
+}): React.ReactElement {
+  const value = Math.min(Math.max(level, 0), 1)
+  const percent = Math.round(value * 100)
+  return (
+    <div
+      className="flex w-6 shrink-0 flex-col items-center gap-2.5 py-3"
+      title={clipping ? "Input is clipping" : `Input level ${percent}%`}
+    >
+      <span
+        className={cn("size-1.5 shrink-0 rounded-full transition-colors", clipping ? "bg-red-500" : "bg-surface-elevated")}
+        aria-label={clipping ? "Clipping" : undefined}
+      />
+      <div
+        className="flex w-1.5 flex-1 flex-col-reverse gap-[3px]"
+        role="meter"
+        aria-label="Input level"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={percent}
+      >
+        {Array.from({ length: METER_SEGMENTS }, (_, i) => {
+          const lit = value >= (i + 1) / METER_SEGMENTS
+          const tone = i >= METER_SEGMENTS - 3 ? "bg-red-500" : i >= METER_SEGMENTS - 7 ? "bg-amber-400" : "bg-emerald-500"
+          return (
+            <div
+              key={i}
+              className={cn("min-h-0 w-full flex-1 rounded-[2px] transition-colors duration-75", lit ? tone : "bg-surface-elevated")}
+            />
+          )
+        })}
+      </div>
+      <Mic size={12} className={cn("shrink-0 transition-colors", active ? "text-zinc-300" : "text-zinc-600")} aria-hidden="true" />
+    </div>
+  )
+}
+
+/**
+ * The countdown before the mic opens: a ring that drains over the whole countdown,
+ * the number in the middle, and Cancel. Escape cancels too.
+ */
+function StartCountdown({ seconds, total, onCancel }: {
+  seconds: number
+  total: number
+  onCancel: () => void
+}): React.ReactElement {
+  const radius = 26
+  const circumference = 2 * Math.PI * radius
+  return (
+    <div className="mt-4 flex flex-col items-center" role="status" aria-live="assertive">
+      <div className="relative grid size-16 place-items-center">
+        <svg className="absolute inset-0 -rotate-90" viewBox="0 0 64 64" aria-hidden="true">
+          <circle cx="32" cy="32" r={radius} fill="none" strokeWidth="3" className="stroke-surface-elevated" />
+          <circle
+            cx="32" cy="32" r={radius} fill="none" strokeWidth="3" strokeLinecap="round"
+            className="stroke-teal-500 motion-safe:animate-[countdown-drain_var(--countdown)_linear_forwards]"
+            style={{ strokeDasharray: circumference, ["--countdown" as string]: `${total}s`, ["--circ" as string]: `${circumference}` }}
+          />
+        </svg>
+        <span key={seconds} className="text-[24px] font-semibold tabular-nums text-zinc-100 motion-safe:animate-[countdown-tick_.35s_cubic-bezier(.16,1,.3,1)]">
+          {seconds}
+        </span>
+      </div>
+      <p className="mt-3 text-[12px] text-zinc-400">Starting in {seconds}…</p>
+      <button type="button" className="btn-secondary mt-3 px-4 py-1.5 text-[12px]" onClick={onCancel} autoFocus>
+        Cancel
+      </button>
+    </div>
+  )
 }

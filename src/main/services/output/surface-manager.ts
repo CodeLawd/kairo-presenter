@@ -684,10 +684,10 @@ function toDisplayInfo(display: Display, primaryId: number, controlId: number | 
 
 function identifyHtml(number: number, description: string, control: boolean): string {
   return `<!doctype html><html><body style="margin:0;height:100vh;display:flex;align-items:center;justify-content:center;background:transparent;font-family:-apple-system,'Segoe UI',sans-serif;cursor:default">
-<div style="background:rgba(10,10,10,.88);color:#fff;border:2px solid #14b8a6;border-radius:20px;padding:24px 36px;text-align:center">
+<div style="background:rgba(17,18,13,.9);color:#FFFBF4;border:2px solid #FFFBF4;border-radius:20px;padding:24px 36px;text-align:center">
 <div style="font-size:88px;font-weight:700;line-height:1">${number}</div>
 <div style="margin-top:10px;font-size:18px;opacity:.85">${escapeHtml(description)}</div>
-${control ? '<div style="margin-top:6px;font-size:13px;color:#fbbf24">Kairo’s controls are here</div>' : ''}
+${control ? '<div style="margin-top:6px;font-size:13px;color:#A29F96">Kairo’s controls are here</div>' : ''}
 </div></body></html>`
 }
 

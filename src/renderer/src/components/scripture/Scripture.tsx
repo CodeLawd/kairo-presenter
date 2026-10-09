@@ -2,7 +2,7 @@ import { useImportRequest } from '@/hooks/useImportRequest'
 import { createPortal } from "react-dom";
 import { useHeaderToolbarSlot } from "@/components/layout/header-toolbar";
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
-import { AlertCircle, BookOpen, Loader, Plus, Settings as SettingsIcon, Upload } from '@/icons';
+import { AlertCircle, BookOpen, Plus } from '@/icons';
 import { useMultiSelect } from "@/hooks/useMultiSelect";
 import { SelectionAction, SelectionBar } from "@/components/shared/SelectionBar";
 import { useTransferStore } from "@/stores/useTransfer";
@@ -44,7 +44,8 @@ import { PlaylistSidebar } from "./PlaylistSidebar";
 import { passageToResult } from "@shared/passages";
 import { runPassagesCommand } from "@/stores/usePassages";
 import { QueueDock } from "./QueueDock";
-import { ScripturePhraseSearch, ScriptureSearchBar, ScriptureTranslationSelect } from "./ScriptureSearchBar";
+import { ScriptureSearchBar, ScriptureTranslationSelect } from "./ScriptureSearchBar";
+import { ScriptureOptions } from "./ScriptureOptions";
 
 // Recent reference lookups for the lookup field's ▾ list — per machine, newest first.
 const RECENT_LOOKUPS_KEY = "kairo-scripture-recent-lookups";
@@ -140,7 +141,6 @@ export default function Scripture(): React.ReactElement {
   const liveRail = useLiveRailWidth();
   const sidebar = useSidebarWidth('kairo.scripture-sidebar-width', 288);
   const [query, setQuery] = useState("");
-  const [phrase, setPhrase] = useState("");
   const [recentLookups, setRecentLookups] = useState<string[]>(readRecentLookups);
   const [rows, setRows] = useState<ResultRow[]>([]);
   /**
@@ -1398,6 +1398,8 @@ export default function Scripture(): React.ReactElement {
         renameDraft={renameDraft}
         pendingDeletePlanId={pendingDeletePlanId}
         creatingPlaylist={creatingPlaylist}
+        onImportNotes={() => void handleImport()}
+        importingNotes={importing}
         showAddTarget={false}
         onCreate={() => void createPlaylist()}
         onOpenPlan={(plan) => void openPlan(plan)}
@@ -1443,32 +1445,20 @@ export default function Scripture(): React.ReactElement {
                   {livePlan?.planId === selectedPlan.id ? "In use for this service" : "Use for this service"}
                 </Button>
               )}
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                onClick={() => void handleImport()}
-                disabled={importing}
-                aria-label="Import sermon notes"
-                title={importing ? "Extracting sermon notes…" : "Import sermon notes"}
-              >
-                {importing ? <Loader className="animate-spin" /> : <Upload />}
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                onClick={() => useAppStore.getState().openSettings("scripture")}
-                aria-label="Scripture settings"
-                title="Scripture settings — translations, Bible downloads, auto-detection"
-              >
-                <SettingsIcon />
-              </Button>
             </div>,
             toolbarSlot,
           )}
 
-        {/* The Bible bar, like ProPresenter's: look up a reference, or search the
-            text, in the chosen translation. */}
-        <div className="grid shrink-0 grid-cols-[minmax(0,18rem)_minmax(0,1fr)_minmax(0,14rem)] gap-2 px-5 pb-1 pt-3 lg:px-6">
+        {/* The Bible bar: pick the translation, then one field that takes a
+            reference ("jn 3 16") or remembered words ("love is patient"), with
+            live suggestions for both. */}
+        <div className="grid shrink-0 grid-cols-[minmax(0,14rem)_minmax(0,1fr)_auto] gap-2 px-5 pb-1 pt-3 lg:px-6">
+          <ScriptureTranslationSelect
+            translation={translation}
+            translations={translations}
+            disabled={loading}
+            onChange={(value) => void handleTranslationChange(value)}
+          />
           <ScriptureSearchBar
             query={query}
             loading={loading}
@@ -1502,13 +1492,7 @@ export default function Scripture(): React.ReactElement {
             onPreviewSuggestion={previewSuggestion}
             onOpenChapter={(result) => void openChapter(result)}
           />
-          <ScripturePhraseSearch value={phrase} loading={loading} onChange={setPhrase} onSubmit={(text) => void handleSearch(text)} />
-          <ScriptureTranslationSelect
-            translation={translation}
-            translations={translations}
-            disabled={loading}
-            onChange={(value) => void handleTranslationChange(value)}
-          />
+          <ScriptureOptions />
         </div>
 
         <div className="shrink-0 space-y-2 bg-surface px-3 py-2 empty:hidden">

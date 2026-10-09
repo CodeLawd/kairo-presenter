@@ -148,14 +148,16 @@ export function VerseThemePreview({
       }}
       type="button"
       className={cn(
-        "group relative flex shrink-0 flex-col overflow-hidden text-left transition-all focus-visible:outline-none",
+        "group relative flex shrink-0 flex-col overflow-hidden text-left transition-[border-color,transform] duration-300 focus-visible:outline-none active:scale-[0.98]",
         chrome
           ? cn(
-              "rounded-md border",
-              isPicked
-                ? "border-white"
-                : isActive
-                  ? "border-teal-400"
+              // Blue is only for what is on screen; white marks the current
+              // (or picked) card, so "being read" never looks like "live".
+              "rounded-md border-2",
+              isLive
+                ? "border-live"
+                : isPicked || isActive
+                  ? "border-white"
                   : "border-transparent hover:border-slate-500 focus-visible:border-slate-400",
             )
           : "rounded-none border-0 shadow-none",

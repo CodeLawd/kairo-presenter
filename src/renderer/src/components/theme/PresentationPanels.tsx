@@ -20,7 +20,7 @@ export function TransitionPanel(): React.ReactElement {
             onClick={() => save({ ...presentation, transition: { ...transition, kind } })}
             className={
               transition.kind === kind
-                ? 'flex-1 rounded bg-teal-600 py-1.5 text-xs font-medium text-white'
+                ? 'flex-1 rounded bg-teal-500 py-1.5 text-xs font-medium text-on-accent'
                 : 'btn-secondary flex-1 py-1.5 text-xs'
             }
           >

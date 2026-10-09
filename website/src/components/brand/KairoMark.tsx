@@ -2,7 +2,7 @@ import Image from 'next/image'
 import kairoIcon from '../../../public/brand/kairo-icon.png'
 
 /**
- * The Kairo app mark — the same rounded amber K the desktop app shows on its
+ * The Kairo app mark — the same rounded K the desktop app shows on its
  * splash, auth wall and setup wizard.
  *
  * It is a PNG rather than an SVG because no vector of the mark exists in either
@@ -16,7 +16,7 @@ export function KairoMark({
   className,
 }: {
   size?: number
-  /** Soft amber halo behind the mark, as on the desktop auth screens. */
+  /** Soft accent-blue halo behind the mark. */
   glow?: boolean
   className?: string
 }): React.ReactElement {

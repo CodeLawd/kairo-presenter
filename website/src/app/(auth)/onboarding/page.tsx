@@ -16,37 +16,29 @@ const TOTAL = 3
 const COPY: { title: string; blurb: string; brand: BrandPanel }[] = [
   {
     title: 'Confirm your email',
-    blurb: 'Enter the six-digit code we sent to your email.',
-    brand: {
-      kind: 'quote',
-      quote: 'First, let’s make sure we can reach you.',
-      attribution: 'Kairo presentation software',
-    },
+    blurb: 'We sent a six-digit code to your inbox. It’s good for 24 hours.',
+    brand: { quote: 'First, let’s make sure we can reach you.' },
   },
   {
     title: 'About your church',
     blurb: 'Add the church name and service times your team will use.',
     brand: {
-      kind: 'quote',
       quote: (
         <>
           Set up the church once. <span className="font-semibold">The team can take it from there.</span>
         </>
       ),
-      attribution: 'Kairo presentation software',
     },
   },
   {
     title: 'You’re all set for now',
     blurb: 'Your account is ready. Choose a download for your computer, then sign in to Kairo with this account.',
     brand: {
-      kind: 'quote',
       quote: (
         <>
           Ready for the service you planned. <span className="font-semibold">And the moments you didn&rsquo;t.</span>
         </>
       ),
-      attribution: 'Kairo presentation software',
     },
   },
 ]

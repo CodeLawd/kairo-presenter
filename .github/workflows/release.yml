@@ -7,9 +7,13 @@ name: Release
 # every matrix job succeeds — a partial matrix can never publish. Deliberately
 # fail one matrix job on a test tag to prove no release is created.
 #
-# Tags are expected to be protected (maintainers only). Releases are created
-# as DRAFTS: a maintainer publishes after Plan 006 physical-machine
-# acceptance. Drafts never trigger auto-update.
+# Tags are expected to be protected (maintainers only). Pushing a `v*` tag
+# publishes the release straight away: the website's download links and the
+# in-app updater both read the latest published release.
+#
+# Until the signing secrets exist, builds go out UNSIGNED (Mac ad-hoc signed,
+# Windows unsigned) with a warning. Once CSC_LINK / WIN_CSC_LINK are set, the
+# same workflow signs automatically and verifies the signature.
 #
 # Signing secrets (names only — values live in the `release` environment):
 #   APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID — notarization
@@ -38,6 +42,7 @@ jobs:
     env:
       MAIN_VITE_API_URL: ${{ vars.PROD_API_URL }}
       MAIN_VITE_WEB_URL: ${{ vars.PROD_WEB_URL }}
+      HAS_WIN_CERT: ${{ secrets.WIN_CSC_LINK != '' }}
     strategy:
       fail-fast: true
       matrix:
@@ -104,10 +109,30 @@ jobs:
           test -n "$MAIN_VITE_WEB_URL" || (echo "::error::MAIN_VITE_WEB_URL is empty — set PROD_WEB_URL (release environment or repo variables)" && exit 1)
           echo "endpoints: $MAIN_VITE_API_URL / $MAIN_VITE_WEB_URL"
 
-      - name: Package (signed, never publish from here)
-        # Signing inputs come from the `release` environment only. Unsigned
-        # forks/PRs cannot reach this workflow (tag-gated + environment-gated).
-        run: npm run ${{ matrix.build_script }} -- --publish never
+      - name: Package (never publish from here)
+        # Signing inputs come from the `release` environment only. Forks/PRs
+        # cannot reach this workflow (tag-gated + environment-gated). Without a
+        # certificate the build is unsigned rather than failing.
+        shell: bash
+        run: |
+          EXTRA=""
+          case "${{ matrix.id }}" in
+            mac-*)
+              if [ -z "${CSC_LINK:-}" ]; then
+                echo "::warning::No Mac certificate (CSC_LINK) — building unsigned, ad-hoc signed"
+                export CSC_IDENTITY_AUTO_DISCOVERY=false KAIRO_ADHOC_SIGN=1
+                EXTRA="-c.mac.identity=null -c.mac.notarize=false"
+              fi
+              ;;
+            win-*)
+              if [ -z "${WIN_CSC_LINK:-}" ]; then
+                echo "::warning::No Windows certificate (WIN_CSC_LINK) — building unsigned"
+                unset WIN_CSC_LINK WIN_CSC_KEY_PASSWORD CSC_LINK CSC_KEY_PASSWORD
+                export CSC_IDENTITY_AUTO_DISCOVERY=false
+              fi
+              ;;
+          esac
+          npm run ${{ matrix.build_script }} -- --publish never $EXTRA
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
@@ -117,30 +142,9 @@ jobs:
           WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
 
-      - name: Signing preconditions (fail fast, never silently unsigned)
-        # Encodes the STOP condition: a release that cannot be signed must
-        # stop here, not publish an unsigned artifact that Gatekeeper/SmartScreen
-        # would block. Linux needs no identity (SHA-256 manifest instead).
-        shell: bash
-        run: |
-          case "${{ matrix.id }}" in
-            mac-*)
-              test -n "${CSC_LINK:-}" || (echo "::error::CSC_LINK empty — mac releases must be signed (docs/signing-setup.md)" && exit 1)
-              test -n "${APPLE_ID:-}" || (echo "::error::APPLE_ID empty — notarization required for mac releases" && exit 1)
-              test -n "${APPLE_TEAM_ID:-}" || (echo "::error::APPLE_TEAM_ID empty — notarization required for mac releases" && exit 1)
-              ;;
-            win-*)
-              test -n "${WIN_CSC_LINK:-}" || (echo "::error::WIN_CSC_LINK empty — Windows releases must be signed (docs/signing-setup.md)" && exit 1)
-              ;;
-          esac
-          echo "signing preconditions ok for ${{ matrix.id }}"
-        env:
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
-
       - name: Verify signature (macOS)
+        # Ad-hoc signed builds pass `codesign --verify` too, so this checks
+        # signed and unsigned releases alike.
         if: startsWith(matrix.id, 'mac-')
         run: |
           STAGED=$(ls release/*.dmg | head -1)
@@ -149,7 +153,8 @@ jobs:
           hdiutil detach /tmp/kairo-sig
 
       - name: Verify signature (Windows)
-        if: matrix.id == 'win-x64'
+        # Only signed builds have a signature to check.
+        if: matrix.id == 'win-x64' && env.HAS_WIN_CERT == 'true'
         shell: pwsh
         run: |
           $exe = (Get-ChildItem release/*.exe | Select-Object -First 1).FullName
@@ -157,7 +162,7 @@ jobs:
           if ($sig.Status -ne 'Valid') { Write-Error "Windows signature not valid: $($sig.Status) ($exe)"; exit 1 }
           "Windows signature valid: $exe"
 
-      - name: Upload signed artifacts (workflow storage only)
+      - name: Upload artifacts (workflow storage only)
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: kairo-${{ matrix.id }}-signed
@@ -233,9 +238,10 @@ jobs:
           sha256sum * > sha256sums.txt
           cat sha256sums.txt
 
-      - name: Create single draft GitHub release
+      - name: Publish GitHub release
         uses: softprops/action-gh-release@e598afbe1493e6b1bafb1f389cabb956eab91231 # v3.0.3
         with:
           files: stage/*
-          draft: true
+          draft: false
+          make_latest: true
           generate_release_notes: true

@@ -1,49 +1,62 @@
+import type { CSSProperties } from 'react'
 import { PRODUCT_NAME, PRODUCT_TAGLINE } from '@shared/brand'
 import { cn } from '@/lib/utils'
-import kairoIcon from '@/assets/kairo-icon.png'
+import kairoTile from '@/assets/kairo-tile.png'
+import kairoMark from '@/assets/kairo-mark.png'
+import kairoWordmark from '@/assets/kairo-wordmark.png'
+
+/** The brand files, for effects that need their shapes (e.g. a glint masked to the tile). */
+export const KAIRO_TILE_URL = kairoTile
+export const KAIRO_MARK_URL = kairoMark
 
 type MarkSize = 'sm' | 'md' | 'lg'
 
-const SIZE: Record<MarkSize, { box: string; img: number }> = {
-  sm: { box: 'h-9 w-9', img: 36 },
-  md: { box: 'h-14 w-14', img: 56 },
-  lg: { box: 'h-[4.5rem] w-[4.5rem]', img: 72 },
-}
+const SIZE: Record<MarkSize, number> = { sm: 28, md: 56, lg: 72 }
 
 /**
- * The Kairo app mark — rounded amber K icon used on splash, auth, and setup.
+ * The Kairo mark — four rounded quarters forming a K.
+ *
+ * - `mark` (default): the bare mark in the current text colour (off-white in
+ *   dark, ink in light). Used everywhere inside the app — blue is reserved for
+ *   what is live on screen, so the brand mark stays neutral.
+ * - `tile`: the off-white mark on the blue app-icon tile, matching the Dock
+ *   icon, for the rare place that should look like the app icon itself.
  */
 export function KairoMark({
   size = 'md',
+  variant = 'mark',
   className,
 }: {
   size?: MarkSize
+  variant?: 'tile' | 'mark'
   className?: string
 }): React.ReactElement {
-  const dim = SIZE[size]
-  return (
-    <span
-      className={cn(
-        'relative inline-grid place-items-center',
-        dim.box,
-        className,
-      )}
-    >
-      <img
-        src={kairoIcon}
-        alt=""
-        width={dim.img}
-        height={dim.img}
-        className={cn('relative h-full w-full object-contain', dim.box)}
-        draggable={false}
+  const px = SIZE[size]
+  if (variant === 'mark') {
+    // A mask so one file serves every theme: the shape comes from the PNG,
+    // the colour from the theme's text token.
+    const box = Math.round(px * 0.72)
+    return (
+      <span
+        aria-hidden="true"
+        className={cn('inline-block shrink-0 bg-[rgb(var(--text-primary))]', className)}
+        style={{ width: box, height: box, ...maskOf(kairoMark) }}
       />
-    </span>
+    )
+  }
+  return (
+    <img
+      src={kairoTile}
+      alt=""
+      width={px}
+      height={px}
+      className={cn('inline-block shrink-0 select-none', className)}
+      draggable={false}
+    />
   )
 }
 
-/**
- * Icon + wordmark (+ optional tagline). Brand-first lockup for auth and setup.
- */
+/** Mark + wordmark, as drawn by the brand — not a font approximation. */
 export function KairoLockup({
   size = 'md',
   tagline = false,
@@ -55,9 +68,8 @@ export function KairoLockup({
   align?: 'center' | 'start'
   className?: string
 }): React.ReactElement {
-  const titleSize =
-    size === 'lg' ? 'text-[26px]' : size === 'md' ? 'text-[22px]' : 'text-[17px]'
-
+  // The horizontal lockup's height; its width follows the artwork's ratio.
+  const height = size === 'lg' ? 40 : size === 'md' ? 32 : 24
   return (
     <div
       className={cn(
@@ -66,22 +78,30 @@ export function KairoLockup({
         className,
       )}
     >
-      <KairoMark size={size} />
-      <div className={cn(align === 'center' && 'flex flex-col items-center')}>
-        <p
-          className={cn(
-            'font-semibold leading-none tracking-[-0.03em] text-white',
-            titleSize,
-          )}
-        >
-          {PRODUCT_NAME}
+      <span
+        role="img"
+        aria-label={PRODUCT_NAME}
+        className="inline-block bg-[rgb(var(--text-primary))]"
+        style={{ height, aspectRatio: '1002 / 240', ...maskOf(kairoWordmark) }}
+      />
+      {tagline && (
+        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-400">
+          {PRODUCT_TAGLINE}
         </p>
-        {tagline && (
-          <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-400">
-            {PRODUCT_TAGLINE}
-          </p>
-        )}
-      </div>
+      )}
     </div>
   )
+}
+
+function maskOf(url: string): CSSProperties {
+  return {
+    WebkitMaskImage: `url(${url})`,
+    maskImage: `url(${url})`,
+    WebkitMaskSize: 'contain',
+    maskSize: 'contain',
+    WebkitMaskRepeat: 'no-repeat',
+    maskRepeat: 'no-repeat',
+    WebkitMaskPosition: 'center',
+    maskPosition: 'center',
+  }
 }

@@ -29,7 +29,7 @@ export default function StepDone({
       <div className="relative inline-flex self-start">
         <KairoMark size="md" />
         <span
-          className="absolute -bottom-0.5 -right-0.5 grid h-5 w-5 place-items-center rounded-full bg-teal-500 text-white ring-2 ring-surface"
+          className="absolute -bottom-0.5 -right-0.5 grid h-5 w-5 place-items-center rounded-full bg-teal-500 text-on-accent ring-2 ring-surface"
           aria-hidden="true"
         >
           <Check size={11} strokeWidth={3} />

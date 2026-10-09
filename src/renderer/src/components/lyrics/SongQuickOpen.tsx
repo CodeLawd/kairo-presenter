@@ -244,7 +244,7 @@ export function SongQuickOpen({ songs, onClose, onOpen }: SongQuickOpenProps): R
       role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
       <div className="flex w-full max-w-5xl items-start justify-center gap-3" onKeyDown={handleKeyDown}>
       <section role="dialog" aria-modal="true" aria-label="Search song library"
-        className="flex w-[30rem] shrink-0 flex-col overflow-hidden rounded-xl bg-[#1c1c1e] animate-spring-in motion-reduce:animate-none">
+        className="flex w-[30rem] shrink-0 flex-col overflow-hidden rounded-xl bg-surface-secondary animate-spring-in motion-reduce:animate-none">
         <div className="flex h-12 shrink-0 items-center gap-2.5 px-3.5">
           <Search size={17} className="shrink-0 text-zinc-500" aria-hidden="true" />
           <input ref={inputRef} value={query} onChange={(event) => setQuery(event.target.value)}
@@ -380,7 +380,7 @@ export function SongQuickOpen({ songs, onClose, onOpen }: SongQuickOpenProps): R
       {previewOpen && activeRow && (
         <aside
           aria-label="Song preview"
-          className="flex h-[min(520px,68vh)] w-[28rem] shrink-0 flex-col overflow-hidden rounded-xl bg-[#1d1d1d] ring-1 ring-black/60 animate-spring-in motion-reduce:animate-none"
+          className="flex h-[min(520px,68vh)] w-[28rem] shrink-0 flex-col overflow-hidden rounded-xl bg-surface-secondary ring-1 ring-black/60 animate-spring-in motion-reduce:animate-none"
         >
               <div ref={previewRef} className="min-h-0 flex-1 overflow-y-auto px-5 py-4 select-text" aria-live="polite">
                 {activeRow?.kind === 'online' ? (
@@ -461,7 +461,7 @@ export function SongQuickOpen({ songs, onClose, onOpen }: SongQuickOpenProps): R
                 type="button"
                 disabled={!activeRow || importingId !== null}
                 onClick={() => activeRow && openRow(activeRow)}
-                className="inline-flex h-7 items-center gap-1.5 rounded-md bg-teal-500 px-3 text-[11px] font-semibold text-[#111827] transition-colors hover:bg-teal-400 disabled:opacity-40"
+                className="inline-flex h-7 items-center gap-1.5 rounded-md bg-teal-500 px-3 text-[11px] font-semibold text-on-accent transition-colors hover:bg-teal-600 disabled:opacity-40"
               >
                 {activeRow?.kind === 'online' ? (
                   importingId === activeRow.result.id ? (

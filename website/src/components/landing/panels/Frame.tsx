@@ -22,7 +22,7 @@ export function Frame({
     <div
       className={cx(
         'overflow-hidden rounded-xl border border-line bg-panel',
-        'shadow-[0_40px_80px_-48px_rgba(0,0,0,0.9)]',
+        'shadow-[0_40px_80px_-48px_rgba(17, 18, 13,0.9)]',
         className,
       )}
     >

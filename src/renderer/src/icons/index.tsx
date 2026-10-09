@@ -34,6 +34,12 @@ import {
   UserCircle as PhUserCircle,
   Clipboard as PhClipboard,
   Clock as PhClock,
+  Church as PhChurch,
+  Lightbulb as PhLightbulb,
+  Laptop as PhLaptop,
+  Usb as PhUsb,
+  DeviceMobile as PhDeviceMobile,
+  Waveform as PhWaveform,
   Cloud as PhCloud,
   Copy as PhCopy,
   CurrencyDollar as PhCurrencyDollar,
@@ -156,6 +162,12 @@ export const CircleOff = wrap(PhProhibit)
 export const CircleUser = wrap(PhUserCircle)
 export const ClipboardPaste = wrap(PhClipboard)
 export const Clock = wrap(PhClock)
+export const Church = wrap(PhChurch)
+export const Lightbulb = wrap(PhLightbulb)
+export const Laptop = wrap(PhLaptop)
+export const Usb = wrap(PhUsb)
+export const DeviceMobile = wrap(PhDeviceMobile)
+export const Waveform = wrap(PhWaveform)
 export const Cloud = wrap(PhCloud)
 export const Copy = wrap(PhCopy)
 export const DollarSign = wrap(PhCurrencyDollar)

@@ -29,7 +29,8 @@ module.exports = {
         foreground: 'rgb(var(--text-primary) / <alpha-value>)',
         primary: {
           DEFAULT: 'rgb(var(--control-accent) / <alpha-value>)',
-          foreground: '#ffffff',
+          // Text on the accent: ink on white (dark theme), paper on ink (light).
+          foreground: 'rgb(var(--on-accent) / <alpha-value>)',
         },
         secondary: {
           DEFAULT: 'rgb(var(--surface-tertiary) / <alpha-value>)',
@@ -59,33 +60,45 @@ module.exports = {
         // like, but opaque, per theme (see --tint-* in index.css).
         tint: {
           teal: 'rgb(var(--tint-teal) / <alpha-value>)',
+          live: 'rgb(var(--tint-live) / <alpha-value>)',
           red: 'rgb(var(--tint-red) / <alpha-value>)',
           amber: 'rgb(var(--tint-amber) / <alpha-value>)',
           yellow: 'rgb(var(--tint-yellow) / <alpha-value>)',
           rose: 'rgb(var(--tint-rose) / <alpha-value>)',
         },
+        // Brand palette: ink #11120D (primary), paper #FFFBF4 (white),
+        // stone #565449 (muted); CTAs use the white accent, #6C91C2 is `live`. Surfaces and text
+        // steps in index.css are blends of these.
+        ink: '#11120D',
+        paper: '#FFFBF4',
+        stone: '#565449',
+        white: '#FFFBF4',
         surface: {
           DEFAULT: 'rgb(var(--surface) / <alpha-value>)',
+          rail: 'rgb(var(--surface-rail) / <alpha-value>)',
+          header: 'rgb(var(--surface-header) / <alpha-value>)',
           secondary: 'rgb(var(--surface-secondary) / <alpha-value>)',
           tertiary: 'rgb(var(--surface-tertiary) / <alpha-value>)',
           elevated: 'rgb(var(--surface-elevated) / <alpha-value>)',
           border: 'rgb(var(--surface-border) / <alpha-value>)',
         },
-        // Legacy class name retained to avoid a risky app-wide class migration.
-        // Product accent is Kairo amber (#F59E0B), not a status color.
-        teal: {
-          50: '#fffbeb',
-          100: '#fef3c7',
-          200: '#fde68a',
-          300: '#fcd34d',
-          400: '#fbbf24',
-          500: '#f59e0b',
-          600: '#d97706',
-          700: '#b45309',
-          800: '#92400e',
-          900: '#78350f',
-          950: '#451a03',
-        },
+        // Legacy class name retained to avoid an app-wide class migration:
+        // `teal-*` is the accent — white in dark, ink in light (index.css
+        // --accent-*). Text on a solid accent fill is `text-on-accent`.
+        teal: Object.fromEntries(
+          [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950].map((k) => [k, `rgb(var(--accent-${k}) / <alpha-value>)`]),
+        ),
+        // The old warm gold is retired: warnings and highlights that used
+        // amber / yellow read in the palette's neutral accent instead.
+        amber: Object.fromEntries(
+          [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950].map((k) => [k, `rgb(var(--accent-${k}) / <alpha-value>)`]),
+        ),
+        yellow: Object.fromEntries(
+          [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950].map((k) => [k, `rgb(var(--accent-${k}) / <alpha-value>)`]),
+        ),
+        'on-accent': 'rgb(var(--on-accent) / <alpha-value>)',
+        // #6C91C2 — reserved for what is live / on screen.
+        live: 'rgb(var(--live) / <alpha-value>)',
         // Existing components use slate extensively; neutralize its blue cast.
         slate: {
           50: 'rgb(var(--neutral-50) / <alpha-value>)',

@@ -69,13 +69,11 @@ test('resource thumbnails use safe named alternatives and clickable rows are but
   assert.match(catalogue, /<button[\s\S]*resource\.id/)
 })
 
-test('onboarding resource step keeps discovery optional and explicit', () => {
+test('legacy resource catalogue keeps discovery optional and explicit', () => {
   const step = read('src/renderer/src/components/onboarding/StepProPresenterResources.tsx')
-  const wizard = read('src/renderer/src/components/onboarding/OnboardingWizard.tsx')
 
   assert.match(step, /ResourceCatalogue mode=["']onboarding["']/)
   assert.match(step, /Nothing in ProPresenter was changed/)
-  assert.match(wizard, /current === ['"]propresenterResources['"]/) 
 })
 
 test('preview and catalogue services stay read-only', () => {

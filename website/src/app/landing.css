@@ -1,9 +1,18 @@
 /* Scroll timelines need CSS; layout, color, and typography live in Tailwind classes. */
 .landing [id] { scroll-margin-top: 30px; }
-.landing :focus-visible { outline: 2px solid #d0d0d0; outline-offset: 4px; }
+.landing :focus-visible { outline: 2px solid #D3CFC7; outline-offset: 4px; }
 .landing #product :focus-visible,
-.landing #screens :focus-visible { outline-color: #111; }
-.landing #get :focus-visible { outline-color: #111; }
+.landing #screens :focus-visible { outline-color: #11120D; }
+.landing #get :focus-visible { outline-color: #11120D; }
+
+/* Operator demo: a detected verse lands in the list. */
+@keyframes demo-card-in {
+  from { opacity: 0; transform: translateY(-8px) scale(.98); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .landing [class*="demo-card-in"] { animation: none !important; }
+}
 
 @keyframes landing-rise {
   from { opacity: .36; transform: translateY(38px); }
@@ -14,8 +23,8 @@
   to { opacity: .28; transform: translateY(0); }
 }
 @keyframes landing-letter {
-  from { color: #2a2a2a; }
-  to { color: #f3f3f3; }
+  from { color: #2B2B23; }
+  to { color: #F6F3EB; }
 }
 
 @keyframes landing-hero-enter {
@@ -27,9 +36,9 @@
   to { opacity: 1; transform: translateY(0) rotate(0); filter: blur(0); }
 }
 @keyframes landing-hero-cue-light {
-  0%, 28% { color: #f3f3f3; text-shadow: none; }
-  48% { color: #ffb554; text-shadow: 0 0 34px rgba(255, 163, 50, .48); }
-  100% { color: #f3f3f3; text-shadow: none; }
+  0%, 28% { color: #F6F3EB; text-shadow: none; }
+  48% { color: #AABED7; text-shadow: 0 0 34px rgba(108, 145, 194, .48); }
+  100% { color: #F6F3EB; text-shadow: none; }
 }
 @keyframes landing-hero-cue-line {
   0%, 20% { transform: scaleX(0); opacity: 0; }
@@ -70,7 +79,7 @@
   bottom: -.085em;
   height: .035em;
   border-radius: 999px;
-  background: #f6a545;
+  background: #6C91C2;
   transform-origin: left;
   transform: scaleX(1);
   opacity: .55;

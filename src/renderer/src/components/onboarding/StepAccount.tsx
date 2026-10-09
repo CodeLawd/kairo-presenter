@@ -1,81 +1,64 @@
-import { Check } from '@/icons'
+import { useState, type CSSProperties } from 'react'
+import { PRODUCT_NAME } from '@shared/brand'
 import { needsEmailConfirmation } from '@shared/cloud/auth-state'
-import AuthPanel from '@/components/account/AuthPanel'
+import AuthPanel, { type AuthMode } from '@/components/account/AuthPanel'
 import VerifyEmailNotice from '@/components/account/VerifyEmailNotice'
 import { useAccountStore } from '@/stores/useAccountStore'
-import StepShell from './StepShell'
-import { useState } from 'react'
+
+const at = (i: number): CSSProperties => ({ '--i': i }) as CSSProperties
 
 /**
- * The account step.
- *
- * Auth and email confirmation happen on the launch wall, so this screen is a
- * confirmation. Signing out here (wrong email) returns the operator to the
- * sign-in wall; Continue is disabled until they are signed in again.
+ * The account page of first-run setup, after the tour: create an account (the
+ * default — this is a first launch), or sign in, then the emailed code. The
+ * wizard moves on by itself once the session can enter the app.
  */
-export default function StepAccount(): React.ReactElement {
+export default function StepAccount({ mode, onModeChange }: {
+  mode: AuthMode
+  onModeChange: (mode: AuthMode) => void
+}): React.ReactElement {
   const session = useAccountStore((s) => s.session)
   const setSession = useAccountStore((s) => s.setSession)
   const [signingOut, setSigningOut] = useState(false)
+  const verifying = needsEmailConfirmation(session)
 
-  const signOut = async (): Promise<void> => {
+  const useDifferentEmail = async (): Promise<void> => {
     setSigningOut(true)
     try {
       setSession(await window.api.account.signOut())
+      onModeChange('signUp')
     } finally {
       setSigningOut(false)
     }
   }
 
-  if (session.state !== 'signed-out') {
-    // Signed in but unconfirmed is its own state, not a signed-in screen with a
-    // warning stapled to it. The step asks for the one thing still outstanding.
-    if (needsEmailConfirmation(session)) {
-      return (
-        <StepShell
-          title="Confirm your email"
-          blurb={`We sent a 6-digit code. It confirms ${session.org?.name ?? 'your church'} and turns on syncing across your machines.`}
-        >
-          <VerifyEmailNotice />
-
-          {/*
-            The way out. Someone who mistyped their address is otherwise stuck
-            on this screen forever: the code goes to an inbox they cannot read,
-            and every route back to the sign-up form is behind the account they
-            are trying to abandon.
-          */}
-          <button
-            type="button"
-            className="self-start text-[12px] text-slate-500 underline-offset-2 transition-colors hover:text-slate-300 hover:underline disabled:opacity-50"
-            onClick={() => void signOut()}
-            disabled={signingOut}
-          >
-            {signingOut ? 'Signing out…' : 'Use a different email'}
-          </button>
-        </StepShell>
-      )
-    }
-
-    return (
-      <StepShell
-        title="You are signed in"
-        blurb="Your setup will follow this account to your other Kairo computers."
-      >
-        <p className="inline-flex items-center gap-2 text-[13px] text-teal-400">
-          <Check size={14} aria-hidden="true" />
-          {session.user?.email}
-          {session.org && <span className="text-slate-500">· {session.org.name}</span>}
-        </p>
-      </StepShell>
-    )
-  }
+  const title = verifying ? 'Confirm your email' : mode === 'signUp' ? 'Create your account' : `Sign in to ${PRODUCT_NAME}`
+  const blurb = verifying
+    ? `Enter the 6-digit code we sent to ${session.user?.email ?? 'your email'}.`
+    : mode === 'signUp'
+      ? 'Your church’s songs, themes and settings follow you to every Kairo computer.'
+      : 'Welcome back. Your church’s library comes with you.'
 
   return (
-    <StepShell
-      title="Create an account"
-      blurb="An account is required to use Kairo. It also shares your themes and settings across every machine in your church."
-    >
-      <AuthPanel initialMode="signUp" />
-    </StepShell>
+    <div className="onboarding-setup">
+      <h2 id="onboarding-slide-title" key={title} className="onboarding-setup-title ob-in">{title}</h2>
+      <p className="ob-rise mt-2 max-w-[44ch] text-center text-[14px] leading-relaxed text-slate-400" style={at(1)}>{blurb}</p>
+      <div className="ob-in mt-8 w-full max-w-[380px]" style={at(2)}>
+        {verifying ? (
+          <div className="flex flex-col items-center gap-6">
+            <VerifyEmailNotice showEmail={false} centered />
+            <button
+              type="button"
+              className="onboarding-text-button"
+              onClick={() => void useDifferentEmail()}
+              disabled={signingOut}
+            >
+              {signingOut ? 'Signing out…' : 'Use a different email'}
+            </button>
+          </div>
+        ) : (
+          <AuthPanel key={mode} initialMode={mode} onModeChange={onModeChange} />
+        )}
+      </div>
+    </div>
   )
 }

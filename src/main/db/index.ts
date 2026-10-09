@@ -4,7 +4,7 @@ import { renamedStore } from './legacy-store'
 import type { AppSettings } from '@shared/ipc'
 import { DEFAULT_TRANSLATION_ID } from '@shared/bible-translations'
 import { DEFAULT_OVERLAY_SETTINGS, normalizeOverlaySettings } from '@shared/overlay-defaults'
-import { normalizeThemeLibrary } from '@shared/theme-library'
+import { assignThemeToOutput, isUntouchedThemeLibrary, normalizeThemeLibrary, seedBuiltInThemes } from '@shared/theme-library'
 import { EMPTY_PP_RESOURCE_BINDINGS, normalizeResourceBindings } from '@shared/propresenter-resources'
 import { DEFAULT_DOCUMENTS_SETTINGS } from '@shared/documents'
 import { DEFAULT_PRESENTATION_SETTINGS, normalizePresentationSettings } from '@shared/program'
@@ -44,7 +44,7 @@ const defaults: AppSettings = {
   lyrics: {
     braveApiKey: '',
     googleTranslateApiKey: '',
-    glossColor: '#D4A017',
+    glossColor: '#AABED7',
   },
   display: {
     theme: 'dark',
@@ -81,6 +81,12 @@ export const store = new Store<AppSettings>({
 
 export const migrations = new Store<{
   nkjvDefaultV1: boolean
+  /** An NKJV default nobody can read (no pack, no key) has moved to bundled KJV. */
+  kjvDefaultV1: boolean
+  /** A new install's theme library has been filled with the built-in themes. */
+  builtInThemesV1: boolean
+  /** The old gold gloss default has moved to the palette blue (custom picks kept). */
+  glossPaletteV1: boolean
   customThemeLibraryV1: boolean
   cloudOnboardingV1: boolean
   /** Songs that predate the Songs folder have been exported into it. */
@@ -89,14 +95,17 @@ export const migrations = new Store<{
   name: renamedStore('proautomate-migrations', 'kairo-migrations'),
   defaults: {
     nkjvDefaultV1: false,
+    kjvDefaultV1: false,
+    builtInThemesV1: false,
+    glossPaletteV1: false,
     customThemeLibraryV1: false,
     cloudOnboardingV1: false,
     songsFolderExportV1: false,
   },
 })
 
-// Product decision: NKJV is the default. Apply once for existing installs whose
-// electron-store file predates the new default, then preserve future user choices.
+// Applied once for installs whose store predates a default translation, then
+// future user choices are preserved. The default itself is KJV (bundled).
 if (!migrations.get('nkjvDefaultV1')) {
   store.set('scripture', { ...store.get('scripture'), defaultTranslation: DEFAULT_TRANSLATION_ID })
   migrations.set('nkjvDefaultV1', true)
@@ -121,7 +130,7 @@ if (!migrations.get('nkjvDefaultV1')) {
     dirty = true
   }
   if (typeof lyrics.glossColor !== 'string' || !/^#[0-9a-fA-F]{3,8}$/.test(lyrics.glossColor.trim())) {
-    next.glossColor = '#D4A017'
+    next.glossColor = '#AABED7'
     dirty = true
   }
   if (dirty) store.set('lyrics', next)
@@ -171,6 +180,36 @@ if (!migrations.get('customThemeLibraryV1')) {
   migrations.set('customThemeLibraryV1', true)
 } else {
   store.set('themeLibrary', normalizeThemeLibrary(store.get('themeLibrary'), store.get('overlay').theme))
+}
+// A new install starts with every built-in theme in its library — Broadcast on
+// screens for scripture, Stage lyrics for lyrics — instead of one placeholder.
+// Only a library nobody has shaped yet is touched, once.
+if (!migrations.get('builtInThemesV1')) {
+  const library = store.get('themeLibrary')
+  if (isUntouchedThemeLibrary(library)) {
+    const seeded = seedBuiltInThemes(library)
+    const broadcast = seeded.find((theme) => theme.kind === 'scripture')
+    const stageLyrics = seeded.find((theme) => theme.kind === 'lyrics')
+    const overlay = store.get('overlay')
+    const outputs = overlay.outputs.map((output) => {
+      if (output.kind !== 'screen') return output
+      const withScripture = broadcast ? assignThemeToOutput(output, broadcast) : output
+      return stageLyrics ? assignThemeToOutput(withScripture, stageLyrics) : withScripture
+    })
+    store.set('themeLibrary', seeded)
+    store.set('overlay', normalizeOverlaySettings({ ...overlay, outputs }))
+  }
+  migrations.set('builtInThemesV1', true)
+}
+
+// The lyric gloss default was gold; installs still on that default move to the
+// palette blue. A colour someone picked themselves is left alone.
+if (!migrations.get('glossPaletteV1')) {
+  const lyrics = store.get('lyrics')
+  if (String(lyrics.glossColor ?? '').toUpperCase() === '#D4A017') {
+    store.set('lyrics', { ...lyrics, glossColor: '#AABED7' })
+  }
+  migrations.set('glossPaletteV1', true)
 }
 
 export function initDatabase(): void {

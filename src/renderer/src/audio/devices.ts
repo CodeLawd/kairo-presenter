@@ -55,3 +55,13 @@ export function resolveCaptureDeviceId(devices: AudioDevice[], savedId?: string)
   if (savedId && devices.some((device) => device.id === savedId)) return savedId
   return (devices.find((device) => device.isDefault) ?? devices[0]).id
 }
+
+/** What kind of input a device is, from its name — for labels and icons. */
+export type InputKind = 'Built-in' | 'External' | 'Continuity' | 'Virtual'
+export function inputKindLabel(device: AudioDevice): InputKind {
+  const label = device.label.toLowerCase()
+  if (/(iphone|ipad|airpods|continuity)/.test(label)) return 'Continuity'
+  if (/(virtual|teams|zoom|blackhole|loopback|aggregate|cable)/.test(label)) return 'Virtual'
+  if (/(built-in|macbook|imac|internal)/.test(label)) return 'Built-in'
+  return 'External'
+}

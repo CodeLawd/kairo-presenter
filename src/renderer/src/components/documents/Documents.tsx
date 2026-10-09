@@ -528,7 +528,7 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
             )}
           </div>
 
-          <div ref={importMenuRef} className="relative shrink-0">
+          <div ref={importMenuRef} className="relative shrink-0" data-tour="documents-import">
             <div className="flex">
               <button
                 type="button"
@@ -900,7 +900,7 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
                         // and a fixed box letterboxes one of them into a stamp.
                         'group/page relative h-28 shrink-0 overflow-hidden rounded-md border bg-black transition-opacity',
                         page === index
-                          ? 'border-teal-400/80 ring-1 ring-teal-400/40'
+                          ? 'border-live'
                           : 'border-transparent opacity-60 hover:opacity-100',
                       )}
                     >

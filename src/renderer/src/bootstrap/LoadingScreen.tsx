@@ -1,7 +1,7 @@
 import type { BootstrapProgress } from '@shared/ipc'
 import { PRODUCT_NAME, PRODUCT_TAGLINE } from '@shared/brand'
 import { getBootstrapPercent } from './bootstrap-state'
-import kairoIcon from '@/assets/kairo-icon.png'
+import kairoStacked from '@/assets/kairo-stacked.png'
 
 /**
  * Branded startup screen, shown briefly on every launch. The progress row only
@@ -33,33 +33,36 @@ export function LoadingScreen({
       aria-busy={!fadingOut}
     >
       <div className="flex w-[340px] flex-col items-center gap-7">
-        {/* Liquid-glass mark: the icon in full colour under a glass lens — a
-            top specular, a slowly drifting caustic and a lit rim. Every layer
-            is masked to the icon's own shape. */}
-        <div className="splash-mark relative h-[88px] w-[88px]">
-          <img
-            src={kairoIcon}
-            alt=""
-            width={88}
-            height={88}
-            className="relative h-full w-full object-contain"
+        {/* The stacked logo (mark over "Kairo") under a glass lens — a top
+            specular and a slowly drifting caustic, every layer masked to the
+            logo's own shape. Off-white in dark, ink in light. */}
+        <div className="splash-mark relative h-[100px] w-[152px]" role="img" aria-label={PRODUCT_NAME}>
+          <span
+            aria-hidden
+            className="absolute inset-0 bg-[rgb(var(--text-primary))]"
+            style={{
+              WebkitMaskImage: `url(${kairoStacked})`,
+              maskImage: `url(${kairoStacked})`,
+              WebkitMaskSize: 'contain',
+              maskSize: 'contain',
+              WebkitMaskRepeat: 'no-repeat',
+              maskRepeat: 'no-repeat',
+              WebkitMaskPosition: 'center',
+              maskPosition: 'center',
+            }}
           />
           {(['splash-glass-caustic', 'splash-glass-lens'] as const).map((layer) => (
             <div
               key={layer}
               aria-hidden
               className={`splash-glass-layer ${layer}`}
-              style={{ WebkitMaskImage: `url(${kairoIcon})`, maskImage: `url(${kairoIcon})` }}
+              style={{ WebkitMaskImage: `url(${kairoStacked})`, maskImage: `url(${kairoStacked})` }}
             />
           ))}
-          <div aria-hidden className="splash-glass-rim" />
         </div>
 
-        <div className="splash-copy text-center">
-          <h1 className="text-[28px] font-semibold leading-none tracking-[-0.03em] text-white">
-            {PRODUCT_NAME}
-          </h1>
-          <p className="mt-2.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-300">
+        <div className="splash-copy -mt-2 text-center">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-300">
             {PRODUCT_TAGLINE}
           </p>
         </div>

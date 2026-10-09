@@ -1,196 +1,253 @@
-import { useCallback, useEffect, useState } from 'react'
-import type { OnboardingState } from '@shared/ipc'
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
+import type { OnboardingState, OnboardingStepId } from '@shared/ipc'
 import { canEnterApp } from '@shared/cloud/auth-state'
 import { isStepComplete, onboardingSteps } from '@shared/cloud/onboarding'
 import { useBootstrapStore } from '@/bootstrap/useBootstrapStore'
 import { useAccountStore } from '@/stores/useAccountStore'
+import { useAppStore } from '@/stores/useAppStore'
 import { KairoMark } from '@/components/brand/KairoMark'
+import { ChevronLeft } from '@/icons'
 import StepAccount from './StepAccount'
-import StepApiKeys from './StepApiKeys'
-import StepChurchProfile from './StepChurchProfile'
-import StepDone from './StepDone'
 import StepOutput from './StepOutput'
-import StepProPresenter from './StepProPresenter'
-import StepProPresenterResources from './StepProPresenterResources'
+import { LOCAL_ZONE } from './church-options'
+import { TOUR_SLIDES, TourStage } from './TourSlides'
+import WelcomeView from './WelcomeView'
+import type { NavRoute } from '@/App'
+import type { AuthMode } from '@/components/account/AuthPanel'
+
+/** Footer back-link names, as in ProPresenter: "‹ Welcome", "‹ Screen Configuration". */
+const STEP_NAMES: Partial<Record<OnboardingStepId, string>> = {
+  welcome: 'Welcome',
+  account: 'Account',
+  output: 'Screen Configuration',
+}
 
 /**
- * First-run setup. An overlay above the shell — never a route — so the app
- * underneath keeps its live state and the wizard can be left at any point.
- *
- * Deliberately quiet: one hairline of progress, one primary action, and no
- * step-picker. An operator meeting this screen has not learned the app yet, so
- * every control that is not the next thing to do is noise.
- *
- * Every exit path is honoured immediately: Escape, "Finish later", and the last
- * step's Finish all close it for good. Setup must never be something an
- * operator has to fight their way out of ten minutes before a service.
+ * First-run setup, once per install, modelled on ProPresenter's welcome window:
+ * the tour (`welcome`), then the account — created here on a first launch, so
+ * the operator knows what Kairo is before being asked to sign up — then this
+ * computer's screens, then the closing welcome. Shown signed out; `App` keeps it
+ * mounted across sign-in so the flow carries on rather than restarting.
  */
-export default function OnboardingWizard({
-  onDismiss,
-}: {
-  onDismiss: () => void
+export default function OnboardingWizard({ onDismiss }: {
+  /** Close setup; `route` opens a workspace, `coach: false` skips the tips that follow. */
+  onDismiss: (route?: NavRoute, options?: { coach?: boolean }) => void
 }): React.ReactElement {
   const settings = useBootstrapStore((s) => s.settings)
   const state = useBootstrapStore((s) => s.onboarding)
   const setOnboarding = useBootstrapStore((s) => s.setOnboarding)
-  const [busy, setBusy] = useState(false)
-  // The closing screen is a view, not a step: it is not something to answer, so
-  // it stays out of the step list, the progress rail and the saved state.
-  const [showDone, setShowDone] = useState(false)
-
-  const current = state.currentStep
-  // Derived from the outputs the Output step writes: answering "directly to a
-  // screen" drops the ProPresenter steps from the walk.
-  const steps = onboardingSteps(settings)
-  const index = Math.max(0, steps.indexOf(current))
-  const total = steps.length
-  const isLast = index === total - 1
   const accountReady = useAccountStore((s) => canEnterApp(s.session))
-  // Signing in lives in the token vault rather than in settings, so the account
-  // step is the one the wizard has to answer for itself. Confirmed address is
-  // required — the launch wall should have already done this.
-  const done = current === 'account' ? accountReady : isStepComplete(current, settings)
+  const orgName = useAccountStore((s) => s.session.org?.name ?? '')
+  const [busy, setBusy] = useState(false)
+  const [savingScreen, setSavingScreen] = useState(false)
+  const [error, setError] = useState('')
+  const [slide, setSlide] = useState(0)
+  // Direction of travel for slide and page transitions: 1 forward, -1 back.
+  const [dir, setDir] = useState<1 | -1>(1)
+  // Setup is saved as finished; the closing welcome is on screen.
+  const [welcomed, setWelcomed] = useState(false)
+  // A first launch most likely needs a new account; the tour's "Sign in" link
+  // and the form's own toggle switch it.
+  const [authMode, setAuthMode] = useState<AuthMode>('signUp')
+  const dialog = useRef<HTMLDivElement>(null)
+  const pending = useRef(false)
+  const steps = onboardingSteps(settings)
+  const index = Math.max(0, steps.indexOf(state.currentStep))
+  const current = steps[index]
+  const isLast = index === steps.length - 1
+  const touring = current === 'welcome'
+  // Nothing past the account opens until the session can enter the app.
+  const onAccount = !touring && (current === 'account' || !accountReady)
+  const lastSlide = slide === TOUR_SLIDES.length - 1
+  const locked = busy || savingScreen
 
-  const apply = useCallback(
-    async (run: () => Promise<OnboardingState>): Promise<OnboardingState | null> => {
-      setBusy(true)
-      try {
-        const next = await run()
-        setOnboarding(next)
-        return next
-      } catch {
-        // A failed write must not trap the operator inside the wizard.
-        return null
-      } finally {
-        setBusy(false)
-      }
-    },
-    [setOnboarding],
-  )
+  const apply = useCallback(async (run: () => Promise<OnboardingState>): Promise<boolean> => {
+    if (pending.current) return false
+    pending.current = true
+    setBusy(true)
+    setError('')
+    try {
+      setOnboarding(await run())
+      return true
+    } catch {
+      setError('Your setup could not be saved. Please try again.')
+      return false
+    } finally {
+      pending.current = false
+      setBusy(false)
+    }
+  }, [setOnboarding])
 
-  const finish = useCallback(async (): Promise<void> => {
-    if (current === 'account' && !done) return
-    await apply(() => window.api.onboarding.finish())
-    onDismiss()
-  }, [apply, current, done, onDismiss])
+  /** The church profile comes from sign-up: the org's name and this computer's zone. */
+  const seedChurch = useCallback(async (): Promise<void> => {
+    const church = useBootstrapStore.getState().settings.church
+    const org = useAccountStore.getState().session.org?.name?.trim() ?? ''
+    const next = { ...church, name: church.name.trim() || org, timezone: church.timezone || LOCAL_ZONE }
+    if (next.name === church.name && next.timezone === church.timezone) return
+    await window.api.settings.set('church', next)
+    useBootstrapStore.getState().patchSettings('church', next)
+  }, [])
+
+  /** Ends setup. Finishing or skipping lands on the welcome, unless `welcome: false`. */
+  const finish = useCallback(async ({ welcome = true } = {}): Promise<boolean> => {
+    if (!accountReady || savingScreen) return false
+    const done = await apply(async () => {
+      await seedChurch()
+      return window.api.onboarding.finish()
+    })
+    if (done && welcome) { setDir(1); setWelcomed(true) }
+    return done
+  }, [accountReady, apply, savingScreen, seedChurch])
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') void finish()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [finish])
+    const previous = document.activeElement as HTMLElement | null
+    dialog.current?.focus()
+    return () => previous?.focus()
+  }, [])
 
-  /**
-   * Records how this step was answered, then moves exactly one step along —
-   * never to "the first unanswered step". Walking back to an earlier screen and
-   * pressing Continue must show the next screen in order, not skip ahead past
-   * everything already answered.
-   *
-   * One button, not a Next/Skip pair: whether the step counts as done is read
-   * off the settings the operator did or did not fill in, so making them also
-   * declare it would be asking the same question twice.
-   */
+  // Signed in and confirmed on the account page: carry on to screens.
+  useEffect(() => {
+    if (!accountReady || current !== 'account') return
+    setDir(1)
+    void apply(async () => {
+      await seedChurch()
+      await window.api.onboarding.completeStep('account')
+      return window.api.onboarding.setCurrentStep('output')
+    })
+  }, [accountReady, apply, current, seedChurch])
+
+  const goToSlide = (next: number): void => {
+    const clamped = Math.min(TOUR_SLIDES.length - 1, Math.max(0, next))
+    if (clamped === slide) return
+    setDir(clamped > slide ? 1 : -1)
+    setSlide(clamped)
+  }
+
+  /** Leave the tour: to the account, or straight to screens when already signed in. */
+  const leaveTour = async (mode: AuthMode = authMode): Promise<void> => {
+    if (locked) return
+    setAuthMode(mode)
+    setDir(1)
+    await apply(async () => {
+      await window.api.onboarding.completeStep('welcome')
+      if (!accountReady) return window.api.onboarding.setCurrentStep('account')
+      await window.api.onboarding.completeStep('account')
+      return window.api.onboarding.setCurrentStep('output')
+    })
+  }
+
   const advance = async (): Promise<void> => {
-    if (current === 'account' && !done) return
-    await apply(() =>
-      done ? window.api.onboarding.completeStep(current) : window.api.onboarding.skipStep(current),
-    )
-    if (isLast) {
-      // Setup ending by the dialog simply disappearing leaves the operator
-      // unsure anything was kept. Show what was set up, and let them leave.
-      setShowDone(true)
+    if (locked || !accountReady) return
+    setDir(1)
+    const saved = await apply(async () => {
+      await (isStepComplete(current, settings) ? window.api.onboarding.completeStep(current) : window.api.onboarding.skipStep(current))
+      if (!isLast) return window.api.onboarding.setCurrentStep(steps[index + 1])
+      await seedChurch()
+      return window.api.onboarding.finish()
+    })
+    if (saved && isLast) setWelcomed(true)
+  }
+
+  // Back skips the account page once signed in — there is nothing to redo there.
+  const backTarget = steps.slice(0, index).reverse().find((step) => step !== 'account' || !accountReady) ?? null
+  const back = (): void => {
+    if (locked || !backTarget) return
+    setDir(-1)
+    // Walking back into the tour lands on its last slide, not its first.
+    if (backTarget === 'welcome') setSlide(TOUR_SLIDES.length - 1)
+    void apply(() => window.api.onboarding.setCurrentStep(backTarget))
+  }
+
+  const openScreens = async (): Promise<void> => {
+    if (await finish({ welcome: false })) {
+      onDismiss(undefined, { coach: false })
+      useAppStore.getState().openScreens()
+    }
+  }
+
+  const onKeyDown = (event: React.KeyboardEvent): void => {
+    if (event.key === 'Escape') {
+      event.preventDefault(); event.stopPropagation()
+      // The account cannot be skipped; once in, Escape is "set up later".
+      if (welcomed) onDismiss(); else if (accountReady) void finish()
       return
     }
-    void apply(() => window.api.onboarding.setCurrentStep(steps[index + 1]))
+    const typing = (event.target as HTMLElement).closest('input, select, textarea')
+    if (touring && !typing && (event.key === 'ArrowRight' || event.key === 'ArrowLeft')) {
+      event.preventDefault()
+      goToSlide(slide + (event.key === 'ArrowRight' ? 1 : -1))
+      return
+    }
+    if (event.key !== 'Tab') return
+    const targets = Array.from(dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], [tabindex="0"]') ?? []).filter((node) => node.getClientRects().length > 0)
+    const first = targets[0], last = targets[targets.length - 1]
+    if (!first) { event.preventDefault(); return }
+    if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog.current)) { event.preventDefault(); last.focus() }
+    else if (!event.shiftKey && (document.activeElement === last || document.activeElement === dialog.current)) { event.preventDefault(); first.focus() }
   }
 
-  const back = (): void => {
-    if (index === 0) return
-    void apply(() => window.api.onboarding.setCurrentStep(steps[index - 1]))
-  }
+  // Setup pages fill the bar from the first setup step to the last.
+  const setupCount = steps.length - 1
+  const progress = setupCount > 0 ? index / setupCount : 1
 
   return (
-    <div
-      className="fixed inset-0 z-[70] flex items-center justify-center animate-fade-in"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="onboarding-title"
-      data-onboarding-wizard="true"
-    >
-      <div className="absolute inset-0 bg-black/65" aria-hidden="true" />
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-5 onboarding-scrim" role="presentation">
+      <div ref={dialog} role="dialog" aria-modal="true" aria-labelledby="onboarding-title onboarding-slide-title" tabIndex={-1} data-onboarding-wizard="true" className="onboarding-dialog" onKeyDown={onKeyDown}>
+        <header className="onboarding-titlebar">
+          <KairoMark size="sm" variant="mark" />
+          <span id="onboarding-title" className="text-sm font-semibold text-slate-300">Welcome to Kairo</span>
+        </header>
 
-      <div className="relative flex min-h-[28rem] w-[520px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl bg-surface shadow-2xl animate-spring-in">
-
-        {/* Progress is a hairline, not a widget — it answers "how much longer"
-            and nothing else. */}
-        <div className="relative h-[2px] w-full bg-surface-border" aria-hidden="true">
-          <div
-            className="h-full bg-[#F59E0B] transition-[width] duration-300 ease-out-expo"
-            style={{ width: showDone ? '100%' : `${((index + 1) / total) * 100}%` }}
-          />
-        </div>
-
-        <div className="relative flex flex-1 flex-col px-8 pb-6 pt-7">
-          <div className="flex items-center gap-2.5">
-            <KairoMark size="sm" />
-            <p
-              id="onboarding-title"
-              className="text-[11px] font-medium uppercase tracking-[0.1em] text-slate-500"
-            >
-              {showDone ? 'Setup complete' : `Setup · ${index + 1} of ${total}`}
-            </p>
-          </div>
-
-          <div className="mt-5 flex flex-1 flex-col">
-            {showDone && <StepDone onStart={() => void finish()} busy={busy} />}
-            {!showDone && current === 'account' && <StepAccount />}
-            {!showDone && current === 'propresenter' && (
-              <StepProPresenter
-                onConnected={() => void apply(() => window.api.onboarding.completeStep('propresenter'))}
-              />
-            )}
-            {!showDone && current === 'propresenterResources' && <StepProPresenterResources />}
-            {!showDone && current === 'output' && <StepOutput />}
-            {!showDone && current === 'apiKeys' && <StepApiKeys />}
-            {!showDone && current === 'church' && <StepChurchProfile />}
-          </div>
-
-          {!showDone && (
-          <div className="mt-8 flex items-center justify-between gap-4">
-            <button
-              type="button"
-              className="text-[12px] text-slate-600 transition-colors hover:text-slate-300 focus-visible:outline-none focus-visible:text-slate-300 disabled:opacity-40"
-              onClick={() => void finish()}
-              disabled={current === 'account' && !done}
-            >
-              Finish later
-            </button>
-
-            <div className="flex items-center gap-4">
-              {index > 0 && (
-                <button
-                  type="button"
-                  className="text-[12px] text-slate-500 transition-colors hover:text-slate-300 disabled:opacity-40 focus-visible:outline-none focus-visible:text-slate-300"
-                  onClick={back}
-                  disabled={busy}
-                >
-                  Back
-                </button>
-              )}
-              <button
-                type="button"
-                className="btn-primary min-w-[7rem]"
-                onClick={() => void advance()}
-                disabled={busy || (current === 'account' && !done)}
-              >
-                {isLast ? 'Finish' : 'Continue'}
-              </button>
+        <div className="onboarding-body">
+          {welcomed ? (
+            <WelcomeView churchName={settings.church.name || orgName} onStart={(route) => onDismiss(route)} />
+          ) : touring ? (
+            <div className="flex h-full flex-col">
+              <div className="min-h-0 flex-1"><TourStage index={slide} dir={dir} /></div>
+              <div className="onboarding-dots" role="group" aria-label="Tour slides">
+                {TOUR_SLIDES.map((item, i) => (
+                  <button key={item.id} type="button" className="onboarding-dot" aria-label={`${item.headline}, slide ${i + 1} of ${TOUR_SLIDES.length}`} aria-current={i === slide} onClick={() => goToSlide(i)} />
+                ))}
+              </div>
             </div>
-          </div>
+          ) : (
+            // Keyed by step so each page replays its entrance in the direction of travel.
+            <div key={onAccount ? 'account' : current} style={{ '--dir': dir } as CSSProperties}>
+              {onAccount
+                ? <StepAccount mode={authMode} onModeChange={setAuthMode} />
+                : <StepOutput onSavingChange={setSavingScreen} onOpenScreens={() => void openScreens()} />}
+            </div>
           )}
         </div>
+
+        {!welcomed && <footer className="onboarding-footer">
+          {!touring && <div className="onboarding-progress" style={{ '--progress': progress } as CSSProperties} aria-hidden="true" />}
+          <div className="flex min-w-0 flex-col items-start gap-1">
+            {!touring && backTarget && (
+              <button type="button" className="onboarding-text-button" disabled={locked} onClick={back}>
+                <ChevronLeft size={14} aria-hidden="true" />{STEP_NAMES[backTarget]}
+              </button>
+            )}
+            {error && <p key={error} role="alert" className="onboarding-error text-[12px] text-red-400">{error}</p>}
+          </div>
+          {onAccount ? <span /> : (
+            <button
+              type="button"
+              className="btn-primary onboarding-cta"
+              disabled={locked}
+              onClick={() => touring ? (lastSlide ? void leaveTour() : goToSlide(slide + 1)) : void advance()}
+            >
+              {busy ? 'Saving…' : 'Continue'}
+            </button>
+          )}
+          <div className="flex justify-end">
+            {touring ? (
+              <button type="button" className="btn-secondary min-w-[140px]" disabled={locked} onClick={() => void leaveTour()}>Skip Tour</button>
+            ) : accountReady && !onAccount && (
+              <button type="button" className="btn-secondary min-w-[140px]" disabled={locked} onClick={() => void finish()}>Set Up Later</button>
+            )}
+          </div>
+        </footer>}
       </div>
     </div>
   )

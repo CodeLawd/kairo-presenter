@@ -41,8 +41,9 @@
     "package:ci:win-x64": "electron-builder --win --x64 --publish never",
     "package:ci:linux-x64": "electron-builder --linux --x64 --publish never",
     "verify:package": "node scripts/verify-package.mjs",
-    "release:mac": "npm run typecheck && electron-vite build && electron-builder --mac --arm64 --publish always",
-    "build:mac:unsigned": "npm run typecheck && electron-vite build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --arm64 -c.mac.identity=null -c.mac.notarize=false",
+    "release": "node scripts/release.mjs",
+    "release:mac":"npm run typecheck && electron-vite build && electron-builder --mac --arm64 --publish always",
+    "build:mac:unsigned": "npm run typecheck && electron-vite build && CSC_IDENTITY_AUTO_DISCOVERY=false KAIRO_ADHOC_SIGN=1 electron-builder --mac --arm64 -c.mac.identity=null -c.mac.notarize=false",
     "build:dir": "electron-vite build && electron-builder --dir -c.mac.identity=null -c.mac.notarize=false"
   },
   "dependencies": {

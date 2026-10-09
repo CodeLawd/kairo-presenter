@@ -261,7 +261,7 @@ export function SermonReader({ sermonId }: { sermonId: string }): React.ReactEle
 
   if (loading && !shown) {
     return (
-      <article className="min-h-80 w-full overflow-hidden rounded-xl bg-white shadow-[0_24px_60px_-32px_rgba(0,0,0,0.9)]">
+      <article className="min-h-80 w-full overflow-hidden rounded-xl bg-white shadow-[0_24px_60px_-32px_rgba(17, 18, 13,0.9)]">
         <div className="px-8 py-10 md:px-12 md:py-12">
           <div className="h-3 w-40 rounded bg-black/[0.06]" />
           <div className="mt-4 h-8 w-3/4 rounded bg-black/[0.07]" />

@@ -33,8 +33,8 @@ export class ErrorBoundary extends Component<Props, State> {
   public render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen bg-[#0d1b2a] text-slate-100 flex items-center justify-center p-6 font-sans">
-          <div className="w-full max-w-2xl bg-[#152538] rounded-none p-8 shadow-2xl">
+        <div className="min-h-screen bg-surface text-slate-100 flex items-center justify-center p-6 font-sans">
+          <div className="w-full max-w-2xl bg-surface-secondary rounded-none p-8 shadow-2xl">
             <div className="flex items-center space-x-3 text-red-500 mb-6">
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -63,7 +63,7 @@ export class ErrorBoundary extends Component<Props, State> {
               <span className="text-xs uppercase font-mono tracking-widest text-slate-400">
                 Error Message
               </span>
-              <div className="mt-2 bg-[#0d1b2a] p-4 font-mono text-sm text-red-400 overflow-x-auto whitespace-pre-wrap select-text">
+              <div className="mt-2 bg-surface p-4 font-mono text-sm text-red-400 overflow-x-auto whitespace-pre-wrap select-text">
                 {this.state.error?.toString()}
               </div>
             </div>
@@ -73,7 +73,7 @@ export class ErrorBoundary extends Component<Props, State> {
                 <span className="text-xs uppercase font-mono tracking-widest text-slate-400">
                   Stack Trace
                 </span>
-                <div className="mt-2 bg-[#0d1b2a] p-4 font-mono text-xs text-slate-400 h-48 overflow-y-auto whitespace-pre-wrap select-text">
+                <div className="mt-2 bg-surface p-4 font-mono text-xs text-slate-400 h-48 overflow-y-auto whitespace-pre-wrap select-text">
                   {this.state.errorInfo.componentStack}
                 </div>
               </div>

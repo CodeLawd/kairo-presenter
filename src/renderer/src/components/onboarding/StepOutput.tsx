@@ -1,148 +1,98 @@
-import { Check } from '@/icons'
-import { cn } from '@/lib/utils'
-import type { AppSettings, OverlayOutput } from '@shared/ipc'
-import { outputDestinationLabel } from '@shared/overlay-outputs'
-import { applyOutputRoute, outputRouteOf, type OutputRoute } from '@shared/overlay-defaults'
+import { useState, type CSSProperties } from 'react'
+import type { OverlayOutput } from '@shared/ipc'
+import type { StageDisplayConfig } from '@shared/program'
+import { makeProjectorOutput } from '@shared/overlay-defaults'
 import { useBootstrapStore } from '@/bootstrap/useBootstrapStore'
-import { DisplayPicker, useDisplays } from '@/components/screens/displays'
-import StepShell from './StepShell'
+import { DisplayPicker, useDisplays, type DisplayBound } from '@/components/screens/displays'
+import { ChevronRight } from '@/icons'
 
-const ROUTES: Array<{ id: OutputRoute; title: string; detail: string }> = [
-  {
-    id: 'screen',
-    title: 'Directly to a screen',
-    detail: 'A projector or TV plugged into this computer. No ProPresenter needed.',
-  },
-  {
-    id: 'propresenter',
-    title: 'Through ProPresenter',
-    detail: 'Kairo sends to ProPresenter, and ProPresenter drives the screens.',
-  },
-  {
-    id: 'both',
-    title: 'Both',
-    detail: 'A screen from Kairo, plus ProPresenter for stage and stream.',
-  },
-]
+type Binding = Pick<OverlayOutput, 'displayId' | 'displayLabel' | 'displaySize'>
 
 /**
- * How pushes reach the room, then which destinations are on. The route answer
- * only switches outputs on and off — the same `overlay.outputs` the Theme →
- * Output panel edits — so nothing is wizard-only, and whether the ProPresenter
- * steps come next is read straight off the result.
- *
- * Rendered as hairline-separated lists rather than a stack of cards — five of
- * those in a 520px dialog reads as clutter, not as choices.
+ * One audience screen and one stage screen — the common case. Everything else
+ * (more screens, NDI, themes per screen) is in the Screens window, linked below.
+ * Each pick saves immediately; the wizard waits on `onSavingChange`.
  */
-export default function StepOutput(): React.ReactElement {
-  const overlay = useBootstrapStore((s) => s.settings.overlay)
+export default function StepOutput({ onSavingChange, onOpenScreens }: {
+  onSavingChange: (saving: boolean) => void
+  onOpenScreens: () => void
+}): React.ReactElement {
   const settings = useBootstrapStore((s) => s.settings)
   const patchSettings = useBootstrapStore((s) => s.patchSettings)
   const displays = useDisplays()
-  const route = outputRouteOf(overlay.outputs)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
 
-  const save = async (outputs: OverlayOutput[]): Promise<void> => {
-    const next: AppSettings['overlay'] = { ...overlay, outputs }
-    patchSettings('overlay', next)
-    await window.api.settings.set('overlay', next)
+  const outputs = settings.overlay.outputs
+  const screen = outputs.find((output) => output.kind === 'screen') ?? makeProjectorOutput(0)
+  const stages = settings.presentation.stageDisplays
+  const stage: DisplayBound = stages[0] ?? { name: 'Stage display', displayId: null, displayLabel: '', displaySize: null }
+  const enabledScreens = outputs.filter((output) => output.kind === 'screen' && output.enabled)
+  const enabledStages = stages.filter((item) => item.enabled)
+
+  const run = async (write: () => Promise<void>): Promise<void> => {
+    setSaving(true)
+    onSavingChange(true)
+    setError('')
+    try {
+      await write()
+    } catch {
+      setError('The screen could not be saved. Please try again.')
+    } finally {
+      setSaving(false)
+      onSavingChange(false)
+    }
   }
 
-  // The answer is also the ProPresenter switch: only a setup that goes through
-  // ProPresenter turns the integration on (Settings → ProPresenter).
-  const chooseRoute = async (route: OutputRoute): Promise<void> => {
-    const propresenter = { ...settings.propresenter, enabled: route !== 'screen' }
-    patchSettings('propresenter', propresenter)
-    await window.api.settings.set('propresenter', propresenter)
-    await save(applyOutputRoute(overlay.outputs, route))
-  }
+  const saveAudience = (patch: Binding): Promise<void> => run(async () => {
+    const next = { ...screen, ...patch, enabled: patch.displayId !== null }
+    const overlay = {
+      ...settings.overlay,
+      outputs: outputs.some((output) => output.id === screen.id)
+        ? outputs.map((output) => output.id === screen.id ? next : output)
+        : [...outputs, next],
+    }
+    await window.api.settings.set('overlay', overlay)
+    patchSettings('overlay', overlay)
+  })
 
-  const patchOutput = (id: string, patch: Partial<OverlayOutput>): Promise<void> =>
-    save(overlay.outputs.map((output) => (output.id === id ? { ...output, ...patch } : output)))
-
-  const screen = overlay.outputs.find((output) => output.kind === 'screen' && output.enabled)
+  const saveStage = (patch: Binding): Promise<void> => run(async () => {
+    const enabled = patch.displayId !== null
+    let stageDisplays: StageDisplayConfig[]
+    if (stages[0]) stageDisplays = stages.map((item, i) => i === 0 ? { ...item, ...patch, enabled } : item)
+    else if (enabled) stageDisplays = [{ id: `stage-${Date.now().toString(36)}`, name: 'Stage display', enabled, ...patch, showNext: true, showClock: true, showTimer: true }]
+    else return
+    const presentation = { ...settings.presentation, stageDisplays }
+    await window.api.settings.set('presentation', presentation)
+    patchSettings('presentation', presentation)
+  })
 
   return (
-    <StepShell
-      title="How does Kairo reach your screens?"
-      blurb="You can change this any time in Theme → Output."
-    >
-      <ul className="-mx-1" role="radiogroup">
-        {ROUTES.map((option) => {
-          const selected = route === option.id
-          return (
-            <li key={option.id}>
-              <button
-                type="button"
-                role="radio"
-                aria-checked={selected}
-                onClick={() => void chooseRoute(option.id)}
-                className="flex w-full items-start gap-3 rounded-lg px-1 py-2.5 text-left transition-colors hover:bg-surface-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/40"
-              >
-                <span
-                  className={cn(
-                    'mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full border transition-colors',
-                    selected ? 'border-teal-500 bg-teal-500' : 'border-transparent bg-surface-elevated',
-                  )}
-                  aria-hidden="true"
-                >
-                  {selected && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-[13px] text-slate-200">{option.title}</span>
-                  <span className="block text-[11px] leading-snug text-slate-500">{option.detail}</span>
-                </span>
-              </button>
-            </li>
-          )
-        })}
-      </ul>
-
-      {screen && (
-        <DisplayPicker
-          id="onboarding-display"
-          target={screen}
-          displays={displays}
-          others={[]}
-          onChange={(patch) => void patchOutput(screen.id, patch)}
-        />
-      )}
-
-      {route && (
-        <details className="group">
-          <summary className="cursor-pointer text-[11px] text-slate-500 hover:text-slate-300">
-            Fine-tune which outputs are on
-          </summary>
-          <ul className="-mx-1 mt-2">
-            {overlay.outputs.map((output) => (
-              <li key={output.id}>
-                <button
-                  type="button"
-                  onClick={() => void patchOutput(output.id, { enabled: !output.enabled })}
-                  aria-pressed={output.enabled}
-                  className="flex w-full items-center gap-3 rounded-lg px-1 py-2.5 text-left transition-colors hover:bg-surface-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/40"
-                >
-                  <span
-                    className={`grid h-4 w-4 shrink-0 place-items-center rounded border transition-colors ${
-                      output.enabled
-                        ? 'border-teal-500 bg-teal-500 text-white'
-                        : 'border-transparent bg-surface-elevated'
-                    }`}
-                    aria-hidden="true"
-                  >
-                    {output.enabled && <Check size={11} strokeWidth={3} />}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate text-[13px] text-slate-200">
-                    {output.name}
-                  </span>
-                  <span className="shrink-0 text-[11px] text-slate-600">
-                    {outputDestinationLabel(output.kind)}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </details>
-      )}
-    </StepShell>
+    <div className="onboarding-setup">
+      <h2 id="onboarding-slide-title" className="onboarding-setup-title ob-in">Configure Screens</h2>
+      <fieldset disabled={saving} className="onboarding-group min-w-0">
+        <div className="onboarding-row ob-in" style={{ '--i': 1 } as CSSProperties}>
+          <div>
+            <label htmlFor="ob-audience" className="text-[16px] font-semibold text-slate-200">Audience Screen</label>
+            <p className="mt-1 text-[13px] text-slate-500">What the room sees</p>
+          </div>
+          <DisplayPicker id="ob-audience" target={{ ...screen, name: 'Audience screen' }} displays={displays} others={[...enabledScreens.filter((output) => output.id !== screen.id), ...enabledStages]} onChange={(patch) => void saveAudience(patch)} />
+        </div>
+        <div className="onboarding-row ob-in" style={{ '--i': 2 } as CSSProperties}>
+          <div>
+            <label htmlFor="ob-stage" className="text-[16px] font-semibold text-slate-200">Stage Screen</label>
+            <p className="mt-1 text-[13px] text-slate-500">What the pastor and band see</p>
+          </div>
+          <DisplayPicker id="ob-stage" target={stage} displays={displays} others={[...enabledScreens, ...enabledStages.filter((item) => item.id !== stages[0]?.id)]} onChange={(patch) => void saveStage(patch)} />
+        </div>
+      </fieldset>
+      {error && <p key={error} role="alert" className="onboarding-error mt-4 text-sm text-red-400">{error}</p>}
+      <p className="ob-rise mt-6 text-center text-[13px] text-slate-400">
+        {displays.length <= 1 ? 'No projector or TV connected yet? Skip this and connect one before your service.' : 'More screens and stage layouts can be set up in Screens.'}
+      </p>
+      <button type="button" className="ob-rise mt-4 inline-flex items-center gap-1 text-[14px] font-medium text-teal-400 hover:text-teal-300" onClick={onOpenScreens} disabled={saving}>
+        Open full Screen Configuration <ChevronRight size={14} aria-hidden="true" />
+      </button>
+    </div>
   )
 }

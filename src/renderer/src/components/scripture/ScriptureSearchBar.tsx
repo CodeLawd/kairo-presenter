@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { BookOpen, ChevronDown, Clock, Loader, Search, X } from '@/icons';
+import { BookOpen, ChevronDown, Clock, Loader, X } from '@/icons';
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -10,7 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { BookCompletion } from "@shared/scripture-query";
+import { isLikelyPhraseQuery, type BookCompletion } from "@shared/scripture-query";
 import type {
   ScriptureResult,
   ScriptureTranslation,
@@ -44,6 +44,32 @@ export interface ScriptureSearchBarProps {
 /** "John 3:16" or "John 3:16-18" — something smaller than its chapter. */
 const isWithinChapter = (result: ScriptureResult): boolean => result.reference.includes(":");
 
+/** The verse text as read, without the ¶ paragraph marks some Bibles carry. */
+const verseText = (result: ScriptureResult): string =>
+  result.verses.map((verse) => verse.text).join(" ").replace(/¶\s*/g, "").trim();
+
+/**
+ * `text` with the words of `query` emphasised, so a phrase search shows why a
+ * verse matched. Whole query first; otherwise each word of 3+ letters.
+ */
+function Highlighted({ text, query }: { text: string; query: string }): React.ReactElement {
+  const escape = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const phrase = query.trim().replace(/\s+/g, " ");
+  const words = phrase.split(" ").filter((word) => word.length >= 3);
+  const pattern = text.toLowerCase().includes(phrase.toLowerCase())
+    ? escape(phrase).replace(/ /g, "\\s+")
+    : words.map(escape).join("|");
+  if (!pattern) return <>{text}</>;
+  const parts = text.split(new RegExp(`(${pattern})`, "gi"));
+  return (
+    <>
+      {parts.map((part, index) =>
+        index % 2 === 1 ? <mark key={index} className="bg-transparent font-semibold text-slate-100">{part}</mark> : part,
+      )}
+    </>
+  );
+}
+
 type Item =
   | { kind: "book"; completion: BookCompletion }
   | { kind: "verse"; result: ScriptureResult }
@@ -53,8 +79,9 @@ const BAR_FIELD =
   "relative flex h-8 min-w-0 items-center rounded-md border border-input bg-surface-secondary transition-colors focus-within:border-slate-400";
 
 /**
- * The reference lookup, like ProPresenter's Scripture Lookup: "jos 1 5 9" or
- * "John 3:16", with ▾ for recent lookups.
+ * The one scripture search: a reference ("jos 1 5 9", "John 3:16") or the words
+ * of a verse ("love is patient"), with ▾ for recent lookups. Phrase matches list
+ * their text first so the verse can be confirmed before its reference.
  *
  * Under it, one list: book completions, then live verse matches (or, after ▾,
  * recent lookups). Enter
@@ -95,6 +122,9 @@ export function ScriptureSearchBar({
           : []),
       ];
   const open = (focused || recentsOpen) && !dismissed && items.length > 0;
+  // Remembered words, not a reference: show each match's text first so the
+  // operator can confirm it is the verse they mean, then where it is.
+  const phraseMode = isLikelyPhraseQuery(query);
 
   // New text, new list: reopen it and drop the pick.
   useEffect(() => {
@@ -156,7 +186,7 @@ export function ScriptureSearchBar({
       <input
         ref={inputRef as React.Ref<HTMLInputElement>}
         className="h-full min-w-0 flex-1 bg-transparent px-2 text-[13px] text-slate-100 outline-none placeholder:text-slate-500"
-        placeholder="Reference — John 3:16"
+        placeholder="Search a reference or words — John 3:16, love is patient"
         value={query}
         onChange={(e) => onQueryChange(e.target.value)}
         onKeyDown={handleKeyDown}
@@ -170,7 +200,7 @@ export function ScriptureSearchBar({
         }}
         autoComplete="off"
         spellCheck={false}
-        aria-label="Scripture reference"
+        aria-label="Search scripture by reference or words"
         aria-autocomplete="list"
         aria-controls="scripture-search-suggestions"
         aria-expanded={open}
@@ -220,7 +250,8 @@ export function ScriptureSearchBar({
               role="option"
               aria-selected={index === active}
               className={cn(
-                "flex items-center rounded-md text-xs",
+                "flex rounded-md text-xs",
+                phraseMode && item.kind === "verse" ? "items-start" : "items-center",
                 index === active ? "bg-surface-tertiary" : "hover:bg-surface-tertiary",
               )}
               onMouseEnter={() => setActive(index)}
@@ -248,13 +279,23 @@ export function ScriptureSearchBar({
                       </kbd>
                     )}
                   </>
+                ) : phraseMode ? (
+                  <span className="min-w-0 flex-1 py-0.5">
+                    <span className="line-clamp-2 text-[13px] leading-snug text-slate-300">
+                      <Highlighted text={verseText(item.result)} query={query} />
+                    </span>
+                    <span className="mt-1 block text-[11px] font-medium text-slate-500">
+                      {item.result.reference}
+                      <span className="font-normal"> · {item.result.translation}</span>
+                    </span>
+                  </span>
                 ) : (
                   <>
-                    <span className="w-20 shrink-0 truncate font-semibold text-teal-300">
+                    <span className="w-28 shrink-0 truncate font-semibold text-slate-100">
                       {item.result.reference}
                     </span>
                     <span className="min-w-0 flex-1 truncate text-slate-400">
-                      {item.result.verses.map((verse) => verse.text).join(" ")}
+                      {verseText(item.result)}
                     </span>
                   </>
                 )}
@@ -262,7 +303,7 @@ export function ScriptureSearchBar({
               {/* Two explicit choices, always shown: the found verse on its own, or
                   the chapter it sits in. Clicking the row itself adds the verse. */}
               {item.kind === "verse" && isWithinChapter(item.result) && (
-                <div className="mr-1 flex shrink-0 items-center gap-1">
+                <div className={cn("mr-1 flex shrink-0 items-center gap-1", phraseMode && "mt-1.5")}>
                   <button
                     type="button"
                     tabIndex={-1}
@@ -297,47 +338,6 @@ export function ScriptureSearchBar({
   );
 }
 
-/** Full-text search, kept apart from the reference lookup — ProPresenter's Search field. */
-export function ScripturePhraseSearch({
-  value,
-  loading,
-  onChange,
-  onSubmit,
-}: {
-  value: string;
-  loading: boolean;
-  onChange: (value: string) => void;
-  onSubmit: (value: string) => void;
-}): React.ReactElement {
-  return (
-    <form
-      className={BAR_FIELD}
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (value.trim()) onSubmit(value.trim());
-      }}
-    >
-      <Search size={13} className="ml-2.5 shrink-0 text-slate-500" aria-hidden="true" />
-      <input
-        className="h-full min-w-0 flex-1 bg-transparent px-2 text-[13px] text-slate-100 outline-none placeholder:text-slate-500"
-        placeholder="Search text — love is patient"
-        value={value}
-        disabled={loading}
-        onChange={(e) => onChange(e.target.value)}
-        autoComplete="off"
-        spellCheck={false}
-        aria-label="Search scripture text"
-        name="scripture-phrase"
-      />
-      {value && (
-        <Button type="button" variant="ghost" size="icon-xs" className="mr-1 shrink-0" onClick={() => onChange("")} aria-label="Clear search text">
-          <X aria-hidden="true" />
-        </Button>
-      )}
-    </form>
-  );
-}
-
 /** The Bible every lookup and search reads from, by its full name. */
 export function ScriptureTranslationSelect({
   translation,
@@ -365,7 +365,7 @@ export function ScriptureTranslationSelect({
       </SelectTrigger>
       <SelectContent
         position="popper"
-        align="end"
+        align="start"
         sideOffset={4}
         className="max-h-[min(26rem,var(--radix-select-content-available-height))] min-w-0"
       >

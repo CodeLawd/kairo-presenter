@@ -559,7 +559,7 @@ function StatusDot({ tone }: { tone: Status['tone'] }): React.ReactElement {
       aria-hidden="true"
       className={cn(
         'h-1.5 w-1.5 shrink-0 rounded-full',
-        tone === 'live' ? 'bg-teal-400' : tone === 'warn' ? 'bg-slate-400' : 'bg-slate-700',
+        tone === 'live' ? 'bg-live' : tone === 'warn' ? 'bg-slate-400' : 'bg-slate-700',
       )}
     />
   )
