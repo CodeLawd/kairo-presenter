@@ -105,8 +105,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
 
   if (google) {
     const expected = `${publicWebUrl}/v1/auth/google/callback`;
+    // A trailing slash is the same address; normalise it rather than refuse.
+    google.callbackUrl = google.callbackUrl.replace(/\/+$/, "");
     if (google.callbackUrl !== expected) {
-      throw new ConfigError(`GOOGLE_CALLBACK_URL must be ${expected} so Google sign-in sets its cookie on the website origin`);
+      // Name what was received — a URL, not a secret — so a deploy log shows
+      // the mismatch instead of only the expectation.
+      throw new ConfigError(
+        `GOOGLE_CALLBACK_URL is ${google.callbackUrl} but must be ${expected} so Google sign-in sets its cookie on the website origin. Remove GOOGLE_CALLBACK_URL to use that value automatically.`,
+      );
     }
   }
 

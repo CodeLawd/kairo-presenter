@@ -59,6 +59,11 @@ describe('loadConfig', () => {
 
   it('rejects a Google callback on the API origin instead of the website', () => {
     expect(() => loadConfig({ ...BASE, GOOGLE_CLIENT_ID: 'id', GOOGLE_CLIENT_SECRET: 'secret', GOOGLE_CALLBACK_URL: 'http://localhost:3000/v1/auth/google/callback' })).toThrow(/GOOGLE_CALLBACK_URL/)
+    // The log names the value it got, so a wrong host is visible at a glance.
+    expect(() => loadConfig({ ...BASE, GOOGLE_CLIENT_ID: 'id', GOOGLE_CLIENT_SECRET: 'secret', GOOGLE_CALLBACK_URL: 'http://localhost:3000/v1/auth/google/callback' })).toThrow(/is http:\/\/localhost:3000\/v1\/auth\/google\/callback but must be/)
+    // A trailing slash is the same address.
+    const slashed = loadConfig({ ...BASE, GOOGLE_CLIENT_ID: 'id', GOOGLE_CLIENT_SECRET: 'secret', GOOGLE_CALLBACK_URL: 'http://localhost:3001/v1/auth/google/callback/' })
+    expect(slashed.google?.callbackUrl).toBe('http://localhost:3001/v1/auth/google/callback')
   })
 
   it('refuses to boot with a Brevo key but no sender address', () => {
