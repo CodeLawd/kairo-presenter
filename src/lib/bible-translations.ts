@@ -153,6 +153,13 @@ export const BIBLE_TRANSLATIONS: readonly BibleTranslationDefinition[] = [
 /** KJV ships with Kairo, so a new install can show scripture with no download or key. */
 export const DEFAULT_TRANSLATION_ID = 'KJV'
 
+/**
+ * The translation the pack tooling (converter, installer temp files) targets
+ * when none is named. Separate from DEFAULT_TRANSLATION_ID: KJV is bundled and
+ * never shipped as a pack, NKJV is the original downloadable pack.
+ */
+export const DEFAULT_PACK_TRANSLATION_ID = 'NKJV'
+
 /** Ids shipped inside resources/bible.db — derived, never hand-listed. */
 export const BUNDLED_TRANSLATION_IDS: readonly string[] = BIBLE_TRANSLATIONS.filter(
   (entry) => entry.bundled,

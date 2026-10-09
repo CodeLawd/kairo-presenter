@@ -24,9 +24,9 @@ test('every registry id is unique and normalized', () => {
   }
 })
 
-test('the default translation is a registered API translation', () => {
-  assert.equal(DEFAULT_TRANSLATION_ID, 'NKJV')
-  assert.equal(getTranslationDefinition('NKJV')?.access, 'api')
+test('the default translation ships with Kairo, so it works with no download or key', () => {
+  assert.equal(DEFAULT_TRANSLATION_ID, 'KJV')
+  assert.equal(isBundledTranslation(DEFAULT_TRANSLATION_ID), true)
 })
 
 test('bundled translations ship offline and can never be removed or overwritten', () => {

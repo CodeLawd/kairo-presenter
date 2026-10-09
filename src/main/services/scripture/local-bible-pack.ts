@@ -7,7 +7,7 @@ import { gunzipSync } from 'zlib'
 import os from 'os'
 import { BIBLE_VERSE_COUNTS } from './bible-verse-counts'
 import {
-  DEFAULT_TRANSLATION_ID,
+  DEFAULT_PACK_TRANSLATION_ID,
   getDownloadablePack,
   getTranslationDefinition,
 } from '@shared/bible-translations'
@@ -228,7 +228,7 @@ export async function downloadBiblePack(
   }
 }
 
-export function temporaryPackPath(translationId = DEFAULT_TRANSLATION_ID): string {
+export function temporaryPackPath(translationId = DEFAULT_PACK_TRANSLATION_ID): string {
   const slug = translationId.toLowerCase().replace(/[^a-z0-9]+/g, '') || 'bible'
   return path.join(os.tmpdir(), `kairo-${slug}-${randomUUID()}.db`)
 }

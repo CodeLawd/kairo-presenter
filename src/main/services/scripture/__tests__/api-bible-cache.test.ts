@@ -90,7 +90,7 @@ test('tracks chapter progress and verse counts per translation', () => {
   assert.equal(state!.totalChapters, 1189)
   assert.equal(state!.status, 'partial')
   assert.equal(state!.expiresAt, NOW + API_CACHE_MAX_AGE_MS)
-  assert.deepEqual(cache.getIncompleteChapters(BIBLE_ID, ['JHN.1', 'JHN.2']), ['JHN.2'])
+  assert.deepEqual(cache.getIncompleteChapters(BIBLE_ID, ['JHN.1', 'JHN.2'], NOW), ['JHN.2'])
 })
 
 test('reports a fully cached translation as downloaded and an old one as stale', () => {

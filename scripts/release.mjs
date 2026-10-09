@@ -51,10 +51,11 @@ const answer = (await rl.question('  Publish this release? (y/N) ')).trim().toLo
 rl.close()
 if (answer !== 'y' && answer !== 'yes') fail('Cancelled. Nothing was changed.')
 
-// 4. Check it builds before anything leaves this machine.
+// 4. Run the same checks as the release build, before anything leaves this machine.
 console.log('\n→ Typecheck and tests')
 run('npm', ['run', 'typecheck'])
 run('npm', ['test'])
+run('npm', ['run', 'test:main'])
 
 // 5. Bump package.json + package-lock.json, commit "Release vX", tag vX.
 console.log(`\n→ Bumping to v${next}`)

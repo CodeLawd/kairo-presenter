@@ -28,7 +28,7 @@ import { gzipSync } from 'zlib'
 import { dirname, resolve } from 'path'
 import { BOOKS } from '../src/main/services/scripture/bible-db'
 import { validatePackRowsFor, type PackVerseRow } from '../src/main/services/scripture/local-bible-pack'
-import { DEFAULT_TRANSLATION_ID } from '../src/lib/bible-translations'
+import { DEFAULT_PACK_TRANSLATION_ID } from '../src/lib/bible-translations'
 
 // ─── Source JSON shapes ───────────────────────────────────────────────────────
 
@@ -75,7 +75,7 @@ export function parseConverterArgs(argv: string[]): ConverterOptions {
   let input: string | null = null
   let output: string | null = null
   let force = false
-  let translation: string = DEFAULT_TRANSLATION_ID
+  let translation: string = DEFAULT_PACK_TRANSLATION_ID
   let name: string | undefined
   let language: string | undefined
 
@@ -127,7 +127,7 @@ function fail(message: string): never {
  */
 export function parsePackSource(
   raw: unknown,
-  expectedId: string = DEFAULT_TRANSLATION_ID,
+  expectedId: string = DEFAULT_PACK_TRANSLATION_ID,
 ): { rows: PackVerseRow[]; name: string; language: string; translationId: string } {
   if (!raw || typeof raw !== 'object') fail('source is not a JSON object')
   const source = raw as Partial<SourceFile>
@@ -255,7 +255,7 @@ export function writePackFile(
   validated: { rows: PackVerseRow[]; name: string; language: string },
   outputPath: string,
   force: boolean,
-  translationId: string = DEFAULT_TRANSLATION_ID,
+  translationId: string = DEFAULT_PACK_TRANSLATION_ID,
 ): BuiltPack {
   const normalized = translationId.toUpperCase()
   if (existsSync(outputPath) && !force) {
