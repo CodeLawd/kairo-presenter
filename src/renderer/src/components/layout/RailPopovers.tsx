@@ -14,6 +14,7 @@ import {
   Waveform,
 } from '@/icons'
 import { cn } from '@/lib/utils'
+import { hueStyle, railHueClass } from '@/lib/hue'
 import { useAccountStore } from '@/stores/useAccountStore'
 import { useAppStore } from '@/stores/useAppStore'
 import { useBootstrapStore } from '@/bootstrap/useBootstrapStore'
@@ -28,9 +29,6 @@ import type { AudioDevice } from '@shared/ipc'
  * header band with the thing itself, then details, then actions. Flat — tone
  * and spacing do the separating — with a short staggered rise on open.
  */
-
-const RAIL_BUTTON =
-  'relative flex size-10 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-surface-tertiary hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 data-[state=open]:bg-surface-elevated data-[state=open]:text-zinc-50'
 
 const PANEL = 'z-50 overflow-hidden rounded-xl border border-zinc-700 bg-surface-elevated text-zinc-200 animate-spring-in'
 
@@ -103,8 +101,8 @@ export function AccountRailButton(): React.ReactElement {
 
   return (
     <Popover.Root>
-      <Popover.Trigger className={RAIL_BUTTON} aria-label="Account" data-tooltip="Account" data-tooltip-side="right">
-        <AccountAvatar session={session} size={26} />
+      <Popover.Trigger className={railHueClass()} style={hueStyle('amber')} aria-label="Account" data-tooltip="Account" data-tooltip-side="right">
+        <AccountAvatar session={session} size={26} tinted />
         <StatusDot tone={signedOut ? 'idle' : offline ? 'warn' : 'ok'} />
       </Popover.Trigger>
       <Popover.Portal>
@@ -215,7 +213,7 @@ export function AudioRailButton(): React.ReactElement {
 
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
-      <Popover.Trigger className={RAIL_BUTTON} aria-label="Audio input" data-tooltip="Audio input" data-tooltip-side="right">
+      <Popover.Trigger className={railHueClass()} style={hueStyle('lime')} aria-label="Audio input" data-tooltip="Audio input" data-tooltip-side="right">
         <Mic size={19} aria-hidden="true" />
         <StatusDot tone={capturing ? 'ok' : 'idle'} />
       </Popover.Trigger>

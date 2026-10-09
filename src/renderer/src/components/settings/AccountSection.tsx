@@ -24,11 +24,22 @@ export function accountInitials(session: Pick<SessionSnapshot, 'user'>): string 
 }
 
 /** The account avatar: initials on stone, or a person glyph when there are none. */
-export function AccountAvatar({ session, size }: { session: Pick<SessionSnapshot, 'user'>; size: number }): React.ReactElement {
+export function AccountAvatar({
+  session,
+  size,
+  tinted = false,
+}: {
+  session: Pick<SessionSnapshot, 'user'>
+  size: number
+  /** Paint in the surrounding `--hue` (the rail button) instead of stone. */
+  tinted?: boolean
+}): React.ReactElement {
   const initials = accountInitials(session)
   return (
     <span
-      className="grid shrink-0 place-items-center rounded-full bg-stone font-semibold text-white"
+      className={`grid shrink-0 place-items-center rounded-full font-semibold ${
+        tinted ? 'bg-[rgb(var(--hue)/0.22)] text-[rgb(var(--hue))]' : 'bg-stone text-white'
+      }`}
       style={{ width: size, height: size, fontSize: Math.round(size * 0.36) }}
       aria-hidden="true"
     >

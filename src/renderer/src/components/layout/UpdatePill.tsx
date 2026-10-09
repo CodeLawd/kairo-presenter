@@ -21,13 +21,15 @@ export default function UpdatePill(): React.ReactElement | null {
 
   if (status.state === 'idle' || status.state === 'checking' || status.state === 'error') return null
 
+  // The brand blue — the one header item that should catch the eye.
   const base =
-    'flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded px-2 text-[11px] font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-1'
+    'flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded px-2.5 text-[11px] font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-live/50'
+  const solid = 'bg-live text-white hover:bg-live/85'
 
   if (status.state === 'downloading') {
     return (
       <div
-        className={`${base} text-zinc-500`}
+        className={`${base} bg-live/15 text-live`}
         role="status"
         aria-label={`Downloading update${typeof status.percent === 'number' ? `, ${status.percent} percent` : ''}`}
       >
@@ -42,7 +44,7 @@ export default function UpdatePill(): React.ReactElement | null {
       <button
         type="button"
         onClick={() => void download()}
-        className={`${base} text-teal-400 hover:bg-tint-teal focus-visible:ring-teal-400`}
+        className={`${base} ${solid}`}
         title={`Kairo ${status.version} is available — download it now, install whenever you like`}
       >
         <Download size={13} aria-hidden="true" />
@@ -57,11 +59,9 @@ export default function UpdatePill(): React.ReactElement | null {
       type="button"
       onClick={() => (confirming ? void install() : setConfirming(true))}
       onBlur={() => setConfirming(false)}
-      className={`${base} ${
-        confirming
-          ? 'bg-tint-amber text-amber-200 focus-visible:ring-amber-400'
-          : 'text-teal-400 hover:bg-tint-teal focus-visible:ring-teal-400'
-      }`}
+      // Confirming keeps the blue but rings it, so the second click reads as a
+      // deliberate step rather than the same button again.
+      className={`${base} ${solid} ${confirming ? 'ring-2 ring-white/70' : ''}`}
       title={
         confirming
           ? 'Click again to quit and install now'

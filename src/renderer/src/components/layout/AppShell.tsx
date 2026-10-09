@@ -22,15 +22,17 @@ import { clearLiveAll } from '@/lib/clear-live-output'
 import { useBootstrapStore } from '@/bootstrap/useBootstrapStore'
 import { propresenterEnabled } from '@shared/pp-connect-gate'
 import UpdatePill from './UpdatePill'
+import { hueStyle, railHueClass, type Hue } from '@/lib/hue'
 import { HEADER_TOOLBAR_SLOT_ID } from './header-toolbar'
 
-const workspaces: Array<{ id: NavRoute; label: string; icon: typeof CircleGauge }> = [
-  { id: 'operator', label: 'Operator', icon: CircleGauge },
-  { id: 'scripture', label: 'Scripture', icon: BookOpen },
-  { id: 'lyrics', label: 'Lyrics', icon: Music2 },
-  { id: 'documents', label: 'Documents', icon: FileText },
-  { id: 'theme', label: 'Theme', icon: Palette },
+const workspaces: Array<{ id: NavRoute; label: string; icon: typeof CircleGauge; hue: Hue }> = [
+  { id: 'operator', label: 'Operator', icon: CircleGauge, hue: 'green' },
+  { id: 'scripture', label: 'Scripture', icon: BookOpen, hue: 'orange' },
+  { id: 'lyrics', label: 'Lyrics', icon: Music2, hue: 'violet' },
+  { id: 'documents', label: 'Documents', icon: FileText, hue: 'cyan' },
+  { id: 'theme', label: 'Theme', icon: Palette, hue: 'pink' },
 ]
+
 
 interface WorkspaceRailProps {
   currentRoute: NavRoute
@@ -46,7 +48,7 @@ export function WorkspaceRail({
   return (
     <nav className="workspace-rail flex shrink-0 flex-col items-center" aria-label="Workspaces">
       <div className="flex w-full flex-1 flex-col items-center gap-1 px-1.5 py-3">
-        {workspaces.map(({ id, label, icon: Icon }) => {
+        {workspaces.map(({ id, label, icon: Icon, hue }) => {
           const active = currentRoute === id
           return (
             <button
@@ -57,13 +59,8 @@ export function WorkspaceRail({
               aria-current={active ? 'page' : undefined}
               data-tooltip={label}
               data-tooltip-side="right"
-              className={[
-                'flex size-10 items-center justify-center rounded-md transition-colors duration-150',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500',
-                active
-                  ? 'bg-surface-elevated text-zinc-50 shadow-sm'
-                  : 'text-zinc-500 hover:bg-surface-tertiary hover:text-zinc-200',
-              ].join(' ')}
+              style={hueStyle(hue)}
+              className={railHueClass(active)}
             >
               <Icon size={19} weight={active ? 'fill' : 'regular'} aria-hidden="true" />
             </button>
@@ -71,13 +68,15 @@ export function WorkspaceRail({
         })}
       </div>
       <div className="flex flex-col items-center gap-1 pb-1">
+        <MediaRailButton />
         <AudioRailButton />
         <AccountRailButton />
       </div>
       <button
         type="button"
         onClick={onOpenSettings}
-        className="mb-3 flex size-10 items-center justify-center rounded-md text-zinc-500 hover:bg-surface-tertiary hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+        // Settings stays neutral — it's housekeeping, not a place to work.
+        className="mb-3 flex size-10 items-center justify-center rounded-md text-zinc-300 transition-colors duration-150 hover:bg-surface-tertiary hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
         aria-label="Open Settings"
         data-tooltip="Settings"
         data-tooltip-side="right"
@@ -85,6 +84,34 @@ export function WorkspaceRail({
         <Settings size={19} aria-hidden="true" />
       </button>
     </nav>
+  )
+}
+
+/**
+ * Opens and closes the media dock. Not a workspace — the dock slides in over
+ * whichever one is open — so it sits with the tools, not the pages. A blue dot
+ * means media is on screen right now.
+ */
+function MediaRailButton(): React.ReactElement {
+  const open = useMediaDockStore((s) => s.open)
+  const toggle = useMediaDockStore((s) => s.toggle)
+  const liveId = useMediaDockStore((s) => s.liveItemId)
+  const liveName = useMediaDockStore((s) => s.liveName)
+  const label = open ? 'Close media' : 'Open media'
+  return (
+    <button
+      type="button"
+      onClick={() => toggle()}
+      aria-label={liveName ? `${label} — ${liveName} on screen` : label}
+      aria-pressed={open}
+      data-tooltip={liveName ? `Media — ${liveName} on screen` : 'Media'}
+      data-tooltip-side="right"
+      style={hueStyle('coral')}
+      className={railHueClass(open)}
+    >
+      <MediaLibrary size={19} weight={open ? 'fill' : 'regular'} aria-hidden="true" />
+      {liveId && <span className="absolute right-2 top-2 size-1.5 rounded-full bg-live" aria-hidden="true" />}
+    </button>
   )
 }
 
@@ -101,6 +128,7 @@ function StatusItem({
   detail,
   state,
   icon: Icon,
+  hue,
   onClick,
   action,
 }: {
@@ -108,6 +136,8 @@ function StatusItem({
   detail: string
   state: 'ready' | 'active' | 'offline' | 'warning'
   icon: typeof Radio
+  /** Icon colour. */
+  hue: Hue
   /** Makes the status a button (e.g. ProPresenter: connect). */
   onClick?: () => void
   /** What clicking does, shown in the tooltip. */
@@ -122,7 +152,7 @@ function StatusItem({
 
   const content = (
     <>
-      <Icon size={13} className="text-zinc-500" aria-hidden="true" />
+      <Icon size={13} style={hueStyle(hue)} className="text-[rgb(var(--hue))]" aria-hidden="true" />
       <span className={`h-1.5 w-1.5 rounded-full ${dotClass}`} aria-hidden="true" />
       <span className="header-status-label whitespace-nowrap text-[11px] font-medium text-zinc-500">
         {label}
@@ -211,10 +241,6 @@ export default function AppShell({
   // header once it is switched on in Settings.
   const showPp = useBootstrapStore((s) => propresenterEnabled(s.settings))
   const screens = useScreensStatus()
-  const mediaOpen = useMediaDockStore((s) => s.open)
-  const toggleMedia = useMediaDockStore((s) => s.toggle)
-  const mediaLiveId = useMediaDockStore((s) => s.liveItemId)
-  const mediaLiveName = useMediaDockStore((s) => s.liveName)
   /** Session is live while the transcript pipeline runs; show output ref when one is up. */
   const isLive = isTranscribing || Boolean(liveOutputLabel?.trim())
   const liveDetail = liveOutputLabel?.trim() || (isTranscribing ? 'Listening' : null)
@@ -245,6 +271,7 @@ export default function AppShell({
           detail={screens.detail}
           state={screens.state}
           icon={MonitorPlay}
+          hue="cyan"
           onClick={() => useAppStore.getState().openScreens()}
           action="Open Screens (⌥⌘1)"
         />
@@ -259,43 +286,13 @@ export default function AppShell({
           }
           state={ppState === 'connected' ? 'ready' : ppState === 'connecting' ? 'warning' : 'offline'}
           icon={Radio}
+          hue="violet"
           onClick={onProPresenterStatus}
           action={ppState === 'connected' ? 'Open ProPresenter settings' : 'Click to connect'}
         />}
       </div>
 
       <div className="header-live flex shrink-0 items-center gap-1 pl-2">
-        <button
-          type="button"
-          onClick={() => toggleMedia()}
-          className={[
-            'relative flex h-7 shrink-0 items-center gap-1.5 rounded px-2 text-[11px] font-medium transition-colors duration-150',
-            'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/30',
-            mediaOpen || mediaLiveId
-              ? 'text-teal-400 hover:bg-tint-teal'
-              : 'text-zinc-500 hover:bg-surface-tertiary hover:text-zinc-200',
-          ].join(' ')}
-          aria-label={mediaOpen ? 'Close media' : 'Open media'}
-          aria-pressed={mediaOpen}
-          title={
-            mediaLiveName
-              ? mediaOpen
-                ? `Close media — ${mediaLiveName} on screen`
-                : `Open media — ${mediaLiveName} on screen`
-              : mediaOpen
-                ? 'Close media'
-                : 'Open media'
-          }
-        >
-          <MediaLibrary size={15} weight={mediaOpen ? 'fill' : 'regular'} aria-hidden="true" />
-          <span>Media</span>
-          {mediaLiveId && (
-            <span
-              className="absolute right-1 top-1 size-1.5 rounded-full bg-teal-400"
-              aria-hidden="true"
-            />
-          )}
-        </button>
         {houseTrack && (
           <button
             type="button"
@@ -314,7 +311,7 @@ export default function AppShell({
         <div
           className={[
             'header-live-label flex h-7 min-w-0 max-w-[16rem] items-center gap-1.5 px-2 text-[11px] font-medium',
-            isLive ? 'text-rose-400' : 'text-zinc-500',
+            isLive ? 'text-rose-400' : 'text-[rgb(var(--hue-coral)/0.85)]',
           ].join(' ')}
           title={
             liveOutputLabel?.trim()
@@ -328,7 +325,7 @@ export default function AppShell({
           <span
             className={[
               'h-1.5 w-1.5 shrink-0 rounded-full',
-              isLive ? 'bg-rose-500' : 'bg-zinc-600',
+              isLive ? 'bg-rose-500' : 'bg-[rgb(var(--hue-coral)/0.45)]',
             ].join(' ')}
             aria-hidden="true"
           />
@@ -349,7 +346,7 @@ export default function AppShell({
           aria-label="Clear text and background"
           title="Clear text and the dock background"
         >
-          <Eraser size={13} aria-hidden="true" />
+          <Eraser size={13} style={hueStyle('pink')} className="text-[rgb(var(--hue))]" aria-hidden="true" />
           {clearing ? 'Clearing' : 'Clear'}
         </button>
         <UpdatePill />

@@ -29,6 +29,18 @@
     --accent-950: 41 41 34;
     --on-accent: 17 18 13;
     --live: 108 145 194;
+    /* Icon hues — earthy, half-saturated tones that sit with ink and paper
+       (sage, terracotta, ochre…), one per tool so a colour means the same
+       thing everywhere. None is the live blue, reserved for what's on screen. */
+    --hue-green: 143 176 138;
+    --hue-orange: 217 142 79;
+    --hue-violet: 163 139 196;
+    --hue-cyan: 95 168 160;
+    --hue-pink: 207 127 154;
+    --hue-coral: 201 111 94;
+    --hue-lime: 163 174 98;
+    --hue-amber: 212 165 90;
+    --hue-indigo: 138 147 201;
     --tint-live: 36 46 58;
     --tint-teal: 47 47 41;
     --tint-red: 55 27 22;
@@ -82,6 +94,15 @@
     --accent-950: 213 209 201;
     --on-accent: 255 251 244;
     --live: 108 145 194;
+    --hue-green: 78 122 72;
+    --hue-orange: 166 92 32;
+    --hue-violet: 110 82 152;
+    --hue-cyan: 38 118 110;
+    --hue-pink: 160 70 102;
+    --hue-coral: 160 70 54;
+    --hue-lime: 104 114 40;
+    --hue-amber: 150 104 30;
+    --hue-indigo: 80 90 160;
     --tint-live: 226 232 240;
     --tint-teal: 236 232 224;
     --tint-red: 253 227 221;

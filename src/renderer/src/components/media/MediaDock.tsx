@@ -1167,7 +1167,8 @@ function SidebarRow({
         active ? 'row-selected' : 'text-slate-400 hover:bg-surface-tertiary',
       )}
     >
-      <span className={cn('shrink-0', active ? 'text-slate-200' : 'text-slate-500')}>{icon}</span>
+      {/* Media's colour (coral, as on its rail button) marks every collection. */}
+      <span className="shrink-0 text-[rgb(var(--hue-coral))]">{icon}</span>
       <span className="flex-1 truncate text-[12px]">{label}</span>
       <span className={cn('shrink-0 text-[10px] tabular-nums', active ? 'text-slate-400' : 'text-slate-600')}>
         {count}
