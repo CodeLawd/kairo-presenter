@@ -17,10 +17,10 @@ export default function DownloadPage(): React.ReactElement {
         <CardContent>
           <div className="grid gap-2.5 sm:grid-cols-2">
             {[
-              { label: 'Apple silicon Mac', detail: 'M series', href: '/api/download/mac-arm64', icon: <IconApple /> },
-              { label: 'Intel Mac', detail: 'Intel chip', href: '/api/download/mac-x64', icon: <IconApple /> },
-              { label: 'Windows', detail: 'Windows 10 or later', href: '/api/download/windows-x64', icon: <IconWindows /> },
-              { label: 'Linux', detail: 'AppImage · x64', href: '/api/download/linux-x64', icon: null },
+              { label: 'Apple silicon Mac', detail: 'M series', href: '/download/thanks?platform=mac-arm64', icon: <IconApple /> },
+              { label: 'Intel Mac', detail: 'Intel chip', href: '/download/thanks?platform=mac-x64', icon: <IconApple /> },
+              { label: 'Windows', detail: 'Windows 10 or later', href: '/download/thanks?platform=windows-x64', icon: <IconWindows /> },
+              { label: 'Linux', detail: 'AppImage · x64', href: '/download/thanks?platform=linux-x64', icon: null },
             ].map(({ label, detail, href, icon }) => (
               <a key={href} className="flex min-h-16 items-center gap-3 rounded-lg bg-muted/60 px-4 py-3 transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" href={href}>
                 {icon}

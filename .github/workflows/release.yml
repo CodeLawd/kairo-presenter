@@ -93,7 +93,16 @@ jobs:
           cache: npm
 
       - name: Clean install (never reuse node_modules across OSes)
-        run: npm ci
+        # Native modules download prebuilt binaries/headers during install; a
+        # runner network blip there fails the whole matrix, so retry.
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            npm ci && exit 0
+            echo "::warning::npm ci failed (attempt $attempt of 3), retrying in 30s"
+            sleep 30
+          done
+          exit 1
 
       - name: Rebuild native modules for Electron
         run: npm run rebuild:native
