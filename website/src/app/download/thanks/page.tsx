@@ -33,7 +33,12 @@ const platforms: Record<Platform, { name: string; steps: React.ReactNode[] }> = 
 function macSteps(): React.ReactNode[] {
   return [
     <>Open the <b>.dmg</b> from your Downloads folder and drag Kairo into <b>Applications</b>.</>,
-    <>Open Kairo. If macOS says it <b>can’t verify the developer</b>, go to <b>System Settings → Privacy &amp; Security</b> and click <b>Open Anyway</b>. You only do this once.</>,
+    <>Open Kairo. If macOS says <b>“Kairo” Not Opened</b>, click <b>Done</b>, then open <b>System Settings → Privacy &amp; Security</b>, scroll to the bottom and click <b>Open Anyway</b> next to Kairo. You only do this once.</>,
+    <>
+      Prefer Terminal? Run{' '}
+      <code className="rounded bg-[#11120D]/[.06] px-1.5 py-0.5 text-[.9em]">xattr -cr /Applications/Kairo.app</code>{' '}
+      and open Kairo again.
+    </>,
   ]
 }
 
