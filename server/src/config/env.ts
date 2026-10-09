@@ -84,6 +84,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const mongoUrl = env.MONGO_URL?.trim() ?? "";
   if (!mongoUrl) throw new ConfigError("MONGO_URL is required");
 
+  // Production must name the website: falling back to localhost there breaks
+  // Google sign-in, email links and the cookie origin, and the failure would
+  // surface somewhere else with a misleading message.
+  if (production && !env.PUBLIC_WEB_URL?.trim()) {
+    throw new ConfigError("PUBLIC_WEB_URL is required in production (the website address, e.g. https://kairo-presenter.vercel.app)");
+  }
   const publicWebUrl = (env.PUBLIC_WEB_URL?.trim() || "http://localhost:3001").replace(/\/$/, "");
 
   const google =

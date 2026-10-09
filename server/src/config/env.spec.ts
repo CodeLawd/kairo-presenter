@@ -26,9 +26,18 @@ describe('loadConfig', () => {
   })
 
   it('rejects a weak vault key in production only', () => {
-    const weak = { ...BASE, VAULT_ENCRYPTION_KEY: 'short', NODE_ENV: 'production' }
+    const weak = { ...BASE, VAULT_ENCRYPTION_KEY: 'short', NODE_ENV: 'production', PUBLIC_WEB_URL: 'https://kairo.test' }
     expect(() => loadConfig(weak)).toThrow(/VAULT_ENCRYPTION_KEY must be at least 32/)
     expect(loadConfig({ ...weak, NODE_ENV: 'development' }).vaultEncryptionKey).toBe('short')
+  })
+
+  it('requires the website address in production only', () => {
+    // A localhost fallback in production broke Google sign-in with an error
+    // that blamed GOOGLE_CALLBACK_URL instead of the missing address.
+    const prod = { ...BASE, NODE_ENV: 'production' }
+    expect(() => loadConfig(prod)).toThrow(/PUBLIC_WEB_URL is required/)
+    expect(loadConfig({ ...prod, PUBLIC_WEB_URL: 'https://kairo.test/' }).publicWebUrl).toBe('https://kairo.test')
+    expect(loadConfig(BASE).publicWebUrl).toBe('http://localhost:3001')
   })
 
   it('treats unset Google and Brevo as features that are off, not as errors', () => {
