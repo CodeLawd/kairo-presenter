@@ -1,8 +1,9 @@
 'use client'
 
+import { safeReturnPath } from '@contracts/return-path'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Suspense, useCallback, useEffect, useState } from 'react'
-import { AuthSplit, type BrandPanel } from '@/components/auth/AuthSplit'
+import { AuthSplit } from '@/components/auth/AuthSplit'
 import { linkBtn } from '@/components/auth/styles'
 import { Progress } from '@/components/onboarding/Progress'
 import { StepChurch } from '@/components/onboarding/StepChurch'
@@ -13,33 +14,18 @@ import { getSession, useAccessToken, type SessionSnapshot } from '@/lib/session'
 
 const TOTAL = 3
 
-const COPY: { title: string; blurb: string; brand: BrandPanel }[] = [
+const COPY: { title: string; blurb: string }[] = [
   {
     title: 'Confirm your email',
     blurb: 'We sent a six-digit code to your inbox. It’s good for 24 hours.',
-    brand: { quote: 'First, let’s make sure we can reach you.' },
   },
   {
     title: 'About your church',
     blurb: 'Add the church name and service times your team will use.',
-    brand: {
-      quote: (
-        <>
-          Set up the church once. <span className="font-semibold">The team can take it from there.</span>
-        </>
-      ),
-    },
   },
   {
     title: 'You’re all set for now',
     blurb: 'Your account is ready. Choose a download for your computer, then sign in to Kairo with this account.',
-    brand: {
-      quote: (
-        <>
-          Ready for the service you planned. <span className="font-semibold">And the moments you didn&rsquo;t.</span>
-        </>
-      ),
-    },
   },
 ]
 
@@ -51,7 +37,7 @@ function OnboardingContent(): React.ReactElement {
   const [session, setSession] = useState<SessionSnapshot | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
 
-  const returnTo = params.get('returnTo') ?? '/dashboard'
+  const returnTo = safeReturnPath(params.get('returnTo'))
   const afterVerify = params.get('afterVerify') === '1'
   const raw = Number(params.get('step'))
   const step = Number.isFinite(raw) && raw >= 1 && raw <= TOTAL ? Math.trunc(raw) : 1
@@ -106,7 +92,6 @@ function OnboardingContent(): React.ReactElement {
     <AuthSplit
       title={copy.title}
       blurb={loadError ?? copy.blurb}
-      brand={copy.brand}
       header={<Progress step={step} total={TOTAL} />}
       footer={
         <div className="flex items-center justify-between gap-4">
@@ -153,7 +138,7 @@ export default function OnboardingPage(): React.ReactElement {
   return (
     <Suspense
       fallback={
-        <AuthSplit title={COPY[0].title} brand={COPY[0].brand}>
+        <AuthSplit title={COPY[0].title}>
           {null}
         </AuthSplit>
       }

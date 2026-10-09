@@ -30,6 +30,7 @@ import { UsersService } from '../users/users.service'
 import { OrgsService } from '../orgs/orgs.service'
 import { APP_CONFIG } from '../config/config.module'
 import type { AppConfig } from '../config/env'
+import { platformRoleOf } from '../common/platform-admin'
 import { clearRefreshCookie, REFRESH_COOKIE, setRefreshCookie } from './refresh-cookie'
 
 @Controller('v1/auth')
@@ -179,6 +180,10 @@ export class AuthController {
         email: user.email,
         name: user.name,
         emailVerified: user.emailVerifiedAt !== null,
+        // Kairo staff — unlocks the website's /admin console. The API checks
+        // again on every admin request; this only decides what to show.
+        isAdmin: platformRoleOf(user, this.config) !== null,
+        platformRole: platformRoleOf(user, this.config),
       },
       orgId: claims.orgId,
       role: claims.role,

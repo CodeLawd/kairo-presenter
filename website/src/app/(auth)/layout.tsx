@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { AppTheme } from '@/components/dashboard/app-theme'
 
 /**
  * A pass-through layout. It exists only to hang shared metadata on the auth
@@ -19,5 +20,10 @@ export default function AuthLayout({
 }: {
   children: React.ReactNode
 }): React.ReactElement {
-  return <>{children}</>
+  return (
+    <>
+      <AppTheme />
+      {children}
+    </>
+  )
 }

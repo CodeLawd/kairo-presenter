@@ -45,16 +45,19 @@ function macSteps(): React.ReactNode[] {
 export default async function DownloadThanks({
   searchParams,
 }: {
-  searchParams: Promise<{ platform?: string }>
+  searchParams: Promise<{ platform?: string; source?: string }>
 }): Promise<React.ReactElement> {
-  const { platform } = await searchParams
+  const { platform, source: rawSource } = await searchParams
+  // Where the button was, for the admin download stats.
+  const source = rawSource && /^[a-z0-9-]{1,32}$/.test(rawSource) ? rawSource : 'direct'
   if (!platform || !(platform in platforms)) redirect('/#get')
   const { name, steps } = platforms[platform as Platform]
-  const href = `/api/download/${platform}`
+  // The automatic start was already counted; a manual retry is not a second download.
+  const href = `/api/download/${platform}?source=${source}&retry=1`
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-[#EAE7DF] px-5 py-16 text-[#11120D]">
-      <StartDownload platform={platform} />
+      <StartDownload platform={platform} source={source} />
       <div className="w-full max-w-xl">
         <img src="/brand/kairo-icon.png" alt="" width={56} height={56} className="size-14" />
         <p className="mt-8 text-xs font-semibold tracking-[.18em] text-[#646157]">KAIRO FOR {name.toUpperCase()}</p>

@@ -29,7 +29,8 @@ export function Logo({
       width={WIDTH}
       height={HEIGHT}
       priority={priority}
-      className="block w-auto"
+      // `brand-logo`: drawn dark in the app's light theme (globals.css).
+      className="brand-logo block w-auto"
       style={{ height }}
     />
   );

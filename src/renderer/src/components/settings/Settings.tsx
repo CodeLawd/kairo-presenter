@@ -831,6 +831,7 @@ function AudioSection({
 }) {
   const [devices, setDevices] = useState<AudioDevice[]>([])
   const [devicesLoading, setDevicesLoading] = useState(true)
+  const [outputs, setOutputs] = useState<MediaDeviceInfo[]>([])
   const [listening, setListening] = useState(false)
   const [captureError, setCaptureError] = useState<string | null>(null)
   const [localLevel, setLocalLevel] = useState<import('@shared/ipc').AudioLevel | null>(null)
@@ -849,6 +850,13 @@ function AudioSection({
         setDevicesLoading(false)
       })
     }
+    const refreshOutputs = (): void => {
+      void navigator.mediaDevices.enumerateDevices().then((all) => {
+        if (!cancelled) setOutputs(all.filter((d) => d.kind === 'audiooutput' && d.deviceId !== 'default' && d.label))
+      }).catch(() => undefined)
+    }
+    refreshOutputs()
+    navigator.mediaDevices.addEventListener('devicechange', refreshOutputs)
     refresh()
     // Labels and IDs fill in once permission is granted, and change when a
     // microphone is plugged in or removed.
@@ -856,6 +864,7 @@ function AudioSection({
     return () => {
       cancelled = true
       navigator.mediaDevices.removeEventListener('devicechange', refresh)
+      navigator.mediaDevices.removeEventListener('devicechange', refreshOutputs)
     }
   }, [])
 
@@ -1001,6 +1010,28 @@ function AudioSection({
               <p className="mt-2 text-[11px] leading-snug text-[#FF453A]">{captureError}</p>
             ) : null}
           </div>
+        </div>
+      </section>
+
+      <section className="space-y-2">
+        <h3 className="px-0.5 text-xs font-semibold tracking-tight text-white/60">Output</h3>
+        <div className="space-y-2 rounded-xl bg-surface-tertiary p-3.5">
+          <label className="label" htmlFor="audio-output-device">Playback device</label>
+          <select
+            id="audio-output-device"
+            className="input w-full"
+            value={settings.presentation.audio.outputLabel}
+            onChange={(event) => update('presentation', {
+              audio: { ...settings.presentation.audio, outputLabel: event.target.value },
+            })}
+          >
+            <option value="">System Default</option>
+            {settings.presentation.audio.outputLabel && !outputs.some((d) => d.label === settings.presentation.audio.outputLabel) && (
+              <option value={settings.presentation.audio.outputLabel}>{settings.presentation.audio.outputLabel} (unavailable)</option>
+            )}
+            {outputs.map((device) => <option key={device.deviceId} value={device.label}>{device.label}</option>)}
+          </select>
+          <p className="text-[11px] leading-snug text-white/40">Routes music, video and camera sound to this device.</p>
         </div>
       </section>
 
@@ -2096,7 +2127,16 @@ export default function Settings({
     },
     audio: () => {
       publish('audio', settings.audio)
-      window.api.settings.set('audio', settings.audio).then(() => showSaved('audio'))
+      Promise.all([
+        window.api.settings.set('audio', settings.audio),
+        window.api.settings.get('presentation').then((current) =>
+          window.api.settings.set('presentation', { ...current, audio: { ...current.audio, outputLabel: settings.presentation.audio.outputLabel } }),
+        ),
+      ]).then(() => {
+        const current = useBootstrapStore.getState().settings.presentation
+        publish('presentation', { ...current, audio: { ...current.audio, outputLabel: settings.presentation.audio.outputLabel } })
+        showSaved('audio')
+      })
     },
     apikeys: () => {
       // ApiKeysSection owns save (drafts + clearKeys). Keep a no-op for the map.

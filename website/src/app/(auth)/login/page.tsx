@@ -9,14 +9,7 @@ import { PasswordField } from '@/components/auth/PasswordField'
 import { btnPrimary, input, label, linkBtn, msg, msgError, msgOk } from '@/components/auth/styles'
 import { api, ApiError } from '@/lib/api'
 import { getSession, seedAccessToken } from '@/lib/session'
-
-const BRAND = {
-  quote: (
-    <>
-      Be ready for what&rsquo;s planned. <span className="font-semibold">And what isn&rsquo;t.</span>
-    </>
-  ),
-}
+import { safeReturnPath } from '@contracts/return-path'
 
 function LoginPageContent(): React.ReactElement {
   const router = useRouter()
@@ -24,10 +17,15 @@ function LoginPageContent(): React.ReactElement {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const googleError = params.get('googleError')
+  const [error, setError] = useState<string | null>(googleError
+    ? googleError === 'cancelled' ? 'Google sign-in was cancelled. You can try again.'
+      : googleError === 'expired' ? 'Your Google sign-in expired. Please try again.'
+      : 'Google sign-in could not finish. Try again, or sign in with your email and password.'
+    : null)
   const [notice, setNotice] = useState<string | null>(null)
 
-  const returnTo = params.get('returnTo') ?? '/dashboard'
+  const returnTo = safeReturnPath(params.get('returnTo'))
 
   const submit = async (event: React.FormEvent): Promise<void> => {
     event.preventDefault()
@@ -74,7 +72,6 @@ function LoginPageContent(): React.ReactElement {
     <AuthSplit
       title="Welcome back"
       blurb="Sign in to manage your church, your team, and the computers running Kairo."
-      brand={BRAND}
       footer={
         <p className="m-0">
           New to Kairo?{' '}
@@ -141,7 +138,7 @@ function LoginPageContent(): React.ReactElement {
  */
 export default function LoginPage(): React.ReactElement {
   return (
-    <Suspense fallback={<AuthSplit title="Welcome back" brand={BRAND}>{null}</AuthSplit>}>
+    <Suspense fallback={<AuthSplit title="Welcome back">{null}</AuthSplit>}>
       <LoginPageContent />
     </Suspense>
   )

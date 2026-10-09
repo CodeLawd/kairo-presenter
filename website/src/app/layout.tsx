@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { Barlow, Inter, JetBrains_Mono, Manrope, Geist } from 'next/font/google'
 import './globals.css'
 import { cn } from "@/lib/utils";
+import { DASHBOARD_THEME_BOOT_SCRIPT } from '@/lib/dashboard-theme-script'
 
 const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
@@ -53,13 +54,18 @@ export default function RootLayout({
     // `data-scroll-behavior` is required from Next 16 on: the framework no
     // longer forces instant scroll on navigation, and globals.css sets
     // `scroll-behavior: smooth` on html.
+    // suppressHydrationWarning: the boot script sets data-dash-theme on <html>
+    // before React hydrates, which is intended.
     <html
+      suppressHydrationWarning
       lang="en"
       data-scroll-behavior="smooth"
       className={cn(barlow.variable, manrope.variable, jetbrainsMono.variable, inter.variable, "font-sans", geist.variable)}
     >
       <head>
         <meta name="theme-color" content="#11120D" />
+        {/* Dashboard light mode, set before first paint (no dark flash). */}
+        <script dangerouslySetInnerHTML={{ __html: DASHBOARD_THEME_BOOT_SCRIPT }} />
       </head>
       <body>{children}</body>
     </html>

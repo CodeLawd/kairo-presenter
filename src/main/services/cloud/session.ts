@@ -93,7 +93,7 @@ export class CloudSessionService {
   private pairingListeners = new Set<PairingListener>()
   private secretsListeners = new Set<SecretsListener>()
   private refreshTimer: ReturnType<typeof setInterval> | null = null
-  private pairingAbort = false
+  private pairingGeneration = 0
   private nextRefreshAllowedAt = 0
   /** Failed refreshes in a row, for the retry schedule; reset on success. */
   private offlineAttempts = 0
@@ -160,7 +160,7 @@ export class CloudSessionService {
     this.refreshTimer = null
     if (this.offlineRetry) clearTimeout(this.offlineRetry)
     this.offlineRetry = null
-    this.pairingAbort = true
+    this.pairingGeneration += 1
   }
 
   async signUp(input: SignUpInput): Promise<SessionSnapshot> {
@@ -184,6 +184,7 @@ export class CloudSessionService {
   }
 
   async signOut(): Promise<SessionSnapshot> {
+    this.cancelPairing()
     this.secretsHydrated = false
     this.lastSecretsUpdatedAt = null
     try {
@@ -250,7 +251,7 @@ export class CloudSessionService {
    * does it, which is both safer and the only place a password manager works.
    */
   async startPairing(): Promise<DevicePairingState> {
-    this.pairingAbort = false
+    const generation = ++this.pairingGeneration
     try {
       const started = await this.api.request<DeviceStartPayload>(
         'post',
@@ -258,6 +259,7 @@ export class CloudSessionService {
         { deviceId: this.getDeviceId(), ...this.devicePayload() },
         { authenticated: false },
       )
+      if (generation !== this.pairingGeneration) return this.getPairing()
       this.emitPairing({
         status: 'waiting',
         userCode: started.userCode,
@@ -268,9 +270,10 @@ export class CloudSessionService {
       void shell.openExternal(started.verificationUri).catch(() => {
         // The code is on screen either way; opening the browser is a courtesy.
       })
-      void this.pollPairing(started)
+      void this.pollPairing(started, generation)
       return this.getPairing()
     } catch (error) {
+      if (generation !== this.pairingGeneration) return this.getPairing()
       return this.emitPairing({
         ...IDLE_PAIRING,
         status: 'error',
@@ -280,17 +283,17 @@ export class CloudSessionService {
   }
 
   cancelPairing(): DevicePairingState {
-    this.pairingAbort = true
+    this.pairingGeneration += 1
     return this.emitPairing({ ...IDLE_PAIRING })
   }
 
-  private async pollPairing(started: DeviceStartPayload): Promise<void> {
+  private async pollPairing(started: DeviceStartPayload, generation: number): Promise<void> {
     let intervalSec = started.interval
     const deadline = Date.now() + started.expiresIn * 1000
 
-    while (!this.pairingAbort && Date.now() < deadline) {
+    while (generation === this.pairingGeneration && Date.now() < deadline) {
       await delay(intervalSec * 1000)
-      if (this.pairingAbort) return
+      if (generation !== this.pairingGeneration) return
 
       try {
         const result = await this.api.request<DevicePollPayload>(
@@ -300,6 +303,7 @@ export class CloudSessionService {
           { authenticated: false },
         )
 
+        if (generation !== this.pairingGeneration) return
         if (result.state === 'approved') {
           await this.adopt(result)
           this.emitPairing({ ...IDLE_PAIRING, status: 'approved' })
@@ -323,7 +327,7 @@ export class CloudSessionService {
       }
     }
 
-    if (!this.pairingAbort) {
+    if (generation === this.pairingGeneration) {
       this.emitPairing({
         ...IDLE_PAIRING,
         status: 'expired',

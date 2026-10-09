@@ -1,3 +1,7 @@
+'use client'
+
+import { useEffect, useState } from 'react'
+import { api } from '@/lib/api'
 import { btnSecondary } from '@/components/auth/styles'
 
 /** Google's own four-colour mark — their branding rules require it unaltered. */
@@ -17,6 +21,15 @@ function GoogleMark(): React.ReactElement {
  * A full navigation rather than a fetch — the API runs the OAuth redirect dance.
  */
 export function GoogleButton({ returnTo }: { returnTo: string }): React.ReactElement {
+  const [enabled, setEnabled] = useState(false)
+  useEffect(() => {
+    let active = true
+    void api<{ enabled: boolean }>('/v1/auth/google/status')
+      .then((status) => { if (active) setEnabled(status.enabled) })
+      .catch(() => {})
+    return () => { active = false }
+  }, [])
+  if (!enabled) return <></>
   return (
     <>
       <a className={btnSecondary} href={`/v1/auth/google?returnTo=${encodeURIComponent(returnTo)}`}>
@@ -24,9 +37,9 @@ export function GoogleButton({ returnTo }: { returnTo: string }): React.ReactEle
         Continue with Google
       </a>
       <div className="my-6 flex items-center gap-3" aria-hidden="true">
-        <span className="rule-left h-px flex-1" />
-        <span className="font-mono text-[10.5px] uppercase tracking-[0.16em] text-faint">or</span>
-        <span className="rule-right h-px flex-1" />
+        <span className="h-px flex-1 bg-paper/10" />
+        <span className="text-[12.5px] text-faint">or</span>
+        <span className="h-px flex-1 bg-paper/10" />
       </div>
     </>
   )

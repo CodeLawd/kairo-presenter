@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { usePresentation } from '@/hooks/useProgramState'
 import { overlayMediaUrl } from '@shared/overlay-template'
 import { useImportRequest } from '@/hooks/useImportRequest'
 import { useBoothToolboxStore } from '@/stores/useBoothToolboxStore'
@@ -9,6 +10,7 @@ import { useTracksPlaybackStore } from '@/stores/useTracksPlaybackStore'
  * switches. The NDI overlay never hears this.
  */
 export function TracksPlayer(): null {
+  const [presentation] = usePresentation()
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const library = useTracksPlaybackStore((state) => state.library)
   const seekToken = useTracksPlaybackStore((state) => state.seekToken)
@@ -84,6 +86,27 @@ export function TracksPlayer(): null {
     if (audio.ended) audio.currentTime = 0
     void audio.play().catch(() => undefined)
   }, [live, library.livePaused])
+
+  useEffect(() => {
+    const audio = audioRef.current as (HTMLAudioElement & { setSinkId?: (id: string) => Promise<void> }) | null
+    if (!audio?.setSinkId) return
+    let cancelled = false
+    const route = (): void => {
+      void navigator.mediaDevices.enumerateDevices().then((devices) => {
+        if (cancelled) return
+        const match = presentation.audio.outputLabel
+          ? devices.find((d) => d.kind === 'audiooutput' && d.label === presentation.audio.outputLabel)
+          : null
+        return audio.setSinkId?.(match?.deviceId ?? '')
+      }).catch(() => undefined)
+    }
+    route()
+    navigator.mediaDevices.addEventListener('devicechange', route)
+    return () => {
+      cancelled = true
+      navigator.mediaDevices.removeEventListener('devicechange', route)
+    }
+  }, [presentation.audio.outputLabel])
 
   useEffect(() => {
     if (seekToken === 0) return

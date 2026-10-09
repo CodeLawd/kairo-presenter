@@ -9,14 +9,7 @@ import { PasswordField } from '@/components/auth/PasswordField'
 import { btnPrimary, input, label, msg, msgError } from '@/components/auth/styles'
 import { api, ApiError } from '@/lib/api'
 import { seedAccessToken } from '@/lib/session'
-
-const BRAND = {
-  quote: (
-    <>
-      Set up once. <span className="font-semibold">Bring the team in when you&rsquo;re ready.</span>
-    </>
-  ),
-}
+import { safeReturnPath } from '@contracts/return-path'
 
 function SignUpPageContent(): React.ReactElement {
   const router = useRouter()
@@ -28,7 +21,7 @@ function SignUpPageContent(): React.ReactElement {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const returnTo = params.get('returnTo')
+  const returnTo = params.get('returnTo') ? safeReturnPath(params.get('returnTo')) : null
   // Google sign-up skips the form, and Google has already confirmed the
   // address — onboarding moves past the email step on its own.
   const onboarding = returnTo ? `/onboarding?returnTo=${encodeURIComponent(returnTo)}` : '/onboarding'
@@ -59,7 +52,6 @@ function SignUpPageContent(): React.ReactElement {
     <AuthSplit
       title="Set up Kairo for your church"
       blurb="Free during early access. Next you’ll confirm your email and add your service times."
-      brand={BRAND}
       footer={
         <p className="m-0">
           Already have an account?{' '}
@@ -153,7 +145,7 @@ function SignUpPageContent(): React.ReactElement {
  */
 export default function SignUpPage(): React.ReactElement {
   return (
-    <Suspense fallback={<AuthSplit title="Set up Kairo for your church" brand={BRAND}>{null}</AuthSplit>}>
+    <Suspense fallback={<AuthSplit title="Set up Kairo for your church">{null}</AuthSplit>}>
       <SignUpPageContent />
     </Suspense>
   )

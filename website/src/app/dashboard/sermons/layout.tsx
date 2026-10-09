@@ -52,7 +52,7 @@ export default function SermonsLayout({
 
   return (
     <div className="grid h-full min-h-0 w-full lg:grid-cols-[minmax(0,21rem)_minmax(0,1fr)]">
-      <aside className="hidden min-h-0 border-r border-white/15 bg-gradient-to-b from-white/[0.02] to-transparent lg:block">
+      <aside className="hidden min-h-0 border-r border-border bg-gradient-to-b from-foreground/[0.02] to-transparent lg:block">
         <div className="h-full overflow-y-auto">
           <SermonList />
         </div>

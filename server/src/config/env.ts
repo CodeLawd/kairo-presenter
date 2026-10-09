@@ -23,6 +23,18 @@ export interface AppConfig {
   mail: { apiKey: string; fromEmail: string; fromName: string } | null;
   /** 32-byte material (base64 or passphrase) for org API-key vault AES-GCM. */
   vaultEncryptionKey: string;
+  /**
+   * Superadmins, by email (SUPERADMIN_EMAILS, comma-separated; ADMIN_EMAILS is
+   * read too, its earlier name). Config rather than data, so the owner of the
+   * platform can never be removed from the website. Superadmins grant and
+   * revoke the database-held `admin` role. Empty = no one.
+   */
+  superadminEmails: string[];
+  /**
+   * Shared secret the website sends when it records an installer download
+   * (DOWNLOAD_INGEST_KEY). Unset = download tracking is off.
+   */
+  downloadIngestKey: string | null;
   sermons: SermonConfig;
 }
 
@@ -72,6 +84,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const mongoUrl = env.MONGO_URL?.trim() ?? "";
   if (!mongoUrl) throw new ConfigError("MONGO_URL is required");
 
+  const publicWebUrl = (env.PUBLIC_WEB_URL?.trim() || "http://localhost:3001").replace(/\/$/, "");
+
   const google =
     env.GOOGLE_CLIENT_ID?.trim() && env.GOOGLE_CLIENT_SECRET?.trim()
       ? {
@@ -79,9 +93,16 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
           clientSecret: env.GOOGLE_CLIENT_SECRET.trim(),
           callbackUrl:
             env.GOOGLE_CALLBACK_URL?.trim() ||
-            "http://localhost:3000/v1/auth/google/callback",
+            `${publicWebUrl}/v1/auth/google/callback`,
         }
       : null;
+
+  if (google) {
+    const expected = `${publicWebUrl}/v1/auth/google/callback`;
+    if (google.callbackUrl !== expected) {
+      throw new ConfigError(`GOOGLE_CALLBACK_URL must be ${expected} so Google sign-in sets its cookie on the website origin`);
+    }
+  }
 
   // Brevo is the transport. Unset means "log the message instead of sending it",
   // which is what lets the whole API run with no third-party account at all.
@@ -126,10 +147,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       .split(",")
       .map((origin) => origin.trim())
       .filter(Boolean),
-    publicWebUrl: env.PUBLIC_WEB_URL?.trim() || "http://localhost:3001",
+    publicWebUrl,
     google,
     mail,
     vaultEncryptionKey,
+    superadminEmails: (env.SUPERADMIN_EMAILS ?? env.ADMIN_EMAILS ?? "")
+      .split(",")
+      .map((email) => email.trim().toLowerCase())
+      .filter(Boolean),
+    downloadIngestKey: env.DOWNLOAD_INGEST_KEY?.trim() || null,
     sermons: {
       // The recap is the whole point of the feature and it is read by people
       // who were not there, so quality wins over a few cents a service. The

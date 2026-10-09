@@ -3,6 +3,7 @@ import { Loader } from '@/icons'
 import { createSingleFlight, MIN_PASSWORD_LENGTH, validateSignUp } from '@shared/cloud/auth-state'
 import { useAccountStore } from '@/stores/useAccountStore'
 import PasswordInput from '@/components/ui/password-input'
+import { ProviderLogo } from '@/components/brand/ProviderLogos'
 
 export type AuthMode = 'signIn' | 'signUp'
 type Mode = AuthMode
@@ -23,6 +24,8 @@ export default function AuthPanel({
   onModeChange?: (mode: Mode) => void
 }): React.ReactElement {
   const setSession = useAccountStore((s) => s.setSession)
+  const pairing = useAccountStore((s) => s.pairing)
+  const setPairing = useAccountStore((s) => s.setPairing)
   const [mode, setMode] = useState<Mode>(initialMode)
   const [name, setName] = useState('')
   const [churchName, setChurchName] = useState('')
@@ -82,8 +85,38 @@ export default function AuthPanel({
     setNotice('If that address has an account, a reset link is on its way.')
   }
 
+  const pairInBrowser = async (): Promise<void> => {
+    if (busy || pairing.status === 'waiting') return
+    setBusy(true)
+    setError(null)
+    setNotice(null)
+    try { setPairing(await window.api.account.startDevicePairing()) }
+    catch { setError('Could not open browser sign-in. Please try again.') }
+    finally { setBusy(false) }
+  }
+
+  if (pairing.status === 'waiting') {
+    return (
+      <div className="flex flex-col gap-4" role="status" aria-live="polite">
+        <p className="text-sm text-slate-300">Finish signing in with Google in your browser, then approve this computer.</p>
+        <p className="text-center font-mono text-2xl tracking-widest text-white">{pairing.userCode}</p>
+        <p className="text-xs text-slate-500">Check that the browser shows this same code. Kairo will finish signing in automatically.</p>
+        <button type="button" className="btn-secondary" onClick={() => void window.api.account.openWeb(`/activate?userCode=${encodeURIComponent(pairing.userCode ?? '')}`)}>Open browser again</button>
+        <button type="button" className="text-xs text-slate-400 hover:text-white" onClick={() => void window.api.account.cancelDevicePairing().then(setPairing)}>Cancel</button>
+      </div>
+    )
+  }
+
   return (
     <div className="onboarding-step flex flex-col gap-4">
+      <button type="button" className="btn-secondary inline-flex items-center justify-center gap-2" disabled={busy} onClick={() => void pairInBrowser()}>
+        <ProviderLogo id="google" />
+        Continue with Google
+      </button>
+      {pairing.message && <p className="text-xs text-rose-400" role="alert">{pairing.message}</p>}
+      <div className="flex items-center gap-3 text-xs text-slate-500" aria-hidden="true">
+        <span className="h-px flex-1 bg-surface-border" />or<span className="h-px flex-1 bg-surface-border" />
+      </div>
       {mode === 'signUp' && (
         <>
           <div>

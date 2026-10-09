@@ -7,14 +7,6 @@ import { AuthSplit } from '@/components/auth/AuthSplit'
 import { btnPrimary, btnSecondary } from '@/components/auth/styles'
 import { api, ApiError } from '@/lib/api'
 
-const BRAND = {
-  quote: (
-    <>
-      Almost there. <span className="font-semibold">See you Sunday.</span>
-    </>
-  ),
-}
-
 function VerifyEmailPageContent(): React.ReactElement {
   const params = useSearchParams()
   const [state, setState] = useState<'working' | 'done' | 'failed'>('working')
@@ -47,7 +39,6 @@ function VerifyEmailPageContent(): React.ReactElement {
             ? `${error ?? 'This link no longer works.'} Sign in and we’ll send you a fresh code.`
             : 'Checking your link. This only takes a moment.'
       }
-      brand={BRAND}
     >
       {state === 'done' ? (
         <Link className={btnPrimary} href="/dashboard">
@@ -68,7 +59,7 @@ function VerifyEmailPageContent(): React.ReactElement {
  */
 export default function VerifyEmailPage(): React.ReactElement {
   return (
-    <Suspense fallback={<AuthSplit title="Confirming…" brand={BRAND}>{null}</AuthSplit>}>
+    <Suspense fallback={<AuthSplit title="Confirming…">{null}</AuthSplit>}>
       <VerifyEmailPageContent />
     </Suspense>
   )

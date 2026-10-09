@@ -7,14 +7,6 @@ import { PasswordField } from '@/components/auth/PasswordField'
 import { btnPrimary, msg, msgError } from '@/components/auth/styles'
 import { api, ApiError } from '@/lib/api'
 
-const BRAND = {
-  quote: (
-    <>
-      Locked out happens. <span className="font-semibold">Your library is right where you left it.</span>
-    </>
-  ),
-}
-
 function ResetPasswordPageContent(): React.ReactElement {
   const router = useRouter()
   const params = useSearchParams()
@@ -49,7 +41,6 @@ function ResetPasswordPageContent(): React.ReactElement {
         // A reset signs every device out — say so, or the Kairo computer
         // dropping out looks like a fault.
         blurb="Every device on this account has been signed out, including the Kairo computer. Sign in again on each one before your next service."
-        brand={BRAND}
       >
         <button className={btnPrimary} type="button" onClick={() => router.push('/login')}>
           Sign in with your new password
@@ -62,7 +53,6 @@ function ResetPasswordPageContent(): React.ReactElement {
     <AuthSplit
       title="Choose a new password"
       blurb="Changing it signs out every device on this account, including the Kairo computer."
-      brand={BRAND}
     >
       <form className="flex flex-col gap-5" onSubmit={submit}>
         <PasswordField
@@ -96,7 +86,7 @@ function ResetPasswordPageContent(): React.ReactElement {
  */
 export default function ResetPasswordPage(): React.ReactElement {
   return (
-    <Suspense fallback={<AuthSplit title="Choose a new password" brand={BRAND}>{null}</AuthSplit>}>
+    <Suspense fallback={<AuthSplit title="Choose a new password">{null}</AuthSplit>}>
       <ResetPasswordPageContent />
     </Suspense>
   )

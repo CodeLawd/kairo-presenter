@@ -71,7 +71,7 @@ export class DeviceFlowService {
     return {
       deviceCode,
       userCode,
-      verificationUri: `${this.config.publicWebUrl}/activate`,
+      verificationUri: `${this.config.publicWebUrl}/activate?userCode=${encodeURIComponent(userCode)}`,
       interval: DEVICE_POLL_INTERVAL_SEC,
       expiresIn: Math.floor(REQUEST_TTL_MS / 1000),
     }

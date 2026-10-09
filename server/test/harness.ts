@@ -78,7 +78,7 @@ export interface TestContext {
  * only exist as the interaction between those pieces. A test with the guards
  * mocked out would pass while the API leaked another church's data.
  */
-export async function createTestApp(): Promise<TestContext> {
+export async function createTestApp(options: { google?: boolean } = {}): Promise<TestContext> {
   const mongo = await MongoMemoryServer.create()
   process.env.MONGO_URL = mongo.getUri('proautomate-test')
   process.env.JWT_SECRET = 'test-secret-that-is-definitely-long-enough-32'
@@ -88,6 +88,12 @@ export async function createTestApp(): Promise<TestContext> {
   delete process.env.SMTP_URL
   delete process.env.GOOGLE_CLIENT_ID
   delete process.env.GOOGLE_CLIENT_SECRET
+  delete process.env.GOOGLE_CALLBACK_URL
+  process.env.PUBLIC_WEB_URL = "http://localhost:3001"
+  if (options.google) {
+    process.env.GOOGLE_CLIENT_ID = "test-google-client"
+    process.env.GOOGLE_CLIENT_SECRET = "test-google-secret"
+  }
 
   const mailer = new FakeMailer()
   const summaries = new FakeSummaries()

@@ -118,11 +118,11 @@ export class AuthService {
     return this.startSession(user, context)
   }
 
-  /** Google identities are trusted for the address, so they arrive verified. */
+  /** Google confirms Gmail/Workspace ownership; other addresses use our email code. */
   async signInWithGoogle(
-    profile: { googleId: string; email: string; name: string; avatarUrl?: string },
+    profile: { googleId: string; email: string; name: string; avatarUrl?: string; emailAuthoritative: boolean },
     context: AuthContext,
-  ): Promise<AuthResult> {
+  ): Promise<AuthResult & { isNewUser?: boolean }> {
     const byGoogle = await this.users.findByGoogleId(profile.googleId)
     if (byGoogle) return this.startSession(byGoogle, context)
 
@@ -130,6 +130,9 @@ export class AuthService {
     // account that would silently own none of their org's data.
     const byEmail = await this.users.findByEmail(profile.email)
     if (byEmail) {
+      if (byEmail.status !== 'active' || !profile.emailAuthoritative || (byEmail.googleId && byEmail.googleId !== profile.googleId)) {
+        throw new UnauthorizedException('Sign in with your existing account to use this email address')
+      }
       await this.users.attachGoogleId(byEmail._id, profile.googleId)
       if (!byEmail.emailVerifiedAt) await this.users.markEmailVerified(byEmail._id)
       const refreshed = await this.users.findById(byEmail._id)
@@ -141,7 +144,7 @@ export class AuthService {
       name: profile.name,
       googleId: profile.googleId,
       avatarUrl: profile.avatarUrl,
-      emailVerifiedAt: new Date(),
+      emailVerifiedAt: profile.emailAuthoritative ? new Date() : null,
     })
     const org = await this.orgs.createWithOwner({
       // Google does not ask for a church name. The onboarding church step
@@ -151,6 +154,8 @@ export class AuthService {
     })
     await this.users.setDefaultOrg(user._id, org._id)
 
+    if (!profile.emailAuthoritative) await this.sendVerificationEmail(user)
+
     const pair = await this.tokens.issue({
       userId: user._id,
       orgId: org._id,
@@ -159,12 +164,11 @@ export class AuthService {
       deviceName: context.deviceName ?? context.device?.name,
       device: context.device,
       clientKind: context.clientKind,
-      // Google has already proven the address — there is nothing left to confirm.
-      emailVerified: true,
+      emailVerified: user.emailVerifiedAt !== null,
       userAgent: context.userAgent,
       ip: context.ip,
     })
-    return this.result(pair, user, { id: org._id.toString(), name: org.name, role: 'owner' })
+    return { ...this.result(pair, user, { id: org._id.toString(), name: org.name, role: 'owner' }), isNewUser: true }
   }
 
   /** The role is re-read on every rotation, so a demotion takes effect in 15 minutes. */
@@ -337,6 +341,7 @@ export class AuthService {
   // ─── Internals ──────────────────────────────────────────────────────────────
 
   private async startSession(user: UserDocument, context: AuthContext): Promise<AuthResult> {
+    if (user.status !== 'active') throw new UnauthorizedException('Account is disabled')
     const memberships = await this.orgs.membershipsOf(user._id)
     const membership =
       memberships.find((m) => m.orgId.equals(user.defaultOrgId ?? m.orgId)) ?? memberships[0]

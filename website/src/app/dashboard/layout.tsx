@@ -2,10 +2,11 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { CreditCardIcon, KeyRoundIcon, LogOutIcon, UserRoundIcon } from 'lucide-react'
+import { CreditCardIcon, KeyRoundIcon, LogOutIcon, ShieldIcon, UserRoundIcon } from 'lucide-react'
 import { AppSidebar, MobileNav } from '@/components/app-sidebar'
 import { DashboardProvider, useDashboard } from '@/components/dashboard/dashboard-provider'
 import { DesktopAppPrompt } from '@/components/dashboard/desktop-app-prompt'
+import { ThemeToggle } from '@/components/dashboard/theme-toggle'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -80,6 +81,12 @@ function UserMenu(): React.ReactElement {
             <CreditCardIcon />
             Plans & Billing
           </DropdownMenuItem>
+          {session.user.isAdmin && (
+            <DropdownMenuItem render={<Link href="/admin" />}>
+              <ShieldIcon />
+              Admin
+            </DropdownMenuItem>
+          )}
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
         <DropdownMenuItem variant="destructive" onClick={() => void signOut()}>
@@ -111,7 +118,10 @@ function DashboardChrome({ children }: { children: React.ReactNode }): React.Rea
             <MobileNav />
             <h1 className="truncate text-[15px] font-medium text-foreground">{title}</h1>
           </div>
-          <UserMenu />
+          <div className="flex items-center gap-1">
+            <ThemeToggle />
+            <UserMenu />
+          </div>
         </header>
         <main
           className={cn(

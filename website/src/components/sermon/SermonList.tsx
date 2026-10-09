@@ -163,7 +163,7 @@ function SermonRow({
         compact ? 'px-3 py-3' : 'px-2 py-3.5',
         open
           ? 'bg-primary/[0.09] text-foreground shadow-[inset_0_0_0_1px_rgba(108, 145, 194,0.18)]'
-          : 'text-muted-foreground hover:bg-white/[0.035] hover:text-foreground',
+          : 'text-muted-foreground hover:bg-foreground/[0.035] hover:text-foreground',
       )}
     >
       <div className="flex items-start justify-between gap-3">
@@ -186,7 +186,7 @@ function SermonRow({
             <span className="shrink-0 font-mono text-[11px] tabular-nums text-faint">{time}</span>
             {item.speaker ? (
               <>
-                <span className="text-white/15" aria-hidden>
+                <span className="text-foreground/15" aria-hidden>
                   ·
                 </span>
                 <span className="truncate">{item.speaker}</span>
@@ -454,13 +454,13 @@ export function SermonList(): React.ReactElement {
             <div key={row} className="flex gap-3">
               {compact ? (
                 <div className="flex w-9 shrink-0 flex-col items-center gap-1 pt-1">
-                  <div className="h-5 w-6 rounded bg-white/[0.06]" />
-                  <div className="h-2 w-7 rounded bg-white/[0.04]" />
+                  <div className="h-5 w-6 rounded bg-foreground/[0.06]" />
+                  <div className="h-2 w-7 rounded bg-foreground/[0.04]" />
                 </div>
               ) : null}
               <div className="flex flex-1 flex-col gap-2 py-1">
-                <div className="h-3.5 w-4/5 rounded bg-white/[0.06]" />
-                <div className="h-2.5 w-1/2 rounded bg-white/[0.04]" />
+                <div className="h-3.5 w-4/5 rounded bg-foreground/[0.06]" />
+                <div className="h-2.5 w-1/2 rounded bg-foreground/[0.04]" />
               </div>
             </div>
           ))}
@@ -542,18 +542,18 @@ export function SermonList(): React.ReactElement {
                       </span>
                       <span className="pb-0.5 font-mono text-[10px] uppercase tracking-[0.16em] text-faint">
                         {stamp.month}
-                        <span className="mx-1.5 text-white/15">·</span>
+                        <span className="mx-1.5 text-foreground/15">·</span>
                         {stamp.weekday}
                         {group.items.length === 1 ? (
                           <>
-                            <span className="mx-1.5 text-white/15">·</span>
+                            <span className="mx-1.5 text-foreground/15">·</span>
                             <span className="normal-case tracking-normal">
                               {formatServiceTime(group.items[0]!.preachedAt)}
                             </span>
                           </>
                         ) : null}
                       </span>
-                      <span className="mb-1.5 h-px flex-1 bg-gradient-to-r from-white/12 to-transparent" />
+                      <span className="mb-1.5 h-px flex-1 bg-gradient-to-r from-foreground/12 to-transparent" />
                     </div>
                   ) : (
                     <h2 className="mb-2 px-1 text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
@@ -618,7 +618,7 @@ export function SermonList(): React.ReactElement {
         <div
           className={cn(
             compact
-              ? 'sticky top-0 z-20 border-b border-white/10 bg-background/90 px-3 py-3 backdrop-blur-md'
+              ? 'sticky top-0 z-20 border-b border-border bg-background/90 px-3 py-3 backdrop-blur-md'
               : 'mb-5',
           )}
         >
@@ -635,8 +635,8 @@ export function SermonList(): React.ReactElement {
                 placeholder="Search title, preacher…"
                 aria-label="Search recaps"
                 className={cn(
-                  'h-9 bg-white/[0.03] pr-8 pl-8 text-[13px] placeholder:text-faint',
-                  'border-white/10 focus-visible:border-primary/40 focus-visible:ring-primary/20',
+                  'h-9 bg-foreground/[0.03] pr-8 pl-8 text-[13px] placeholder:text-faint',
+                  'border-border focus-visible:border-primary/40 focus-visible:ring-primary/20',
                 )}
               />
               {query ? (
@@ -660,7 +660,7 @@ export function SermonList(): React.ReactElement {
                       size="icon"
                       aria-label="Filter recaps"
                       className={cn(
-                        'size-9 shrink-0 border-white/10 bg-white/[0.03]',
+                        'size-9 shrink-0 border-border bg-foreground/[0.03]',
                         filterActive && 'border-primary/40 text-primary',
                       )}
                     />

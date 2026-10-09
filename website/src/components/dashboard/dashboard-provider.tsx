@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { KairoMark } from '@/components/brand/KairoMark'
 import { ApiError, authedApi } from '@/lib/api'
 import { getSession, useAccessToken, type SessionSnapshot } from '@/lib/session'
+import { useDashboardTheme, type DashboardThemePreference } from '@/lib/dashboard-theme'
 
 type DashboardContextValue = {
   session: SessionSnapshot
@@ -26,6 +27,9 @@ type DashboardContextValue = {
   getAccessToken: () => Promise<string>
   refresh: () => Promise<void>
   signOut: () => Promise<void>
+  /** Light / dark / system for the dashboard and admin console. */
+  theme: DashboardThemePreference
+  setTheme: (next: DashboardThemePreference) => void
 }
 
 const DashboardContext = createContext<DashboardContextValue | null>(null)
@@ -39,6 +43,8 @@ export function useDashboard(): DashboardContextValue {
 export function DashboardProvider({ children }: { children: React.ReactNode }): React.ReactElement {
   const router = useRouter()
   const tokens = useAccessToken()
+  // Applied here so the loading and error screens are themed too.
+  const { preference: theme, setPreference: setTheme } = useDashboardTheme()
   const [session, setSession] = useState<SessionSnapshot | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -89,8 +95,8 @@ export function DashboardProvider({ children }: { children: React.ReactNode }): 
 
   const value = useMemo<DashboardContextValue | null>(() => {
     if (!session) return null
-    return { session, request, getAccessToken: tokens.get, refresh: load, signOut }
-  }, [session, request, tokens, load, signOut])
+    return { session, request, getAccessToken: tokens.get, refresh: load, signOut, theme, setTheme }
+  }, [session, request, tokens, load, signOut, theme, setTheme])
 
   if (error) {
     return (

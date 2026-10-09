@@ -1,13 +1,14 @@
 import { randomUUID } from 'node:crypto'
 import { Controller, Get, Inject, Req, Res, UseGuards } from '@nestjs/common'
-import type { Request, Response } from 'express'
+import type { Response } from 'express'
 import { AuthService } from './auth.service'
-import { GoogleAuthGuard } from '../common/guards/google-auth.guard'
+import { GoogleAuthGuard, type GoogleRequest } from '../common/guards/google-auth.guard'
 import { Public } from '../common/decorators/public.decorator'
 import { APP_CONFIG } from '../config/config.module'
 import type { AppConfig } from '../config/env'
 import type { GoogleProfile } from './strategies/google.strategy'
 import { setRefreshCookie } from './refresh-cookie'
+import { googleFailureUrl } from './google-state'
 
 /**
  * Google sign-in, browser only.
@@ -26,6 +27,10 @@ export class GoogleController {
   ) {}
 
   @Public()
+  @Get('status')
+  status(): { enabled: boolean } { return { enabled: Boolean(this.config.google) } }
+
+  @Public()
   @UseGuards(GoogleAuthGuard)
   @Get()
   // Passport redirects to Google before this body ever runs.
@@ -34,30 +39,26 @@ export class GoogleController {
   @Public()
   @UseGuards(GoogleAuthGuard)
   @Get('callback')
-  async callback(@Req() request: Request, @Res() response: Response): Promise<void> {
-    const profile = request.user as GoogleProfile
-    const result = await this.auth.signInWithGoogle(profile, {
-      clientKind: 'web',
-      deviceId: randomUUID(),
-      userAgent: request.headers['user-agent'],
-      ip: request.ip,
-    })
-
-    setRefreshCookie(response, result.refreshToken, this.config)
-
-    // `state` carries where the person was going — commonly /activate, when
-    // they started this to pair a booth machine.
-    const target = safeReturnTo(request.query.state, this.config.publicWebUrl)
-    response.redirect(target)
+  async callback(@Req() request: GoogleRequest, @Res() response: Response): Promise<void> {
+    try {
+      const profile = request.user as GoogleProfile
+      const result = await this.auth.signInWithGoogle(profile, {
+        clientKind: 'web',
+        deviceId: randomUUID(),
+        userAgent: request.headers['user-agent'],
+        ip: request.ip,
+      })
+      setRefreshCookie(response, result.refreshToken, this.config)
+      const destination = new URL(request.googleReturnTo ?? '/dashboard', this.config.publicWebUrl)
+      if (result.isNewUser && destination.pathname !== '/onboarding') {
+        const onboarding = new URL('/onboarding', this.config.publicWebUrl)
+        onboarding.searchParams.set('returnTo', `${destination.pathname}${destination.search}${destination.hash}`)
+        response.redirect(onboarding.toString())
+      } else {
+        response.redirect(destination.toString())
+      }
+    } catch {
+      response.redirect(googleFailureUrl(this.config, 'failed', request.googleReturnTo))
+    }
   }
-}
-
-/**
- * Only ever redirect within our own web app. An open redirect here would let a
- * crafted link bounce a freshly-authenticated person to an attacker's page.
- */
-function safeReturnTo(state: unknown, baseUrl: string): string {
-  if (typeof state !== 'string' || !state.startsWith('/')) return `${baseUrl}/auth/callback`
-  if (state.startsWith('//')) return `${baseUrl}/auth/callback`
-  return `${baseUrl}${state}`
 }

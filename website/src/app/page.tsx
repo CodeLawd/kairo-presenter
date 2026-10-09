@@ -557,7 +557,7 @@ export default function HomePage(): React.ReactElement {
                 <a
                   key={platform}
                   className="group flex min-h-[235px] flex-col justify-between rounded-2xl bg-white p-6 text-[#11120D] shadow-[0_10px_30px_rgba(17, 18, 13,0.045)] transition-[box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:shadow-[0_16px_38px_rgba(17, 18, 13,0.09)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#11120D] motion-reduce:transform-none motion-reduce:transition-none min-[701px]:p-7"
-                  href={`/download/thanks?platform=${platform}`}
+                  href={`/download/thanks?platform=${platform}&source=home`}
                 >
                   <span className="block">
                     <span className="flex items-center gap-3">

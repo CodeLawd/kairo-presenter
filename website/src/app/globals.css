@@ -331,6 +331,65 @@
   --sidebar-ring: #6C91C2;
 }
 
+/* Dashboard light mode. Set on <html> by the dashboard/admin theme switch
+   (and before paint by the script in the root layout), so portals — menus,
+   dialogs, sheets — pick it up too. The marketing site never sets it. Same
+   values as the desktop app's light theme: paper surfaces, ink text, ink
+   primary actions, the blue kept for focus and charts. */
+html[data-dash-theme='light'] {
+  color-scheme: light;
+  --background: #FAF6EF;
+  --foreground: #11120D;
+  --card: #FFFBF4;
+  --card-foreground: #11120D;
+  --popover: #FFFBF4;
+  --popover-foreground: #11120D;
+  --primary: #11120D;
+  --primary-foreground: #FFFBF4;
+  --secondary: #F1EEE6;
+  --secondary-foreground: #11120D;
+  --muted: #EBE7DF;
+  --muted-foreground: #5F5D53;
+  --accent: #F1EEE6;
+  --accent-foreground: #11120D;
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: rgba(17, 18, 13, 0.1);
+  --input: rgba(17, 18, 13, 0.16);
+  --ring: #6C91C2;
+  --chart-1: #6C91C2;
+  --chart-2: #4F6888;
+  --chart-3: #8C8980;
+  --chart-4: #565449;
+  --chart-5: #D5D1C9;
+  --sidebar: #F1EEE6;
+  --sidebar-foreground: #11120D;
+  --sidebar-primary: #11120D;
+  --sidebar-primary-foreground: #FFFBF4;
+  --sidebar-accent: #E5E1D9;
+  --sidebar-accent-foreground: #11120D;
+  --sidebar-border: rgba(17, 18, 13, 0.1);
+  --sidebar-ring: #6C91C2;
+
+  /* The named palette flips too: dashboard code uses `paper` for primary
+     text and `ink` for the page, `mute`/`faint` for quieter text. */
+  --color-ink: #FAF6EF;
+  --color-panel: #FFFBF4;
+  --color-panel-2: #F1EEE6;
+  --color-inset: #EBE7DF;
+  --color-paper: #11120D;
+  --color-dim: #403F36;
+  --color-mute: #5F5D53;
+  --color-faint: #77756B;
+  --color-line: rgba(17, 18, 13, 0.1);
+  --color-line-soft: rgba(17, 18, 13, 0.06);
+}
+
+/* The logo artwork is white; in light mode draw it in ink instead. */
+html[data-dash-theme='light'] .brand-logo {
+  filter: brightness(0);
+  opacity: 0.93;
+}
+
 /* Landing utilities (`bg-accent`, `text-accent`) are the brand blue — shadcn's
    `--color-accent` map above would otherwise steal the brand token. Dashboard
    hovers use `secondary`, not `accent`, for exactly this reason. */

@@ -43,6 +43,15 @@ describe('loadConfig', () => {
     expect(both.google).toMatchObject({ clientId: 'id', clientSecret: 'secret' })
   })
 
+  it('returns Google through the website proxy so cookies stay first-party', () => {
+    const config = loadConfig({ ...BASE, PUBLIC_WEB_URL: 'https://kairo.test/', GOOGLE_CLIENT_ID: 'id', GOOGLE_CLIENT_SECRET: 'secret' })
+    expect(config.google?.callbackUrl).toBe('https://kairo.test/v1/auth/google/callback')
+  })
+
+  it('rejects a Google callback on the API origin instead of the website', () => {
+    expect(() => loadConfig({ ...BASE, GOOGLE_CLIENT_ID: 'id', GOOGLE_CLIENT_SECRET: 'secret', GOOGLE_CALLBACK_URL: 'http://localhost:3000/v1/auth/google/callback' })).toThrow(/GOOGLE_CALLBACK_URL/)
+  })
+
   it('refuses to boot with a Brevo key but no sender address', () => {
     // A default sender would be an address Brevo has not verified, so every
     // send would be rejected by the provider and nobody would find out until a

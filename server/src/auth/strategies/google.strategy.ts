@@ -6,6 +6,7 @@ import type { AppConfig } from '../../config/env'
 export interface GoogleProfile {
   googleId: string
   email: string
+  emailAuthoritative: boolean
   name: string
   avatarUrl?: string
 }
@@ -24,10 +25,7 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
       clientSecret: config.clientSecret,
       callbackURL: config.callbackUrl,
       scope: ['email', 'profile'],
-      // Passport's built-in `state: true` stores the value in a server session,
-      // and this API is deliberately sessionless. The return path is passed
-      // through as an explicit `state` parameter instead (see GoogleAuthGuard),
-      // and validated on the way back so it can only ever be one of our pages.
+      // GoogleAuthGuard signs state and binds it to an HttpOnly browser cookie.
       state: false,
     })
   }
@@ -38,7 +36,12 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
     profile: Profile,
     done: VerifyCallback,
   ): void {
-    const email = profile.emails?.[0]?.value
+    const email = profile.emails?.[0]?.value?.trim().toLowerCase()
+    const claims = profile._json as { email_verified?: boolean; hd?: string }
+    if (claims.email_verified !== true) {
+      done(new Error('Google email address is not verified'), undefined)
+      return
+    }
     if (!email) {
       // Google can return a profile with no address on some workspace configs;
       // there is no account to link without one.
@@ -48,6 +51,7 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
     const resolved: GoogleProfile = {
       googleId: profile.id,
       email,
+      emailAuthoritative: email.endsWith('@gmail.com') || Boolean(claims.hd && email.endsWith(`@${claims.hd.toLowerCase()}`)),
       name: profile.displayName || email.split('@')[0],
       avatarUrl: profile.photos?.[0]?.value,
     }

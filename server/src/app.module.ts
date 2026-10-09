@@ -8,6 +8,8 @@ import { AuthModule } from './auth/auth.module'
 import { UsersModule } from './users/users.module'
 import { OrgsModule } from './orgs/orgs.module'
 import { SermonsModule } from './sermons/sermons.module'
+import { DownloadsModule } from './downloads/downloads.module'
+import { AdminModule } from './admin/admin.module'
 import { MailModule } from './mail/mail.module'
 import { HealthController } from './health/health.controller'
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard'
@@ -27,6 +29,8 @@ import { AppThrottlerGuard } from './common/guards/app-throttler.guard'
     OrgsModule,
     SermonsModule,
     AuthModule,
+    DownloadsModule,
+    AdminModule,
   ],
   controllers: [HealthController],
   providers: [

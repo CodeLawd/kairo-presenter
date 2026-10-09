@@ -69,7 +69,7 @@ export function ShareDialog({
             <button
               type="button"
               onClick={onCopy}
-              className="group flex min-w-0 w-full items-center gap-3 overflow-hidden rounded-lg bg-ink px-3.5 py-3 text-left ring-1 ring-white/[0.08] transition-colors hover:ring-white/[0.14]"
+              className="group flex min-w-0 w-full items-center gap-3 overflow-hidden rounded-lg bg-ink px-3.5 py-3 text-left ring-1 ring-border transition-colors hover:ring-foreground/15"
             >
               <Link2Icon className="size-3.5 shrink-0 text-faint" />
               <span className="min-w-0 flex-1 truncate font-mono text-[12.5px] text-paper">

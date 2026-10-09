@@ -1,17 +1,13 @@
 import { fileURLToPath } from 'node:url'
 import { dirname } from 'node:path'
 
-/**
- * The desktop app lives one directory up and ships its own Tailwind v3
- * `postcss.config.js`. Without pinning the root, Turbopack walks up to the
- * parent repo, finds that config, and tries to build this site's CSS with it.
- */
+/** Shared cloud helpers live in the desktop workspace, so Turbopack must include it. */
 const projectRoot = dirname(fileURLToPath(import.meta.url))
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  turbopack: { root: projectRoot },
+  turbopack: { root: dirname(projectRoot) },
   /**
    * `takumi-pdf` is a WebAssembly renderer used only by the recap PDF route.
    * Bundling it breaks: its export map offers a `module` condition pointing at

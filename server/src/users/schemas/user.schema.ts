@@ -39,6 +39,13 @@ export class User {
 
   @Prop({ type: Date, default: null })
   lastLoginAt!: Date | null
+
+  /**
+   * Kairo staff access to the admin console, granted by a superadmin. Unrelated
+   * to a church role. Superadmins are not stored here — they come from config.
+   */
+  @Prop({ type: String, enum: ['admin'], default: null })
+  platformRole!: 'admin' | null
 }
 
 export const UserSchema = SchemaFactory.createForClass(User)

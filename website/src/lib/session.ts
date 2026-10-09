@@ -4,7 +4,18 @@ import { useCallback, useMemo, useRef } from 'react'
 import { api, type TokenSource } from './api'
 
 export interface SessionSnapshot {
-  user: { id: string; email: string; name: string; emailVerified: boolean }
+  /**
+   * `isAdmin` / `platformRole`: Kairo staff — unlocks /admin. Only decides what
+   * to show; the API re-checks every admin request.
+   */
+  user: {
+    id: string
+    email: string
+    name: string
+    emailVerified: boolean
+    isAdmin?: boolean
+    platformRole?: 'superadmin' | 'admin' | null
+  }
   orgId: string | null
   role: string | null
   orgs: { id: string; name: string; role: string }[]
