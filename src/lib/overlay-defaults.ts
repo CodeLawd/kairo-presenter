@@ -12,6 +12,7 @@
 // renderer Settings/Theme pages on hydration — must route stored `overlay`
 // through this before using it.
 
+import { OUTPUT_ASPECT_VALUES } from './displays'
 import type {
   AppSettings,
   OverlayBox,
@@ -24,7 +25,8 @@ import type {
   OverlayTheme,
 } from './ipc'
 import { boxesForLayoutPreset, clampOverlayBox } from './overlay-boxes'
-import { MAX_NDI_OUTPUTS, OVERLAY_OUTPUT_KINDS, themeForContentKind } from './overlay-outputs'
+import { MAX_NDI_OUTPUTS, OVERLAY_OUTPUT_KINDS } from './overlay-outputs'
+import { normalizeOverlayElements } from './overlay-elements'
 import { DEFAULT_CONFIDENCE_LAYOUT, DEFAULT_SHOW_FILTER, normalizeConfidenceLayout, normalizeShowFilter } from './program'
 import {
   asObject,
@@ -93,6 +95,7 @@ const DEFAULT_REFERENCE_STYLE: OverlayTextStyle = {
 }
 
 export const DEFAULT_OVERLAY_THEME: OverlayTheme = {
+  elements: [],
   background: { type: 'transparent', color: '#0b1220', opacity: 1, mediaFit: 'cover' },
   verse: DEFAULT_VERSE_STYLE,
   reference: {
@@ -142,6 +145,7 @@ export function makeOverlayOutput(
     displayLabel: '',
     displaySize: null,
     aspect: 'letterbox',
+    customAspect: { width: 16, height: 9 },
     show: { ...DEFAULT_SHOW_FILTER },
     source: 'program',
     playlistId: '',
@@ -314,6 +318,7 @@ export function normalizeOverlayTheme(raw: unknown): OverlayTheme {
   const presetBoxes = boxesForLayoutPreset(position, refPosition, maxWidthPct, refShow)
 
   return {
+    elements: normalizeOverlayElements(r.elements),
     background: {
       type: safeEnum(
         bg.type,
@@ -336,6 +341,7 @@ export function normalizeOverlayTheme(raw: unknown): OverlayTheme {
       saturation: clampNum(bg.saturation, 0, 2, 1),
       brightness: clampNum(bg.brightness, 0.25, 1.75, 1),
       contrast: clampNum(bg.contrast, 0.25, 1.75, 1),
+      blurPx: clampNum(bg.blurPx, 0, 40, 0),
     },
     verse: normalizeTextStyle(verse, d.verse, presetBoxes.verse, { shadow: verse.shadow }),
     reference: {
@@ -433,9 +439,7 @@ function normalizeOutputVariant(raw: unknown, fallbackTemplate: string): Overlay
   const r = asObject(raw)
   return {
     themeId: typeof r.themeId === 'string' && r.themeId ? r.themeId : null,
-    // This variant is lyrics-only. Strip a baked-in background so a restored
-    // store cannot put a scripture image back on the next lyric push.
-    theme: themeForContentKind(normalizeOverlayTheme(r.theme), 'lyrics'),
+    theme: normalizeOverlayTheme(r.theme),
     template: safeString(r.template, fallbackTemplate),
   }
 }
@@ -484,7 +488,8 @@ export function normalizeOverlayOutputs(raw: unknown, legacy: LegacyOverlayField
       displayId,
       displayLabel: kind === 'screen' ? safeString(r.displayLabel, '').trim() : '',
       displaySize: kind === 'screen' ? normalizeDisplaySize(r.displaySize) : null,
-      aspect: kind === 'screen' ? safeEnum(r.aspect, ['letterbox', 'fill'] as const, 'letterbox') : 'letterbox',
+      aspect: kind === 'screen' ? safeEnum(r.aspect, OUTPUT_ASPECT_VALUES, 'letterbox') : 'letterbox',
+      customAspect: normalizeCustomAspect(r.customAspect),
       show: normalizeShowFilter(r.show),
       source: kind === 'screen' ? safeEnum(r.source, ['program', 'playlist'] as const, 'program') : 'program',
       playlistId: kind === 'screen' ? safeString(r.playlistId, '').trim() : '',
@@ -585,4 +590,13 @@ export function applyOutputRoute(outputs: readonly OverlayOutput[], route: Outpu
     return ppOn ? o : { ...o, enabled: PROPRESENTER_PRESET_IDS.has(o.id) }
   })
   return next
+}
+
+/** A custom output ratio: two whole numbers, 1–100 each (e.g. 32 × 9). */
+function normalizeCustomAspect(raw: unknown): { width: number; height: number } {
+  const r = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
+  return {
+    width: Math.round(clampNum(r.width, 1, 100, 16)),
+    height: Math.round(clampNum(r.height, 1, 100, 9)),
+  }
 }

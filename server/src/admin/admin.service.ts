@@ -11,6 +11,7 @@ import { Session, type SessionDocument } from '../auth/schemas/session.schema'
 import { DownloadEvent, type DownloadEventDocument } from '../downloads/schemas/download-event.schema'
 import { TokenService } from '../auth/token.service'
 import { platformRoleOf, type PlatformRole } from '../common/platform-admin'
+import { UsageAdminService } from './usage-admin.service'
 import { normalizeEmail } from '../users/users.service'
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -36,6 +37,7 @@ export class AdminService {
     @InjectModel(Session.name) private readonly sessions: Model<SessionDocument>,
     @InjectModel(DownloadEvent.name) private readonly downloads: Model<DownloadEventDocument>,
     private readonly tokens: TokenService,
+    private readonly usage: UsageAdminService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
@@ -45,7 +47,7 @@ export class AdminService {
     const [
       usersTotal, usersVerified, usersDisabled, users7, users30,
       churchesTotal, churches30, sermonsTotal, sermons30,
-      installs, downloadsTotal, downloads30, signups,
+      installs, downloadsTotal, downloads30, signups, activeWeek,
     ] = await Promise.all([
       this.users.countDocuments(),
       this.users.countDocuments({ emailVerifiedAt: { $ne: null } }),
@@ -61,12 +63,15 @@ export class AdminService {
       this.downloads.countDocuments({ served: true }),
       this.downloads.countDocuments({ served: true, createdAt: { $gte: since30 } }),
       this.perDay(this.users, {}, 30, now),
+      this.usage.activeThisWeek(now),
     ])
     return {
       users: { total: usersTotal, verified: usersVerified, disabled: usersDisabled, new7d: users7, new30d: users30 },
       churches: { total: churchesTotal, new30d: churches30 },
       sermons: { total: sermonsTotal, last30d: sermons30 },
       activeInstalls30d: installs.length,
+      /** Installs that sent usage statistics this week (v1.0.5+ only). */
+      activeThisWeek: activeWeek,
       downloads: { total: downloadsTotal, last30d: downloads30 },
       signups,
     }
@@ -192,6 +197,7 @@ export class AdminService {
         { $group: { _id: '$orgId', count: { $sum: 1 } } },
       ]),
     ])
+    const seen = await this.usage.lastSeen(ids)
     const ownerById = new Map(owners.map((owner) => [owner._id.toString(), owner]))
     const sermonsById = new Map(sermonCounts.map((row) => [row._id.toString(), row.count]))
     return {
@@ -205,6 +211,8 @@ export class AdminService {
           sermons: sermonsById.get(row._id.toString()) ?? 0,
           timezone: row.timezone,
           createdAt: (row as { createdAt?: Date }).createdAt ?? null,
+          lastActive: seen.get(row._id.toString())?.lastActive ?? null,
+          appVersion: seen.get(row._id.toString())?.appVersion ?? null,
         }
       }),
       total,

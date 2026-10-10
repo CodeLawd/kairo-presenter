@@ -71,7 +71,7 @@ class TransferService {
 
       case 'setlist': {
         const list = setlistService.snapshot().lists.find((item) => item.id === request.listId)
-        if (!list) throw new Error('That setlist no longer exists.')
+        if (!list) throw new Error('That playlist no longer exists.')
         return setlistBundle(list.name, pick(list.songIds), version)
       }
 

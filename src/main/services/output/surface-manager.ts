@@ -1,7 +1,7 @@
 import { powerSaveBlocker, screen, BrowserWindow, type Display } from 'electron'
 import log from 'electron-log/main'
-import type { DisplayInfo, MediaPlayback, OverlayOutput, OverlayTheme } from '@shared/ipc'
-import { describeDisplay, frameHeightFor, resolveDisplay } from '@shared/displays'
+import type { DisplayInfo, MediaPlayback, OverlayOutput, OverlayTheme, TestPatternInput } from '@shared/ipc'
+import { describeDisplay, frameHeightFor, OUTPUT_ASPECTS, resolveDisplay, testPatternLayout } from '@shared/displays'
 import { escapeHtml } from '@shared/overlay-template'
 import { normalizeOverlaySettings } from '@shared/overlay-defaults'
 import { followsProgram, isRenderedKind, primaryNdiOutputId } from '@shared/overlay-outputs'
@@ -27,6 +27,7 @@ import { StageWindow } from './stage-window'
 
 /** How long "Identify displays" labels stay up. */
 const IDENTIFY_MS = 3000
+const TEST_PATTERN_MS = 5000
 /**
  * Quiet period before display changes are acted on. macOS emits `moved` on
  * every step of a window drag, and a replug arrives as a burst of add /
@@ -144,6 +145,9 @@ class SurfaceManager {
     return screen.getAllDisplays().map((display) => toDisplayInfo(display, primaryId, controlId))
   }
 
+  /** Open test-pattern windows, one per display. */
+  private readonly patterns = new Map<number, BrowserWindow>()
+
   /** Flashes each display's name for a few seconds so an operator can tell them apart. */
   identify(): void {
     this.listDisplays().forEach((display, index) => {
@@ -172,6 +176,53 @@ class SurfaceManager {
         if (!win.isDestroyed()) win.destroy()
       }, IDENTIFY_MS)
     })
+  }
+
+  /**
+   * Shows what an output of this shape will cover on a display: a yellow frame
+   * where content goes, black bars where the shape does not fill the screen.
+   * Sized exactly like the real output window (full screen, or the half-size
+   * rehearsal window on the display with Kairo's controls). One per display —
+   * a newer request replaces it — and gone after a few seconds.
+   */
+  showTestPattern(input: TestPatternInput): boolean {
+    const display = this.listDisplays().find((d) => d.id === input.displayId)
+    if (!display) return false
+    this.patterns.get(display.id)?.destroy()
+
+    const frameHeight = frameHeightFor(display.size, input.aspect, input.customAspect)
+    const { bounds, frame } = testPatternLayout(display.bounds, display.hostsMainWindow, frameHeight)
+    const shape =
+      input.aspect === 'custom'
+        ? `${input.customAspect.width}:${input.customAspect.height}`
+        : input.aspect === 'fill'
+          ? 'Matches the display'
+          : (OUTPUT_ASPECTS.find((o) => o.value === input.aspect)?.label.split(' — ')[0] ?? '16:9')
+
+    const win = new BrowserWindow({
+      ...bounds,
+      frame: false,
+      show: false,
+      focusable: false,
+      skipTaskbar: true,
+      alwaysOnTop: true,
+      hasShadow: false,
+      roundedCorners: false,
+      resizable: false,
+      backgroundColor: '#000000',
+      webPreferences: { contextIsolation: true, nodeIntegration: false },
+    })
+    win.setAlwaysOnTop(true, 'screen-saver')
+    const html = testPatternHtml(input.name, shape, `1920 × ${frameHeight}`, frame)
+    void win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`).then(() => {
+      if (!win.isDestroyed()) win.showInactive()
+    })
+    this.patterns.set(display.id, win)
+    setTimeout(() => {
+      if (!win.isDestroyed()) win.destroy()
+      if (this.patterns.get(display.id) === win) this.patterns.delete(display.id)
+    }, TEST_PATTERN_MS)
+    return true
   }
 
   // ─── Reconcile ──────────────────────────────────────────────────────────────
@@ -284,7 +335,7 @@ class SurfaceManager {
         kind: 'display',
         bounds: display.bounds,
         rehearsal: display.hostsMainWindow,
-        frameHeight: frameHeightFor(display.size, output.aspect === 'fill'),
+        frameHeight: frameHeightFor(display.size, output.aspect, output.customAspect),
       }
       const surface = existing ?? new ProgramSurface(output.name || 'Screen', sink)
       this.fileScreen(output, surface)
@@ -682,9 +733,29 @@ function toDisplayInfo(display: Display, primaryId: number, controlId: number | 
   }
 }
 
+/** The test card: black screen, yellow frame with a grid, the output's name and shape. */
+function testPatternHtml(
+  name: string,
+  shape: string,
+  size: string,
+  frame: { width: number; height: number },
+): string {
+  const esc = escapeHtml
+  const w = (frame.width * 100).toFixed(3)
+  const h = (frame.height * 100).toFixed(3)
+  return `<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0;height:100vh;background:#000;overflow:hidden;font-family:-apple-system,'Segoe UI',sans-serif;cursor:default">
+<div style="position:absolute;left:${(100 - Number(w)) / 2}%;top:${(100 - Number(h)) / 2}%;width:${w}%;height:${h}%;box-sizing:border-box;background:#F5C518;border:6px solid #11120D;
+background-image:linear-gradient(rgba(17,18,13,.18) 2px,transparent 2px),linear-gradient(90deg,rgba(17,18,13,.18) 2px,transparent 2px);background-size:10% 10%;
+display:flex;flex-direction:column;align-items:center;justify-content:center;color:#11120D;text-align:center">
+<div style="font-size:min(7vw,7vh);font-weight:800;letter-spacing:-.02em">${esc(name || 'Screen')}</div>
+<div style="margin-top:1.5vh;font-size:min(4vw,4vh);font-weight:600">${esc(shape)}</div>
+<div style="margin-top:1vh;font-size:min(2.4vw,2.4vh);opacity:.7">${esc(size)} frame · black bars are outside the frame</div>
+</div></body></html>`
+}
+
 function identifyHtml(number: number, description: string, control: boolean): string {
   return `<!doctype html><html><body style="margin:0;height:100vh;display:flex;align-items:center;justify-content:center;background:transparent;font-family:-apple-system,'Segoe UI',sans-serif;cursor:default">
-<div style="background:rgba(17,18,13,.9);color:#FFFBF4;border:2px solid #FFFBF4;border-radius:20px;padding:24px 36px;text-align:center">
+<div style="background:rgba(12,17,29,.9);color:#F9FAFB;border:2px solid #F9FAFB;border-radius:20px;padding:24px 36px;text-align:center">
 <div style="font-size:88px;font-weight:700;line-height:1">${number}</div>
 <div style="margin-top:10px;font-size:18px;opacity:.85">${escapeHtml(description)}</div>
 ${control ? '<div style="margin-top:6px;font-size:13px;color:#A29F96">Kairo’s controls are here</div>' : ''}

@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto'
+import type { UsageReport, UsageReportResult } from '@shared/cloud/usage'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -546,6 +547,21 @@ export class CloudSessionService {
       payload,
       { timeoutMs: 120_000 },
     )
+  }
+
+  /**
+   * Sends usage counts (see `src/lib/cloud/usage.ts`). Same gate as recaps —
+   * signed in with a confirmed address — and a short timeout: nobody waits on it.
+   */
+  async reportUsage(report: UsageReport): Promise<UsageReportResult> {
+    if (!this.canUpload()) throw new Error('Not signed in')
+    return this.api.request<UsageReportResult>('post', '/v1/usage/report', report, { timeoutMs: 15_000 })
+  }
+
+  /** This install's id and the machine facts usage reports carry. */
+  usageDevice(): { installId: string; os: string; osVersion: string; arch: string; appVersion: string; electronVersion: string } {
+    const { os: platform, osVersion, arch, appVersion, electronVersion } = this.deviceSnapshot()
+    return { installId: this.getDeviceId(), os: platform, osVersion, arch, appVersion, electronVersion }
   }
 
   /** True when an upload could actually go out right now. */

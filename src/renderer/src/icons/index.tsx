@@ -87,6 +87,8 @@ import {
   ArrowsClockwise as PhArrowsClockwise,
   Repeat as PhRepeat,
   ArrowCounterClockwise as PhArrowCounterClockwise,
+  ArrowUUpLeft as PhArrowUUpLeft,
+  ArrowUUpRight as PhArrowUUpRight,
   Path as PhPath,
   FloppyDisk as PhFloppyDisk,
   MagnifyingGlass as PhMagnifyingGlass,
@@ -220,6 +222,8 @@ export const Radio = wrap(PhBroadcast)
 export const RefreshCw = wrap(PhArrowsClockwise)
 export const Repeat = wrap(PhRepeat)
 export const RotateCcw = wrap(PhArrowCounterClockwise)
+export const Undo = wrap(PhArrowUUpLeft)
+export const Redo = wrap(PhArrowUUpRight)
 export const Route = wrap(PhPath)
 export const Save = wrap(PhFloppyDisk)
 export const ScanSearch = wrap(PhMagnifyingGlass)

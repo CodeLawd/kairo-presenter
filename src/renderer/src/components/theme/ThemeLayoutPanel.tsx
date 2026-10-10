@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils'
 import type { OverlayBox, OverlayContentKind, OverlayTheme } from '@shared/ipc'
 import { colorWithOpacity } from '@shared/overlay-template'
 import type { OverlayLayerId } from './OverlayCanvas'
+import { NumberField } from './NumberField'
 import { overlayLayerLabel } from '@shared/overlay-outputs'
 
 function expandHex(value: string): string | null {
@@ -51,50 +52,6 @@ function FieldShell({
       )}
     >
       {children}
-    </div>
-  )
-}
-
-function CompactNumber({
-  label,
-  value,
-  onChange,
-  step = 1,
-  min,
-  max,
-  suffix,
-}: {
-  label: string
-  value: number
-  onChange: (value: number) => void
-  step?: number
-  min?: number
-  max?: number
-  suffix?: string
-}): React.ReactElement {
-  return (
-    <div className="min-w-0">
-      <FieldLabel>{label}</FieldLabel>
-      <FieldShell>
-        <input
-          type="number"
-          className="h-full w-full bg-transparent text-sm outline-none tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-          value={Number.isFinite(value) ? value : 0}
-          step={step}
-          min={min}
-          max={max}
-          onChange={(event) => {
-            const next = Number(event.target.value)
-            if (!Number.isFinite(next)) return
-            let clamped = next
-            if (min !== undefined) clamped = Math.max(min, clamped)
-            if (max !== undefined) clamped = Math.min(max, clamped)
-            onChange(clamped)
-          }}
-          aria-label={label}
-        />
-        {suffix && <span className="shrink-0 text-xs text-zinc-500">{suffix}</span>}
-      </FieldShell>
     </div>
   )
 }
@@ -348,7 +305,7 @@ export function ThemeLayoutPanel({
         </div>
 
         <div className="grid grid-cols-2 gap-2">
-          <CompactNumber
+          <NumberField
             label="X"
             value={Number(box.xPct.toFixed(1))}
             step={0.5}
@@ -357,7 +314,7 @@ export function ThemeLayoutPanel({
             suffix="%"
             onChange={(v) => setBoxField('xPct', v)}
           />
-          <CompactNumber
+          <NumberField
             label="Y"
             value={Number(box.yPct.toFixed(1))}
             step={0.5}
@@ -366,7 +323,7 @@ export function ThemeLayoutPanel({
             suffix="%"
             onChange={(v) => setBoxField('yPct', v)}
           />
-          <CompactNumber
+          <NumberField
             label="Width"
             value={Number(box.widthPct.toFixed(1))}
             step={0.5}
@@ -375,7 +332,7 @@ export function ThemeLayoutPanel({
             suffix="%"
             onChange={(v) => setBoxField('widthPct', v)}
           />
-          <CompactNumber
+          <NumberField
             label="Height"
             value={Number(box.heightPct.toFixed(1))}
             step={0.5}

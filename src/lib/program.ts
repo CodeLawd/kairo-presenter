@@ -89,7 +89,7 @@ export interface ProgramAudioSettings {
   outputLabel: string
   /**
    * Also send program sound (videos, camera) with every NDI feed. Needs the
-   * NDI 6 (grandi) binding — the legacy grandiose-mac sender has no audio.
+   * NDI 6 (grandi) binding.
    */
   ndi: boolean
 }

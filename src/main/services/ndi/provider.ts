@@ -34,9 +34,9 @@ export const FOURCC_AUDIO_FLTP = 1884572742
 
 export interface NdiSender {
   sendVideo(frame: NdiVideoFrame): Promise<void>
-  /** Absent when the native binding cannot send audio (grandiose-mac 0.0.6). */
+  /** Absent when the native binding cannot send audio. */
   sendAudio?(frame: NdiAudioFrame): Promise<void>
-  /** Optional explicit teardown; grandiose-mac 0.0.6 relies on GC finalizers. */
+  /** Optional explicit teardown; without it the binding relies on GC finalizers. */
   destroy?(): Promise<void> | void
 }
 
@@ -52,43 +52,11 @@ export interface NdiCreateSenderOptions {
 }
 
 export interface NdiProvider {
-  /** Stable adapter name for logs, e.g. 'grandi' or 'grandiose-mac'. */
+  /** Stable adapter name for logs, e.g. 'grandi'. */
   readonly name: string
   version(): string
   createSender(opts: NdiCreateSenderOptions): Promise<NdiSender>
   findSources?(timeoutMs?: number): Promise<NdiSourceInfo[]>
-}
-
-// ─── grandiose-mac shape (subset actually used) ──────────────────────────────
-
-interface GrandioseMacSender {
-  video: (frame: NdiVideoFrame) => Promise<void>
-}
-
-interface GrandioseMacModule {
-  version: () => string
-  send: (opts: { name: string; clockVideo?: boolean; clockAudio?: boolean }) => Promise<GrandioseMacSender>
-  find?: () => Promise<{ sources?: () => NdiSourceInfo[] } | NdiSourceInfo[]>
-}
-
-export function createGrandioseMacProvider(native: GrandioseMacModule): NdiProvider {
-  return {
-    name: 'grandiose-mac',
-    version: () => native.version(),
-    async createSender(opts) {
-      const sender = await native.send({ name: opts.name, clockVideo: opts.clockVideo })
-      return {
-        sendVideo: (frame) => sender.video(frame),
-      }
-    },
-    async findSources() {
-      if (typeof native.find !== 'function') return []
-      const result = await native.find()
-      if (Array.isArray(result)) return result
-      if (result && typeof result.sources === 'function') return result.sources() ?? []
-      return []
-    },
-  }
 }
 
 // ─── grandi (tux-tn, NDI 6) shape ────────────────────────────────────────────

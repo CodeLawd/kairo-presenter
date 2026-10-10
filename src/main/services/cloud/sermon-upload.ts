@@ -43,6 +43,8 @@ export class SermonUploader {
   constructor(
     private readonly records: ServiceRecords,
     private readonly session: SermonUploadSession,
+    /** Told once per recap that reaches the account (usage statistics). */
+    private readonly onPublished: (serviceId: string) => void = () => {},
   ) {}
 
   /** On launch: everything that was still waiting when the app last closed. */
@@ -131,6 +133,7 @@ export class SermonUploader {
         attempts: 0,
       })
       log.info('[Cloud] Sermon published', { serviceId })
+      this.onPublished(serviceId)
     } catch (error) {
       if (error instanceof TranscriptTooLongError) {
         // No amount of retrying shortens the service.

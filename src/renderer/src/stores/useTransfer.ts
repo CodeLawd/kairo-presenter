@@ -79,7 +79,7 @@ export function describeCommit(result: TransferCommitResult): string {
   const parts: string[] = []
   if (result.added) parts.push(`${result.added} song${result.added === 1 ? '' : 's'} added`)
   if (result.replaced) parts.push(`${result.replaced} replaced`)
-  if (result.setlistName) parts.push(`setlist “${result.setlistName}” created`)
+  if (result.setlistName) parts.push(`playlist “${result.setlistName}” created`)
   if (result.playlistTitle) parts.push(`playlist “${result.playlistTitle}” added`)
   if (parts.length === 0) return 'Nothing was imported.'
   const text = parts.join(', ')

@@ -19,7 +19,7 @@ import {
   transitionMs,
   type ProgramProp,
 } from '../src/lib/program'
-import { frameHeightFor } from '../src/lib/displays'
+import { frameHeightFor, testPatternLayout } from '../src/lib/displays'
 
 test('an empty or foreign store normalizes to the defaults', () => {
   assert.deepEqual(normalizePresentationSettings(undefined), DEFAULT_PRESENTATION_SETTINGS)
@@ -144,10 +144,28 @@ test('show filters default room layers on, confidence layers off', () => {
 })
 
 test('fill uses the display aspect at 1920 wide; letterbox stays 1080', () => {
-  assert.equal(frameHeightFor({ width: 1024, height: 768 }, true), 1440)
-  assert.equal(frameHeightFor({ width: 1024, height: 768 }, false), 1080)
-  assert.equal(frameHeightFor({ width: 3440, height: 1440 }, true), 804)
-  assert.equal(frameHeightFor({ width: 0, height: 0 }, true), 1080)
+  assert.equal(frameHeightFor({ width: 1024, height: 768 }, 'fill'), 1440)
+  assert.equal(frameHeightFor({ width: 1024, height: 768 }, 'letterbox'), 1080)
+  assert.equal(frameHeightFor({ width: 3440, height: 1440 }, 'fill'), 804)
+  assert.equal(frameHeightFor({ width: 0, height: 0 }, 'fill'), 1080)
+})
+
+test('each preset shape sets the frame height, whatever the display', () => {
+  const display = { width: 1920, height: 1080 }
+  assert.equal(frameHeightFor(display, '16:10'), 1200)
+  assert.equal(frameHeightFor(display, '4:3'), 1440)
+  assert.equal(frameHeightFor(display, '21:9'), 823)
+  assert.equal(frameHeightFor(display, '9:16'), 3413)
+  assert.equal(frameHeightFor(display, '1:1'), 1920)
+  assert.equal(frameHeightFor(display, '32:9'), 540)
+})
+
+test('a custom ratio is used, and absurd ones are clamped to a usable frame', () => {
+  const display = { width: 1920, height: 1080 }
+  assert.equal(frameHeightFor(display, 'custom', { width: 3, height: 2 }), 1280)
+  assert.equal(frameHeightFor(display, 'custom', { width: 100, height: 1 }), 360)
+  assert.equal(frameHeightFor(display, 'custom', { width: 1, height: 100 }), 4320)
+  assert.equal(frameHeightFor(display, 'custom', null), 1080)
 })
 
 test("NDI sound is off by default and kept when set", () => {
@@ -186,4 +204,22 @@ test('timerReadout agrees on time-up and pause for every surface', () => {
 test('formatClock reads like the screens', () => {
   assert.equal(formatClock(new Date(2026, 0, 1, 21, 5)), '9:05 PM')
   assert.equal(formatClock(new Date(2026, 0, 1, 0, 30)), '12:30 AM')
+})
+
+test('the test pattern frame leaves bars exactly where the output will', () => {
+  const tv = { x: 1920, y: 0, width: 1920, height: 1080 }
+  // 16:9 on a 16:9 screen: no bars.
+  assert.deepEqual(testPatternLayout(tv, false, 1080).frame, { width: 1, height: 1 })
+  // 4:3 on a 16:9 screen: bars at the sides, full height.
+  const fourThree = testPatternLayout(tv, false, 1440).frame
+  assert.equal(fourThree.height, 1)
+  assert.equal(Number(fourThree.width.toFixed(3)), 0.75)
+  // 21:9 on a 16:9 screen: bars above and below, full width.
+  const wide = testPatternLayout(tv, false, 823).frame
+  assert.equal(wide.width, 1)
+  assert.ok(wide.height < 0.8)
+  // On the control display it is a half-size window of the frame's own shape.
+  const rehearsal = testPatternLayout({ x: 0, y: 0, width: 1440, height: 900 }, true, 1440)
+  assert.deepEqual(rehearsal.bounds, { x: 360, y: 180, width: 720, height: 540 })
+  assert.deepEqual(rehearsal.frame, { width: 1, height: 1 })
 })

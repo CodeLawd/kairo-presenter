@@ -137,7 +137,12 @@ function initialTabTranslation(defaultTranslation: ScriptureTranslation): Script
     : defaultTranslation;
 }
 
-export default function Scripture(): React.ReactElement {
+/**
+ * `active`: the Scripture tab is on screen. It stays mounted while hidden (so
+ * the open passage survives a tab switch) and then must not answer the
+ * keyboard — Enter here sends a verse live — or fill the header toolbar.
+ */
+export default function Scripture({ active = true }: { active?: boolean }): React.ReactElement {
   const liveRail = useLiveRailWidth();
   const sidebar = useSidebarWidth('kairo.scripture-sidebar-width', 288);
   const [query, setQuery] = useState("");
@@ -1290,7 +1295,7 @@ export default function Scripture(): React.ReactElement {
   );
 
   useEffect(() => {
-    if (cards.length === 0) return;
+    if (!active || cards.length === 0) return;
 
     const handleQueueKeyboard = (event: KeyboardEvent): void => {
       const target = event.target as HTMLElement | null;
@@ -1349,6 +1354,7 @@ export default function Scripture(): React.ReactElement {
     window.addEventListener("keydown", handleQueueKeyboard);
     return () => window.removeEventListener("keydown", handleQueueKeyboard);
   }, [
+    active,
     activeCardIndex,
     cards.length,
     cardsSource,
@@ -1430,7 +1436,7 @@ export default function Scripture(): React.ReactElement {
       />
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        {toolbarSlot &&
+        {active && toolbarSlot &&
           createPortal(
             <div className="flex h-7 min-w-0 items-center gap-1.5">
               {selectedPlan && (

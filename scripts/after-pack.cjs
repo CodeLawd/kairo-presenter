@@ -39,20 +39,6 @@ exports.default = async function afterPack(context) {
     fs.cpSync(source, target, { recursive: true })
   }
 
-  // Second line of defence behind the `files` globs in package.json: drop the
-  // grandiose-mac NDI runtime dirs that do not belong to this tuple. Only
-  // directories are removed; loose files (licences) stay.
-  const libKeep = { darwin: 'mac_universal', win32: 'win_x64', linux: 'linux_x64' }[platform]
-  const libDir = path.join(resources, 'app.asar.unpacked', 'node_modules', 'grandiose-mac', 'lib')
-  if (libKeep && fs.existsSync(libDir)) {
-    for (const name of fs.readdirSync(libDir)) {
-      const full = path.join(libDir, name)
-      if (name !== libKeep && fs.statSync(full).isDirectory()) {
-        fs.rmSync(full, { recursive: true, force: true })
-      }
-    }
-  }
-
   // Unsigned Mac builds (no Developer ID yet): electron-builder skips signing
   // entirely, and Apple Silicon reports an app with no signature as "damaged".
   // An ad-hoc signature turns that into the ordinary "unidentified developer"

@@ -86,6 +86,7 @@ export function VerseCardGrid({
               sendStatus={card.sendStatus}
               // A playlist is hundreds of cards; only draw the ones on screen.
               lazy
+              footer={{ number: localIdx + 1 }}
               isPicked={pickedCards.has(idx)}
               selectId={String(idx)}
               onSelect={(event) => {

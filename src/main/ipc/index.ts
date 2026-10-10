@@ -9,6 +9,7 @@ import { transferService } from "../services/transfer";
 import { documentsService } from "../services/documents";
 import { ipcMain, BrowserWindow, clipboard, dialog, powerMonitor, shell } from "electron";
 import type { OpenDialogOptions } from "electron";
+import type { TestPatternInput } from "@shared/ipc";
 import log from "electron-log/main";
 import type {
   AppSettings,
@@ -78,6 +79,7 @@ import { allowPickedOverlayMedia } from "../services/ndi/media-allowlist";
 import { runBootstrap } from "../bootstrap";
 import { onboardingService } from "../services/cloud/onboarding";
 import { cloudSession } from "../services/cloud/session";
+import { usageService } from "../services/usage";
 
 // ─── Broadcast helper ─────────────────────────────────────────────────────────
 
@@ -260,6 +262,7 @@ function registerScriptureHandlers(): void {
   });
 
   ipcMain.handle(IPC.SCRIPTURE.SEARCH, async (_event, query: string, translation?: AppSettings['scripture']['defaultTranslation']) => {
+    usageService.track('scripture_search');
     return scriptureService.search(query, translation, store.get('stt').bibleApiKey);
   });
 
@@ -350,6 +353,7 @@ function registerScriptureHandlers(): void {
   // Resolves once the download has *started*; chapter-by-chapter progress is
   // pushed, so the renderer stays responsive (and can pause) while it runs.
   ipcMain.handle(IPC.SCRIPTURE.DOWNLOAD_TRANSLATION, async (_event, bibleId: string) => {
+    usageService.track('bible_download');
     await scriptureService.ensureAuthorizedBibleId(bibleId, store.get("stt").bibleApiKey);
     await getDownloadManager().startDownloadInBackground(bibleId);
   });
@@ -411,6 +415,7 @@ function registerScriptureHandlers(): void {
   });
 
   ipcMain.handle(IPC.SCRIPTURE.DOWNLOAD_LOCAL_BIBLE_TRANSLATION, async (_event, translation: string) => {
+    usageService.track('bible_download');
     if (typeof translation !== "string" || !translation.trim()) {
       throw new Error("A translation id is required.");
     }
@@ -436,6 +441,7 @@ function registerTranscriptionHandlers(): void {
   serviceRecords.onChanged(snapshot => broadcast(SERVICE_CHANGED, snapshot));
   // Anything still waiting when the app last closed goes out now.
   sermonUploader.start();
+  usageService.start();
   let changingService = false;
   handle(SERVICE_CHANNEL, async (_event, command: ServiceCommand) => {
     if (command.action === 'list') return serviceRecords.snapshot();
@@ -448,6 +454,7 @@ function registerTranscriptionHandlers(): void {
         // is left alone here.
         serviceRecords.create();
         sttService.clearHistory();
+        usageService.track('service_started');
       } else if (command.action === 'end') {
         const plan = command.planId ? sermonPlanStore.get(command.planId) : null;
         if (command.planId && !plan) throw new Error('Selected notes are unavailable.');
@@ -575,6 +582,7 @@ function registerLyricsHandlers(): void {
   });
 
   ipcMain.handle(IPC.LYRICS.SEARCH_ONLINE, async (_event, query: string) => {
+    usageService.track('song_online_search');
     return lyricsService.searchOnline(query);
   });
 
@@ -589,6 +597,7 @@ function registerLyricsHandlers(): void {
   );
 
   ipcMain.handle(IPC.LYRICS.IMPORT, async (_event, source) => {
+    usageService.track('song_import');
     return lyricsService.importSong(source);
   });
 
@@ -645,6 +654,7 @@ function registerLyricsHandlers(): void {
   });
 
   ipcMain.handle(IPC.LYRICS.PUSH_SLIDE, async (_event, songId: string, slideIndex: number) => {
+    usageService.track('lyrics_slide');
     const song = lyricsService.getSong(songId);
     if (!song) throw new Error(`Song not found: ${songId}`);
 
@@ -754,6 +764,7 @@ function registerDocumentHandlers(): void {
     return documentsService.remove(id);
   });
   handle(DOCUMENTS.PUSH, async (_event, id, page) => {
+    usageService.track('document_page');
     const slide = await documentsService.slide(id, page);
     const applied = await orchestrator.presentDocumentPage(slide.path, slide);
     mediaService.setLiveItem(null);
@@ -835,6 +846,7 @@ function registerMediaHandlers(): void {
    * ProPresenter is cut to the bound NDI video input.
    */
   ipcMain.handle(IPC.MEDIA.PUSH, async (_event, itemId: string) => {
+    usageService.track('media_live');
     const item = mediaService.getItem(itemId);
     if (!item) throw new Error("That background is no longer in the folder.");
 
@@ -979,7 +991,10 @@ function registerProgramHandlers(): void {
   programService.onChange((state) => broadcast(PROGRAM.STATE, state));
 
   handle(PROGRAM.GET_STATE, () => programService.getState());
-  handle(PROGRAM.SHOW_MESSAGE, (_event, text: string) => programService.showMessage(String(text ?? "")));
+  handle(PROGRAM.SHOW_MESSAGE, (_event, text: string) => {
+    usageService.track("message_shown");
+    return programService.showMessage(String(text ?? ""));
+  });
   handle(PROGRAM.CLEAR_MESSAGE, () => programService.clearMessage());
   handle(PROGRAM.SET_STAGE_MESSAGE, (_event, text: string | null) =>
     programService.setStageMessage(typeof text === "string" ? text : null),
@@ -1002,7 +1017,10 @@ function registerProgramHandlers(): void {
   });
   handle(PROGRAM.NDI_AUDIO_SUPPORTED, () => surfaceManager.ndiAudioSupported());
   handle(PROGRAM.TIMER_SET, (_event, seconds: number) => programService.setTimer(Number(seconds) || 0));
-  handle(PROGRAM.TIMER_START, () => programService.startTimer());
+  handle(PROGRAM.TIMER_START, () => {
+    usageService.track("timer_start");
+    return programService.startTimer();
+  });
   handle(PROGRAM.TIMER_PAUSE, () => programService.pauseTimer());
   handle(PROGRAM.TIMER_RESET, () => programService.resetTimer());
   handle(PROGRAM.SET_ON_SCREENS, (_event, layer: unknown, on: unknown) =>
@@ -1050,12 +1068,16 @@ function registerSongUsageHandlers(): void {
 function registerOutputHandlers(): void {
   handle(IPC.OUTPUT.SEND_TEST, () => orchestrator.testOverlay());
   handle(IPC.OUTPUT.CLEAR_TEXT, () => orchestrator.clearText());
-  handle(IPC.OUTPUT.CLEAR_ALL, () => orchestrator.clearOverlay());
+  handle(IPC.OUTPUT.CLEAR_ALL, () => {
+    usageService.track('output_clear');
+    return orchestrator.clearOverlay();
+  });
 }
 
 function registerDisplayHandlers(): void {
   ipcMain.handle(IPC.DISPLAYS.LIST, () => surfaceManager.listDisplays());
   ipcMain.handle(IPC.DISPLAYS.IDENTIFY, () => surfaceManager.identify());
+  ipcMain.handle(IPC.DISPLAYS.TEST_PATTERN, (_event, input: TestPatternInput) => surfaceManager.showTestPattern(input));
   surfaceManager.onChange((displays) => broadcast(IPC.DISPLAYS.CHANGED, displays));
   // A re-matched display id was written behind the renderer's back — resend
   // settings so its next overlay write does not put the old id back.

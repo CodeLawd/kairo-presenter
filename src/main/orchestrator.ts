@@ -61,6 +61,7 @@ import { surfaceManager, type SurfaceTarget } from "./services/output/surface-ma
 import { programService } from "./services/output/program-service";
 import type { OutputShowFilter, ProgramSlideInfo } from "@shared/program";
 import { store } from "./db";
+import { usageService } from "./services/usage";
 
 /**
  * Lays the background pushed from the Media dock under a theme.
@@ -88,8 +89,8 @@ function ppConnected(): boolean {
 /**
  * `theme` with the dock's live background applied per `themeForPush`: a theme
  * with its own background outranks the dock (scripture over a running song
- * keeps the scripture look); lyric themes are forced transparent so they take
- * it; `force` is the dock's own "present this background" action.
+ * keeps the scripture look, a song theme with a background keeps its own); a
+ * transparent theme takes it; `force` is the dock's own "present this background" action.
  */
 function withLiveBackground(theme: OverlayTheme, force = false, showsBackgrounds = true): OverlayTheme {
   const live = mediaService.getLiveItem();
@@ -379,6 +380,7 @@ class Orchestrator {
       this.cancelAutoPresent(suggestionId);
       this.pendingSuggestions.delete(suggestionId);
       scriptureService.dismissSuggestion(suggestionId);
+      usageService.track("scripture_manual");
       await this.presentScripture(suggestion);
       return;
     }
@@ -387,6 +389,7 @@ class Orchestrator {
     const manual = scriptureService.getPendingSuggestion(suggestionId);
     if (manual) {
       scriptureService.dismissSuggestion(suggestionId);
+      usageService.track("scripture_manual");
       await this.presentScripture(manual);
     }
   }
@@ -690,6 +693,7 @@ class Orchestrator {
       this.autoTimers.delete(suggestion.id);
       this.pendingSuggestions.delete(suggestion.id);
       scriptureTrace.mark(suggestion.correlationId, "countdownCompletedAt");
+      usageService.track("scripture_auto");
       await this.presentScripture(suggestion, prepared).catch((err) =>
         log.error("[Orchestrator] Auto-present error", (err as Error).message),
       );
@@ -723,6 +727,7 @@ class Orchestrator {
   }
 
   async presentScriptureDirectly(suggestion: ScriptureSuggestion): Promise<void> {
+    usageService.track("scripture_manual");
     await this.presentScripture(suggestion);
   }
 

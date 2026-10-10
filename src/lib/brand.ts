@@ -4,10 +4,10 @@ export const PRODUCT_TAGLINE = 'Scripture  |  Lyrics  |  Presentation'
 
 /** The palette: ink is primary, paper the white, stone muted, CTA blue marks live. */
 export const BRAND = {
-  primary: '#11120D',
-  white: '#FFFBF4',
-  muted: '#565449',
-  live: '#6C91C2',
+  primary: '#0C111D',
+  white: '#F9FAFB',
+  muted: '#374151',
+  live: '#315EDE',
 } as const
 
 /** NDI sender shown in ProPresenter’s video-input list. */

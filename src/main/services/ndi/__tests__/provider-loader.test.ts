@@ -5,18 +5,13 @@ import {
   isSupportedTuple,
   type RequireFn,
 } from '../provider-loader'
-import { createGrandioseMacProvider, createGrandiProvider } from '../provider'
+import { createGrandiProvider } from '../provider'
 
 function requireStub(modules: Record<string, unknown>): RequireFn {
   return (id: string) => {
     if (id in modules) return modules[id]
     throw new Error(`Cannot find module '${id}'`)
   }
-}
-
-const grandioseNative = {
-  version: () => 'NDI SDK 5.5.2-test',
-  send: async () => ({ video: async () => {} }),
 }
 
 const grandiNative = {
@@ -44,12 +39,8 @@ describe('ndi provider-loader', () => {
     }
   })
 
-  it('prefers grandi over grandiose-mac', () => {
-    const result = loadNdiProvider(
-      'darwin',
-      'arm64',
-      requireStub({ '@grandi/darwin-arm64': grandiNative, 'grandiose-mac': grandioseNative }),
-    )
+  it('loads grandi on Apple silicon', () => {
+    const result = loadNdiProvider('darwin', 'arm64', requireStub({ '@grandi/darwin-arm64': grandiNative }))
     assert.equal(result.ok, true)
     assert.equal(result.ok && result.adapter, 'grandi')
   })
@@ -66,10 +57,9 @@ describe('ndi provider-loader', () => {
     assert.equal(requested[0], '@grandi/win32-x64')
   })
 
-  it('falls back to grandiose-mac when grandi is absent', () => {
-    const result = loadNdiProvider('darwin', 'arm64', requireStub({ 'grandiose-mac': grandioseNative }))
-    assert.equal(result.ok, true)
-    assert.equal(result.ok && result.adapter, 'grandiose-mac')
+  it('is unavailable on Apple silicon when grandi is absent — no legacy fallback', () => {
+    const result = loadNdiProvider('darwin', 'arm64', requireStub({ 'grandiose-mac': {} }))
+    assert.equal(result.ok, false)
   })
 
   it('returns unavailable when no binding loads', () => {
@@ -83,18 +73,6 @@ describe('ndi provider-loader', () => {
     }
     const result = loadNdiProvider('win32', 'x64', throwing)
     assert.equal(result.ok, false)
-  })
-
-  it('grandiose-mac adapter maps send/version', async () => {
-    const provider = createGrandioseMacProvider(grandioseNative)
-    assert.equal(provider.name, 'grandiose-mac')
-    assert.equal(provider.version(), 'NDI SDK 5.5.2-test')
-    const sender = await provider.createSender({ name: 'test' })
-    await sender.sendVideo({
-      xres: 2, yres: 2, frameRateN: 30000, frameRateD: 1001,
-      pictureAspectRatio: 1, frameFormatType: 1, lineStrideBytes: 8,
-      data: Buffer.alloc(16), fourCC: 1095911234,
-    })
   })
 
   it('grandi adapter maps version/find', async () => {

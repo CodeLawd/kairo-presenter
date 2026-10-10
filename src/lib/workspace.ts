@@ -13,6 +13,7 @@
  * the song is gone; drop one in and it appears.
  */
 
+import { normalizeHotkey } from './lyrics-hotkeys'
 import type { LyricsSong, LyricsSongSection, LyricsSectionType, LyricsSource } from './ipc'
 
 /** Folder created under the user's Documents directory by default. */
@@ -110,6 +111,7 @@ export function serializeSongFile(song: LyricsSong): string {
       label: section.label,
       lines: section.lines,
       ...(section.lineColors?.some((c) => Boolean(c)) ? { lineColors: section.lineColors } : {}),
+      ...(normalizeHotkey(section.hotkey) ? { hotkey: normalizeHotkey(section.hotkey) } : {}),
     })),
   }
   return `${JSON.stringify(payload, null, 2)}\n`
@@ -131,11 +133,13 @@ function coerceSection(raw: unknown): LyricsSongSection | null {
         return typeof c === 'string' && c.trim() ? c.trim() : null
       })
     : undefined
+  const hotkey = normalizeHotkey(obj.hotkey)
   return {
     type,
     label,
     lines,
     ...(lineColors?.some((c) => Boolean(c)) ? { lineColors } : {}),
+    ...(hotkey ? { hotkey } : {}),
   }
 }
 

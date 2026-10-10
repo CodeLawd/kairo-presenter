@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { Check, Library as LibraryIcon, Pencil, Plus, Trash2 } from '@/icons'
 import { cn } from '@/lib/utils'
+import { RowContextMenu } from '@/components/shared/RowContextMenu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { leavesTarget } from '@/lib/drag'
 import { useTransferStore } from '@/stores/useTransfer'
 import {
@@ -20,8 +22,8 @@ import {
  * The LIBRARY half of a page rail: the default library, then user-made ones.
  *
  * Shared by Lyrics, Documents and Scripture so the three pages behave the same
- * — create with ＋, rename and delete on hover, drag an item onto a row to file
- * it there. Deleting a library returns its items to the default, so the control
+ * — create with ＋, rename and delete on right-click, drag an item onto a row to
+ * file it there. Deleting a library returns its items to the default, so the control
  * is safe to reach for mid-service.
  */
 export function LibrarySection({
@@ -30,13 +32,19 @@ export function LibrarySection({
   counts,
   onSelect,
   extraRows,
+  addItems,
 }: {
   kind: LibraryKind
   activeLibraryId: string
   counts: Record<string, number>
   onSelect: (libraryId: string) => void
-  /** Page-specific rows shown under the libraries, e.g. Favorites or Recent. */
+  /** Page-specific rows shown under the libraries, e.g. Favorites. */
   extraRows?: React.ReactNode
+  /**
+   * Other things the header's ＋ can make, e.g. a setlist. With any, ＋ opens a
+   * menu (New library first), the way ProPresenter's library + does.
+   */
+  addItems?: Array<{ label: string; icon?: React.ReactNode; onSelect: () => void }>
 }): React.ReactElement {
   const library = useLibrary(kind)
   const [renamingId, setRenamingId] = useState<string | null>(null)
@@ -141,16 +149,44 @@ export function LibrarySection({
   return (
     <div>
       <div className="flex items-center gap-1 px-2 pb-1">
-        <p className="flex-1 text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Library</p>
-        <button
-          type="button"
-          aria-label="New library"
-          title="New library"
-          className="grid size-5 place-items-center rounded text-zinc-600 transition-colors hover:bg-surface-tertiary hover:text-zinc-300"
-          onClick={createLibrary}
-        >
-          <Plus size={12} />
-        </button>
+        <p className="flex-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-600">Library</p>
+        {addItems?.length ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                aria-label="New"
+                data-tooltip="New"
+                className="grid size-5 place-items-center rounded text-zinc-600 transition-colors hover:bg-surface-tertiary hover:text-zinc-300 data-[state=open]:bg-surface-tertiary data-[state=open]:text-zinc-300"
+              >
+                <Plus size={12} />
+              </button>
+            </DropdownMenuTrigger>
+            {/* Don't hand focus back to ＋: the new row's name field takes it for renaming. */}
+            <DropdownMenuContent align="end" className="w-40" onCloseAutoFocus={(event) => event.preventDefault()}>
+              <DropdownMenuItem onSelect={createLibrary}>
+                <LibraryIcon size={13} />
+                New library
+              </DropdownMenuItem>
+              {addItems.map((item) => (
+                <DropdownMenuItem key={item.label} onSelect={item.onSelect}>
+                  {item.icon}
+                  {item.label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : (
+          <button
+            type="button"
+            aria-label="New library"
+            title="New library"
+            className="grid size-5 place-items-center rounded text-zinc-600 transition-colors hover:bg-surface-tertiary hover:text-zinc-300"
+            onClick={createLibrary}
+          >
+            <Plus size={12} />
+          </button>
+        )}
       </div>
 
       <div className="flex flex-col gap-0.5">
@@ -185,48 +221,41 @@ export function LibrarySection({
               className="w-full rounded-md bg-surface-tertiary px-2 py-1.5 text-[12px] text-zinc-100 outline-none ring-1 ring-teal-500/40"
             />
           ) : (
-            <div
+            // Right-click to rename or delete; double-click renames.
+            <RowContextMenu
               key={entry.id}
-              className={rowClass(activeLibraryId === entry.id, dropId === entry.id, landedId === entry.id)}
-              {...dropHandlers(entry.id)}
-            >
-              <LibraryIcon size={13} className="shrink-0" aria-hidden />
-              <button
-                type="button"
-                aria-current={activeLibraryId === entry.id}
-                className="min-w-0 flex-1 truncate text-left"
-                onClick={() => onSelect(entry.id)}
-              >
-                {entry.name}
-              </button>
-              {trailing(entry.id) ?? (
-                <span className="shrink-0 text-[10px] tabular-nums text-zinc-600 group-hover:hidden">
-                  {counts[entry.id] ?? 0}
-                </span>
-              )}
-              <span className={cn('hidden shrink-0 items-center gap-0.5', !dropId && !landedId && 'group-hover:flex')}>
-                <button
-                  type="button"
-                  aria-label={`Rename ${entry.name}`}
-                  className="grid size-5 place-items-center rounded text-zinc-500 hover:text-zinc-200"
-                  onClick={() => { setDraftName(entry.name); setRenamingId(entry.id) }}
-                >
-                  <Pencil size={10} />
-                </button>
-                <button
-                  type="button"
-                  aria-label={`Delete ${entry.name}`}
-                  title={`Delete ${entry.name} — its items move to ${DEFAULT_LIBRARY_NAME[kind]}`}
-                  className="grid size-5 place-items-center rounded text-zinc-500 hover:text-rose-400"
-                  onClick={() => {
+              items={[
+                { label: 'Rename', icon: <Pencil size={13} />, onSelect: () => { setDraftName(entry.name); setRenamingId(entry.id) } },
+                {
+                  label: `Delete (items go to ${DEFAULT_LIBRARY_NAME[kind]})`,
+                  icon: <Trash2 size={13} />,
+                  destructive: true,
+                  onSelect: () => {
                     if (activeLibraryId === entry.id) onSelect(DEFAULT_LIBRARY_ID)
                     run({ action: 'delete', kind, libraryId: entry.id })
-                  }}
+                  },
+                },
+              ]}
+            >
+              <div
+                className={rowClass(activeLibraryId === entry.id, dropId === entry.id, landedId === entry.id)}
+                {...dropHandlers(entry.id)}
+              >
+                <LibraryIcon size={13} className="shrink-0" aria-hidden />
+                <button
+                  type="button"
+                  aria-current={activeLibraryId === entry.id}
+                  className="min-w-0 flex-1 truncate text-left"
+                  onClick={() => onSelect(entry.id)}
+                  onDoubleClick={() => { setDraftName(entry.name); setRenamingId(entry.id) }}
                 >
-                  <Trash2 size={10} />
+                  {entry.name}
                 </button>
-              </span>
-            </div>
+                {trailing(entry.id) ?? (
+                  <span className="shrink-0 text-[10px] tabular-nums text-zinc-600">{counts[entry.id] ?? 0}</span>
+                )}
+              </div>
+            </RowContextMenu>
           ),
         )}
 

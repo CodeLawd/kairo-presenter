@@ -526,13 +526,20 @@ export default function App(): React.ReactElement {
         />
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <main className="relative flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-surface">
-            {/* Keep Operator and Theme mounted across navigation so live session
-                state and the theme library/draft survive tab switches. */}
+            {/* Keep Operator, Scripture, Theme and Documents mounted across
+                navigation so live session state, the open passage and the
+                theme draft survive tab switches. */}
             <div
               className={`${route === 'operator' ? 'flex' : 'hidden'} min-h-0 w-full flex-1 flex-col overflow-hidden [&>*]:min-h-0 [&>*]:flex-1`}
               aria-hidden={route !== 'operator'}
             >
               <Operator />
+            </div>
+            <div
+              className={`${route === 'scripture' ? 'flex' : 'hidden'} min-h-0 w-full flex-1 flex-col overflow-hidden [&>*]:min-h-0 [&>*]:flex-1`}
+              aria-hidden={route !== 'scripture'}
+            >
+              <Scripture active={route === 'scripture'} />
             </div>
             <div
               className={`${route === 'theme' ? 'flex' : 'hidden'} min-h-0 w-full flex-1 flex-col overflow-hidden [&>*]:min-h-0 [&>*]:flex-1`}
@@ -546,7 +553,7 @@ export default function App(): React.ReactElement {
             >
               <Documents active={route === 'documents'} />
             </div>
-            {route !== 'operator' && route !== 'theme' && route !== 'documents' && (
+            {route !== 'operator' && route !== 'scripture' && route !== 'theme' && route !== 'documents' && (
               <div key={route} className="flex min-h-0 w-full flex-1 flex-col overflow-hidden [&>*]:min-h-0 [&>*]:flex-1">
                 {views[route]}
               </div>

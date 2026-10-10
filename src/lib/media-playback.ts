@@ -110,8 +110,8 @@ function clamp(value: unknown, min: number, max: number, fallback: number): numb
  * The dock's live loop only fills in for a theme that asked for nothing — a
  * scripture theme configured with an image, gradient or solid colour must keep
  * it when it is pushed over a song that is already running a motion loop.
- * Lyric themes are forced transparent (`themeForContentKind`), so they always
- * take the dock background.
+ * The same goes for a lyrics theme with a background of its own; a song with
+ * no lyrics theme inherits scripture's look without its background.
  */
 export function themeOwnsBackground(theme: OverlayTheme): boolean {
   return theme.background.type !== 'transparent'

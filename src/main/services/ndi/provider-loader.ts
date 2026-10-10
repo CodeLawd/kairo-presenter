@@ -6,16 +6,12 @@
  * throwing, and native loading stays lazy inside error handling so a broken
  * addon disables only NDI — never main.
  *
- * Selection order per adapter: the tuple-specific `@grandi/*` NDI 6 prebuild
- * first, then `grandiose-mac` only for the existing darwin-arm64 release.
+ * Each tuple loads its `@grandi/*` NDI 6 prebuild. (The older `grandiose-mac`
+ * fallback was removed once grandi proved itself on every release.)
  */
 import log from 'electron-log/main'
 import path from 'node:path'
-import {
-  createGrandiProvider,
-  createGrandioseMacProvider,
-  type NdiProvider,
-} from './provider'
+import { createGrandiProvider, type NdiProvider } from './provider'
 
 export type SupportedTuple = `${NodeJS.Platform}:${NodeJS.Architecture}`
 
@@ -42,7 +38,7 @@ export function isSupportedTuple(
 }
 
 export type ProviderLoadResult =
-  | { ok: true; provider: NdiProvider; adapter: 'grandi' | 'grandiose-mac' }
+  | { ok: true; provider: NdiProvider; adapter: 'grandi' }
   | { ok: false; reason: string }
 
 export type RequireFn = (id: string) => unknown
@@ -75,16 +71,6 @@ function tryLoadGrandi(tuple: string, requireFn: RequireFn): NdiProvider | null 
   return null
 }
 
-function tryLoadGrandioseMac(requireFn: RequireFn): NdiProvider | null {
-  try {
-    const native = requireFn('grandiose-mac') as Parameters<typeof createGrandioseMacProvider>[0]
-    if (!native || typeof (native as { send?: unknown }).send !== 'function') return null
-    return createGrandioseMacProvider(native)
-  } catch {
-    return null
-  }
-}
-
 /**
  * Select and lazily load the NDI provider for the given platform/arch.
  * Never throws for unsupported tuples or broken native bindings.
@@ -107,16 +93,6 @@ export function loadNdiProvider(
       /* version() must never fail selection */
     }
     return { ok: true, provider: grandi, adapter: 'grandi' }
-  }
-  const legacy = tuple === 'darwin:arm64' ? tryLoadGrandioseMac(requireFn) : null
-  if (legacy) {
-    try {
-      const sdk = legacy.version()
-      log.info('[NDI] grandiose-mac loaded', { sdkVersion: sdk })
-    } catch {
-      /* ignore */
-    }
-    return { ok: true, provider: legacy, adapter: 'grandiose-mac' }
   }
   return { ok: false, reason: `no NDI native binding available for ${platform}/${arch}` }
 }

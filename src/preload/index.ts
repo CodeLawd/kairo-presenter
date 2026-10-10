@@ -36,6 +36,7 @@ import type {
   ResilienceStatus,
   NdiStatus,
   DisplayInfo,
+  TestPatternInput,
   PPVideoInputInfo,
   PPLook,
   Unsubscribe,
@@ -746,6 +747,9 @@ const displays: KairoAPI['displays'] = {
   },
   identify(): Promise<void> {
     return ipcRenderer.invoke(IPC.DISPLAYS.IDENTIFY)
+  },
+  testPattern(input: TestPatternInput): Promise<boolean> {
+    return ipcRenderer.invoke(IPC.DISPLAYS.TEST_PATTERN, input)
   },
   onChanged(callback: (displays: DisplayInfo[]) => void): Unsubscribe {
     return subscribe(IPC.DISPLAYS.CHANGED, callback)

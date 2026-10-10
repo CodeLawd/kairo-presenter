@@ -368,8 +368,8 @@ export function SongQuickOpen({ songs, onClose, onOpen }: SongQuickOpenProps): R
           <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 px-3.5 py-2 text-[11px] text-zinc-500">
             <span><kbd className="font-sans text-zinc-400">↑↓</kbd> move</span>
             <span><kbd className="font-sans text-zinc-400">↵</kbd> open</span>
-            <span><kbd className="font-sans text-zinc-400">⌘↵</kbd> add to setlist</span>
-            <span className="ml-auto">Drag a song onto a library or setlist</span>
+            <span><kbd className="font-sans text-zinc-400">⌘↵</kbd> add to playlist</span>
+            <span className="ml-auto">Drag a song onto a library or playlist</span>
           </div>
         </div>
       </section>
@@ -454,7 +454,7 @@ export function SongQuickOpen({ songs, onClose, onOpen }: SongQuickOpenProps): R
                 onClick={() => active && addToSetlist(active)}
                 className="inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium text-zinc-400 transition-colors hover:bg-surface-tertiary hover:text-zinc-100 disabled:opacity-40"
               >
-                {active && added === active.id ? 'Added' : setlist ? `Add to ${setlist.name}` : 'Add to setlist'}
+                {active && added === active.id ? 'Added' : setlist ? `Add to ${setlist.name}` : 'Add to playlist'}
                 <kbd className="font-sans text-[10px] opacity-60">⌘↵</kbd>
               </button>
               <button

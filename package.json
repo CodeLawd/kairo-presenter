@@ -47,39 +47,29 @@
     "build:dir": "electron-vite build && electron-builder --dir -c.mac.identity=null -c.mac.notarize=false"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.97.0",
     "@deepgram/sdk": "^5.3.0",
     "@electron-toolkit/preload": "^3.0.1",
     "@electron-toolkit/utils": "^3.0.0",
-    "@phosphor-icons/react": "^2.1.10",
-    "@tiptap/extension-highlight": "^3.30.5",
-    "@tiptap/react": "^3.30.5",
-    "@tiptap/starter-kit": "^3.30.5",
     "axios": "^1.16.1",
     "better-sqlite3": "^12.10.0",
     "cheerio": "^1.2.0",
-    "class-variance-authority": "^0.7.1",
     "electron-log": "^5.2.4",
     "electron-store": "^8.2.0",
     "electron-updater": "^6.8.9",
     "grandi": "2.0.2",
-    "input-otp": "^1.5.0",
     "jszip": "^3.10.1",
     "mammoth": "^1.12.1",
-    "openai": "^6.38.0",
-    "pdf-parse": "^1.1.1",
-    "radix-ui": "^1.6.7",
-    "react-resizable-panels": "^4.12.3",
-    "zustand": "^4.5.5"
-  },
-  "optionalDependencies": {
-    "grandiose-mac": "^0.0.6"
+    "pdf-parse": "^1.1.1"
   },
   "devDependencies": {
     "@electron/asar": "3.4.1",
     "@electron/notarize": "^3.1.1",
     "@electron/rebuild": "^3.7.2",
     "@fontsource-variable/source-sans-3": "^5.3.0",
+    "@phosphor-icons/react": "^2.1.10",
+    "@tiptap/extension-highlight": "^3.30.5",
+    "@tiptap/react": "^3.30.5",
+    "@tiptap/starter-kit": "^3.30.5",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20.17.6",
     "@types/pdf-parse": "^1.1.5",
@@ -89,6 +79,7 @@
     "@typescript-eslint/parser": "^7.18.0",
     "@vitejs/plugin-react": "^4.3.3",
     "autoprefixer": "^10.4.20",
+    "class-variance-authority": "^0.7.1",
     "cross-env": "^10.1.0",
     "electron": "^33.2.0",
     "electron-builder": "^26.15.3",
@@ -96,20 +87,27 @@
     "eslint": "^8.57.1",
     "eslint-import-resolver-typescript": "^3.10.1",
     "eslint-plugin-import": "^2.32.0",
+    "input-otp": "^1.5.0",
     "pdfjs-dist": "^4.10.38",
     "postcss": "^8.4.49",
+    "radix-ui": "^1.6.7",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-resizable-panels": "^4.12.3",
     "tailwindcss": "^3.4.15",
     "tsx": "^4.23.12",
     "typescript": "^5.6.3",
-    "vite": "^5.4.11"
+    "vite": "^5.4.11",
+    "zustand": "^4.5.5"
   },
   "packageManager": "npm@11.19.0",
   "build": {
     "appId": "com.kairo.app",
     "productName": "Kairo",
     "copyright": "Copyright © 2026 Kairo",
+    "electronLanguages": [
+      "en"
+    ],
     "directories": {
       "output": "release",
       "buildResources": "build"
@@ -149,7 +147,12 @@
       "!.env",
       "!.env.example",
       "!.claude/**/*",
-      "!.vite/**/*"
+      "!.vite/**/*",
+      "!**/node_modules/pdf-parse/lib/pdf.js/v1.10.88/**",
+      "!**/node_modules/pdf-parse/lib/pdf.js/v1.9.426/**",
+      "!**/node_modules/pdf-parse/lib/pdf.js/v2.0.550/**",
+      "!**/node_modules/better-sqlite3/deps/**",
+      "!**/node_modules/better-sqlite3/src/**"
     ],
     "extraResources": [
       {
@@ -164,8 +167,7 @@
     "asarUnpack": [
       "**/*.node",
       "**/node_modules/@grandi/**",
-      "**/node_modules/better-sqlite3/**",
-      "**/node_modules/grandiose-mac/**"
+      "**/node_modules/better-sqlite3/**"
     ],
     "npmRebuild": true,
     "mac": {
@@ -220,12 +222,13 @@
         "!.env.example",
         "!.claude/**/*",
         "!.vite/**/*",
-        "!**/node_modules/grandiose-mac/lib/win_x64/**/*",
-        "!**/node_modules/grandiose-mac/lib/win_x86/**/*",
-        "!**/node_modules/grandiose-mac/lib/linux_x64/**/*",
-        "!**/node_modules/grandiose-mac/lib/linux_arm64/**/*",
         "!**/*.dll",
-        "!**/*.so*"
+        "!**/*.so*",
+        "!**/node_modules/pdf-parse/lib/pdf.js/v1.10.88/**",
+        "!**/node_modules/pdf-parse/lib/pdf.js/v1.9.426/**",
+        "!**/node_modules/pdf-parse/lib/pdf.js/v2.0.550/**",
+        "!**/node_modules/better-sqlite3/deps/**",
+        "!**/node_modules/better-sqlite3/src/**"
       ],
       "extendInfo": {
         "NSMicrophoneUsageDescription": "Kairo listens to the service audio so it can transcribe the sermon in real time.",
@@ -305,12 +308,13 @@
         "!.env.example",
         "!.claude/**/*",
         "!.vite/**/*",
-        "!**/node_modules/grandiose-mac/lib/mac_universal/**/*",
-        "!**/node_modules/grandiose-mac/lib/linux_x64/**/*",
-        "!**/node_modules/grandiose-mac/lib/linux_arm64/**/*",
-        "!**/node_modules/grandiose-mac/lib/win_x86/**/*",
         "!**/*.dylib",
-        "!**/*.so*"
+        "!**/*.so*",
+        "!**/node_modules/pdf-parse/lib/pdf.js/v1.10.88/**",
+        "!**/node_modules/pdf-parse/lib/pdf.js/v1.9.426/**",
+        "!**/node_modules/pdf-parse/lib/pdf.js/v2.0.550/**",
+        "!**/node_modules/better-sqlite3/deps/**",
+        "!**/node_modules/better-sqlite3/src/**"
       ]
     },
     "nsis": {
@@ -373,12 +377,13 @@
         "!.env.example",
         "!.claude/**/*",
         "!.vite/**/*",
-        "!**/node_modules/grandiose-mac/lib/mac_universal/**/*",
-        "!**/node_modules/grandiose-mac/lib/win_x64/**/*",
-        "!**/node_modules/grandiose-mac/lib/win_x86/**/*",
-        "!**/node_modules/grandiose-mac/lib/linux_arm64/**/*",
         "!**/*.dylib",
-        "!**/*.dll"
+        "!**/*.dll",
+        "!**/node_modules/pdf-parse/lib/pdf.js/v1.10.88/**",
+        "!**/node_modules/pdf-parse/lib/pdf.js/v1.9.426/**",
+        "!**/node_modules/pdf-parse/lib/pdf.js/v2.0.550/**",
+        "!**/node_modules/better-sqlite3/deps/**",
+        "!**/node_modules/better-sqlite3/src/**"
       ]
     },
     "deb": {

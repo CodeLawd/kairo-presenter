@@ -75,8 +75,13 @@ type Item =
   | { kind: "verse"; result: ScriptureResult }
   | { kind: "recent"; reference: string };
 
-const BAR_FIELD =
+/** The page search field — Scripture's Bible bar, and Lyrics' song search. */
+export const BAR_FIELD =
   "relative flex h-8 min-w-0 items-center rounded-md border border-input bg-surface-secondary transition-colors focus-within:border-slate-400";
+
+/** A button that sits beside BAR_FIELD at the same height — Options, Import. */
+export const BAR_BUTTON =
+  "flex h-8 shrink-0 items-center gap-2 rounded-md border border-input bg-surface-secondary px-3 text-[13px] font-medium text-slate-200 transition-colors hover:bg-surface-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 data-[state=open]:bg-surface-tertiary";
 
 /**
  * The one scripture search: a reference ("jos 1 5 9", "John 3:16") or the words

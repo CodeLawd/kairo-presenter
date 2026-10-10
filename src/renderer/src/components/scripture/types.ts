@@ -26,7 +26,8 @@ export const CARD_ZOOM_DEFAULT = 100;
  * cards per row. The grid stretches cards to fill each row; height is derived
  * as 16:9 for the theme preview.
  */
-export const CARD_BASE_WIDTH = 200;
+// Same minimum as a lyric card at 100%, so both tabs fit the same number per row.
+export const CARD_BASE_WIDTH = 180;
 export const CARD_BASE_HEIGHT = Math.round((CARD_BASE_WIDTH * 9) / 16);
 
 export function createResultRow(

@@ -148,7 +148,7 @@ export function ImportReviewModal({ preview }: { preview: TransferPreview }): Re
     : songCount > 0
       ? `Import ${songCount} song${songCount === 1 ? '' : 's'}`
       : createSetlist && preview.setlist
-        ? 'Create setlist'
+        ? 'Create playlist'
         : 'Nothing to import'
   const allAlreadyHere = !isPlaylist && newSongs.length === 0 && duplicates.length > 0
 
@@ -238,7 +238,7 @@ export function ImportReviewModal({ preview }: { preview: TransferPreview }): Re
                   <ListMusic size={14} className="shrink-0 text-white/45" aria-hidden="true" />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[13px] text-white">
-                      Create setlist “{preview.setlist.name}”
+                      Create playlist “{preview.setlist.name}”
                     </span>
                     <span className="block text-[11px] text-white/40">
                       {preview.setlist.songCount} songs in service order

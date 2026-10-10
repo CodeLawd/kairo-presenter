@@ -215,7 +215,7 @@ export function mergeKairoBundles(bundles: KairoBundle[]): KairoBundle {
   if (bundles.length === 0) throw new Error('No files to import.')
   if (bundles.length === 1) return bundles[0]
   if (bundles.some((bundle) => bundle.kind !== 'songs')) {
-    throw new Error('Setlists and scripture playlists import one file at a time. Select just that file.')
+    throw new Error('Song and scripture playlists import one file at a time. Select just that file.')
   }
   const seen = new Set<string>()
   const songs: LyricsSong[] = []

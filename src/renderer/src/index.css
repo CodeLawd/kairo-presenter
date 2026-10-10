@@ -7,126 +7,126 @@
 @layer base {
   :root {
     /* Pane tones carry the structure without visible divider lines. */
-    --surface: 17 18 13;
-    --surface-secondary: 31 31 25;
-    --surface-tertiary: 39 39 32;
-    --surface-elevated: 50 50 42;
-    --surface-rail: 43 43 36;
-    --surface-header: 36 36 30;
-    --surface-border: 54 54 45;
-    /* Accent is white in dark, ink in light; #6C91C2 marks only what is live. */
-    --control-accent: 255 251 244;
-    --accent-50: 255 251 244;
-    --accent-100: 255 251 244;
-    --accent-200: 255 251 244;
-    --accent-300: 255 251 244;
-    --accent-400: 255 251 244;
-    --accent-500: 255 251 244;
-    --accent-600: 231 228 220;
-    --accent-700: 162 159 150;
-    --accent-800: 86 84 73;
-    --accent-900: 65 64 55;
-    --accent-950: 41 41 34;
-    --on-accent: 17 18 13;
-    --live: 108 145 194;
-    /* Icon hues — earthy, half-saturated tones that sit with ink and paper
-       (sage, terracotta, ochre…), one per tool so a colour means the same
-       thing everywhere. None is the live blue, reserved for what's on screen. */
-    --hue-green: 143 176 138;
-    --hue-orange: 217 142 79;
-    --hue-violet: 163 139 196;
-    --hue-cyan: 95 168 160;
-    --hue-pink: 207 127 154;
-    --hue-coral: 201 111 94;
-    --hue-lime: 163 174 98;
-    --hue-amber: 212 165 90;
-    --hue-indigo: 138 147 201;
-    --tint-live: 36 46 58;
-    --tint-teal: 47 47 41;
+    --surface: 12 17 29;
+    --surface-secondary: 21 27 39;
+    --surface-tertiary: 26 32 46;
+    --surface-elevated: 33 40 54;
+    --surface-rail: 28 35 49;
+    --surface-header: 24 30 43;
+    --surface-border: 35 43 57;
+    /* Accent is white in dark, ink in light; #315EDE (cobalt) marks only what is live. */
+    --control-accent: 249 250 251;
+    --accent-50: 249 250 251;
+    --accent-100: 249 250 251;
+    --accent-200: 249 250 251;
+    --accent-300: 249 250 251;
+    --accent-400: 249 250 251;
+    --accent-500: 249 250 251;
+    --accent-600: 222 224 227;
+    --accent-700: 142 148 157;
+    --accent-800: 55 65 81;
+    --accent-900: 42 50 65;
+    --accent-950: 27 34 47;
+    --on-accent: 12 17 29;
+    --live: 49 94 222;
+    /* Icon hues — clear, cool-leaning tones that sit on onyx and slate, one per
+       tool so a colour means the same thing everywhere. None is the cobalt
+       live blue, reserved for what's on screen. */
+    --hue-green: 94 204 140;
+    --hue-orange: 240 152 84;
+    --hue-violet: 167 139 245;
+    --hue-cyan: 72 194 216;
+    --hue-pink: 236 120 178;
+    --hue-coral: 244 124 104;
+    --hue-lime: 178 208 92;
+    --hue-amber: 240 190 84;
+    --hue-indigo: 138 146 245;
+    --tint-live: 35 43 59;
+    --tint-teal: 31 38 52;
     --tint-red: 55 27 22;
-    --tint-amber: 47 47 41;
-    --tint-yellow: 47 47 41;
+    --tint-amber: 31 38 52;
+    --tint-yellow: 31 38 52;
     --tint-rose: 56 26 27;
-    --range-track: 69 68 58;
-    --text-primary: 255 251 244;
+    --range-track: 44 53 68;
+    --text-primary: 249 250 251;
     /* Grey text, a step brighter than the neutral scale so labels read on
        charcoal. slate/zinc text-* map here (tailwind.config.js); bg/border don't. */
-    --fg-200: 255 251 244;
-    --fg-300: 235 231 223;
-    --fg-400: 204 201 193;
-    --fg-500: 171 168 159;
-    --fg-600: 140 137 128;
-    --neutral-50: 255 251 244;
-    --neutral-100: 247 243 235;
-    --neutral-200: 231 228 220;
-    --neutral-300: 213 209 201;
-    --neutral-400: 162 159 150;
-    --neutral-500: 120 117 107;
-    --neutral-600: 86 84 73;
-    --neutral-700: 65 64 55;
-    --neutral-800: 41 41 34;
-    --neutral-900: 24 25 19;
-    --neutral-950: 17 18 13;
+    --fg-200: 249 250 251;
+    --fg-300: 226 228 231;
+    --fg-400: 191 195 200;
+    --fg-500: 153 158 167;
+    --fg-600: 117 124 135;
+    --neutral-50: 249 250 251;
+    --neutral-100: 239 241 243;
+    --neutral-200: 222 224 227;
+    --neutral-300: 200 204 208;
+    --neutral-400: 142 148 157;
+    --neutral-500: 94 102 115;
+    --neutral-600: 55 65 81;
+    --neutral-700: 42 50 65;
+    --neutral-800: 27 34 47;
+    --neutral-900: 16 22 34;
+    --neutral-950: 12 17 29;
     --radius: 0.375rem;
     --radius-md: 0.5rem;
     --radius-sm: 0.25rem;
   }
 
   [data-theme='light'] {
-    --surface: 250 246 239;
-    --surface-secondary: 241 238 230;
-    --surface-tertiary: 229 225 217;
-    --surface-elevated: 255 251 244;
-    --surface-border: 214 211 203;
-    --surface-rail: 223 219 212;
-    --surface-header: 235 231 223;
-    --control-accent: 17 18 13;
-    --accent-50: 17 18 13;
-    --accent-100: 17 18 13;
-    --accent-200: 17 18 13;
-    --accent-300: 17 18 13;
-    --accent-400: 17 18 13;
-    --accent-500: 17 18 13;
-    --accent-600: 43 43 36;
-    --accent-700: 65 64 55;
-    --accent-800: 86 84 73;
-    --accent-900: 120 117 107;
-    --accent-950: 213 209 201;
-    --on-accent: 255 251 244;
-    --live: 108 145 194;
-    --hue-green: 78 122 72;
-    --hue-orange: 166 92 32;
-    --hue-violet: 110 82 152;
-    --hue-cyan: 38 118 110;
-    --hue-pink: 160 70 102;
-    --hue-coral: 160 70 54;
-    --hue-lime: 104 114 40;
-    --hue-amber: 150 104 30;
-    --hue-indigo: 80 90 160;
-    --tint-live: 226 232 240;
-    --tint-teal: 236 232 224;
+    --surface: 243 245 246;
+    --surface-secondary: 233 235 237;
+    --surface-tertiary: 219 221 225;
+    --surface-elevated: 249 250 251;
+    --surface-border: 202 205 210;
+    --surface-rail: 212 215 219;
+    --surface-header: 226 228 231;
+    --control-accent: 12 17 29;
+    --accent-50: 12 17 29;
+    --accent-100: 12 17 29;
+    --accent-200: 12 17 29;
+    --accent-300: 12 17 29;
+    --accent-400: 12 17 29;
+    --accent-500: 12 17 29;
+    --accent-600: 28 35 49;
+    --accent-700: 42 50 65;
+    --accent-800: 55 65 81;
+    --accent-900: 94 102 115;
+    --accent-950: 200 204 208;
+    --on-accent: 249 250 251;
+    --live: 49 94 222;
+    --hue-green: 22 128 70;
+    --hue-orange: 190 82 18;
+    --hue-violet: 109 52 210;
+    --hue-cyan: 14 116 144;
+    --hue-pink: 184 36 104;
+    --hue-coral: 190 62 46;
+    --hue-lime: 84 120 18;
+    --hue-amber: 156 100 10;
+    --hue-indigo: 72 64 196;
+    --tint-live: 229 231 234;
+    --tint-teal: 227 229 232;
     --tint-red: 253 227 221;
-    --tint-amber: 236 232 224;
-    --tint-yellow: 236 232 224;
+    --tint-amber: 227 229 232;
+    --tint-yellow: 227 229 232;
     --tint-rose: 254 227 225;
-    --range-track: 214 211 203;
-    --text-primary: 17 18 13;
-    --fg-200: 41 41 34;
-    --fg-300: 64 63 54;
-    --fg-400: 85 83 72;
-    --fg-500: 106 104 94;
-    --fg-600: 86 84 73;
-    --neutral-50: 17 18 13;
-    --neutral-100: 24 25 19;
-    --neutral-200: 41 41 34;
-    --neutral-300: 65 64 55;
-    --neutral-400: 86 84 73;
-    --neutral-500: 120 117 107;
-    --neutral-600: 162 159 150;
-    --neutral-700: 213 209 201;
-    --neutral-800: 231 228 220;
-    --neutral-900: 247 243 235;
-    --neutral-950: 255 251 244;
+    --range-track: 202 205 210;
+    --text-primary: 12 17 29;
+    --fg-200: 27 34 47;
+    --fg-300: 41 50 64;
+    --fg-400: 54 64 80;
+    --fg-500: 78 87 101;
+    --fg-600: 55 65 81;
+    --neutral-50: 12 17 29;
+    --neutral-100: 16 22 34;
+    --neutral-200: 27 34 47;
+    --neutral-300: 42 50 65;
+    --neutral-400: 55 65 81;
+    --neutral-500: 94 102 115;
+    --neutral-600: 142 148 157;
+    --neutral-700: 200 204 208;
+    --neutral-800: 222 224 227;
+    --neutral-900: 239 241 243;
+    --neutral-950: 249 250 251;
   }
 
   html,
@@ -175,7 +175,7 @@
   }
 
   [data-theme='light'] .bg-white {
-    background-color: #FFFBF4;
+    background-color: #F9FAFB;
   }
 
   /* Electron drag region for frameless window on macOS */
@@ -447,7 +447,7 @@
   .sermon-notes-editor .sermon-notes-tiptap blockquote {
     margin: 0.75em 0;
     padding-left: 0.85em;
-    border-left: 1px solid rgb(86 84 73 / 0.45);
+    border-left: 1px solid rgb(55 65 81 / 0.45);
     color: rgb(51 65 85);
   }
 

@@ -3,13 +3,74 @@ import { X } from '@/icons'
 import { cn } from '@/lib/utils'
 import type { OverlayBox, OverlayContentKind, OverlayTheme } from '@shared/ipc'
 import {
+  ELEMENT_BOX_MIN,
   moveOverlayBox,
   resizeOverlayBox,
+  resizeOverlayBoxKeepingAspect,
+  TEXT_BOX_MIN,
+  type BoxMinimum,
   type ResizeHandle,
 } from '@shared/overlay-boxes'
+import { overlayElementLabel } from '@shared/overlay-elements'
 import { overlayLayerLabel } from '@shared/overlay-outputs'
 
+/** The two text boxes. */
 export type OverlayLayerId = 'verse' | 'reference'
+/** Anything on the canvas: a text box, or an element by its id. */
+export type CanvasLayerId = string
+
+export function isTextLayer(id: CanvasLayerId | null): id is OverlayLayerId {
+  return id === 'verse' || id === 'reference'
+}
+
+/** The box `id` occupies, or null when it is gone (a deleted element). */
+export function layerBox(theme: OverlayTheme, id: CanvasLayerId): OverlayBox | null {
+  if (id === 'verse') return theme.verse.box
+  if (id === 'reference') return theme.reference.box
+  return theme.elements.find((el) => el.id === id)?.box ?? null
+}
+
+function layerRotation(theme: OverlayTheme, id: CanvasLayerId): number {
+  return theme.elements.find((el) => el.id === id)?.rotationDeg ?? 0
+}
+
+/** Shift while rotating snaps to this many degrees. */
+const ROTATE_SNAP_DEG = 15
+
+/**
+ * A resize drag on a turned box: the pointer moves in screen space, the handles
+ * in the box's own. Turn the pointer delta into the box's axes, resize there,
+ * then move the centre back out so the opposite edge stays where it was.
+ */
+function resizeTurnedBox(
+  start: OverlayBox,
+  handle: ResizeHandle,
+  dxPx: number,
+  dyPx: number,
+  frame: { width: number; height: number },
+  rotationDeg: number,
+  keepAspect: boolean,
+  min: BoxMinimum,
+): OverlayBox {
+  const rad = (rotationDeg * Math.PI) / 180
+  const cos = Math.cos(rad)
+  const sin = Math.sin(rad)
+  const localX = dxPx * cos + dyPx * sin
+  const localY = -dxPx * sin + dyPx * cos
+  const resize = keepAspect ? resizeOverlayBoxKeepingAspect : resizeOverlayBox
+  const next = resize(start, handle, (localX / frame.width) * 100, (localY / frame.height) * 100, min)
+  if (!rotationDeg) return next
+
+  const shiftX = ((next.xPct + next.widthPct / 2 - (start.xPct + start.widthPct / 2)) / 100) * frame.width
+  const shiftY = ((next.yPct + next.heightPct / 2 - (start.yPct + start.heightPct / 2)) / 100) * frame.height
+  const cx = start.xPct + start.widthPct / 2 + ((shiftX * cos - shiftY * sin) / frame.width) * 100
+  const cy = start.yPct + start.heightPct / 2 + ((shiftX * sin + shiftY * cos) / frame.height) * 100
+  return { ...next, xPct: cx - next.widthPct / 2, yPct: cy - next.heightPct / 2 }
+}
+
+function layerMinimum(id: CanvasLayerId): BoxMinimum {
+  return isTextLayer(id) ? TEXT_BOX_MIN : ELEMENT_BOX_MIN
+}
 
 const HANDLES: ResizeHandle[] = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw']
 
@@ -38,12 +99,14 @@ const HANDLE_CLASS: Record<ResizeHandle, string> = {
 interface OverlayCanvasProps {
   theme: OverlayTheme
   contentKind: OverlayContentKind
-  selected: OverlayLayerId | null
-  onSelect: (id: OverlayLayerId | null) => void
-  onBoxChange: (id: OverlayLayerId, box: OverlayBox) => void
-  /** Hides a layer — the canvas's Delete key and the frame's × both call this. */
-  onDeleteLayer: (id: OverlayLayerId) => void
-  /** Double-click on a box: open its text settings. */
+  selected: CanvasLayerId | null
+  onSelect: (id: CanvasLayerId | null) => void
+  onBoxChange: (id: CanvasLayerId, box: OverlayBox) => void
+  /** Rotate handle on an element: its new angle, -180–180°. */
+  onRotate?: (id: CanvasLayerId, deg: number) => void
+  /** Hides the reference or deletes an element — the Delete key and the frame's × both call this. */
+  onDeleteLayer: (id: CanvasLayerId) => void
+  /** Double-click on a text box: open its text settings. */
   onEditLayer?: (id: OverlayLayerId) => void
 }
 
@@ -76,12 +139,12 @@ function snapToCentre(box: OverlayBox): { box: OverlayBox; v: boolean; h: boolea
 }
 
 /**
- * Only the reference can be removed: the verse box holds the content itself, and
- * the theme has no flag that would hide it. Selecting it and pressing Delete is
- * a no-op rather than an error.
+ * The reference hides and elements delete. The verse box holds the content
+ * itself, and the theme has no flag that would hide it, so Delete on it is a
+ * no-op rather than an error.
  */
-function isDeletable(id: OverlayLayerId): boolean {
-  return id === 'reference'
+function isDeletable(id: CanvasLayerId): boolean {
+  return id !== 'verse'
 }
 
 export function OverlayCanvas({
@@ -90,22 +153,26 @@ export function OverlayCanvas({
   selected,
   onSelect,
   onBoxChange,
+  onRotate,
   onDeleteLayer,
   onEditLayer,
 }: OverlayCanvasProps): React.ReactElement {
   const frameRef = useRef<HTMLDivElement>(null)
   const [guides, setGuides] = useState({ v: false, h: false })
   const dragRef = useRef<{
-    id: OverlayLayerId
-    mode: 'move' | 'resize'
+    id: CanvasLayerId
+    mode: 'move' | 'resize' | 'rotate'
     handle?: ResizeHandle
     pointerId: number
     startX: number
     startY: number
     startBox: OverlayBox
+    rotationDeg: number
   } | null>(null)
   const onBoxChangeRef = useRef(onBoxChange)
   onBoxChangeRef.current = onBoxChange
+  const onRotateRef = useRef(onRotate)
+  onRotateRef.current = onRotate
   const onSelectRef = useRef(onSelect)
   onSelectRef.current = onSelect
   const themeRef = useRef(theme)
@@ -134,32 +201,54 @@ export function OverlayCanvas({
     setGuides({ v: false, h: false })
   }
 
-  const applyPointer = (clientX: number, clientY: number): void => {
+  const applyPointer = (clientX: number, clientY: number, shift: boolean): void => {
     const drag = dragRef.current
     const frame = frameRef.current
     if (!drag || !frame) return
     const rect = frame.getBoundingClientRect()
     if (rect.width <= 0 || rect.height <= 0) return
-    const dxPct = ((clientX - drag.startX) / rect.width) * 100
-    const dyPct = ((clientY - drag.startY) / rect.height) * 100
-    if (drag.mode === 'resize' && drag.handle) {
-      onBoxChangeRef.current(drag.id, resizeOverlayBox(drag.startBox, drag.handle, dxPct, dyPct))
+    const min = layerMinimum(drag.id)
+    if (drag.mode === 'rotate') {
+      const box = drag.startBox
+      const cx = rect.left + ((box.xPct + box.widthPct / 2) / 100) * rect.width
+      const cy = rect.top + ((box.yPct + box.heightPct / 2) / 100) * rect.height
+      // 0° with the pointer straight above the centre, clockwise positive.
+      let deg = (Math.atan2(clientX - cx, cy - clientY) * 180) / Math.PI
+      if (shift) deg = Math.round(deg / ROTATE_SNAP_DEG) * ROTATE_SNAP_DEG
+      if (deg > 180) deg -= 360
+      onRotateRef.current?.(drag.id, Math.round(deg))
       return
     }
-    const snapped = snapToCentre(moveOverlayBox(drag.startBox, dxPct, dyPct))
+    if (drag.mode === 'resize' && drag.handle) {
+      const next = resizeTurnedBox(
+        drag.startBox,
+        drag.handle,
+        clientX - drag.startX,
+        clientY - drag.startY,
+        rect,
+        drag.rotationDeg,
+        shift,
+        min,
+      )
+      onBoxChangeRef.current(drag.id, next)
+      return
+    }
+    const dxPct = ((clientX - drag.startX) / rect.width) * 100
+    const dyPct = ((clientY - drag.startY) / rect.height) * 100
+    const snapped = snapToCentre(moveOverlayBox(drag.startBox, dxPct, dyPct, min))
     setGuides((g) => (g.v === snapped.v && g.h === snapped.h ? g : { v: snapped.v, h: snapped.h }))
     onBoxChangeRef.current(drag.id, snapped.box)
   }
 
   const beginDrag = (
     event: React.PointerEvent<HTMLElement>,
-    id: OverlayLayerId,
-    mode: 'move' | 'resize',
+    id: CanvasLayerId,
+    mode: 'move' | 'resize' | 'rotate',
     handle?: ResizeHandle
   ): void => {
     event.preventDefault()
     event.stopPropagation()
-    const box = id === 'verse' ? theme.verse.box : theme.reference.box
+    const box = layerBox(theme, id)
     if (!box) return
 
     endDrag()
@@ -171,6 +260,7 @@ export function OverlayCanvas({
       startX: event.clientX,
       startY: event.clientY,
       startBox: { ...box },
+      rotationDeg: layerRotation(theme, id),
     }
     onSelectRef.current(id)
 
@@ -186,7 +276,7 @@ export function OverlayCanvas({
     const move = (moveEvent: PointerEvent | MouseEvent): void => {
       if (!dragRef.current) return
       moveEvent.preventDefault()
-      applyPointer(moveEvent.clientX, moveEvent.clientY)
+      applyPointer(moveEvent.clientX, moveEvent.clientY, moveEvent.shiftKey)
     }
     const up = (): void => {
       endDrag()
@@ -224,17 +314,26 @@ export function OverlayCanvas({
       const move = delta[event.key]
       if (!move) return
       // Read through the ref so the listener isn't re-attached on every drag frame.
-      const box = selected === 'verse' ? themeRef.current.verse.box : themeRef.current.reference.box
+      const box = layerBox(themeRef.current, selected)
       if (!box) return
       event.preventDefault()
-      onBoxChangeRef.current(selected, moveOverlayBox(box, move[0], move[1]))
+      onBoxChangeRef.current(selected, moveOverlayBox(box, move[0], move[1], layerMinimum(selected)))
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [selected, onDeleteLayer])
 
-  const layers: OverlayLayerId[] =
-    theme.reference.show ? ['verse', 'reference'] : ['verse']
+  // Drawing order: elements under the text, the text, elements over it.
+  const below = theme.elements.filter((el) => !el.aboveText)
+  const above = theme.elements.filter((el) => el.aboveText)
+  const layers: Array<{ id: CanvasLayerId; label: string; box: OverlayBox; z: number; rotationDeg?: number }> = [
+    ...below.map((el, i) => ({ id: el.id, label: overlayElementLabel(el), box: el.box, z: 100 + i, rotationDeg: el.rotationDeg })),
+    { id: 'verse', label: overlayLayerLabel(contentKind, 'verse'), box: theme.verse.box, z: 200 },
+    ...(theme.reference.show
+      ? [{ id: 'reference', label: overlayLayerLabel(contentKind, 'reference'), box: theme.reference.box, z: 210 }]
+      : []),
+    ...above.map((el, i) => ({ id: el.id, label: overlayElementLabel(el), box: el.box, z: 300 + i, rotationDeg: el.rotationDeg })),
+  ]
 
   return (
     <div
@@ -245,17 +344,19 @@ export function OverlayCanvas({
         if (event.target === event.currentTarget) onSelect(null)
       }}
     >
-      {layers.map((id) => (
+      {layers.map(({ id, label, box, z, rotationDeg }) => (
         <LayerFrame
+          rotationDeg={onRotate ? rotationDeg : undefined}
           key={id}
           id={id}
-          label={overlayLayerLabel(contentKind, id === 'verse' ? 'verse' : 'reference')}
-          box={id === 'verse' ? theme.verse.box : theme.reference.box}
+          label={label}
+          box={box}
           selected={selected === id}
-          stacked={selected === id ? 30 : id === 'reference' ? 20 : 10}
+          stacked={selected === id ? 1000 : z}
+          deleteVerb={isTextLayer(id) ? 'Hide' : 'Delete'}
           onDelete={isDeletable(id) ? () => onDeleteLayer(id) : undefined}
           onPointerDown={beginDrag}
-          onDoubleClick={onEditLayer ? () => onEditLayer(id) : undefined}
+          onDoubleClick={onEditLayer && isTextLayer(id) ? () => onEditLayer(id) : undefined}
         />
       ))}
       {guides.v && <div className="pointer-events-none absolute inset-y-0 left-1/2 z-40 w-px -translate-x-1/2 bg-white/70" />}
@@ -270,21 +371,26 @@ function LayerFrame({
   box,
   selected,
   stacked,
+  rotationDeg,
+  deleteVerb,
   onDelete,
   onPointerDown,
   onDoubleClick,
 }: {
-  id: OverlayLayerId
+  id: CanvasLayerId
   label: string
   box: OverlayBox
   selected: boolean
   stacked: number
+  /** Elements turn; text boxes don't, and get no rotate handle. */
+  rotationDeg?: number
+  deleteVerb: string
   /** Omitted for layers that cannot be hidden. */
   onDelete?: () => void
   onPointerDown: (
     event: React.PointerEvent<HTMLElement>,
-    id: OverlayLayerId,
-    mode: 'move' | 'resize',
+    id: CanvasLayerId,
+    mode: 'move' | 'resize' | 'rotate',
     handle?: ResizeHandle
   ) => void
   onDoubleClick?: () => void
@@ -311,6 +417,7 @@ function LayerFrame({
         height: `${box.heightPct}%`,
         zIndex: stacked,
         pointerEvents: 'auto',
+        transform: rotationDeg ? `rotate(${rotationDeg}deg)` : undefined,
       }}
       onPointerDown={(event) => onPointerDown(event, id, 'move')}
       onDoubleClick={onDoubleClick}
@@ -333,8 +440,8 @@ function LayerFrame({
             event.stopPropagation()
             onDelete()
           }}
-          title={`Hide ${label} (Delete)`}
-          aria-label={`Hide ${label}`}
+          title={`${deleteVerb} ${label} (Delete)`}
+          aria-label={`${deleteVerb} ${label}`}
           className={cn(
             'absolute -top-5 -right-1 z-20 grid h-4 w-4 place-items-center rounded bg-black/75 text-white transition-opacity hover:opacity-80'
           )}
@@ -355,6 +462,18 @@ function LayerFrame({
             onPointerDown={(event) => onPointerDown(event, id, 'resize', handle)}
           />
         ))}
+      {selected && rotationDeg !== undefined && (
+        <>
+          <span className="pointer-events-none absolute -bottom-5 left-1/2 h-5 w-px -translate-x-1/2 bg-white/70" />
+          <span
+            role="presentation"
+            title="Rotate (Shift snaps to 15°)"
+            className="absolute -bottom-7 left-1/2 z-20 h-3 w-3 -translate-x-1/2 rounded-full border-2 border-white bg-black/60"
+            style={{ cursor: 'grab', pointerEvents: 'auto' }}
+            onPointerDown={(event) => onPointerDown(event, id, 'rotate')}
+          />
+        </>
+      )}
     </div>
   )
 }

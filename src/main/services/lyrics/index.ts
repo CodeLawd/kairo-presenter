@@ -1,3 +1,5 @@
+import { normalizeHotkey } from '@shared/lyrics-hotkeys'
+import { parseSectionLines, serializeSectionLines } from '@shared/lyrics-section-json'
 import path from 'path'
 import { app } from 'electron'
 import Database from 'better-sqlite3'
@@ -45,6 +47,7 @@ interface InternalSection {
   index: number
   lines: string[]
   lineColors?: (string | null)[]
+  hotkey?: string
 }
 
 interface Song {
@@ -62,48 +65,6 @@ interface Song {
 
 // ─── Section lines JSON (backward compatible) ─────────────────────────────────
 
-/** Persist lines; include colors only when at least one override is set. */
-function serializeSectionLines(lines: string[], lineColors?: (string | null)[]): string {
-  if (lineColors && lineColors.some((c) => Boolean(c?.trim()))) {
-    const colors = lines.map((_, i) => {
-      const c = lineColors[i]?.trim()
-      return c || null
-    })
-    return JSON.stringify({ lines, lineColors: colors })
-  }
-  return JSON.stringify(lines)
-}
-
-function parseSectionLines(raw: string): {
-  lines: string[]
-  lineColors?: (string | null)[]
-} {
-  try {
-    const parsed = JSON.parse(raw) as unknown
-    if (Array.isArray(parsed)) {
-      return { lines: parsed.map((x) => String(x ?? '')) }
-    }
-    if (
-      parsed &&
-      typeof parsed === 'object' &&
-      Array.isArray((parsed as { lines?: unknown }).lines)
-    ) {
-      const obj = parsed as { lines: unknown[]; lineColors?: unknown[] }
-      const lines = obj.lines.map((x) => String(x ?? ''))
-      const rawColors = obj.lineColors
-      const lineColors = Array.isArray(rawColors)
-        ? lines.map((_, i) => {
-            const c = rawColors[i]
-            return typeof c === 'string' && c.trim() ? c.trim() : null
-          })
-        : undefined
-      return { lines, lineColors }
-    }
-  } catch {
-    /* fall through */
-  }
-  return { lines: [] }
-}
 
 const SQL_CREATE_SONGS = `
   CREATE TABLE IF NOT EXISTS songs (
@@ -720,6 +681,7 @@ class LyricsService {
         index: i + 1,
         lines: s.lines,
         ...(s.lineColors ? { lineColors: s.lineColors } : {}),
+        ...(normalizeHotkey(s.hotkey) ? { hotkey: normalizeHotkey(s.hotkey) } : {}),
       })),
       createdAt:  song.createdAt,
       updatedAt:  song.updatedAt,
@@ -766,7 +728,7 @@ class LyricsService {
           sec.type,
           sec.label,
           sec.index,
-          serializeSectionLines(sec.lines, sec.lineColors),
+          serializeSectionLines(sec.lines, sec.lineColors, sec.hotkey),
           i
         )
       }
@@ -824,7 +786,7 @@ class LyricsService {
           sec.type,
           sec.label,
           i + 1,
-          serializeSectionLines(sec.lines, sec.lineColors),
+          serializeSectionLines(sec.lines, sec.lineColors, sec.hotkey),
           i
         )
       }
@@ -1302,6 +1264,7 @@ class LyricsService {
         label: s.label,
         lines: parsed.lines,
         ...(parsed.lineColors ? { lineColors: parsed.lineColors } : {}),
+        ...(parsed.hotkey ? { hotkey: parsed.hotkey } : {}),
       }
     })
 
@@ -1334,6 +1297,7 @@ class LyricsService {
         label: s.label,
         lines: s.lines,
         ...(s.lineColors ? { lineColors: s.lineColors } : {}),
+        ...(s.hotkey ? { hotkey: s.hotkey } : {}),
       })),
       createdAt:   song.createdAt,
       updatedAt:   song.updatedAt,

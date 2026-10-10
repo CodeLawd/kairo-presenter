@@ -8,7 +8,9 @@ import {
   normalizeThemeLibrary,
   nextUntitledThemeName,
   outputUsesTheme,
+  setThemeBaseline,
   syncThemeToOutputs,
+  themeBaseline,
   themesForKind,
   unassignThemeFromOutput,
   updateLibraryTheme,
@@ -183,4 +185,41 @@ test('a new install is seeded with every built-in; a shaped library is left alon
   const renamed = [{ ...placeholder[0], name: 'Sunday' }]
   assert.equal(isUntouchedThemeLibrary(renamed), false)
   assert.equal(isUntouchedThemeLibrary(seeded), false)
+})
+
+test('edits leave the default alone until "Set as default"', () => {
+  const red = { ...DEFAULT_OVERLAY_THEME, verse: { ...DEFAULT_OVERLAY_THEME.verse, color: '#ff0000' } }
+  const library = [createCustomTheme('Warm', DEFAULT_OVERLAY_THEME, 'scripture', 1, 'warm')]
+  const edited = updateLibraryTheme(library, 'warm', { name: 'Warm', theme: red }, 2)
+  assert.equal(edited[0].theme.verse.color, '#ff0000')
+  assert.equal(themeBaseline(edited[0]).verse.color, DEFAULT_OVERLAY_THEME.verse.color)
+
+  const committed = setThemeBaseline(edited, 'warm', red)
+  assert.equal(themeBaseline(committed[0]).verse.color, '#ff0000')
+  red.verse.color = '#00ff00'
+  assert.equal(themeBaseline(committed[0]).verse.color, '#ff0000', 'the default is a snapshot')
+})
+
+test('a theme saved before defaults existed takes its pre-edit look as its default', () => {
+  const [legacy] = normalizeThemeLibrary(
+    [{ id: 'old', name: 'Old', kind: 'scripture', createdAt: 1, updatedAt: 1, theme: DEFAULT_OVERLAY_THEME }],
+    DEFAULT_OVERLAY_THEME,
+  )
+  assert.equal(legacy.baseline, undefined)
+  const red = { ...DEFAULT_OVERLAY_THEME, verse: { ...DEFAULT_OVERLAY_THEME.verse, color: '#ff0000' } }
+  const [edited] = updateLibraryTheme([legacy], 'old', { name: 'Old', theme: red }, 2)
+  assert.equal(themeBaseline(edited).verse.color, DEFAULT_OVERLAY_THEME.verse.color)
+  // Normalizing (as main does on every save) keeps the default.
+  const [stored] = normalizeThemeLibrary([edited], DEFAULT_OVERLAY_THEME)
+  assert.equal(themeBaseline(stored).verse.color, DEFAULT_OVERLAY_THEME.verse.color)
+})
+
+test('a lyrics theme keeps its background when assigned to a screen', () => {
+  const withImage = {
+    ...DEFAULT_OVERLAY_THEME,
+    background: { ...DEFAULT_OVERLAY_THEME.background, type: 'image' as const, mediaPath: '/tmp/a.png' },
+  }
+  const theme = createCustomTheme('Stage', withImage, 'lyrics', 1, 'stage')
+  const output = assignThemeToOutput(makeOverlayOutput('main', 'screen'), theme)
+  assert.equal(output.lyrics?.theme.background.type, 'image')
 })

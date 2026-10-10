@@ -21,6 +21,8 @@ export interface AdminOverview {
   churches: { total: number; new30d: number }
   sermons: { total: number; last30d: number }
   activeInstalls30d: number
+  /** Installs that sent usage statistics in the last 7 days. */
+  activeThisWeek: number
   downloads: { total: number; last30d: number }
   signups: DayCount[]
 }
@@ -46,6 +48,9 @@ export interface AdminChurch {
   sermons: number
   timezone: string
   createdAt: string | null
+  /** From usage statistics: last day a desktop reported, and its newest app version. */
+  lastActive: string | null
+  appVersion: string | null
 }
 
 export interface Page<T> { items: T[]; total: number; page: number; pageSize: number }
@@ -90,4 +95,92 @@ export function formatRelative(value: string | null): string {
   if (days === 1) return 'Yesterday'
   if (days < 30) return `${days} days ago`
   return formatDate(value)
+}
+
+// ─── Usage statistics ────────────────────────────────────────────────────────
+
+export interface AdminUsage {
+  days: number
+  active: { today: number; week: number; month: number; churches: number }
+  activeByDay: DayCount[]
+  systems: {
+    installs: number
+    os: KeyCount[]
+    osVersion: KeyCount[]
+    arch: KeyCount[]
+    appVersion: KeyCount[]
+    theme: KeyCount[]
+    bible: KeyCount[]
+    memoryGb: KeyCount[]
+    adoption: KeyCount[]
+  }
+  features: KeyCount[]
+  featureByDay: { day: string; key: string; count: number }[]
+  errors: KeyCount[]
+  errorsByVersion: KeyCount[]
+  web: { pages: KeyCount[]; viewsByDay: DayCount[] }
+}
+
+export interface AdminUsageChurch {
+  id: string
+  name: string
+  installs: number
+  lastActive: string
+  versions: string[]
+  services: number
+  minutes: number
+  errors: number
+  topFeatures: KeyCount[]
+}
+
+export interface AdminUsageChurchDetail {
+  id: string
+  name: string
+  days: number
+  installs: { installId: string; lastActive: string; system: Record<string, string | number | boolean> }[]
+  activity: DayCount[]
+  features: KeyCount[]
+  errors: KeyCount[]
+}
+
+export const FEATURE_NAMES: Record<string, string> = {
+  service_started: 'Services started',
+  service_ended: 'Services ended',
+  listening_minutes: 'Minutes transcribed',
+  scripture_manual: 'Verses sent by hand',
+  scripture_auto: 'Verses sent automatically',
+  scripture_search: 'Scripture searches',
+  lyrics_slide: 'Lyric slides shown',
+  song_import: 'Songs imported',
+  song_online_search: 'Online song searches',
+  media_live: 'Media put live',
+  document_page: 'Document pages shown',
+  timer_start: 'Timers started',
+  message_shown: 'Messages shown',
+  output_clear: 'Screens cleared',
+  bible_download: 'Bibles downloaded',
+  recap_uploaded: 'Recaps published',
+}
+
+export const ERROR_NAMES: Record<string, string> = {
+  uncaught: 'App error',
+  unhandled_rejection: 'Unhandled async error',
+  renderer_gone: 'Window crashed',
+  child_process_gone: 'Helper process crashed',
+}
+
+export const OS_NAMES: Record<string, string> = { darwin: 'macOS', win32: 'Windows', linux: 'Linux' }
+
+export const ADOPTION_NAMES: Record<string, string> = {
+  screens: 'Audience screens',
+  ndi: 'NDI output',
+  propresenter: 'ProPresenter',
+  transcription: 'Live transcription',
+  automation: 'Scripture automation',
+}
+
+/** "2026-10-09" → "9 Oct 2026"; also accepts full ISO dates. */
+export function formatDay(value: string | null): string {
+  if (!value) return '—'
+  return formatDate(value.length === 10 ? `${value}T12:00:00` : value)
 }

@@ -34,7 +34,7 @@ export function reorderLyricSlide(sections: LyricsSongSection[], from: number, t
     }
     previous = block.source
   }
-  return result
+  return uniqueHotkeys(result)
 }
 
 /**
@@ -65,7 +65,47 @@ export function labelLyricSlides(
       result.push({ ...base, type, label, lines: [...block.lines], lineColors: [...block.colors] })
     }
   })
-  return result
+  return uniqueHotkeys(result)
+}
+
+/**
+ * Removes slides (by flat index) and rejoins what is left. A section whose
+ * every slide is removed disappears; neighbours that now touch and share a
+ * label merge, the same as after a move.
+ */
+export function deleteLyricSlides(sections: LyricsSongSection[], slideIndexes: Iterable<number>): LyricsSongSection[] {
+  const chosen = new Set(slideIndexes)
+  const blocks = slideBlocks(sections)
+  if (![...chosen].some(index => index >= 0 && index < blocks.length)) return sections
+  return joinBlocks(sections, blocks.filter((_, index) => !chosen.has(index)))
+}
+
+/** A slide's own lyric lines (before display wrapping), or null when out of range. */
+export function lyricSlideLines(sections: LyricsSongSection[], index: number): string[] | null {
+  const block = slideBlocks(sections)[index]
+  return block ? [...block.lines] : null
+}
+
+/**
+ * Replaces one slide's lines (Quick Edit). A line left unchanged keeps its
+ * colour; edited lines go back to automatic. A blank line in the new text
+ * starts another slide in the same section, as everywhere else.
+ */
+export function replaceLyricSlide(sections: LyricsSongSection[], index: number, lines: string[]): LyricsSongSection[] {
+  const blocks = slideBlocks(sections)
+  const block = blocks[index]
+  if (!block) return sections
+  const tidy = lines
+    .map((line) => line.replace(/\s+$/, ''))
+    .filter((line, i, all) => line.trim() || (i > 0 && all[i - 1].trim()))
+  while (tidy.length && !tidy.at(-1)!.trim()) tidy.pop()
+  if (!tidy.length) return sections
+  blocks[index] = {
+    ...block,
+    lines: tidy,
+    colors: tidy.map((line, i) => (line.trim() && block.lines[i] === line ? block.colors[i] : null)),
+  }
+  return joinBlocks(sections, blocks)
 }
 
 /** Rebuilds sections from blocks, merging neighbours that share a type and label. */
@@ -81,7 +121,7 @@ function joinBlocks(sections: LyricsSongSection[], blocks: SlideBlock[]): Lyrics
       result.push({ ...base, lines: [...block.lines], lineColors: [...block.colors] })
     }
   }
-  return result
+  return uniqueHotkeys(result)
 }
 
 /**
@@ -107,4 +147,21 @@ export function moveLyricSlide(
   const rest = blocks.filter((_, index) => index !== from)
   rest.splice(from < insertAt ? insertAt - 1 : insertAt, 0, moved)
   return joinBlocks(sections, rest)
+}
+
+/**
+ * A section split by a move or relabel copies its fields to both halves; a
+ * hotkey must stay on one of them (the first), or one key would mean two places.
+ */
+function uniqueHotkeys(sections: LyricsSongSection[]): LyricsSongSection[] {
+  const seen = new Set<string>()
+  return sections.map((section) => {
+    if (!section.hotkey) return section
+    if (!seen.has(section.hotkey)) {
+      seen.add(section.hotkey)
+      return section
+    }
+    const { hotkey: _duplicate, ...rest } = section
+    return rest
+  })
 }

@@ -10,6 +10,7 @@ import { ScaledOverlayPreview } from "@/components/overlay/ScaledOverlayPreview"
 import type { OverlayVideoTime } from "@shared/overlay-fit";
 import type { OverlayTheme, ScriptureResult } from "@shared/ipc";
 import type { SendStatus } from "./types";
+import { sectionFill } from "@/components/lyrics/section-colors";
 
 export interface VerseThemePreviewProps {
   result: ScriptureResult;
@@ -56,6 +57,11 @@ export interface VerseThemePreviewProps {
    * is looked at.
    */
   lazy?: boolean;
+  /**
+   * A Songs-style label bar under the slide: the reference on the left, the
+   * card's number on the right. Off for the live monitor and Operator cards.
+   */
+  footer?: { number: number } | null;
 }
 
 /**
@@ -115,6 +121,7 @@ export function VerseThemePreview({
   lazy = false,
   isPicked = false,
   selectId,
+  footer = null,
 }: VerseThemePreviewProps): React.ReactElement {
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const drawSlide = useNearViewport(lazy, buttonRef);
@@ -158,7 +165,10 @@ export function VerseThemePreview({
                 ? "border-live"
                 : isPicked || isActive
                   ? "border-white"
-                  : "border-transparent hover:border-slate-500 focus-visible:border-slate-400",
+                  : footer
+                    // Same quiet frame as a lyric card.
+                    ? "border-surface-border hover:border-stone focus-visible:border-slate-400"
+                    : "border-transparent hover:border-slate-500 focus-visible:border-slate-400",
             )
           : "rounded-none border-0 shadow-none",
       )}
@@ -194,6 +204,17 @@ export function VerseThemePreview({
           <div className="h-full w-full bg-surface-secondary" />
         )}
       </div>
+
+      {chrome && footer && (
+        // The lyric cards' bar, in the verse blue, carrying the reference.
+        <div
+          className="flex h-[22px] w-full shrink-0 items-center gap-2 self-stretch px-2 text-[12px]"
+          style={sectionFill("verse")}
+        >
+          <span className="min-w-0 flex-1 truncate font-medium">{formatCardReference(result.reference)}</span>
+          <span className="shrink-0 tabular-nums opacity-80">{footer.number}</span>
+        </div>
+      )}
 
       {chrome && status && (
         <span className="absolute right-1.5 top-1.5 bg-slate-800 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-slate-100">

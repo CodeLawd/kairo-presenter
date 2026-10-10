@@ -1,44 +1,59 @@
 import { memo, useState, useEffect, useRef, useCallback, useDeferredValue, useMemo } from 'react'
 import { SegmentedControl } from '@/components/shared/SegmentedControl'
-import { Check, Copy, Loader, MoreHorizontal, Plus, Trash2 } from '@/icons'
+import { Check, Copy, Film, Image, Loader, MoreHorizontal, Plus, Redo, RotateCcw, Trash2, Undo } from '@/icons'
 import { cn } from '@/lib/utils'
 import {
   contentKindLabel,
   liveOverlayTheme,
   OVERLAY_CONTENT_KINDS,
   primaryRenderedOutput,
-  themeForContentKind,
 } from '@shared/overlay-outputs'
-import { Slider as SliderPrimitive } from '@/components/ui/slider'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useAppStore } from '@/stores/useAppStore'
 import { overlayMediaUrl, renderOverlayHTML } from '@shared/overlay-template'
 import { DEFAULT_OVERLAY_SETTINGS, DEFAULT_OVERLAY_THEME, normalizeOverlaySettings, normalizeOverlayTheme } from '@shared/overlay-defaults'
-import type { AppSettings, CustomOverlayTheme, OverlayBox, OverlayContentKind, OverlayOutput, OverlayTextStyle, OverlayTheme } from '@shared/ipc'
+import type { AppSettings, CustomOverlayTheme, OverlayBox, OverlayContentKind, OverlayElement, OverlayOutput, OverlayTextStyle, OverlayTheme } from '@shared/ipc'
 import {
   assignThemeToOutput,
   createCustomTheme,
   detachThemeFromOutputs,
   nextUntitledThemeName,
   outputUsesTheme,
+  setThemeBaseline,
   syncThemeToOutputs,
+  themeBaseline,
   themesForKind,
   unassignThemeFromOutput,
   updateLibraryTheme,
   BUILT_IN_THEMES,
   builtInThemesForKind,
 } from '@shared/theme-library'
-import { applyLayoutPreset, placeReferenceAgainstVerse, clampOverlayBox } from '@shared/overlay-boxes'
+import { applyLayoutPreset, placeReferenceAgainstVerse, clampOverlayBox, ELEMENT_BOX_MIN } from '@shared/overlay-boxes'
+import {
+  createOverlayElement,
+  duplicateOverlayElement,
+  MAX_OVERLAY_ELEMENTS,
+  overlayElementLabel,
+  removeOverlayElement,
+  reorderOverlayElement,
+  updateOverlayElement,
+} from '@shared/overlay-elements'
 import { ScaledOverlayPreview } from '@/components/overlay/ScaledOverlayPreview'
-import { OverlayCanvas, type OverlayLayerId } from './OverlayCanvas'
+import { isTextLayer, OverlayCanvas, type CanvasLayerId } from './OverlayCanvas'
+import { ThemeElementPanel, type ReorderTarget } from './ThemeElementPanel'
+import { ShapeMenuItems, ShapeThumb, type ShapePick } from './ShapeGallery'
+import { overlayShape } from '@shared/overlay-shapes'
 import { ThemeTypePanel } from './ThemeTypePanel'
 import { ThemeLayoutPanel } from './ThemeLayoutPanel'
+import { useThemeHistory } from './useThemeHistory'
+import { LabeledSegmented, MediaAdjustments, MediaPicker, Slider, pct } from './fields'
 import { useBootstrapStore } from '@/bootstrap/useBootstrapStore'
 
 // ─── Sample content for the WYSIWYG preview ────────────────────────────────────
@@ -73,49 +88,6 @@ const SAMPLES: Record<OverlayContentKind, SampleContent> = {
 }
 
 // ─── Small reusable atoms (local to this page, mirrors Settings.tsx style) ────
-
-function Slider({
-  label,
-  value,
-  onChange,
-  min,
-  max,
-  step = 1,
-  unit = '',
-  format,
-}: {
-  label: string
-  value: number
-  onChange: (v: number) => void
-  min: number
-  max: number
-  step?: number
-  unit?: string
-  format?: (v: number) => string
-}): React.ReactElement {
-  return (
-    <div>
-      <div className="mb-2 flex items-center justify-between">
-        <label className="label mb-0">{label}</label>
-        <span className="text-[11px] tabular-nums text-slate-400">
-          {format ? format(value) : value}
-          {unit}
-        </span>
-      </div>
-      <SliderPrimitive
-        min={min}
-        max={max}
-        step={step}
-        value={[value]}
-        onValueChange={(next) => onChange(next[0])}
-        aria-label={label}
-        trackClassName="relative h-1 w-full grow overflow-hidden rounded-full bg-surface-elevated"
-        rangeClassName="absolute h-full bg-slate-300"
-        thumbClassName="block size-3.5 rounded-full bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
-      />
-    </div>
-  )
-}
 
 function expandHex(value: string): string | null {
   const trimmed = value.trim()
@@ -163,31 +135,6 @@ function ColorField({
   )
 }
 
-function LabeledSegmented<T extends string>({
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  label: string
-  value: T
-  options: { value: T; label: string }[]
-  onChange: (v: T) => void
-}): React.ReactElement {
-  return (
-    <div>
-      <p className="label">{label}</p>
-      <SegmentedControl
-        label={label}
-        value={value}
-        options={options}
-        onChange={onChange}
-        itemClassName={options.length > 4 ? 'px-0 text-[11px]' : undefined}
-      />
-    </div>
-  )
-}
-
 // ─── Main page ──────────────────────────────────────────────────────────────────
 // Like ProPresenter: a theme is a library item, edits save as you make them,
 // and every screen using the theme follows. Built-ins are templates for + New.
@@ -205,17 +152,21 @@ export default function ThemeEditor(): React.ReactElement {
   const [draft, setDraft] = useState<OverlayTheme>(DEFAULT_OVERLAY_THEME)
   const [name, setName] = useState('')
   const [tab, setTab] = useState<InspectorTab>('background')
-  const [selectedLayer, setSelectedLayer] = useState<OverlayLayerId | null>('verse')
+  const [selectedLayer, setSelectedLayer] = useState<CanvasLayerId | null>('verse')
   const [sampleLength, setSampleLength] = useState<'short' | 'long'>('short')
   const [saved, setSaved] = useState(false)
   const setThemeViewState = useAppStore((s) => s.setThemeViewState)
   const [stageRef, frameWidth] = useFitFrame()
+  const history = useThemeHistory()
 
   // Latest values for the debounced save, which outlives the render that scheduled it.
   const overlayRef = useRef(overlay)
   const libraryRef = useRef(library)
+  const themeDefaults = useBootstrapStore((s) => s.settings.themeDefaults) ?? {}
   overlayRef.current = overlay
   libraryRef.current = library
+  // The draft edits build on — read before React re-renders, so back-to-back edits chain.
+  const draftRef = useRef(draft)
   const lastByKind = useRef<Record<OverlayContentKind, string | null>>({ scripture: null, lyrics: null })
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -314,9 +265,11 @@ export default function ThemeEditor(): React.ReactElement {
     setKind(item.kind)
     setSelectedId(item.id)
     setName(item.name)
-    setDraft(themeForContentKind(structuredClone(normalizeOverlayTheme(item.theme)), item.kind))
+    const theme = structuredClone(normalizeOverlayTheme(item.theme))
+    draftRef.current = theme
+    setDraft(theme)
+    history.clear()
     setThemeViewState({ selectedId: item.id, selectedName: item.name })
-    if (item.kind === 'lyrics') setTab((t) => (t === 'background' ? 'type' : t))
   }
 
   const select = (item: CustomOverlayTheme): void => {
@@ -324,24 +277,117 @@ export default function ThemeEditor(): React.ReactElement {
     open(item)
   }
 
+  /** Shows `theme` and saves it, without touching undo history. */
+  const showTheme = (theme: OverlayTheme): void => {
+    if (!selectedId) return
+    draftRef.current = theme
+    setDraft(theme)
+    scheduleSave(selectedId, name, theme)
+  }
+
   const editTheme = (next: OverlayTheme | ((current: OverlayTheme) => OverlayTheme)): void => {
     if (!selectedId) return
-    setDraft((current) => {
-      const theme = typeof next === 'function' ? next(current) : next
-      scheduleSave(selectedId, name, theme)
-      return theme
-    })
+    const current = draftRef.current
+    const theme = typeof next === 'function' ? next(current) : next
+    if (theme === current) return
+    history.record(current)
+    showTheme(theme)
   }
+
+  const undo = (): void => {
+    const theme = history.undo(draftRef.current)
+    if (theme) showTheme(theme)
+  }
+
+  const redo = (): void => {
+    const theme = history.redo(draftRef.current)
+    if (theme) showTheme(theme)
+  }
+
+  /** Back to the theme's default. An edit like any other, so Undo brings the changes back. */
+  const resetToDefault = (): void => {
+    const entry = libraryRef.current.find((t) => t.id === selectedId)
+    if (entry) editTheme(structuredClone(normalizeOverlayTheme(themeBaseline(entry))))
+  }
+
+  const setAsDefault = (): void => {
+    if (!selectedId) return
+    flush()
+    writeLibrary(setThemeBaseline(libraryRef.current, selectedId, draftRef.current))
+  }
+
+  // ⌘Z / ⇧⌘Z (and ⌘Y). Text fields keep their own undo.
+  const undoRef = useRef(undo)
+  const redoRef = useRef(redo)
+  undoRef.current = undo
+  redoRef.current = redo
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (!(event.metaKey || event.ctrlKey) || event.altKey) return
+      const key = event.key.toLowerCase()
+      if (key !== 'z' && key !== 'y') return
+      const el = event.target as HTMLElement | null
+      const textEntry =
+        !!el && (el.tagName === 'TEXTAREA' || el.isContentEditable || (el.tagName === 'INPUT' && (el as HTMLInputElement).type === 'text'))
+      if (textEntry) return
+      event.preventDefault()
+      if (key === 'y' || event.shiftKey) redoRef.current()
+      else undoRef.current()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
 
   const updateTheme = <K extends keyof OverlayTheme>(section: K, partial: Partial<OverlayTheme[K]>): void =>
     editTheme((current) => ({ ...current, [section]: { ...current[section], ...partial } }))
 
-  const updateBox = (id: OverlayLayerId, box: OverlayBox): void => updateTheme(id, { box: clampOverlayBox(box) })
+  const updateElement = (id: string, patch: Partial<Omit<OverlayElement, 'id' | 'kind'>>): void =>
+    editTheme((current) => ({ ...current, elements: updateOverlayElement(current.elements, id, patch) }))
 
-  const hideLayer = (id: OverlayLayerId): void => {
-    if (id !== 'reference') return
-    editTheme((current) => ({ ...current, reference: { ...current.reference, show: false } }))
-    setSelectedLayer('verse')
+  const updateBox = (id: CanvasLayerId, box: OverlayBox): void => {
+    if (isTextLayer(id)) updateTheme(id, { box: clampOverlayBox(box) })
+    else updateElement(id, { box: clampOverlayBox(box, ELEMENT_BOX_MIN) })
+  }
+
+  /** The canvas's Delete: hides the reference, deletes an element. */
+  const deleteLayer = (id: CanvasLayerId): void => {
+    if (id === 'verse') return
+    if (id === 'reference') {
+      editTheme((current) => ({ ...current, reference: { ...current.reference, show: false } }))
+      setSelectedLayer('verse')
+      return
+    }
+    editTheme((current) => ({ ...current, elements: removeOverlayElement(current.elements, id) }))
+    setSelectedLayer(null)
+  }
+
+  const addElement = async (pick: ShapePick | { kind: 'image' | 'video' }): Promise<void> => {
+    if (draftRef.current.elements.length >= MAX_OVERLAY_ELEMENTS) return
+    const { kind } = pick
+    let element = createOverlayElement(kind, undefined, undefined, 'shape' in pick ? pick.shape : undefined)
+    if ('radiusPx' in pick && pick.radiusPx) element = { ...element, radiusPx: pick.radiusPx }
+    if (kind === 'image' || kind === 'video') {
+      const picked = await window.api.ndi.pickOverlayMedia(kind)
+      if (!picked) return
+      element = { ...element, mediaPath: picked, box: await mediaBox(picked, kind) }
+    }
+    editTheme((current) => ({ ...current, elements: [...current.elements, element] }))
+    setSelectedLayer(element.id)
+  }
+
+  const duplicateElement = (id: string): void => {
+    const { elements, id: copyId } = duplicateOverlayElement(draftRef.current.elements, id)
+    if (!copyId) return
+    editTheme((current) => ({ ...current, elements }))
+    setSelectedLayer(copyId)
+  }
+
+  const reorderElement = (id: string, to: ReorderTarget): void =>
+    editTheme((current) => ({ ...current, elements: reorderOverlayElement(current.elements, id, to) }))
+
+  const replaceElementMedia = async (element: OverlayElement): Promise<void> => {
+    const picked = await window.api.ndi.pickOverlayMedia(element.kind as 'image' | 'video')
+    if (picked) updateElement(element.id, { mediaPath: picked })
   }
 
   const rename = (nextName: string): void => {
@@ -363,7 +409,7 @@ export default function ThemeEditor(): React.ReactElement {
     flush()
     const item = createCustomTheme(
       baseName,
-      themeForContentKind(structuredClone(normalizeOverlayTheme(base)), kind),
+      structuredClone(normalizeOverlayTheme(base)),
       kind,
     )
     writeLibrary([...libraryRef.current, item])
@@ -414,6 +460,25 @@ export default function ThemeEditor(): React.ReactElement {
     writeOutputs(outputs)
   }
 
+  /**
+   * This theme becomes the default for its kind: every screen and NDI feed
+   * switches to it now, and screens added later start with it.
+   */
+  const makeDefault = (): void => {
+    flush()
+    const entry = libraryRef.current.find((t) => t.id === selectedId)
+    if (!entry) return
+    const next = { ...useBootstrapStore.getState().settings.themeDefaults, [entry.kind]: entry.id }
+    useBootstrapStore.getState().patchSettings('themeDefaults', next)
+    void window.api.settings.set('themeDefaults', next)
+    writeOutputs(
+      overlayRef.current.outputs.map((o) =>
+        o.kind === 'screen' || o.kind === 'ndi' ? assignThemeToOutput(o, entry) : o,
+      ),
+    )
+    flashSaved()
+  }
+
   // ─── Render ─────────────────────────────────────────────────────────────────
 
   const previewTheme = useDeferredValue(draft)
@@ -435,8 +500,12 @@ export default function ThemeEditor(): React.ReactElement {
   const themes = themesForKind(library, kind)
   const selected = themes.find((t) => t.id === selectedId) ?? null
   const screens = overlay.outputs.filter((o) => o.kind === 'screen' || o.kind === 'ndi')
-  const tabs: InspectorTab[] = kind === 'lyrics' ? ['type', 'layout'] : ['background', 'type', 'layout']
+  const tabs: InspectorTab[] = ['background', 'type', 'layout']
   const activeTab = tabs.includes(tab) ? tab : tabs[0]
+  const selectedElement = draft.elements.find((el) => el.id === selectedLayer) ?? null
+  // No edits since the reset point (the bottom "Save theme" button).
+  const isDefault = !selected || sameValue(draft, normalizeOverlayTheme(themeBaseline(selected)))
+  const isKindDefault = Boolean(selected) && themeDefaults[kind] === selected?.id
   const templates = builtInThemesForKind(kind)
 
   return (
@@ -462,6 +531,7 @@ export default function ThemeEditor(): React.ReactElement {
               theme={item.id === selectedId ? previewTheme : item.theme}
               kind={kind}
               selected={item.id === selectedId}
+              isDefault={themeDefaults[kind] === item.id}
               onClick={() => select(item)}
               onDuplicate={() => duplicate(item)}
               onDelete={() => remove(item)}
@@ -484,6 +554,39 @@ export default function ThemeEditor(): React.ReactElement {
                 onBlur={flush}
               />
               <span className={cn('text-[11px] text-slate-400 transition-opacity', saved ? 'opacity-100' : 'opacity-0')}>Saved</span>
+              {isKindDefault ? (
+                <span className="shrink-0 rounded-md bg-surface-secondary px-2.5 py-1 text-[12px] font-medium text-slate-300">
+                  Default theme
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  className="btn-secondary shrink-0 px-3 py-1 text-[12px]"
+                  onClick={makeDefault}
+                  data-tooltip="Use this theme on every screen, and for screens you add later"
+                >
+                  Make default
+                </button>
+              )}
+              <AddElementMenu disabled={draft.elements.length >= MAX_OVERLAY_ELEMENTS} onAdd={(pick) => void addElement(pick)} />
+              <div className="flex items-center">
+                {([
+                  { label: 'Undo', shortcut: '⌘Z', icon: Undo, enabled: history.canUndo, run: undo },
+                  { label: 'Redo', shortcut: '⇧⌘Z', icon: Redo, enabled: history.canRedo, run: redo },
+                ] as const).map(({ label, shortcut, icon: Icon, enabled, run }) => (
+                  <button
+                    key={label}
+                    type="button"
+                    aria-label={label}
+                    data-tooltip={`${label} (${shortcut})`}
+                    disabled={!enabled}
+                    onClick={run}
+                    className="grid size-7 place-items-center rounded-md text-slate-300 transition-colors hover:bg-surface-secondary hover:text-white disabled:text-slate-600 disabled:hover:bg-transparent"
+                  >
+                    <Icon size={15} aria-hidden="true" />
+                  </button>
+                ))}
+              </div>
               <SegmentedControl
                 label="Sample text"
                 value={sampleLength}
@@ -492,7 +595,8 @@ export default function ThemeEditor(): React.ReactElement {
                   { value: 'long', label: 'Long' },
                 ]}
                 onChange={setSampleLength}
-                className="bg-surface-secondary"
+                fit
+                className="shrink-0 bg-surface-secondary"
                 itemClassName="px-2.5 py-0.5 text-[11px]"
               />
 
@@ -513,7 +617,8 @@ export default function ThemeEditor(): React.ReactElement {
                   selected={selectedLayer}
                   onSelect={setSelectedLayer}
                   onBoxChange={updateBox}
-                  onDeleteLayer={hideLayer}
+                  onRotate={(id, rotationDeg) => updateElement(id, { rotationDeg })}
+                  onDeleteLayer={deleteLayer}
                   onEditLayer={(id) => {
                     setSelectedLayer(id)
                     setTab('type')
@@ -575,9 +680,21 @@ export default function ThemeEditor(): React.ReactElement {
       </main>
 
       {/* Inspector */}
-      <aside className="min-h-0 overflow-y-auto bg-surface-secondary">
+      <aside className="flex min-h-0 flex-col bg-surface-secondary">
         {selected && (
-          <div className="space-y-4 p-4">
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+            {selectedElement ? (
+              <ThemeElementPanel
+                key={selectedElement.id}
+                element={selectedElement}
+                onChange={(patch) => updateElement(selectedElement.id, patch)}
+                onReorder={(to) => reorderElement(selectedElement.id, to)}
+                onDuplicate={() => duplicateElement(selectedElement.id)}
+                onDelete={() => deleteLayer(selectedElement.id)}
+                onPickMedia={() => void replaceElementMedia(selectedElement)}
+              />
+            ) : (
+            <>
             <SegmentedControl
               role="tablist"
               label="Theme settings"
@@ -585,7 +702,6 @@ export default function ThemeEditor(): React.ReactElement {
               options={tabs.map((t) => ({ value: t, label: t === 'background' ? 'Background' : t === 'type' ? 'Text' : 'Layout' }))}
               onChange={setTab}
             />
-
 
             {activeTab === 'background' && (
               <BackgroundFields theme={draft} onChange={(partial) => updateTheme('background', partial)} onPickMedia={pickMedia} />
@@ -631,11 +747,51 @@ export default function ThemeEditor(): React.ReactElement {
                 onUpdatePresetWidth={(maxWidthPct) => editTheme((current) => applyLayoutPreset(current, current.layout.position, maxWidthPct))}
               />
             )}
+
+            {activeTab === 'layout' && draft.elements.length > 0 && (
+              <ElementList elements={draft.elements} onSelect={setSelectedLayer} />
+            )}
+            </>
+            )}
+          </div>
+        )}
+        {selected && (
+          <div className="flex shrink-0 gap-2 p-4 pt-3">
+            <button
+              type="button"
+              className="btn-secondary flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap text-[12px]"
+              disabled={isDefault}
+              onClick={resetToDefault}
+              data-tooltip="Undo every change since the default was set"
+            >
+              <RotateCcw size={13} aria-hidden="true" />
+              Reset
+            </button>
+            <button
+              type="button"
+              className="btn-primary flex-1 whitespace-nowrap text-[12px]"
+              disabled={isDefault}
+              onClick={setAsDefault}
+              data-tooltip="Save these changes — Reset will return to them"
+            >
+              Save theme
+            </button>
           </div>
         )}
       </aside>
     </div>
   )
+}
+
+/** Deep equality for plain theme data; an absent key equals `undefined`. */
+function sameValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)])
+  for (const key of keys) {
+    if (!sameValue((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key])) return false
+  }
+  return true
 }
 
 /**
@@ -663,6 +819,128 @@ function useFitFrame(): [React.RefCallback<HTMLDivElement>, number] {
     measure()
   }, [])
   return [ref, width]
+}
+
+const MEDIA_ICONS = { image: Image, video: Film } as const
+
+function AddElementMenu({
+  disabled,
+  onAdd,
+}: {
+  disabled: boolean
+  onAdd: (pick: ShapePick | { kind: 'image' | 'video' }) => void
+}): React.ReactElement {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          disabled={disabled}
+          data-tooltip={disabled ? `A theme holds up to ${MAX_OVERLAY_ELEMENTS} elements` : 'Add a shape, image or video'}
+          className="flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-2 text-[12px] text-slate-300 transition-colors hover:bg-surface-secondary hover:text-white disabled:text-slate-600 disabled:hover:bg-transparent"
+        >
+          <Plus size={13} aria-hidden="true" /> Add Element
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="max-h-[70vh] w-[316px] overflow-y-auto p-2">
+        <DropdownMenuLabel className="px-1 pb-1 pt-0.5 text-[11px] font-medium text-slate-500">Media</DropdownMenuLabel>
+        <div className="grid grid-cols-2 gap-1.5">
+          {(['image', 'video'] as const).map((kind) => {
+            const Icon = MEDIA_ICONS[kind]
+            return (
+              <DropdownMenuItem
+                key={kind}
+                onSelect={() => onAdd({ kind })}
+                className="flex h-[72px] flex-col items-center justify-center gap-1.5 rounded-md bg-surface-tertiary text-[12px] text-slate-200 focus:bg-surface-border focus:text-white"
+              >
+                <Icon size={22} aria-hidden="true" />
+                {kind === 'image' ? 'Image' : 'Video'}
+              </DropdownMenuItem>
+            )
+          })}
+        </div>
+        <ShapeMenuItems onPick={onAdd} />
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+/** The element's look in a list row: its outline for shapes, an icon for media. */
+function ElementIcon({ element }: { element: OverlayElement }): React.ReactElement {
+  if (element.kind === 'image' || element.kind === 'video') {
+    const Icon = MEDIA_ICONS[element.kind]
+    return <Icon size={13} aria-hidden="true" className="shrink-0 text-slate-500" />
+  }
+  const def = overlayShape(element.shape)
+  const path =
+    element.kind === 'rectangle'
+      ? 'M0 0 H100 V100 H0 Z'
+      : element.kind === 'ellipse'
+        ? 'M0 50 A50 50 0 1 0 100 50 A50 50 0 1 0 0 50 Z'
+        : (def?.path ?? '')
+  return (
+    <span className="shrink-0 text-slate-500">
+      <ShapeThumb path={path} lineOnly={def?.lineOnly} />
+    </span>
+  )
+}
+
+/** Every element, top of the stack first — the way to reach one hidden under another. */
+function ElementList({ elements, onSelect }: { elements: OverlayElement[]; onSelect: (id: string) => void }): React.ReactElement {
+  const ordered = [...elements.filter((el) => el.aboveText).reverse(), ...elements.filter((el) => !el.aboveText).reverse()]
+  return (
+    <div className="space-y-1">
+      <p className="label">Elements</p>
+      {ordered.map((el) => {
+        return (
+          <button
+            key={el.id}
+            type="button"
+            onClick={() => onSelect(el.id)}
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] text-slate-300 transition-colors hover:bg-surface-tertiary hover:text-white"
+          >
+            <ElementIcon element={el} />
+            <span className="min-w-0 flex-1 truncate">
+              {el.mediaPath ? el.mediaPath.split(/[\\/]/).pop() : overlayElementLabel(el)}
+            </span>
+            <span className="shrink-0 text-[11px] text-slate-500">{el.aboveText ? 'Over text' : 'Under text'}</span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+/**
+ * A box for newly placed media at the file's own shape: 30% of the frame wide,
+ * centred, shrunk to fit if it is tall. Falls back to the default box if the
+ * file can't be measured.
+ */
+async function mediaBox(path: string, kind: 'image' | 'video'): Promise<OverlayBox> {
+  const url = overlayMediaUrl(path)
+  const aspect = await new Promise<number | null>((resolve) => {
+    if (kind === 'image') {
+      const img = new window.Image()
+      img.onload = () => resolve(img.naturalHeight ? img.naturalWidth / img.naturalHeight : null)
+      img.onerror = () => resolve(null)
+      img.src = url
+    } else {
+      const video = document.createElement('video')
+      video.preload = 'metadata'
+      video.onloadedmetadata = () => resolve(video.videoHeight ? video.videoWidth / video.videoHeight : null)
+      video.onerror = () => resolve(null)
+      video.src = url
+    }
+  })
+  if (!aspect) return createOverlayElement(kind).box
+  // Box % → frame px: width of 1920, height of 1080.
+  let widthPct = 30
+  let heightPct = ((widthPct / 100) * 1920) / aspect / 1080 * 100
+  if (heightPct > 70) {
+    widthPct *= 70 / heightPct
+    heightPct = 70
+  }
+  return clampOverlayBox({ xPct: 50 - widthPct / 2, yPct: 50 - heightPct / 2, widthPct, heightPct }, ELEMENT_BOX_MIN)
 }
 
 function NewThemeMenu({
@@ -748,35 +1026,10 @@ function BackgroundFields({
       )}
 
       {bg.type !== 'transparent' && (
-        <Slider label="Opacity" value={bg.opacity} onChange={(opacity) => onChange({ opacity })} min={0} max={1} step={0.05} format={(v) => `${Math.round(v * 100)}%`} />
+        <Slider label="Opacity" value={bg.opacity} onChange={(opacity) => onChange({ opacity })} min={0} max={1} step={0.05} format={pct} />
       )}
-    </div>
-  )
-}
 
-/** The chosen image or video as a thumbnail, with its name and a way to change it. */
-function MediaPicker({ type, path, onPick }: { type: 'image' | 'video'; path: string; onPick: () => void }): React.ReactElement {
-  const url = path ? overlayMediaUrl(path) : ''
-  return (
-    <div>
-      <p className="label">{type === 'video' ? 'Video' : 'Image'}</p>
-      <button
-        type="button"
-        onClick={onPick}
-        className="group flex w-full items-center gap-3 rounded-lg bg-surface p-1.5 text-left transition-colors hover:bg-surface-tertiary"
-      >
-        <span className="grid aspect-video w-20 shrink-0 place-items-center overflow-hidden rounded-md bg-black">
-          {url && type === 'video' && <video src={`${url}#t=0.1`} muted preload="metadata" className="h-full w-full object-cover" />}
-          {url && type === 'image' && <img src={url} alt="" className="h-full w-full object-cover" />}
-          {!url && <Plus size={14} className="text-slate-500" aria-hidden="true" />}
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-[12px] text-slate-200" title={path || undefined}>
-            {path ? path.split(/[\\/]/).pop() : `Choose ${type === 'video' ? 'a video' : 'an image'}`}
-          </span>
-          {path && <span className="block text-[11px] text-slate-500 group-hover:text-slate-400">Change…</span>}
-        </span>
-      </button>
+      {(bg.type === 'image' || bg.type === 'video') && <MediaAdjustments bg={bg} onChange={onChange} />}
     </div>
   )
 }
@@ -794,6 +1047,7 @@ function ThemeTile({
   theme,
   kind,
   selected,
+  isDefault = false,
   onClick,
   onDuplicate,
   onDelete,
@@ -802,6 +1056,7 @@ function ThemeTile({
   theme: OverlayTheme
   kind: OverlayContentKind
   selected: boolean
+  isDefault?: boolean
   onClick: () => void
   onDuplicate: () => void
   onDelete: () => void
@@ -818,7 +1073,12 @@ function ThemeTile({
         <div className="overflow-hidden rounded-md">
           <TileSlide html={html} autoFit={previewTheme.layout.autoFitText} />
         </div>
-        <span className={cn('block truncate px-0.5 pt-1.5 text-[12px]', selected ? 'text-white' : 'text-slate-400')}>{name}</span>
+        <span className="flex items-center gap-1.5 px-0.5 pt-1.5">
+          <span className={cn('min-w-0 truncate text-[12px]', selected ? 'text-white' : 'text-slate-400')}>{name}</span>
+          {isDefault && (
+            <span className="shrink-0 rounded bg-surface-tertiary px-1.5 py-px text-[10px] font-medium text-slate-300">Default</span>
+          )}
+        </span>
       </button>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>

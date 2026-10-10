@@ -3,6 +3,7 @@ import { Transform, Type } from 'class-transformer'
 import { IsEmail, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator'
 import { CurrentUser } from '../common/decorators/current-user.decorator'
 import { AdminService, type Actor, type AdminEntry } from './admin.service'
+import { UsageAdminService } from './usage-admin.service'
 import { PlatformAdminGuard, SuperadminOnly, type AdminRequestUser } from './platform-admin.guard'
 
 export class ListQuery {
@@ -27,6 +28,15 @@ export class DownloadsQuery {
   days?: number
 }
 
+export class UsageChurchesQuery extends ListQuery {
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(365)
+  days?: number
+}
+
 export class GrantAdminDto {
   // Pasted addresses often carry spaces; trim before judging the format.
   @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
@@ -43,7 +53,10 @@ export class SetUserStatusDto {
 @UseGuards(PlatformAdminGuard)
 @Controller('v1/admin')
 export class AdminController {
-  constructor(private readonly admin: AdminService) {}
+  constructor(
+    private readonly admin: AdminService,
+    private readonly usage: UsageAdminService,
+  ) {}
 
   @Get('overview')
   overview(): Promise<unknown> {
@@ -87,6 +100,22 @@ export class AdminController {
   @Get('churches')
   churches(@Query() query: ListQuery): Promise<unknown> {
     return this.admin.listChurches(query)
+  }
+
+  /** Usage statistics: activity, systems, features, errors, website pages. */
+  @Get('usage')
+  usageOverview(@Query() query: DownloadsQuery): Promise<unknown> {
+    return this.usage.overview(query.days ?? 30)
+  }
+
+  @Get('usage/churches')
+  usageChurches(@Query() query: UsageChurchesQuery): Promise<unknown> {
+    return this.usage.churches(query)
+  }
+
+  @Get('usage/churches/:orgId')
+  usageChurch(@Param('orgId') orgId: string, @Query() query: DownloadsQuery): Promise<unknown> {
+    return this.usage.church(orgId, query.days ?? 30)
   }
 
   @Get('downloads')

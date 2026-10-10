@@ -295,29 +295,18 @@ export function overlayLayerLabel(kind: OverlayContentKind, layer: 'verse' | 're
 }
 
 /**
- * A theme as `kind` is allowed to define it.
- *
- * Lyric themes describe text only. The background behind a lyric slide is a
- * motion loop that changes every song, so it belongs to a live control surface
- * — not to a theme that gets configured once and left alone. Forcing transparent
- * here means a lyric theme can never bake in a background, however it was
- * seeded (duplicated from a scripture theme, or restored from an older store).
- */
-export function themeForContentKind(theme: OverlayTheme, kind: OverlayContentKind): OverlayTheme {
-  if (kind !== 'lyrics') return theme
-  if (theme.background.type === 'transparent') return theme
-  return { ...theme, background: { ...theme.background, type: 'transparent' } }
-}
-
-/**
  * Look lyrics inherit from scripture when no lyrics theme is applied.
+ * The scripture background stays behind: a song with no theme of its own takes
+ * the dock's motion loop. A lyrics theme can set a background on purpose.
  * Fit-to-box stays off — that toggle lives on the scripture theme and must
  * not grow a couplet to fill the verse box on a lyric push.
  */
 export function inheritLyricsTheme(scriptureTheme: OverlayTheme): OverlayTheme {
-  const lyrics = themeForContentKind(scriptureTheme, 'lyrics')
-  if (!lyrics.layout.autoFitText) return lyrics
-  return { ...lyrics, layout: { ...lyrics.layout, autoFitText: false } }
+  return {
+    ...scriptureTheme,
+    background: { ...scriptureTheme.background, type: 'transparent' },
+    layout: { ...scriptureTheme.layout, autoFitText: false },
+  }
 }
 
 /**
@@ -341,15 +330,8 @@ export function hasContentOverride(output: OverlayOutput, kind: OverlayContentKi
 /** The theme an output renders `kind` with. */
 export function outputThemeFor(output: OverlayOutput, kind: OverlayContentKind): OverlayTheme {
   const variant = outputVariant(output, kind)
-  const theme = variant
-    ? variant.theme
-    : kind === 'lyrics'
-      ? inheritLyricsTheme(output.theme)
-      : output.theme
-  // Always run the kind policy at resolve time. A stored lyrics override can
-  // still carry a scripture background (applied from a scripture draft, or
-  // restored from an older store), and that look must not win over the dock.
-  return themeForContentKind(theme, kind)
+  if (variant) return variant.theme
+  return kind === 'lyrics' ? inheritLyricsTheme(output.theme) : output.theme
 }
 
 /** The `themeId` shown as the source of `kind`'s look. Display only. */
@@ -437,9 +419,14 @@ export function liveOverlayTheme(
 export function configuredMediaPaths(storedOverlay: unknown, storedThemeLibrary: unknown): string[] {
   const paths: string[] = []
 
-  const collect = (theme: unknown): void => {
-    const mediaPath = (theme as { background?: { mediaPath?: unknown } })?.background?.mediaPath
+  const add = (mediaPath: unknown): void => {
     if (typeof mediaPath === 'string' && mediaPath.trim() !== '') paths.push(mediaPath)
+  }
+  const collect = (theme: unknown): void => {
+    const t = theme as { background?: { mediaPath?: unknown }; elements?: unknown } | null
+    add(t?.background?.mediaPath)
+    // Image and video elements are configured media too.
+    if (Array.isArray(t?.elements)) for (const el of t.elements) add((el as { mediaPath?: unknown })?.mediaPath)
   }
 
   const overlay = storedOverlay as { theme?: unknown; outputs?: unknown } | null
@@ -452,7 +439,11 @@ export function configuredMediaPaths(storedOverlay: unknown, storedThemeLibrary:
     }
   }
   if (Array.isArray(storedThemeLibrary)) {
-    for (const item of storedThemeLibrary) collect((item as { theme?: unknown })?.theme)
+    for (const item of storedThemeLibrary) {
+      collect((item as { theme?: unknown })?.theme)
+      // Reset brings the default back, so its media has to stay servable.
+      collect((item as { baseline?: unknown })?.baseline)
+    }
   }
 
   return paths

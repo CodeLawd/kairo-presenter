@@ -13,9 +13,20 @@ function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n))
 }
 
-export function clampOverlayBox(box: OverlayBox): OverlayBox {
-  const widthPct = clamp(box.widthPct, MIN_BOX_WIDTH_PCT, 100)
-  const heightPct = clamp(box.heightPct, MIN_BOX_HEIGHT_PCT, 100)
+/** Smallest box a layer may shrink to, in % of the frame. */
+export interface BoxMinimum {
+  widthPct: number
+  heightPct: number
+}
+
+/** Text boxes keep room for a line of text. */
+export const TEXT_BOX_MIN: BoxMinimum = { widthPct: MIN_BOX_WIDTH_PCT, heightPct: MIN_BOX_HEIGHT_PCT }
+/** Shapes and media can be thin — a rule under a lower third is a shape too. */
+export const ELEMENT_BOX_MIN: BoxMinimum = { widthPct: 0.5, heightPct: 0.5 }
+
+export function clampOverlayBox(box: OverlayBox, min: BoxMinimum = TEXT_BOX_MIN): OverlayBox {
+  const widthPct = clamp(box.widthPct, min.widthPct, 100)
+  const heightPct = clamp(box.heightPct, min.heightPct, 100)
   return {
     xPct: clamp(box.xPct, 0, 100 - widthPct),
     yPct: clamp(box.yPct, 0, 100 - heightPct),
@@ -24,19 +35,23 @@ export function clampOverlayBox(box: OverlayBox): OverlayBox {
   }
 }
 
-export function moveOverlayBox(box: OverlayBox, dxPct: number, dyPct: number): OverlayBox {
-  return clampOverlayBox({
-    ...box,
-    xPct: box.xPct + dxPct,
-    yPct: box.yPct + dyPct,
-  })
+export function moveOverlayBox(box: OverlayBox, dxPct: number, dyPct: number, min: BoxMinimum = TEXT_BOX_MIN): OverlayBox {
+  return clampOverlayBox(
+    {
+      ...box,
+      xPct: box.xPct + dxPct,
+      yPct: box.yPct + dyPct,
+    },
+    min,
+  )
 }
 
 export function resizeOverlayBox(
   box: OverlayBox,
   handle: ResizeHandle,
   dxPct: number,
-  dyPct: number
+  dyPct: number,
+  min: BoxMinimum = TEXT_BOX_MIN,
 ): OverlayBox {
   let left = box.xPct
   let top = box.yPct
@@ -48,13 +63,13 @@ export function resizeOverlayBox(
   if (handle.includes('s')) bottom += dyPct
   if (handle.includes('n')) top += dyPct
 
-  if (right - left < MIN_BOX_WIDTH_PCT) {
-    if (handle.includes('w')) left = right - MIN_BOX_WIDTH_PCT
-    else right = left + MIN_BOX_WIDTH_PCT
+  if (right - left < min.widthPct) {
+    if (handle.includes('w')) left = right - min.widthPct
+    else right = left + min.widthPct
   }
-  if (bottom - top < MIN_BOX_HEIGHT_PCT) {
-    if (handle.includes('n')) top = bottom - MIN_BOX_HEIGHT_PCT
-    else bottom = top + MIN_BOX_HEIGHT_PCT
+  if (bottom - top < min.heightPct) {
+    if (handle.includes('n')) top = bottom - min.heightPct
+    else bottom = top + min.heightPct
   }
 
   left = clamp(left, 0, 100)
@@ -62,21 +77,57 @@ export function resizeOverlayBox(
   top = clamp(top, 0, 100)
   bottom = clamp(bottom, 0, 100)
 
-  if (right - left < MIN_BOX_WIDTH_PCT) {
-    if (handle.includes('w')) left = clamp(right - MIN_BOX_WIDTH_PCT, 0, 100 - MIN_BOX_WIDTH_PCT)
-    else right = clamp(left + MIN_BOX_WIDTH_PCT, MIN_BOX_WIDTH_PCT, 100)
+  if (right - left < min.widthPct) {
+    if (handle.includes('w')) left = clamp(right - min.widthPct, 0, 100 - min.widthPct)
+    else right = clamp(left + min.widthPct, min.widthPct, 100)
   }
-  if (bottom - top < MIN_BOX_HEIGHT_PCT) {
-    if (handle.includes('n')) top = clamp(bottom - MIN_BOX_HEIGHT_PCT, 0, 100 - MIN_BOX_HEIGHT_PCT)
-    else bottom = clamp(top + MIN_BOX_HEIGHT_PCT, MIN_BOX_HEIGHT_PCT, 100)
+  if (bottom - top < min.heightPct) {
+    if (handle.includes('n')) top = clamp(bottom - min.heightPct, 0, 100 - min.heightPct)
+    else bottom = clamp(top + min.heightPct, min.heightPct, 100)
   }
 
-  return clampOverlayBox({
-    xPct: left,
-    yPct: top,
-    widthPct: right - left,
-    heightPct: bottom - top,
-  })
+  return clampOverlayBox(
+    {
+      xPct: left,
+      yPct: top,
+      widthPct: right - left,
+      heightPct: bottom - top,
+    },
+    min,
+  )
+}
+
+/**
+ * Resize that keeps the box's shape — Shift while dragging a handle. A corner
+ * scales from the opposite corner, following whichever edge moved further; an
+ * edge scales about the box's centre line.
+ */
+export function resizeOverlayBoxKeepingAspect(
+  box: OverlayBox,
+  handle: ResizeHandle,
+  dxPct: number,
+  dyPct: number,
+  min: BoxMinimum = TEXT_BOX_MIN,
+): OverlayBox {
+  const width = box.widthPct + (handle.includes('e') ? dxPct : handle.includes('w') ? -dxPct : 0)
+  const height = box.heightPct + (handle.includes('s') ? dyPct : handle.includes('n') ? -dyPct : 0)
+  const horizontal = handle.includes('e') || handle.includes('w')
+  const vertical = handle.includes('n') || handle.includes('s')
+  let scale =
+    horizontal && vertical
+      ? Math.max(width / box.widthPct, height / box.heightPct)
+      : horizontal
+        ? width / box.widthPct
+        : height / box.heightPct
+  scale = Math.max(scale, min.widthPct / box.widthPct, min.heightPct / box.heightPct)
+  // Never grow past the frame in either direction.
+  scale = Math.min(scale, 100 / box.widthPct, 100 / box.heightPct)
+
+  const w = box.widthPct * scale
+  const h = box.heightPct * scale
+  const left = handle.includes('w') ? box.xPct + box.widthPct - w : horizontal ? box.xPct : box.xPct + (box.widthPct - w) / 2
+  const top = handle.includes('n') ? box.yPct + box.heightPct - h : vertical ? box.yPct : box.yPct + (box.heightPct - h) / 2
+  return clampOverlayBox({ xPct: left, yPct: top, widthPct: w, heightPct: h }, min)
 }
 
 export function boxesForLayoutPreset(

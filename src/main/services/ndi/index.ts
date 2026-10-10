@@ -209,7 +209,7 @@ class NdiService {
 
   /**
    * Whether this machine's NDI binding can carry sound. Known from the adapter
-   * before a sender exists; the legacy grandiose-mac sender is video-only.
+   * before a sender exists.
    */
   get audioSupported(): boolean {
     if (this.sender) return typeof this.sender.sendAudio === 'function'

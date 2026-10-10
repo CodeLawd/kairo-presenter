@@ -12,6 +12,7 @@ export function SegmentedControl<T extends string>({
   role = 'radiogroup',
   className,
   itemClassName,
+  fit = false,
 }: {
   value: T
   options: ReadonlyArray<{ value: T; label: React.ReactNode }>
@@ -23,6 +24,12 @@ export function SegmentedControl<T extends string>({
   /** Container overrides — e.g. a different strip colour or a fixed width. */
   className?: string
   itemClassName?: string
+  /**
+   * Never cut a label off: each option is at least as wide as its label, and
+   * extra room is shared out — so it works in a content-wide strip (tabs) and
+   * a full-width one alike. Default: equal widths, long labels truncated.
+   */
+  fit?: boolean
 }): React.ReactElement {
   const itemRole = role === 'tablist' ? 'tab' : 'radio'
   return (
@@ -38,7 +45,8 @@ export function SegmentedControl<T extends string>({
             aria-checked={itemRole === 'radio' ? selected : undefined}
             onClick={() => onChange(option.value)}
             className={cn(
-              'min-w-0 flex-1 truncate rounded-md px-2 py-1 text-[12px] font-medium transition-colors',
+              fit ? 'flex-auto shrink-0 whitespace-nowrap' : 'min-w-0 flex-1 truncate',
+              'rounded-md px-2 py-1 text-[12px] font-medium transition-colors',
               selected ? 'bg-surface-elevated text-white' : 'text-slate-500 hover:text-slate-300',
               itemClassName,
             )}

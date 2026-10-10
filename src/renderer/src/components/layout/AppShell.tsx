@@ -22,9 +22,12 @@ import { clearLiveAll } from '@/lib/clear-live-output'
 import { useBootstrapStore } from '@/bootstrap/useBootstrapStore'
 import { propresenterEnabled } from '@shared/pp-connect-gate'
 import UpdatePill from './UpdatePill'
+import { cn } from '@/lib/utils'
 import { hueStyle, railHueClass, type Hue } from '@/lib/hue'
 import { HEADER_TOOLBAR_SLOT_ID } from './header-toolbar'
 
+
+const IS_MAC = navigator.platform.startsWith('Mac')
 const workspaces: Array<{ id: NavRoute; label: string; icon: typeof CircleGauge; hue: Hue }> = [
   { id: 'operator', label: 'Operator', icon: CircleGauge, hue: 'green' },
   { id: 'scripture', label: 'Scripture', icon: BookOpen, hue: 'orange' },
@@ -256,7 +259,10 @@ export default function AppShell({
   }
 
   return (
-    <header className="app-header drag-region shrink-0">
+    // Only the macOS hidden-inset title bar needs the header to drag the window.
+    // Windows and Linux have a native title bar, and a drag region there
+    // swallows clicks on anything drawn over the header — Settings, menus.
+    <header className={cn('app-header shrink-0', IS_MAC && 'drag-region')}>
       <div className="header-context flex min-w-0 items-center gap-2 pl-[68px]">
         <span className="truncate text-[13px] font-semibold text-zinc-200">
           {workspaces.find((workspace) => workspace.id === currentRoute)?.label}

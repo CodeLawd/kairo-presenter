@@ -116,7 +116,9 @@
       <div class="pa-overlay-root" id="pa-program" style="position:absolute;inset:0;overflow:hidden;">
         <div class="pa-slot" id="pa-bg-layer"></div>
         <div class="pa-slot" id="pa-camera-layer"></div>
+        <div class="pa-slot" id="pa-elements-below-layer"></div>
         <div class="pa-slot" id="pa-text-layer"></div>
+        <div class="pa-slot" id="pa-elements-above-layer"></div>
         <div class="pa-slot" id="pa-props-layer"></div>
         <div class="pa-slot" id="pa-message-layer"></div>
         <div class="pa-slot" id="pa-info-layer">
@@ -151,7 +153,9 @@
       var layers = {
         bg: document.getElementById('pa-bg-layer'),
         camera: document.getElementById('pa-camera-layer'),
+        elementsBelow: document.getElementById('pa-elements-below-layer'),
         text: document.getElementById('pa-text-layer'),
+        elementsAbove: document.getElementById('pa-elements-above-layer'),
         props: document.getElementById('pa-props-layer'),
         message: document.getElementById('pa-message-layer'),
         logo: document.getElementById('pa-logo-layer'),
@@ -459,6 +463,30 @@
         startVideos(nextBg);
       }
 
+      // ─── Theme elements ───────────────────────────────────────────────────
+
+      /**
+       * Shapes and media from the theme. They belong to the look, not the slide,
+       * so identical markup keeps the node — no flicker, and a video element keeps
+       * playing from verse to verse. A changed theme crossfades like the background.
+       */
+      function setElements(layer, next, ms) {
+        var current = currentNode(layer);
+        if (!next) {
+          retire(current, ms);
+          return;
+        }
+        if (current && current.innerHTML === next.innerHTML) return;
+        enter(layer, next, ms);
+        retire(current, ms);
+        // Element videos are decoration: always muted, never routed for sound.
+        var videos = next.querySelectorAll('video');
+        for (var i = 0; i < videos.length; i++) {
+          videos[i].muted = true;
+          videos[i].play().catch(function () {});
+        }
+      }
+
       // ─── Slide text ───────────────────────────────────────────────────────
 
       function fitVerse(scope) {
@@ -542,9 +570,13 @@
         holder.innerHTML = html || '';
         var bg = holder.querySelector('.pa-bg');
         var text = holder.querySelector('.pa-layer');
+        var below = holder.querySelector('.pa-elements-below');
+        var above = holder.querySelector('.pa-elements-above');
         if (bg) bg.remove();
         if (text) text.remove();
         setBackground(bg, ms);
+        setElements(layers.elementsBelow, below, ms);
+        setElements(layers.elementsAbove, above, ms);
         var node = swapLayer(layers.text, text ? text.outerHTML : '', ms);
         if (node) fitVerse(node);
       };

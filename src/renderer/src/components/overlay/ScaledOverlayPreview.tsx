@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   applyOverlayAutoFit,
+  OVERLAY_TRANSPORT_VIDEOS,
   overlayVideoTime,
   playOverlayVideos,
   seekOverlayVideos,
@@ -171,7 +172,7 @@ export function ScaledOverlayPreview({
   useEffect(() => {
     const inner = innerRef.current
     if (!inner || !onTime || !motion) return
-    const videos = inner.querySelectorAll('video')
+    const videos = inner.querySelectorAll<HTMLVideoElement>(OVERLAY_TRANSPORT_VIDEOS)
     if (videos.length === 0) return
     const video = videos[0]
     const emit = (): void => {

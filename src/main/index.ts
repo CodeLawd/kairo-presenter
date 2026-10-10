@@ -40,6 +40,7 @@ import { isPickedOverlayMediaAllowed } from "./services/ndi/media-allowlist";
 import { isInsideRoot, mediaService } from "./services/media";
 import { tracksService } from "./services/tracks";
 import { updaterService } from "./services/updater";
+import { usageService } from "./services/usage";
 
 log.initialize();
 log.transports.file.level = "info";
@@ -295,7 +296,7 @@ function createWindow(): void {
     // Opaque on every platform: a booth screen should look the same whatever
     // is behind the window, and the desktop bleeding through reads as noise.
     // Matches --surface so there is no flash before the first paint.
-    backgroundColor: "#11120D",
+    backgroundColor: "#0C111D",
     webPreferences: {
       preload: join(__dirname, "../preload/index.js"),
       sandbox: false,
@@ -343,6 +344,7 @@ function createWindow(): void {
   mainWindow.webContents.on("render-process-gone", (_event, details) => {
     log.error("[MainWindow] Renderer process gone", details);
     if (details.reason === "clean-exit" || mainWindow.isDestroyed()) return;
+    usageService.trackError("renderer_gone");
     const now = Date.now();
     recentCrashes.push(now);
     while (recentCrashes.length > 0 && now - recentCrashes[0] > 60_000) recentCrashes.shift();
@@ -366,6 +368,7 @@ function createWindow(): void {
     // Coming back to the app often means coming back online — a good moment to
     // retry a recap that could not be published from the booth.
     sermonUploader.wake();
+    usageService.wake();
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -472,7 +475,7 @@ app.whenReady().then(async () => {
 
   // M0: start the NDI sender unconditionally on launch (hardcoded transparent
   // test frame until the overlay window pushes real content). A missing/broken
-  // grandiose-mac native module logs and no-ops — never blocks app boot.
+  // The NDI native module logs and no-ops on failure — never blocks app boot.
   ndiService.start().catch((err) => {
     log.error("[NDI] start() failed:", (err as Error).message);
   });
@@ -516,6 +519,7 @@ app.on("before-quit", () => {
 
 process.on("uncaughtException", (error) => {
   log.error("Uncaught exception:", error);
+  usageService.trackError("uncaught");
   try {
     // Lazy require: the crashing process must not depend on the module graph
     // being fully loaded, and resilience must stay out of the startup path.
@@ -527,8 +531,15 @@ process.on("uncaughtException", (error) => {
   }
 });
 
+// A GPU or utility process dying is invisible to the operator until something
+// stops drawing; counting it shows a bad release in the admin console.
+app.on("child-process-gone", (_event, details) => {
+  if (details.reason !== "clean-exit") usageService.trackError("child_process_gone");
+});
+
 process.on("unhandledRejection", (reason, promise) => {
   log.error("Unhandled rejection at:", promise, "reason:", reason);
+  usageService.trackError("unhandled_rejection");
   try {
     // Same lazy require as above — see comment on uncaughtException.
     // eslint-disable-next-line @typescript-eslint/no-var-requires

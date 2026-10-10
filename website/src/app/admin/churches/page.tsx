@@ -1,12 +1,13 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { SearchIcon } from 'lucide-react'
 import { useDashboard } from '@/components/dashboard/dashboard-provider'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { formatDate, type AdminChurch, type Page } from '@/lib/admin'
+import { formatDate, formatDay, type AdminChurch, type Page } from '@/lib/admin'
 import { Pager, useDebounced } from '@/components/admin/list-controls'
 
 export default function AdminChurchesPage(): React.ReactElement {
@@ -49,6 +50,8 @@ export default function AdminChurchesPage(): React.ReactElement {
               <TableHead>Owner</TableHead>
               <TableHead className="text-right">Members</TableHead>
               <TableHead className="text-right">Recaps</TableHead>
+              <TableHead>Last active</TableHead>
+              <TableHead>App</TableHead>
               <TableHead>Created</TableHead>
             </TableRow>
           </TableHeader>
@@ -56,7 +59,9 @@ export default function AdminChurchesPage(): React.ReactElement {
             {data?.items.map((church) => (
               <TableRow key={church.id}>
                 <TableCell>
-                  <div className="font-medium">{church.name}</div>
+                  <Link href={`/admin/churches/${church.id}`} className="font-medium hover:underline">
+                    {church.name}
+                  </Link>
                   {church.timezone && <div className="text-xs text-muted-foreground">{church.timezone}</div>}
                 </TableCell>
                 <TableCell className="text-sm">
@@ -71,12 +76,14 @@ export default function AdminChurchesPage(): React.ReactElement {
                 </TableCell>
                 <TableCell className="text-right tabular-nums">{church.members}</TableCell>
                 <TableCell className="text-right tabular-nums">{church.sermons}</TableCell>
+                <TableCell className="text-sm text-muted-foreground">{formatDay(church.lastActive)}</TableCell>
+                <TableCell className="text-sm text-muted-foreground">{church.appVersion ?? '—'}</TableCell>
                 <TableCell className="text-sm text-muted-foreground">{formatDate(church.createdAt)}</TableCell>
               </TableRow>
             ))}
             {data && data.items.length === 0 && (
               <TableRow>
-                <TableCell colSpan={5} className="py-10 text-center text-sm text-muted-foreground">
+                <TableCell colSpan={7} className="py-10 text-center text-sm text-muted-foreground">
                   No churches match.
                 </TableCell>
               </TableRow>

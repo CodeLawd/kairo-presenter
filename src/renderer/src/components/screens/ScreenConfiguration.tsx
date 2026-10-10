@@ -26,7 +26,7 @@ import {
   withContentPatch,
 } from '@shared/overlay-outputs'
 import { renderOverlayHTML } from '@shared/overlay-template'
-import { assignThemeToOutput, normalizeThemeLibrary, themesForKind } from '@shared/theme-library'
+import { assignThemeToOutput, normalizeThemeLibrary, themesForKind, withDefaultThemes } from '@shared/theme-library'
 import { bindingForDisplay, describeDisplay, resolveDisplay } from '@shared/displays'
 import { propresenterEnabled } from '@shared/pp-connect-gate'
 import {
@@ -146,11 +146,15 @@ export default function ScreenConfiguration({
     const count = outputs.filter((o) => o.kind === kind).length
     setOutputs([
       ...outputs,
-      makeOverlayOutput(id, kind, {
-        name: count === 0 ? KIND_TITLE[kind] : `${KIND_TITLE[kind]} ${count + 1}`,
-        enabled: true,
-        order: outputs.length,
-      }),
+      withDefaultThemes(
+        makeOverlayOutput(id, kind, {
+          name: count === 0 ? KIND_TITLE[kind] : `${KIND_TITLE[kind]} ${count + 1}`,
+          enabled: true,
+          order: outputs.length,
+        }),
+        themeLibrary,
+        useBootstrapStore.getState().settings.themeDefaults,
+      ),
     ])
     setSelected(id)
   }
@@ -810,7 +814,8 @@ function Detail({
           value={active}
           options={tabs.map((t) => ({ value: t, label: TAB_LABEL[t] }))}
           onChange={onTab}
-          className="mx-8 mt-4 w-fit shrink-0 bg-surface-secondary"
+          fit
+          className="mx-8 mt-4 w-fit max-w-[calc(100%-4rem)] shrink-0 overflow-x-auto bg-surface-secondary"
           itemClassName="px-3.5"
         />
       )}

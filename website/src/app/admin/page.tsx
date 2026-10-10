@@ -37,7 +37,7 @@ export default function AdminOverviewPage(): React.ReactElement {
         <StatCard
           label="Desktop installs in use"
           value={data?.activeInstalls30d}
-          detail="Signed in within 30 days"
+          detail={data && `${data.activeThisWeek} used this week · signed in within 30 days`}
           loading={loading}
         />
         <StatCard

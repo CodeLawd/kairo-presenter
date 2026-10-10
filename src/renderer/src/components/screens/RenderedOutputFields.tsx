@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { SegmentedControl } from '@/components/shared/SegmentedControl'
 import { useSettings } from '@/hooks/useSettings'
 import type { MediaPlaylist, OverlayOutput } from '@shared/ipc'
+import { aspectRatioOf, OUTPUT_ASPECTS } from '@shared/displays'
 import {
   DEFAULT_PRESENTATION_SETTINGS,
   PLAYLIST_SHOW_KEYS,
@@ -91,17 +92,7 @@ export function ScreenSourceFields({ output, onChange }: { output: OverlayOutput
           </FieldRow>
         </>
       ) : (
-        <FieldRow label="Fit" htmlFor={`${output.id}-fit`}>
-          <select
-            id={`${output.id}-fit`}
-            className="input w-full"
-            value={output.aspect}
-            onChange={(e) => onChange({ aspect: e.target.value as OverlayOutput['aspect'] })}
-          >
-            <option value="letterbox">16:9 with black bars</option>
-            <option value="fill">Fill the display</option>
-          </select>
-        </FieldRow>
+        <FitField output={output} onChange={onChange} />
       )}
     </>
   )
@@ -268,4 +259,109 @@ export function NdiSoundField(): React.ReactElement {
       )}
     </div>
   )
+}
+
+/**
+ * The shape an output draws in, with a test pattern on the real display so the
+ * operator sees the result — shown on each change and on demand.
+ */
+function FitField({
+  output,
+  onChange,
+}: {
+  output: OverlayOutput
+  onChange: (patch: Partial<OverlayOutput>) => void
+}): React.ReactElement {
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current) }, [])
+
+  const preview = (next: Pick<OverlayOutput, 'aspect' | 'customAspect'>, delayMs = 0): void => {
+    if (output.displayId == null) return
+    if (timer.current) clearTimeout(timer.current)
+    const displayId = output.displayId
+    // Debounced: typing a custom ratio must not open a window per keystroke.
+    timer.current = setTimeout(() => {
+      void window.api.displays.testPattern({ displayId, name: output.name, ...next })
+    }, delayMs)
+  }
+  const change = (patch: Pick<OverlayOutput, 'aspect' | 'customAspect'>, delayMs = 0): void => {
+    onChange(patch)
+    preview(patch, delayMs)
+  }
+
+  return (
+    <FieldRow label="Fit" htmlFor={`${output.id}-fit`} hint={fitHint(output)}>
+      <div className="flex gap-2">
+        <select
+          id={`${output.id}-fit`}
+          className="input min-w-0 flex-1"
+          value={output.aspect}
+          onChange={(e) => change({ aspect: e.target.value as OverlayOutput['aspect'], customAspect: output.customAspect })}
+        >
+          {OUTPUT_ASPECTS.map((option) => (
+            <option key={option.value} value={option.value}>{option.label}</option>
+          ))}
+        </select>
+        <button
+          type="button"
+          className="btn-secondary shrink-0 px-3 text-[12px]"
+          disabled={output.displayId == null}
+          onClick={() => preview({ aspect: output.aspect, customAspect: output.customAspect })}
+          title={output.displayId == null ? 'Choose a display first' : 'Show a test pattern on this display for a few seconds'}
+        >
+          Test pattern
+        </button>
+      </div>
+      {output.aspect === 'custom' && (
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            min={1}
+            max={100}
+            aria-label="Ratio width"
+            className="input w-20"
+            value={output.customAspect.width}
+            onChange={(e) => change({ aspect: 'custom', customAspect: { ...output.customAspect, width: clampRatio(e.target.value) } }, 500)}
+          />
+          <span className="text-[12px] text-slate-500">:</span>
+          <input
+            type="number"
+            min={1}
+            max={100}
+            aria-label="Ratio height"
+            className="input w-20"
+            value={output.customAspect.height}
+            onChange={(e) => change({ aspect: 'custom', customAspect: { ...output.customAspect, height: clampRatio(e.target.value) } }, 500)}
+          />
+          <span className="text-[12px] text-slate-500">width : height</span>
+        </div>
+      )}
+    </FieldRow>
+  )
+}
+
+function clampRatio(value: string): number {
+  return Math.max(1, Math.min(100, Math.round(Number(value) || 1)))
+}
+
+/** What the chosen shape will look like on the display it is bound to. */
+function fitHint(output: OverlayOutput): string | undefined {
+  const display = output.displaySize
+  if (!display || display.width <= 0 || display.height <= 0) {
+    return output.aspect === 'fill' ? 'Takes the shape of the display once one is chosen.' : undefined
+  }
+  const screen = display.width / display.height
+  const frame = aspectRatioOf(output.aspect, output.customAspect, display) ?? screen
+  const shape = describeRatio(screen)
+  if (Math.abs(frame - screen) / screen < 0.02) return `Fills the display (${shape}) edge to edge.`
+  return frame < screen
+    ? `Your display is ${shape} — black bars at the sides.`
+    : `Your display is ${shape} — black bars above and below.`
+}
+
+/** 1.777… → "16:9", 1.6 → "16:10"; anything unusual as "2.4:1". */
+function describeRatio(ratio: number): string {
+  const known: Array<[number, string]> = [[16 / 9, '16:9'], [16 / 10, '16:10'], [4 / 3, '4:3'], [21 / 9, '21:9'], [32 / 9, '32:9'], [9 / 16, '9:16'], [1, '1:1'], [64 / 27, '21:9']]
+  const match = known.find(([value]) => Math.abs(value - ratio) / ratio < 0.02)
+  return match ? match[1] : `${ratio.toFixed(2).replace(/\.?0+$/, '')}:1`
 }

@@ -128,6 +128,6 @@ test('a theme with its own background outranks the dock loop', () => {
     }),
     true,
   )
-  // Lyric themes are forced transparent, so the dock still fills them.
+  // A theme with no background of its own (every built-in lyrics theme) takes the dock's.
   assert.equal(themeOwnsBackground(DEFAULT_OVERLAY_THEME), false)
 })

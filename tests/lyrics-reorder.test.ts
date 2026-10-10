@@ -72,3 +72,34 @@ test('dropping a slide beside itself in the same section changes nothing', () =>
   assert.equal(moveLyricSlide(sections, 0, 0, 'after'), sections)
   assert.equal(moveLyricSlide(sections, 0, 9, 'after'), sections)
 })
+
+test('deleting slides removes just those slides and rejoins the rest', async () => {
+  const { deleteLyricSlides } = await import('../src/lib/lyrics-reorder')
+  const sections = [
+    { type: 'verse' as const, label: 'Verse 1', lines: ['a1', '', 'a2', '', 'a3'] },
+    { type: 'chorus' as const, label: 'Chorus', lines: ['c1'], hotkey: 'C' },
+    { type: 'verse' as const, label: 'Verse 1', lines: ['b1'] },
+  ]
+  // Slide 1 is "a2": the verse keeps a1 and a3.
+  const oneGone = deleteLyricSlides(sections, [1])
+  assert.deepEqual(oneGone.map((s) => s.lines), [['a1', '', 'a3'], ['c1'], ['b1']])
+  // Deleting the whole chorus (slide 3) joins the two Verse 1 neighbours.
+  const chorusGone = deleteLyricSlides(sections, [3])
+  assert.deepEqual(chorusGone.map((s) => [s.label, s.lines]), [['Verse 1', ['a1', '', 'a2', '', 'a3', '', 'b1']]])
+  // Out-of-range indexes change nothing.
+  assert.equal(deleteLyricSlides(sections, [99]), sections)
+})
+
+test('quick edit replaces one slide, keeping colours on unchanged lines', async () => {
+  const { lyricSlideLines, replaceLyricSlide } = await import('../src/lib/lyrics-reorder')
+  const song = [
+    { type: 'verse' as const, label: 'Verse 1', lines: ['One', 'Two', '', 'Three'], lineColors: ['#FF0000', null, null, '#00FF00'] },
+  ]
+  assert.deepEqual(lyricSlideLines(song, 0), ['One', 'Two'])
+  assert.equal(lyricSlideLines(song, 5), null)
+  const edited = replaceLyricSlide(song, 0, ['One', 'Two changed  ', ''])
+  assert.deepEqual(edited[0].lines, ['One', 'Two changed', '', 'Three'])
+  assert.deepEqual(edited[0].lineColors, ['#FF0000', null, null, '#00FF00'])
+  // Emptying a slide is not a delete: nothing changes.
+  assert.equal(replaceLyricSlide(song, 0, ['  ', '']), song)
+})

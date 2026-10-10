@@ -40,7 +40,7 @@ class SetlistService {
   ): SetlistState {
     const targetId = listId ?? state.activeId
     const target = state.lists.find(list => list.id === targetId)
-    if (!target) throw new Error('Create a setlist first.')
+    if (!target) throw new Error('Create a playlist first.')
     const songIds = edit(target.songIds)
     return {
       ...state,
@@ -57,7 +57,7 @@ class SetlistService {
         return state
 
       case 'create': {
-        if (state.lists.length >= SETLIST_MAX_LISTS) throw new Error('Delete a setlist before creating another.')
+        if (state.lists.length >= SETLIST_MAX_LISTS) throw new Error('Delete a playlist before creating another.')
         const now = Date.now()
         const created: SongSetlist = {
           id: randomUUID(),
@@ -105,7 +105,7 @@ class SetlistService {
         return this.write(this.editList(state, command.listId, () => []))
 
       default:
-        throw new Error('Unknown setlist command.')
+        throw new Error('Unknown playlist command.')
     }
   }
 
@@ -116,7 +116,7 @@ class SetlistService {
    */
   importList(name: string, songIds: string[]): SongSetlist {
     const state = this.snapshot()
-    if (state.lists.length >= SETLIST_MAX_LISTS) throw new Error('Delete a setlist before importing another.')
+    if (state.lists.length >= SETLIST_MAX_LISTS) throw new Error('Delete a playlist before importing another.')
     const base = normalizeSetlistName(name, DEFAULT_SETLIST_NAME)
     const taken = new Set(state.lists.map(list => list.name.toLowerCase()))
     let unique = base

@@ -1,7 +1,7 @@
 import type { CustomOverlayTheme, OverlayContentKind, OverlayOutput, OverlayTheme } from './ipc'
 import { DEFAULT_OVERLAY_SETTINGS, normalizeOverlayTheme } from './overlay-defaults'
 import { applyLayoutPreset } from './overlay-boxes'
-import { setContentOverride, themeForContentKind, withContentPatch } from './overlay-outputs'
+import { setContentOverride, withContentPatch } from './overlay-outputs'
 
 function newId(): string {
   return globalThis.crypto?.randomUUID?.() ?? `theme-${Date.now()}-${Math.random().toString(36).slice(2)}`
@@ -21,6 +21,7 @@ export function createCustomTheme(
     createdAt: now,
     updatedAt: now,
     theme: structuredClone(theme),
+    baseline: structuredClone(theme),
   }
 }
 
@@ -55,9 +56,30 @@ export function updateLibraryTheme(
 ): CustomOverlayTheme[] {
   return library.map((item) =>
     item.id === id
-      ? { ...item, name: patch.name, updatedAt: now, theme: structuredClone(patch.theme) }
+      ? {
+          ...item,
+          name: patch.name,
+          updatedAt: now,
+          theme: structuredClone(patch.theme),
+          // A theme saved before defaults existed takes its pre-edit look as its default.
+          baseline: item.baseline ?? item.theme,
+        }
       : item,
   )
+}
+
+/** The default Reset returns `id` to. */
+export function themeBaseline(item: CustomOverlayTheme): OverlayTheme {
+  return item.baseline ?? item.theme
+}
+
+/** Makes `theme` the default for `id` — "Set as default". */
+export function setThemeBaseline(
+  library: readonly CustomOverlayTheme[],
+  id: string,
+  theme: OverlayTheme,
+): CustomOverlayTheme[] {
+  return library.map((item) => (item.id === id ? { ...item, baseline: structuredClone(theme) } : item))
 }
 
 export function normalizeThemeLibrary(
@@ -86,6 +108,7 @@ export function normalizeThemeLibrary(
       createdAt,
       updatedAt: typeof candidate.updatedAt === 'number' ? candidate.updatedAt : createdAt,
       theme: normalizeOverlayTheme(candidate.theme),
+      ...(candidate.baseline ? { baseline: normalizeOverlayTheme(candidate.baseline) } : {}),
     })
   }
   return normalized
@@ -106,7 +129,7 @@ export function assignThemeToOutput(output: OverlayOutput, theme: CustomOverlayT
     const base = setContentOverride(output, 'lyrics', true)
     return withContentPatch(base, 'lyrics', {
       themeId: theme.id,
-      theme: themeForContentKind(structuredClone(theme.theme), 'lyrics'),
+      theme: structuredClone(theme.theme),
     })
   }
   return { ...output, themeId: theme.id, theme: structuredClone(theme.theme) }
@@ -262,4 +285,23 @@ export function seedBuiltInThemes(library: readonly CustomOverlayTheme[], now = 
   return BUILT_IN_THEMES.map((item, index) =>
     createCustomTheme(item.name, item.theme, item.kind, now + index, index === 0 && reuseId ? reuseId : undefined),
   )
+}
+
+/**
+ * A new screen or NDI feed starts with the default theme for each kind that
+ * has one (`themeDefaults`). Kinds without a default — or whose default was
+ * deleted — keep the output's built-in look.
+ */
+export function withDefaultThemes(
+  output: OverlayOutput,
+  library: readonly CustomOverlayTheme[],
+  defaults: Partial<Record<CustomOverlayTheme['kind'], string>> | undefined,
+): OverlayOutput {
+  if (output.kind !== 'screen' && output.kind !== 'ndi') return output
+  let next = output
+  for (const kind of ['scripture', 'lyrics'] as const) {
+    const theme = library.find((entry) => entry.id === defaults?.[kind] && entry.kind === kind)
+    if (theme) next = assignThemeToOutput(next, theme)
+  }
+  return next
 }

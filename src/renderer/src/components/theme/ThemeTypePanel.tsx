@@ -22,6 +22,7 @@ import type {
   OverlayVerticalAlign,
 } from '@shared/ipc'
 import type { OverlayLayerId } from './OverlayCanvas'
+import { NumberField } from './NumberField'
 import { overlayLayerLabel } from '@shared/overlay-outputs'
 
 const FONT_STACKS: Array<{ label: string; value: string }> = [
@@ -121,54 +122,7 @@ function CompactSelect({
   )
 }
 
-function CompactNumber({
-  label,
-  value,
-  onChange,
-  step = 1,
-  min,
-  max,
-  suffix,
-  icon,
-}: {
-  label: string
-  value: number
-  onChange: (value: number) => void
-  step?: number
-  min?: number
-  max?: number
-  suffix?: string
-  icon?: React.ReactNode
-}): React.ReactElement {
-  return (
-    <div className="min-w-0">
-      <FieldLabel>{label}</FieldLabel>
-      <FieldShell>
-        {icon}
-        <input
-          type="number"
-          className="h-full w-full bg-transparent text-sm outline-none tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-          value={Number.isFinite(value) ? value : 0}
-          step={step}
-          min={min}
-          max={max}
-          onChange={(event) => {
-            const next = Number(event.target.value)
-            if (!Number.isFinite(next)) return
-            let clamped = next
-            if (min !== undefined) clamped = Math.max(min, clamped)
-            if (max !== undefined) clamped = Math.min(max, clamped)
-            onChange(clamped)
-          }}
-          aria-label={label}
-        />
-        {suffix && <span className="shrink-0 text-xs text-zinc-500">{suffix}</span>}
-      </FieldShell>
-    </div>
-  )
-}
-
-function ColorOpacityField({
+export function ColorOpacityField({
   label,
   color,
   opacity,
@@ -369,7 +323,7 @@ function TextFormatFields({
       </div>
 
       <div className="grid grid-cols-2 gap-2">
-        <CompactNumber
+        <NumberField
           label="Line height"
           value={Number(style.lineHeight.toFixed(2))}
           step={0.05}
@@ -378,7 +332,7 @@ function TextFormatFields({
           onChange={(lineHeight) => onChange({ lineHeight })}
           icon={<span className="text-[10px] font-bold text-zinc-500">↕</span>}
         />
-        <CompactNumber
+        <NumberField
           label="Letter spacing"
           value={Number(style.letterSpacingPx.toFixed(1))}
           step={0.5}
@@ -498,8 +452,8 @@ function EffectsFields({
       >
         <div className={cn('space-y-3', !shadow.enabled && 'pointer-events-none opacity-40')}>
           <div className="grid grid-cols-2 gap-2">
-            <CompactNumber label="X" value={shadow.xPx} min={-40} max={40} onChange={(xPx) => onShadowChange({ xPx })} />
-            <CompactNumber label="Y" value={shadow.yPx} min={-40} max={40} onChange={(yPx) => onShadowChange({ yPx })} />
+            <NumberField label="X" value={shadow.xPx} min={-40} max={40} onChange={(xPx) => onShadowChange({ xPx })} />
+            <NumberField label="Y" value={shadow.yPx} min={-40} max={40} onChange={(yPx) => onShadowChange({ yPx })} />
           </div>
           <div>
             <div className="mb-1 flex items-center justify-between">
@@ -556,7 +510,7 @@ function EffectsFields({
                 onOutlineChange({ position: position as OverlayTextOutline['position'] })
               }
             />
-            <CompactNumber
+            <NumberField
               label="Width"
               value={outline.widthPx}
               min={0}

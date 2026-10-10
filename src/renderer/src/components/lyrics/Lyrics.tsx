@@ -3,22 +3,23 @@ import { ZoomControl } from '@/components/shared/ZoomControl'
 import { leavesTarget } from '@/lib/drag'
 import { PICKED_ROW, listShortcuts, selectGesture, useMultiSelect, type SelectGesture } from '@/hooks/useMultiSelect'
 import { MarqueeSelect } from '@/components/shared/MarqueeSelect'
-import { SelectionBar } from '@/components/shared/SelectionBar'
-import { SLIDE_LABEL_CHOICES, sectionColor, sectionFill } from '@/components/lyrics/section-colors'
+import { sectionColor, sectionFill } from '@/components/lyrics/section-colors'
 import { runSetlistCommand, songIdFromDrag, startSongDrag, useSetlistStore, SONG_DRAG_TYPE } from '@/stores/useSetlist'
 import { startLibraryItemDrag, useLibrary } from '@/stores/useLibraries'
 import { DEFAULT_LIBRARY_ID, itemsInLibrary, libraryCounts as countByLibrary } from '@shared/libraries'
-import { labelLyricSlides, moveLyricSlide } from '@shared/lyrics-reorder'
+import { deleteLyricSlides, labelLyricSlides, lyricSlideLines, moveLyricSlide, replaceLyricSlide } from '@shared/lyrics-reorder'
+import { autoAssignHotkeys, hotkeyFromEvent, normalizeHotkey, sectionForHotkey, setSectionHotkey } from '@shared/lyrics-hotkeys'
 import { useLibraryWidth } from './useLibraryWidth'
+import { SlideContextMenu, type SlideMenuTarget } from './SlideContextMenu'
+import { QuickEditCard } from './QuickEditCard'
 import { useImportRequest } from '@/hooks/useImportRequest'
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { createPortal } from 'react-dom'
-import { useHeaderToolbarSlot } from '@/components/layout/header-toolbar'
+import { BAR_FIELD } from '@/components/scripture/ScriptureSearchBar'
+import { SongReflowEditor } from './SongReflowEditor'
 import {
   Search,
   Music2,
   Star,
-  ChevronDown,
   X,
   Plus,
   Trash2,
@@ -28,19 +29,16 @@ import {
   Loader2,
   AlertCircle,
   MoreVertical,
-  GripVertical,
-  ArrowUp,
-  ArrowDown,
   Edit2,
   Save,
   FilePlus,
   Globe,
   Library,
   ClipboardPaste,
+  Keyboard,
   MoreHorizontal,
   Check,
   ListChecks,
-  Scissors,
   Languages,
   RotateCcw,
   ListMusic,
@@ -74,15 +72,12 @@ import type {
 } from '@shared/ipc'
 import {
   buildSlides,
-  insertSlideBreaks,
   preserveSlideBreaks,
   sectionSlideChunks,
   sectionColoredSlideChunks,
 } from '@shared/lyrics-slides'
 import {
-  expandJammedLines,
   parseMarkedSections,
-  splitSectionAtCursor,
 } from '@shared/lyrics-section-edit'
 import {
   sectionsHaveGlosses,
@@ -121,6 +116,8 @@ interface EditSection {
   type: LyricsSectionType
   label: string
   linesText: string
+  /** A–Z / 0–9 — pressing it in the song view puts this section live. */
+  hotkey?: string
 }
 
 interface EditState {
@@ -139,16 +136,6 @@ interface ContextMenuState {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const SECTION_TYPE_OPTS: { value: LyricsSectionType; label: string }[] = [
-  { value: 'verse', label: 'Verse' },
-  { value: 'chorus', label: 'Chorus' },
-  { value: 'bridge', label: 'Bridge' },
-  { value: 'pre-chorus', label: 'Pre-Chorus' },
-  { value: 'tag', label: 'Tag' },
-  { value: 'intro', label: 'Intro' },
-  { value: 'outro', label: 'Outro' },
-  { value: 'ending', label: 'Ending' },
-]
 
 // ─── Pure helpers ─────────────────────────────────────────────────────────────
 
@@ -168,6 +155,7 @@ function songToEdit(song: LyricsSong): EditState {
       type: s.type,
       label: s.label,
       linesText: s.lines.join('\n'),
+      ...(s.hotkey ? { hotkey: s.hotkey } : {}),
     })),
   }
 }
@@ -177,6 +165,7 @@ function editToSections(sections: EditSection[]): LyricsSongSection[] {
     type: s.type,
     label: s.label,
     lines: preserveSlideBreaks(s.linesText.split('\n')),
+    ...(normalizeHotkey(s.hotkey) ? { hotkey: normalizeHotkey(s.hotkey) } : {}),
   }))
 }
 
@@ -296,7 +285,14 @@ function SectionSlideGrid({
   selectedSlides,
   selecting,
   onSelectSlide,
+  quickEdit = null,
+  onQuickEditSave,
+  onQuickEditCancel,
 }: {
+  /** The slide being quick-edited, with its starting text. */
+  quickEdit?: { slide: number; text: string } | null
+  onQuickEditSave?: (slide: number, text: string) => void
+  onQuickEditCancel?: () => void
   /** Tile size in percent; 100 is the original 180–200px tile. */
   zoom: number
   /** Slides picked for labelling (zero-based, whole song). */
@@ -376,11 +372,25 @@ function SectionSlideGrid({
           const isLive = liveSlideIndex === zeroBased
           const isPushing = pushingSlideIndex === zeroBased
           const isPicked = selectedSlides.has(zeroBased)
+          if (quickEdit?.slide === zeroBased) {
+            return (
+              <QuickEditCard
+                key={i}
+                initialText={quickEdit.text}
+                slideNo={slideNo}
+                scale={scale}
+                barStyle={sectionFill(section.type)}
+                onSave={(text) => onQuickEditSave?.(zeroBased, text)}
+                onCancel={() => onQuickEditCancel?.()}
+              />
+            )
+          }
           return (
             <button
               key={i}
               type="button"
               data-lyric-slide={zeroBased}
+              data-lyric-section={sectionIndex}
               data-select-id={zeroBased}
               disabled={reorderBusy}
               // The whole card drags. Pressing ⌘ first starts a rubber band
@@ -448,6 +458,15 @@ function SectionSlideGrid({
               aria-label={selecting ? `Select slide ${slideNo}` : `Show slide ${slideNo}`}
               title={selecting ? 'Select this slide' : 'Click to go live · drag to move · ⌘-click to select'}
             >
+              {i === 0 && section.hotkey && (
+                // ProPresenter-style group hotkey, on the section's first slide.
+                <span
+                  className="pointer-events-none absolute left-1.5 top-1.5 z-10 grid size-5 place-items-center rounded bg-[rgb(var(--hue-orange))] text-[11px] font-bold text-ink"
+                  aria-label={`Hotkey ${section.hotkey}`}
+                >
+                  {section.hotkey}
+                </span>
+              )}
               {slideDrag && slideDrag.from !== zeroBased && slideDrag.over?.index === zeroBased && (
                 <span
                   aria-hidden="true"
@@ -638,7 +657,7 @@ function SongListItem({
         <button
           className="shrink-0 rounded p-0.5 text-slate-600 opacity-0 group-hover:opacity-100 hover:text-rose-400 transition-all duration-150 focus-visible:outline-none"
           onClick={(e) => { e.stopPropagation(); onRemoveFromSetlist(song.id) }}
-          aria-label={`Remove ${song.title} from this setlist`}
+          aria-label={`Remove ${song.title} from this playlist`}
         >
           <X size={13} />
         </button>
@@ -728,189 +747,6 @@ function FloatingContextMenu({
 }
 
 // ─── SectionEditBlock ─────────────────────────────────────────────────────────
-
-function SectionEditBlock({
-  section,
-  index,
-  total,
-  isDragTarget,
-  onUpdate,
-  onDelete,
-  onMove,
-  onSplit,
-  onDragStart,
-  onDragOver,
-  onDrop,
-}: {
-  section: EditSection
-  index: number
-  total: number
-  isDragTarget: boolean
-  onUpdate: (key: string, patch: Partial<EditSection>) => void
-  onDelete: (key: string) => void
-  onMove: (from: number, to: number) => void
-  onSplit: (index: number, cursor: number) => void
-  onDragStart: (index: number) => void
-  onDragOver: (e: React.DragEvent, index: number) => void
-  onDrop: (index: number) => void
-}): React.ReactElement {
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const slideCount = sectionSlideChunks({
-    type: section.type,
-    label: section.label,
-    lines: preserveSlideBreaks(section.linesText.split('\n')),
-  }).length
-
-  const cursorPos = (): number => textareaRef.current?.selectionStart ?? section.linesText.length
-
-  return (
-    <div
-      onDragOver={(e) => onDragOver(e, index)}
-      onDrop={() => onDrop(index)}
-      style={isDragTarget ? undefined : {
-        // Same colour as the section's slide bars in the song view.
-        boxShadow: `inset 3px 0 0 ${sectionColor(section.type)}`,
-      }}
-      className={cn(
-        'overflow-hidden rounded-md transition-colors duration-150',
-        isDragTarget
-          ? 'bg-surface-elevated'
-          : 'bg-surface-secondary'
-      )}
-    >
-      {/* Section header row */}
-      <div
-        className="flex items-center gap-2 bg-surface-tertiary px-3 py-2"
-      >
-        <div
-          draggable
-          onDragStart={(e) => {
-            // Keep text selection in the textarea from hijacking reorder.
-            e.dataTransfer.effectAllowed = 'move'
-            onDragStart(index)
-          }}
-          onDragEnd={() => onDrop(index)}
-          className="text-slate-600 cursor-grab active:cursor-grabbing shrink-0 p-0.5 -ml-0.5 rounded hover:text-slate-400 hover:bg-surface-tertiary"
-          title="Drag to reorder"
-          aria-label="Drag to reorder section"
-        >
-          <GripVertical size={14} />
-        </div>
-
-        {/* Type selector */}
-        <select
-          value={section.type}
-          onChange={(e) => {
-            const t = e.target.value as LyricsSectionType
-            const opt = SECTION_TYPE_OPTS.find((o) => o.value === t)
-            onUpdate(section._key, { type: t, label: opt?.label ?? t })
-          }}
-          className="appearance-none text-[11px] font-bold uppercase tracking-wider cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 rounded px-1.5 py-0.5"
-          style={sectionFill(section.type)}
-          title="Change section type"
-        >
-          {SECTION_TYPE_OPTS.map((o) => (
-            <option key={o.value} value={o.value} className="bg-zinc-900 text-slate-200 font-normal normal-case tracking-normal text-sm">
-              {o.label}
-            </option>
-          ))}
-        </select>
-
-        {/* Label input */}
-        <input
-          type="text"
-          value={section.label}
-          onChange={(e) => onUpdate(section._key, { label: e.target.value })}
-          className="flex-1 bg-transparent text-[13px] font-medium text-slate-300 placeholder:text-slate-600 focus-visible:outline-none min-w-0 border-transparent transition-colors"
-          aria-label={`Section ${index + 1} label`}
-          placeholder="Section label…"
-        />
-        <span className="text-[11px] text-slate-500 tabular-nums shrink-0">
-          {slideCount} slide{slideCount !== 1 ? 's' : ''}
-        </span>
-
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              className="shrink-0 rounded p-1 text-slate-500 transition-colors hover:bg-surface-tertiary hover:text-slate-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-teal-400"
-              title="Section tools"
-              aria-label={`Tools for ${section.label || `section ${index + 1}`}`}
-            >
-              <MoreHorizontal size={14} />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-zinc-500">Slide breaks</DropdownMenuLabel>
-            <DropdownMenuItem onSelect={() => onUpdate(section._key, { linesText: insertSlideBreaks(section.linesText, 1) })}>
-              One line per slide
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => onUpdate(section._key, { linesText: insertSlideBreaks(section.linesText, 2) })}>
-              Two lines per slide
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => onUpdate(section._key, { linesText: expandJammedLines(section.linesText) })}>
-              Separate run-on phrases
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onSelect={() => onUpdate(section._key, {
-                linesText: section.linesText.split('\n').map((l) => l.trimEnd()).filter((l) => l.trim()).join('\n'),
-              })}
-            >
-              Remove all slide breaks
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-zinc-500">Section</DropdownMenuLabel>
-            <DropdownMenuItem onSelect={() => onSplit(index, cursorPos())}>
-              <Scissors size={13} />
-              Split at cursor
-              <span className="ml-auto text-[10px] text-zinc-500">⌘↵</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem disabled={index === 0} onSelect={() => onMove(index, index - 1)}>
-              <ArrowUp size={13} />
-              Move up
-            </DropdownMenuItem>
-            <DropdownMenuItem disabled={index === total - 1} onSelect={() => onMove(index, index + 1)}>
-              <ArrowDown size={13} />
-              Move down
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-
-        {/* Deleting a section was inside "Reflow tools", where nothing suggests
-            it lives. It belongs on the header row, next to the section it
-            removes. */}
-        <button
-          type="button"
-          onClick={() => onDelete(section._key)}
-          className="shrink-0 rounded p-1 text-slate-600 transition-colors hover:bg-tint-red hover:text-red-400 focus-visible:outline-none"
-          title="Delete this section"
-          aria-label={`Delete section ${section.label || index + 1}`}
-        >
-          <Trash2 size={13} />
-        </button>
-      </div>
-
-      {/* Lyrics textarea */}
-      <textarea
-        ref={textareaRef}
-        value={section.linesText}
-        onChange={(e) => onUpdate(section._key, { linesText: e.target.value })}
-        onKeyDown={(e) => {
-          if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-            e.preventDefault()
-            onSplit(index, e.currentTarget.selectionStart)
-          }
-        }}
-        rows={Math.min(16, Math.max(4, section.linesText.split('\n').length + 1))}
-        className="block w-full resize-y bg-transparent px-4 py-3 font-sans text-sm leading-7 text-slate-200 placeholder:text-slate-600 focus-visible:outline-none"
-        aria-label={`${section.label || 'Section'} lyrics`}
-        placeholder={'Type or paste lyrics — one line per row.\nLeave a blank line to start a new slide.'}
-        spellCheck
-      />
-
-    </div>
-  )
-}
 
 // ─── OnlineResultRow ──────────────────────────────────────────────────────────
 
@@ -2368,7 +2204,6 @@ function DeleteConfirmModal({
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function Lyrics(): React.ReactElement {
-  const toolbarSlot = useHeaderToolbarSlot()
   const liveRail = useLiveRailWidth()
 
   // ── Library ──────────────────────────────────────────────────────────────────
@@ -2464,9 +2299,6 @@ export default function Lyrics(): React.ReactElement {
   const [translateError, setTranslateError] = useState<string | null>(null)
   const [translateSourceLang, setTranslateSourceLang] = useState('auto')
 
-  // ── Section drag state ───────────────────────────────────────────────────────
-  const dragSrcRef = useRef<number | null>(null)
-  const [dragTargetIdx, setDragTargetIdx] = useState<number | null>(null)
   const sendTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const playlistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -2961,59 +2793,6 @@ export default function Lyrics(): React.ReactElement {
     [selectedSong, editMode]
   )
 
-  // ── Section helpers ──────────────────────────────────────────────────────────
-  const updateSection = useCallback((key: string, patch: Partial<EditSection>): void => {
-    setEditState((p) => p ? { ...p, sections: p.sections.map((s) => s._key === key ? { ...s, ...patch } : s) } : p)
-  }, [])
-
-  const deleteSection = useCallback((key: string): void => {
-    setEditState((p) => p ? { ...p, sections: p.sections.filter((s) => s._key !== key) } : p)
-  }, [])
-
-  const addSection = useCallback((): void => {
-    setEditState((p) => {
-      if (!p) return p
-      const verseCount = p.sections.filter((s) => s.type === 'verse').length
-      return {
-        ...p,
-        sections: [...p.sections, { _key: makeKey(), type: 'verse', label: `Verse ${verseCount + 1}`, linesText: '' }],
-      }
-    })
-  }, [])
-
-  const splitSection = useCallback((index: number, cursor: number): void => {
-    setEditState((p) => {
-      if (!p) return p
-      const next = splitSectionAtCursor(p.sections, index, cursor, makeKey, 'verse')
-      return next ? { ...p, sections: next } : p
-    })
-  }, [])
-
-  const moveSection = useCallback((from: number, to: number): void => {
-    setEditState((p) => {
-      if (!p) return p
-      const secs = [...p.sections]
-      const [item] = secs.splice(from, 1)
-      secs.splice(to, 0, item)
-      return { ...p, sections: secs }
-    })
-  }, [])
-
-  // ── Drag handlers ────────────────────────────────────────────────────────────
-  const handleDragStart = useCallback((index: number): void => { dragSrcRef.current = index }, [])
-
-  const handleDragOver = useCallback((e: React.DragEvent, index: number): void => {
-    e.preventDefault()
-    setDragTargetIdx(index)
-  }, [])
-
-  const handleDrop = useCallback((toIndex: number): void => {
-    const from = dragSrcRef.current
-    if (from !== null && from !== toIndex) moveSection(from, toIndex)
-    dragSrcRef.current = null
-    setDragTargetIdx(null)
-  }, [moveSection])
-
   // ── Favorite ─────────────────────────────────────────────────────────────────
   const handleToggleFavorite = useCallback(async (id: string): Promise<void> => {
     const result = await window.api.lyrics.toggleFavorite(id)
@@ -3263,11 +3042,90 @@ export default function Lyrics(): React.ReactElement {
     return () => window.removeEventListener('keydown', onKey, true)
   }, [selectingSlides, pickedSlides.size])
 
-  const handleLabelSlides = async (target: { type: LyricsSectionType; label: string }): Promise<void> => {
-    if (!selectedSong || pickedSlides.size === 0 || reorderLock.current) return
+  // ── Slide right-click menu ──────────────────────────────────────────────────
+  const [slideMenu, setSlideMenu] = useState<SlideMenuTarget | null>(null)
+  /** What a menu action applies to: the selection when the slide is in it, else that slide. */
+  const menuSlides = useMemo<Set<number>>(
+    () => (slideMenu ? (pickedSlides.has(slideMenu.slide) ? new Set(pickedSlides) : new Set([slideMenu.slide])) : new Set()),
+    [slideMenu, pickedSlides],
+  )
+
+  /** Saves new sections for the open song (one write at a time). */
+  const saveSections = async (sections: LyricsSongSection[], failure: string): Promise<boolean> => {
+    if (!selectedSong || reorderLock.current) return false
     reorderLock.current = true; setReorderBusy(true); setSendError(null)
     try {
-      const sections = labelLyricSlides(selectedSong.sections, pickedSlides, target)
+      const updated = await window.api.lyrics.update(selectedSong.id, { ...selectedSong, sections })
+      if (!updated) throw new Error(failure)
+      setSongs(previous => previous.map(song => song.id === updated.id ? updated : song))
+      return true
+    } catch (error) { setSendError(cleanIpcError(error)); return false }
+    finally { reorderLock.current = false; setReorderBusy(false) }
+  }
+
+  // Quick Edit: one slide's lines, edited on the card itself.
+  const [quickEdit, setQuickEdit] = useState<{ slide: number; text: string } | null>(null)
+  useEffect(() => setQuickEdit(null), [selectedId, editMode])
+
+  const startQuickEdit = (slide: number): void => {
+    const lines = selectedSong ? lyricSlideLines(selectedSong.sections, slide) : null
+    if (lines) setQuickEdit({ slide, text: lines.join('\n') })
+  }
+
+  const handleQuickEditSave = async (slide: number, text: string): Promise<void> => {
+    setQuickEdit(null)
+    if (!selectedSong) return
+    const sections = replaceLyricSlide(selectedSong.sections, slide, text.split('\n'))
+    if (sections === selectedSong.sections) return
+    // On screen right now: show the corrected words there too.
+    if (await saveSections(sections, 'Could not save that slide') && liveSlideIndex === slide) {
+      void handlePushSlide(slide)
+    }
+  }
+
+  const handleSectionHotkey = (section: number, key: string | undefined): void => {
+    if (!selectedSong) return
+    void saveSections(setSectionHotkey(selectedSong.sections, section, key), 'Could not save the hot key')
+  }
+
+  const handleDeleteSlides = async (slides: ReadonlySet<number>): Promise<void> => {
+    if (!selectedSong || slides.size === 0) return
+    const what = slides.size === 1 ? 'this slide' : `these ${slides.size} slides`
+    if (!window.confirm(`Delete ${what} from “${selectedSong.title}”?`)) return
+    if (await saveSections(deleteLyricSlides(selectedSong.sections, slides), 'Could not delete those slides')) {
+      clearPicked()
+      setLiveSlideIndex(null)
+    }
+  }
+
+  const handleCopySlide = (slide: number): void => {
+    const lines = songSlides[slide]?.lines
+    if (lines) void navigator.clipboard.writeText(lines.join('\n')).catch(() => {})
+  }
+
+  /** Song menu: suggest keys for every section (or clear them all), then save. */
+  const handleSetHotkeys = async (mode: 'auto' | 'clear'): Promise<void> => {
+    if (!selectedSong || reorderLock.current) return
+    reorderLock.current = true; setReorderBusy(true); setSendError(null)
+    try {
+      const sections = mode === 'auto'
+        ? autoAssignHotkeys(selectedSong.sections)
+        : selectedSong.sections.map(({ hotkey: _key, ...rest }) => rest)
+      const updated = await window.api.lyrics.update(selectedSong.id, { ...selectedSong, sections })
+      if (!updated) throw new Error('Could not save the hotkeys')
+      setSongs(previous => previous.map(song => song.id === updated.id ? updated : song))
+    } catch (error) { setSendError(cleanIpcError(error)) }
+    finally { reorderLock.current = false; setReorderBusy(false) }
+  }
+
+  const handleLabelSlides = async (
+    target: { type: LyricsSectionType; label: string },
+    slides: ReadonlySet<number> = pickedSlides,
+  ): Promise<void> => {
+    if (!selectedSong || slides.size === 0 || reorderLock.current) return
+    reorderLock.current = true; setReorderBusy(true); setSendError(null)
+    try {
+      const sections = labelLyricSlides(selectedSong.sections, slides, target)
       const updated = await window.api.lyrics.update(selectedSong.id, { ...selectedSong, sections })
       if (!updated) throw new Error('Could not label those slides')
       setSongs(previous => previous.map(song => song.id === updated.id ? updated : song))
@@ -3291,6 +3149,27 @@ export default function Lyrics(): React.ReactElement {
     window.addEventListener('keydown', navigate, true)
     return () => window.removeEventListener('keydown', navigate, true)
   }, [editMode, selectedSong, showImport, deleteTarget, webPreviewResult, reorderBusy, pushingSlideIndex, liveSlideIndex, songSlides.length, handlePushSlide])
+
+  // Section hotkeys (ProPresenter-style): one key puts that section's first
+  // slide live. Same guards as the arrows — never while typing or in a dialog.
+  useEffect(() => {
+    const jump = (event: KeyboardEvent) => {
+      if (event.altKey || event.ctrlKey || event.metaKey || event.repeat || event.isComposing) return
+      const key = hotkeyFromEvent(event.key)
+      if (!key || !selectedSong) return
+      const target = event.target as HTMLElement | null
+      if (editMode || showImport || deleteTarget || webPreviewResult || reorderBusy || pushingSlideIndex !== null || !document.hasFocus() || document.querySelector('.kairo-pp-settings, [role="dialog"], [role="menu"]') || target?.closest('input, textarea, select, [contenteditable="true"]')) return
+      const section = sectionForHotkey(selectedSong.sections, key)
+      if (section < 0) return
+      const first = (sectionSlideStarts[section] ?? 1) - 1
+      if (first < 0 || first >= songSlides.length) return
+      event.preventDefault(); event.stopImmediatePropagation()
+      document.querySelector(`[data-lyric-slide="${first}"]`)?.scrollIntoView({ block: 'nearest' })
+      void handlePushSlide(first)
+    }
+    window.addEventListener('keydown', jump, true)
+    return () => window.removeEventListener('keydown', jump, true)
+  }, [editMode, selectedSong, showImport, deleteTarget, webPreviewResult, reorderBusy, pushingSlideIndex, sectionSlideStarts, songSlides.length, handlePushSlide])
 
   // ── Playlists ────────────────────────────────────────────────────────────────
   // TODO: wire to the playlist UI when it lands (kept for the WIP).
@@ -3364,46 +3243,13 @@ export default function Lyrics(): React.ReactElement {
       }
     >
       <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-surface">
-      {toolbarSlot && createPortal(
-        <div className="flex h-7 min-w-0 items-center gap-1.5">
-          <div className="no-drag flex h-7 w-[26rem] min-w-0 shrink items-center rounded-md border border-transparent bg-surface-secondary transition-colors focus-within:border-teal-500">
-            <Search size={13} className="ml-2.5 shrink-0 text-slate-500" aria-hidden="true" />
-            <input
-              type="text"
-              className="h-full min-w-0 flex-1 bg-transparent px-2 text-xs text-slate-100 outline-none placeholder:text-slate-500"
-              placeholder="Search your library or the web…"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              aria-label="Search songs"
-            />
-            {query && (
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                className="mr-1 shrink-0"
-                onClick={() => setQuery('')}
-                aria-label="Clear search"
-              >
-                <X />
-              </Button>
-            )}
-          </div>
-          <Button variant="ghost" size="icon-sm" onClick={() => setShowImport(true)} aria-label="Import songs" title="Import songs">
-            <Upload />
-          </Button>
-          <Button size="sm" onClick={handleNewSong} title="New song" data-tour="lyrics-new">
-            <Plus data-icon="inline-start" /> New
-          </Button>
-        </div>,
-        toolbarSlot,
-      )}
       {/* Main split layout */}
       <div ref={libraryWidth.containerRef} className="flex-1 flex min-h-0 min-w-0 overflow-hidden">
 
         {/* ── Left panel: the library, on its own surface ───────────────────── */}
         {/* A sidebar rather than a card: it runs the full height of the page, so
-            the library and the song being edited read as two rooms. Search,
-            Import and New live in the app header's toolbar row. */}
+            the library and the song being edited read as two rooms. Like
+            ProPresenter's library: + on the list's header, Filter under the list. */}
         <div
           style={{ width: libraryWidth.width }}
           className={cn(
@@ -3428,36 +3274,40 @@ export default function Lyrics(): React.ReactElement {
             onSelectSetlist={setViewingSetlistId}
           />
 
-          <div className="flex flex-wrap items-center gap-x-1 gap-y-2">
-            <p className="min-w-0 flex-1 truncate text-[10px] font-semibold uppercase tracking-wider text-zinc-600">
-              {viewingSetlist
-                ? `${filteredSongs.length} ${filteredSongs.length === 1 ? 'song' : 'songs'}`
-                : 'Songs'}
+          {/* The list's header, as in ProPresenter: what's here, then one menu
+              for everything you do to the list, and + for a new song. */}
+          <div className="flex items-center gap-0.5">
+            <p className="min-w-0 flex-1 whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-zinc-600">
+              {loading ? 'Songs' : `${filteredSongs.length} ${filteredSongs.length === 1 ? 'song' : 'songs'}`}
             </p>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="ml-auto">Sort <ChevronDown data-icon="inline-end" /></Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-40">
-                <DropdownMenuGroup>
-                  {(['title', 'artist', 'recent', 'added'] as SortType[]).map((s) => (
-                    <DropdownMenuItem
-                      key={s}
-                      onSelect={() => setSortBy(s)}
-                    >
-                      {sortBy === s ? '✓ ' : ''}{s === 'recent' ? 'Last Modified' : s === 'added' ? 'Date Added' : `By ${s.charAt(0).toUpperCase() + s.slice(1)}`}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon-sm" aria-label="Share songs" title="Export or import a .kairo file">
+                <Button variant="ghost" size="icon-sm" aria-label="Song list options" data-tooltip="Sort, import and export">
                   <MoreHorizontal />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-52">
+                <DropdownMenuLabel className="text-[11px] font-medium text-slate-500">Sort by</DropdownMenuLabel>
+                <DropdownMenuGroup>
+                  {(['title', 'artist', 'recent', 'added'] as SortType[]).map((s) => (
+                    <DropdownMenuItem key={s} onSelect={() => setSortBy(s)}>
+                      <Check size={13} className={sortBy === s ? undefined : 'invisible'} aria-hidden="true" />
+                      {s === 'recent' ? 'Last modified' : s === 'added' ? 'Date added' : s === 'title' ? 'Title' : 'Artist'}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuGroup>
+                <DropdownMenuSeparator />
+                <DropdownMenuGroup>
+                  <DropdownMenuItem onSelect={() => setShowImport(true)}>
+                    <Download size={13} />
+                    Import songs…
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => void importKairo()}>
+                    <Download size={13} />
+                    Import .kairo file…
+                  </DropdownMenuItem>
+                </DropdownMenuGroup>
+                <DropdownMenuSeparator />
                 <DropdownMenuGroup>
                   <DropdownMenuItem
                     onSelect={() => useTransferStore.getState().openSongExport(
@@ -3470,26 +3320,24 @@ export default function Lyrics(): React.ReactElement {
                   {viewingSetlist ? (
                     <DropdownMenuItem onSelect={() => void exportKairo({ kind: 'setlist', listId: viewingSetlist.id })}>
                       <Upload size={13} />
-                      Export this setlist…
+                      Export this playlist…
                     </DropdownMenuItem>
                   ) : null}
                   <DropdownMenuItem onSelect={() => void exportKairo({ kind: 'library' })}>
                     <Upload size={13} />
                     Export whole library…
                   </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onSelect={() => void importKairo()}>
-                    <Download size={13} />
-                    Import .kairo file…
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onSelect={() => setUsageOpen(true)}>
-                    <ListMusic size={13} />
-                    Song usage report…
-                  </DropdownMenuItem>
                 </DropdownMenuGroup>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => setUsageOpen(true)}>
+                  <ListMusic size={13} />
+                  Song usage report…
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            <Button variant="ghost" size="icon-sm" onClick={handleNewSong} aria-label="New song" data-tooltip="New song" data-tour="lyrics-new">
+              <Plus />
+            </Button>
           </div>
 
           {viewingSetlist && setlistSelect.selected.size > 0 && (
@@ -3497,7 +3345,7 @@ export default function Lyrics(): React.ReactElement {
               <span className="min-w-0 flex-1 truncate text-zinc-300">
                 {setlistSelect.selected.size} song{setlistSelect.selected.size === 1 ? '' : 's'} selected
               </span>
-              <button type="button" onClick={removePickedFromSetlist} className="rounded px-1.5 py-0.5 font-medium text-rose-300 hover:bg-tint-rose" title="Remove from setlist (Delete)">
+              <button type="button" onClick={removePickedFromSetlist} className="rounded px-1.5 py-0.5 font-medium text-rose-300 hover:bg-tint-rose" title="Remove from playlist (Delete)">
                 Remove
               </button>
               <button type="button" onClick={setlistSelect.clear} className="rounded px-1.5 py-0.5 text-zinc-400 hover:bg-surface-tertiary hover:text-white" title="Clear (Esc)">
@@ -3656,11 +3504,32 @@ export default function Lyrics(): React.ReactElement {
             )}
           </div>
 
-          {!loading && songs.length > 0 && (
-            <p className="text-[11px] text-slate-600 text-center tabular-nums shrink-0">
-              {filteredSongs.length} of {songs.length} song{songs.length !== 1 ? 's' : ''}
-            </p>
-          )}
+          {/* Filter, under the list it narrows — where ProPresenter keeps it.
+              Same field as Scripture's Bible bar, a step darker than this panel. */}
+          <div className={cn(BAR_FIELD, 'shrink-0 bg-surface')}>
+            <Search size={13} className="ml-2.5 shrink-0 text-slate-500" aria-hidden="true" />
+            <input
+              type="text"
+              className="h-full min-w-0 flex-1 bg-transparent px-2 text-[13px] text-slate-100 outline-none placeholder:text-slate-500"
+              placeholder="Filter, or search the web"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              autoComplete="off"
+              spellCheck={false}
+              aria-label="Search songs"
+            />
+            {query && (
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                className="mr-1 shrink-0"
+                onClick={() => setQuery('')}
+                aria-label="Clear search"
+              >
+                <X />
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* ── Right panel: Editor (70%) ─────────────────────────────────────── */}
@@ -3706,18 +3575,34 @@ export default function Lyrics(): React.ReactElement {
               {/* Editor header */}
               <div className={cn("z-20 flex flex-shrink-0 flex-wrap items-center justify-between gap-3 bg-surface px-4 py-3", editMode && "sticky top-0")}>
                 <div className="flex-1 min-w-0">
-                  {editMode ? (
-                    <div className="flex min-w-0 items-center gap-2.5">
-                      <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-tint-amber px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-300">
-                        <Edit2 size={10} aria-hidden="true" />
-                        {isNewSong ? 'New song' : 'Editing'}
-                      </span>
-                      <span className="truncate text-sm font-medium text-slate-300">
-                        {editState?.title.trim() || (isNewSong ? 'Untitled song' : selectedSong?.title)}
-                      </span>
-                      {editDirty && (
-                        <span className="shrink-0 text-[11px] text-slate-500">· Unsaved changes</span>
-                      )}
+                  {editMode && editState ? (
+                    // The song's details, edited where the view shows them:
+                    // the title in place, the credits on the line under it.
+                    <div className="min-w-0 space-y-1">
+                      <input
+                        className="w-full bg-transparent text-base font-semibold tracking-tight text-white outline-none placeholder:text-slate-600"
+                        placeholder="Song title"
+                        aria-label="Song title"
+                        value={editState.title}
+                        onChange={(e) => patchEdit('title', e.target.value)}
+                        autoFocus={isNewSong}
+                      />
+                      <div className="-ml-2 flex min-w-0 items-center gap-1 text-xs">
+                        {([
+                          ['artist', 'Artist', 'min-w-0 flex-[2]'],
+                          ['copyright', '© Copyright', 'min-w-0 flex-[2]'],
+                          ['ccliNumber', 'CCLI #', 'w-24 shrink-0'],
+                        ] as const).map(([field, placeholder, width]) => (
+                          <input
+                            key={field}
+                            className={cn(width, 'h-7 rounded-md bg-transparent px-2 text-slate-300 outline-none transition-colors placeholder:text-slate-600 hover:bg-surface-secondary focus:bg-surface-secondary')}
+                            placeholder={placeholder}
+                            aria-label={placeholder.replace('© ', '')}
+                            value={editState[field]}
+                            onChange={(e) => patchEdit(field, e.target.value)}
+                          />
+                        ))}
+                      </div>
                     </div>
                   ) : selectedSong ? (
                     <div className="min-w-0">
@@ -3725,8 +3610,6 @@ export default function Lyrics(): React.ReactElement {
                       <p className="mt-0.5 truncate text-xs text-slate-500">
                         {[
                           selectedSong.artist || 'Unknown artist',
-                          `${songSlides.length} slide${songSlides.length === 1 ? '' : 's'}`,
-                          `${selectedSong.sections.length} section${selectedSong.sections.length === 1 ? '' : 's'}`,
                           selectedSong.ccliNumber ? `CCLI #${selectedSong.ccliNumber}` : '',
                           selectedSong.copyright ? `© ${selectedSong.copyright}` : '',
                         ].filter(Boolean).join(' · ')}
@@ -3735,16 +3618,12 @@ export default function Lyrics(): React.ReactElement {
                   ) : null}
                 </div>
                 <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-                  {!editMode && selectedSong && (
-                    <Button
-                      variant={selectingSlides ? 'secondary' : 'ghost'}
-                      size="sm"
-                      onClick={() => (selectingSlides ? clearPicked() : setSelectingSlides(true))}
-                      aria-pressed={selectingSlides}
-                      title="Select slides to label them as a verse, chorus, bridge… (or ⌘-click a slide)"
-                    >
-                      <ListChecks data-icon="inline-start" />
-                      {selectingSlides ? 'Done' : 'Select'}
+                  {/* Selecting is a mode: its way out sits here while it's on.
+                      Getting in is ⋯ → Select slides, or ⌘-click a slide. */}
+                  {!editMode && selectedSong && selectingSlides && (
+                    <Button variant="secondary" size="sm" onClick={clearPicked}>
+                      <Check data-icon="inline-start" />
+                      Done
                     </Button>
                   )}
                   {!editMode && (
@@ -3760,16 +3639,34 @@ export default function Lyrics(): React.ReactElement {
                   {!editMode && selectedSong && (
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="outline" size="icon-sm" aria-label="Song actions" title="Song actions">
+                        <Button variant="ghost" size="icon-sm" aria-label="Song actions" title="Song actions">
                           {translating ? <Loader2 className="animate-spin" /> : <MoreHorizontal />}
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="w-56">
                         <DropdownMenuGroup>
+                          <DropdownMenuItem onSelect={() => setSelectingSlides(true)}>
+                            <ListChecks size={13} />
+                            Select slides
+                            <span className="ml-auto text-[11px] text-slate-500">⌘-click</span>
+                          </DropdownMenuItem>
+                        </DropdownMenuGroup>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuGroup>
                           <DropdownMenuItem onSelect={handleCopyLyrics}>
                             <ClipboardPaste size={13} />
                             {copiedLyrics ? 'Copied' : 'Copy lyrics'}
                           </DropdownMenuItem>
+                          <DropdownMenuItem disabled={reorderBusy} onSelect={() => void handleSetHotkeys('auto')}>
+                            <Keyboard size={13} />
+                            Assign hotkeys
+                          </DropdownMenuItem>
+                          {selectedSong.sections.some((section) => section.hotkey) && (
+                            <DropdownMenuItem disabled={reorderBusy} onSelect={() => void handleSetHotkeys('clear')}>
+                              <Keyboard size={13} />
+                              Clear hotkeys
+                            </DropdownMenuItem>
+                          )}
                           <DropdownMenuSub>
                             <DropdownMenuSubTrigger disabled={translating || saving}>
                               <Languages size={13} />
@@ -3844,85 +3741,41 @@ export default function Lyrics(): React.ReactElement {
               )}
 
               {/* Scrollable content */}
-              <div ref={songScrollRef} className={cn("flex-1 overflow-y-auto space-y-4 min-h-0 px-4", editMode ? "py-6" : "py-4")}>
+              <div ref={songScrollRef} className={cn("flex-1 min-h-0", editMode ? "overflow-hidden pt-1" : "overflow-y-auto space-y-4 px-4 py-4")}>
                 {editMode && editState ? (
-                  /* Edit mode: metadata + sections */
-                  <div className="mx-auto w-full max-w-3xl space-y-6">
-                    <div className="space-y-3">
-                      <input
-                        className="w-full border-transparent bg-transparent pb-1 text-2xl font-semibold tracking-tight text-white outline-none placeholder:text-white/20"
-                        placeholder="Song title"
-                        aria-label="Song title"
-                        value={editState.title}
-                        onChange={(e) => patchEdit('title', e.target.value)}
-                        autoFocus={isNewSong}
-                      />
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <label className="block">
-                          <span className="label">Artist</span>
-                          <input
-                            className="input"
-                            placeholder="Artist or band"
-                            value={editState.artist}
-                            onChange={(e) => patchEdit('artist', e.target.value)}
-                          />
-                        </label>
-                        <label className="block">
-                          <span className="label">Copyright</span>
-                          <input
-                            className="input"
-                            placeholder="© Year, author or publisher"
-                            value={editState.copyright}
-                            onChange={(e) => patchEdit('copyright', e.target.value)}
-                          />
-                        </label>
-                      </div>
-                    </div>
-
+                  /* Edit mode: the whole song as one text, slides beside it */
+                  <div className="flex h-full min-h-0 flex-col">
                     {saveError && (
-                      <div className="flex items-start gap-2 px-3.5 py-2.5 rounded-lg bg-tint-red text-red-400 text-xs">
-                        <AlertCircle size={12} className="shrink-0 mt-0.5" />
+                      <div className="mx-4 mb-2 flex shrink-0 items-start gap-2 rounded-lg bg-tint-red px-3.5 py-2.5 text-xs text-red-400">
+                        <AlertCircle size={12} className="mt-0.5 shrink-0" />
                         <span>{saveError}</span>
                       </div>
                     )}
-
-                    <div className="space-y-3">
-                      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-0.5">
-                        <p className="text-xs font-semibold text-slate-300">
-                          Sections
-                          <span className="ml-1.5 font-normal tabular-nums text-slate-600">{editState.sections.length}</span>
-                        </p>
-                        <p className="text-[11px] text-slate-600">
-                          Blank line = new slide · ⌘↵ splits a section at the cursor · drag ⋮⋮ to reorder
-                        </p>
-                      </div>
-                      {editState.sections.map((sec, idx) => (
-                        <SectionEditBlock
-                          key={sec._key}
-                          section={sec}
-                          index={idx}
-                          total={editState.sections.length}
-                          isDragTarget={dragTargetIdx === idx}
-                          onUpdate={updateSection}
-                          onDelete={deleteSection}
-                          onMove={moveSection}
-                          onSplit={splitSection}
-                          onDragStart={handleDragStart}
-                          onDragOver={handleDragOver}
-                          onDrop={handleDrop}
-                        />
-                      ))}
-                      <button
-                        className="flex w-full items-center justify-center gap-2 rounded-lg bg-surface-secondary py-2.5 text-xs font-medium text-zinc-600 transition-colors hover:border-transparent hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-teal-400"
-                        onClick={addSection}
-                      >
-                        <Plus size={13} /> Add section
-                      </button>
-                    </div>
+                    <SongReflowEditor
+                      sections={editState.sections}
+                      onChange={(sections) => setEditState((prev) => (prev ? { ...prev, sections } : prev))}
+                      autoFocus={!isNewSong}
+                    />
                   </div>
                 ) : selectedSong && (
                   /* View mode: stage filmstrips in push order */
                   <>
+                    <SlideContextMenu
+                      target={slideMenu}
+                      onTarget={setSlideMenu}
+                      disabled={reorderBusy || paintColor !== undefined || slideDrag !== null}
+                      hotkey={slideMenu ? selectedSong.sections[slideMenu.section]?.hotkey : undefined}
+                      usedKeys={new Set(selectedSong.sections.filter((_, i) => i !== slideMenu?.section).map((sec) => sec.hotkey).filter(Boolean) as string[])}
+                      picked={menuSlides.size}
+                      onGoLive={() => slideMenu && void handlePushSlide(slideMenu.slide)}
+                      onEdit={handleEdit}
+                      onQuickEdit={() => slideMenu && startQuickEdit(slideMenu.slide)}
+                      onGroup={(choice) => void handleLabelSlides(choice, menuSlides)}
+                      onHotkey={(key) => slideMenu && handleSectionHotkey(slideMenu.section, key)}
+                      onCopy={() => slideMenu && handleCopySlide(slideMenu.slide)}
+                      onSelect={() => slideMenu && pickSlide(slideMenu.slide, 'toggle')}
+                      onDelete={() => void handleDeleteSlides(menuSlides)}
+                    >
                     <MarqueeSelect
                       className="space-y-5"
                       onBegin={slideSelect.beginMarquee}
@@ -3951,39 +3804,20 @@ export default function Lyrics(): React.ReactElement {
                           }}
                           slideDrag={slideDrag}
                           onSlideDrag={setSlideDrag}
+                          quickEdit={quickEdit}
+                          onQuickEditSave={(slide, text) => void handleQuickEditSave(slide, text)}
+                          onQuickEditCancel={() => setQuickEdit(null)}
                         />
                       ))}
                     </MarqueeSelect>
+                    </SlideContextMenu>
                     <p className="pt-1 text-center text-[11px] text-slate-600">
                       {paintColor !== undefined
                         ? 'Click a lyric line to paint · Esc turns paint off'
-                        : selectingSlides
-                          ? 'Click slides to select · Shift-click selects a range · Esc to cancel'
+                        : selectingSlides || pickedSlides.size > 0
+                          ? 'Right-click a selected slide to group or delete them all · Shift-click selects a range · Esc to cancel'
                           : 'Click a slide to go live · ⌘-click or drag across empty space to select · ← → previous / next'}
                     </p>
-                    {(selectingSlides || pickedSlides.size > 0) && (
-                      <SelectionBar
-                        className="sticky bottom-0 -mx-1 mt-2"
-                        count={pickedSlides.size}
-                        noun="slide"
-                        hint="Click slides to select them"
-                        onClear={clearPicked}
-                      >
-                        <span className="text-[11px] text-slate-500">Label as</span>
-                        {SLIDE_LABEL_CHOICES.map((choice) => (
-                          <button
-                            key={choice.label}
-                            type="button"
-                            disabled={pickedSlides.size === 0 || reorderBusy}
-                            onClick={() => void handleLabelSlides(choice)}
-                            className="inline-flex items-center rounded px-2.5 py-1 text-[11px] font-semibold transition-[filter] hover:brightness-110 disabled:opacity-35"
-                            style={sectionFill(choice.type)}
-                          >
-                            {choice.label}
-                          </button>
-                        ))}
-                      </SelectionBar>
-                    )}
                   </>
                 )}
               </div>

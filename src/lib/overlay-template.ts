@@ -9,12 +9,14 @@
 // — this module does not re-validate them, only the two free-text strings.
 
 import type {
+  OverlayElement,
   OverlayTextOutline,
   OverlayTextShadow,
   OverlayTextStyle,
   OverlayTheme,
 } from './ipc'
 import { overlayBoxStyle } from './overlay-boxes'
+import { overlayShape } from './overlay-shapes'
 import { mediaFilterCss, normalizeMediaPlayback } from './media-playback'
 
 // ─── Escaping ───────────────────────────────────────────────────────────────────
@@ -143,7 +145,10 @@ function backgroundLayerHTML(theme: OverlayTheme): string {
       contrast: bg.contrast,
     })
     const filter = mediaFilterCss(playback)
-    const mediaStyle = `width:100%; height:100%; object-fit:${bg.mediaFit ?? 'cover'}; display:block;`
+    const blurPx = bg.blurPx ?? 0
+    // A blur fades the frame's edges in; scaling the media past them keeps the edges solid.
+    const blurStyle = blurPx > 0 ? ` filter:blur(${blurPx}px); transform:scale(${1 + (blurPx * 4) / 1080});` : ''
+    const mediaStyle = `width:100%; height:100%; object-fit:${bg.mediaFit ?? 'cover'}; display:block;${blurStyle}`
     const media =
       bg.type === 'video'
         ? `<video src="${src}" style="${mediaStyle}" autoplay${playback.loop ? ' loop' : ''} muted playsinline preload="auto" crossorigin="anonymous"></video>`
@@ -164,6 +169,63 @@ function backgroundLayerHTML(theme: OverlayTheme): string {
     style = 'position:absolute; inset:0; background:transparent;'
   }
   return `<div class="pa-bg" style="${style}"></div>`
+}
+
+// ─── Elements ───────────────────────────────────────────────────────────────────
+
+function elementHTML(el: OverlayElement): string {
+  const turn = el.rotationDeg ? ` transform:rotate(${el.rotationDeg}deg);` : ''
+  const frame = `${overlayBoxStyle(el.box)} opacity:${el.opacity};${turn}`
+  if (el.kind === 'image' || el.kind === 'video') {
+    if (!el.mediaPath) return ''
+    const src = escapeHtml(overlayMediaUrl(el.mediaPath))
+    const filter = [
+      mediaFilterCss(normalizeMediaPlayback(el)),
+      el.blurPx > 0 ? `blur(${el.blurPx}px)` : '',
+    ]
+      .filter(Boolean)
+      .join(' ')
+    const style = `width:100%; height:100%; object-fit:${el.mediaFit}; display:block;${filter ? ` filter:${filter};` : ''}`
+    const media =
+      el.kind === 'video'
+        ? `<video src="${src}" style="${style}" autoplay${el.mediaLoop ? ' loop' : ''} muted playsinline preload="auto"></video>`
+        : `<img src="${src}" style="${style}" alt="">`
+    return `<div class="pa-element" style="${frame}">${media}</div>`
+  }
+  if (el.kind === 'shape') {
+    const def = overlayShape(el.shape)
+    if (!def) return ''
+    const fill = def.lineOnly ? 'none' : colorWithOpacity(el.fill, el.fillOpacity)
+    const stroke =
+      el.stroke.enabled && el.stroke.widthPx > 0
+        ? ` stroke="${colorWithOpacity(el.stroke.color, el.stroke.opacity)}" stroke-width="${el.stroke.widthPx}" stroke-linejoin="round" stroke-linecap="round"`
+        : ''
+    // Stretched to the box like an Office shape; the stroke keeps its width
+    // however far it stretches, and may spill past the box edge.
+    return `<div class="pa-element" style="${frame} overflow:visible;"><svg viewBox="0 0 100 100" preserveAspectRatio="none" style="display:block; width:100%; height:100%; overflow:visible;"><path d="${def.path}" fill="${fill}" fill-rule="evenodd"${stroke} vector-effect="non-scaling-stroke"/></svg></div>`
+  }
+  const radius = el.kind === 'ellipse' ? '50%' : `${el.radiusPx}px`
+  // Inside the box, so the border never changes the shape's footprint.
+  const stroke =
+    el.stroke.enabled && el.stroke.widthPx > 0
+      ? ` box-shadow:inset 0 0 0 ${el.stroke.widthPx}px ${colorWithOpacity(el.stroke.color, el.stroke.opacity)};`
+      : ''
+  return `<div class="pa-element" style="${frame} background:${colorWithOpacity(el.fill, el.fillOpacity)}; border-radius:${radius};${stroke}"></div>`
+}
+
+/**
+ * One group of elements — under the text or over it — as its own layer, so the
+ * output window can keep it across slides (see overlay.html `setElements`).
+ * Empty when the group has nothing to draw.
+ */
+function elementsLayerHTML(theme: OverlayTheme, aboveText: boolean): string {
+  const markup = theme.elements
+    .filter((el) => el.aboveText === aboveText)
+    .map(elementHTML)
+    .join('')
+  if (!markup) return ''
+  const cls = aboveText ? 'pa-elements-above' : 'pa-elements-below'
+  return `<div class="${cls}" style="position:absolute;inset:0;overflow:hidden;pointer-events:none;">${markup}</div>`
 }
 
 function textStyleCss(style: OverlayTextStyle, fontSizePx: number): string {
@@ -361,10 +423,12 @@ export function renderOverlayHTML(
   return `
     <div class="pa-overlay-root" style="position:absolute;inset:0;overflow:hidden;box-sizing:border-box;">
       ${backgroundLayerHTML(theme)}
+      ${elementsLayerHTML(theme, false)}
       <div class="pa-layer" style="position:absolute;inset:0;overflow:hidden;">
         ${verseBlock}
         ${referenceBlock}
       </div>
+      ${elementsLayerHTML(theme, true)}
     </div>
   `.trim()
 }

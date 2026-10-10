@@ -75,19 +75,27 @@ interface OverlayVideoRoot {
 }
 
 /**
+ * The background video(s) the operator's transport drives — pause, seek, time.
+ * Video elements placed in the theme are decoration and just keep playing.
+ */
+export const OVERLAY_TRANSPORT_VIDEOS = 'video:not(.pa-element video)'
+
+/**
  * Videos written through innerHTML do not reliably honor `autoplay`.
  * Start them after the slide is in the DOM so the operator preview and the
  * NDI window show motion instead of the first frame.
  */
 export function playOverlayVideos(root: OverlayVideoRoot, paused = false): void {
   const videos = root.querySelectorAll('video')
+  const transport = new Set(Array.from(root.querySelectorAll(OVERLAY_TRANSPORT_VIDEOS)))
   for (let i = 0; i < videos.length; i++) {
     const video = videos[i]
+    const held = paused && transport.has(video)
     video.muted = true
     if (video.defaultMuted !== undefined) video.defaultMuted = true
     video.playsInline = true
-    markOverlayVideoPaused(video, paused)
-    if (paused) {
+    markOverlayVideoPaused(video, held)
+    if (held) {
       video.pause()
       continue
     }
@@ -103,7 +111,7 @@ export function playOverlayVideos(root: OverlayVideoRoot, paused = false): void 
 
 /** Pause or resume videos already in the slide without rebuilding the HTML. */
 export function setOverlayVideosPaused(root: OverlayVideoRoot, paused: boolean): void {
-  const videos = root.querySelectorAll('video')
+  const videos = root.querySelectorAll(OVERLAY_TRANSPORT_VIDEOS)
   for (let i = 0; i < videos.length; i++) {
     const video = videos[i]
     markOverlayVideoPaused(video, paused)
@@ -122,7 +130,7 @@ function markOverlayVideoPaused(video: OverlayVideo, paused: boolean): void {
 
 /** Jump every background video to the same time without rebuilding the slide. */
 export function seekOverlayVideos(root: OverlayVideoRoot, seconds: number): void {
-  const videos = root.querySelectorAll('video')
+  const videos = root.querySelectorAll(OVERLAY_TRANSPORT_VIDEOS)
   const raw = Number.isFinite(seconds) ? Math.max(0, seconds) : 0
   for (let i = 0; i < videos.length; i++) {
     const video = videos[i]

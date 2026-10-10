@@ -338,7 +338,7 @@ function DocumentsArt(): React.ReactElement {
 function StyleArt(): React.ReactElement {
   const backgrounds = ['#232B31', '#36362D', '#313E4C', '#292922', '#414037', '#3F5268']
   const themes: Array<{ name: string; bg: string; font: string }> = [
-    { name: 'Classic', bg: '#11120D', font: 'font-serif' },
+    { name: 'Classic', bg: '#0C111D', font: 'font-serif' },
     { name: 'Modern', bg: '#313E4C', font: 'font-sans' },
     { name: 'Lower third', bg: '#36362D', font: 'font-sans' },
   ]

@@ -32,6 +32,8 @@ export const DEFAULT_SETTINGS: SettingsWithSecretsStatus = {
   documents: { ...DEFAULT_DOCUMENTS_SETTINGS },
   propresenterResources: { ...EMPTY_PP_RESOURCE_BINDINGS },
   presentation: DEFAULT_PRESENTATION_SETTINGS,
+  usage: { shareStats: true },
+  themeDefaults: {},
   secretsConfigured: {
     deepgram: false,
     anthropic: false,

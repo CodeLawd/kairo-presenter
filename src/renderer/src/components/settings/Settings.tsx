@@ -90,12 +90,12 @@ const INTEGRATION_SECTIONS: ReadonlySet<Section> = new Set(['propresenter'])
 const NAV_ICON_BG: Record<Section, string> = {
   propresenter: 'bg-[#3B6FD9]',
   audio: 'bg-[#4F6888]',
-  apikeys: 'bg-[#565449]',
+  apikeys: 'bg-[#374151]',
   scripture: 'bg-[#5BA85A]',
   overlay: 'bg-[#4A9EBF]',
   shortcuts: 'bg-[#527C78]',
   general: 'bg-[#8E8E93]',
-  account: 'bg-[#565449]',
+  account: 'bg-[#374151]',
 }
 
 
@@ -753,10 +753,10 @@ function ConnectionSection({
         </PrefRow>
         <PrefRow label="IP Address">
           <input
-            className={cn(PREF_INPUT, 'w-[220px] max-w-[44vw] !border-0 !bg-transparent !shadow-none focus:!bg-surface-secondary focus:!ring-0')}
+            className={cn(PREF_INPUT, 'w-[220px] max-w-[44vw]')}
             value={pp.host}
             onChange={(e) => update('propresenter', { host: e.target.value })}
-            placeholder="192.168.1.100"
+            placeholder="e.g. 192.168.1.100"
             spellCheck={false}
             name="pp-host"
             aria-label="ProPresenter IP Address"
@@ -764,7 +764,7 @@ function ConnectionSection({
         </PrefRow>
         <PrefRow label="Port">
           <input
-            className={cn(PREF_INPUT, 'w-[220px] max-w-[44vw] tabular-nums !border-0 !bg-transparent !shadow-none focus:!bg-surface-secondary focus:!ring-0')}
+            className={cn(PREF_INPUT, 'w-[220px] max-w-[44vw] tabular-nums')}
             type="text"
             inputMode="numeric"
             pattern="[0-9]*"
@@ -783,7 +783,7 @@ function ConnectionSection({
         <PrefRow label="Password" hint="Preferences → Stage Display">
           <div className="w-[220px] max-w-[44vw]">
             <PasswordInput
-              className="h-7 border-0 bg-transparent py-0 text-right font-mono text-[13px] shadow-none focus:bg-surface-secondary focus:ring-0"
+              className="h-7 py-0 text-right font-mono text-[13px]"
               value={pp.password}
               onChange={(e) => update('propresenter', { password: e.target.value })}
               placeholder="Optional"
@@ -2009,6 +2009,18 @@ function GeneralSection({
 
       <WorkspaceGroup />
 
+      <PrefGroup title="Privacy">
+        <PrefRow
+          label="Share usage statistics"
+          hint="Counts of the features you use and basic system info, so we can improve Kairo. Never your songs, sermons, verses or files."
+        >
+          <Toggle
+            checked={settings.usage?.shareStats !== false}
+            onChange={(on) => update('usage', { shareStats: on })}
+          />
+        </PrefRow>
+      </PrefGroup>
+
       <UpdateGroup />
 
       <SaveBar sectionId="general" savedSection={savedSection} onSave={onSave} />
@@ -2056,6 +2068,8 @@ export default function Settings({
         documents: { ...prev.documents, ...stored.documents },
         propresenterResources: { ...prev.propresenterResources, ...stored.propresenterResources },
         presentation: normalizePresentationSettings(stored.presentation ?? prev.presentation),
+        usage: { ...prev.usage, ...stored.usage },
+        themeDefaults: stored.themeDefaults ?? prev.themeDefaults,
       }))
       setLoading(false)
     }
@@ -2089,6 +2103,12 @@ export default function Settings({
 
     setSettings((prev) => {
       const nextSection = { ...prev[section], ...partial }
+
+      // A privacy choice takes effect the moment it is made, not on Save.
+      if (section === 'usage') {
+        useBootstrapStore.getState().patchSettings('usage', nextSection as AppSettings['usage'])
+        void window.api.settings.set('usage', nextSection as AppSettings['usage'])
+      }
 
       // Theme + gloss color apply immediately (persist + publish), like a live control.
       if (section === 'display' && 'theme' in partial && partial.theme) {

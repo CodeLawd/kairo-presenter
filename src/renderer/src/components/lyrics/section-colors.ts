@@ -15,13 +15,13 @@ export const SECTION_COLOR: Record<LyricsSectionType, string> = {
   'pre-chorus': '#0E7490',
   bridge: '#7C3AED',
   tag: '#A15C07',
-  intro: '#565449',
+  intro: '#374151',
   outro: '#4F46E5',
   ending: '#BE123C',
 }
 
 /** Text on a section-coloured fill (brand paper). */
-export const SECTION_TEXT = '#FFFBF4'
+export const SECTION_TEXT = '#F9FAFB'
 
 /** Solid fill + text for a section label chip or bar. */
 export function sectionFill(type: LyricsSectionType): { backgroundColor: string; color: string } {

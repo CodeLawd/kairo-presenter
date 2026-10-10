@@ -119,7 +119,8 @@ export function MarqueeSelect({
       {band && (
         <div
           aria-hidden="true"
-          className="pointer-events-none fixed z-50 rounded-none border border-white/60 bg-surface-elevated"
+          // See-through, so the cards being swept stay readable underneath.
+          className="pointer-events-none fixed z-50 rounded-sm border border-white/60 bg-white/[0.08]"
           style={{ left: band.x, top: band.y, width: band.w, height: band.h }}
         />
       )}

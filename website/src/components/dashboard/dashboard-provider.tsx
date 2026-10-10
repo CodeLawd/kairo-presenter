@@ -1,7 +1,7 @@
 'use client'
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { KairoMark } from '@/components/brand/KairoMark'
 import { ApiError, authedApi } from '@/lib/api'
 import { getSession, useAccessToken, type SessionSnapshot } from '@/lib/session'
@@ -83,6 +83,15 @@ export function DashboardProvider({ children }: { children: React.ReactNode }): 
   useEffect(() => {
     void load()
   }, [load])
+
+  // Usage statistics: which dashboard sections get used. Counted by section on
+  // the server (ids dropped); fire-and-forget, never in the way of the page.
+  const pathname = usePathname()
+  const signedIn = session !== null
+  useEffect(() => {
+    if (!signedIn || !pathname) return
+    void request('/v1/usage/page', { method: 'POST', body: { path: pathname } }).catch(() => {})
+  }, [signedIn, pathname, request])
 
   const signOut = useCallback(async (): Promise<void> => {
     try {

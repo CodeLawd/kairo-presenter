@@ -5,10 +5,8 @@ import { useDashboard } from '@/components/dashboard/dashboard-provider'
 import { BreakdownCard, DailyChart, StatCard } from '@/components/admin/admin-charts'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { cn } from '@/lib/utils'
+import { RangePicker } from '@/components/admin/list-controls'
 import { PLATFORM_NAMES, SOURCE_NAMES, type AdminDownloads } from '@/lib/admin'
-
-const RANGES = [7, 30, 90, 365] as const
 
 export default function AdminDownloadsPage(): React.ReactElement {
   const { request } = useDashboard()
@@ -28,23 +26,7 @@ export default function AdminDownloadsPage(): React.ReactElement {
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-4">
-      <div className="flex gap-1 self-start rounded-lg bg-muted p-1" role="radiogroup" aria-label="Range">
-        {RANGES.map((range) => (
-          <button
-            key={range}
-            type="button"
-            role="radio"
-            aria-checked={days === range}
-            onClick={() => setDays(range)}
-            className={cn(
-              'rounded-md px-3 py-1 text-sm transition-colors',
-              days === range ? 'bg-background font-medium text-foreground' : 'text-muted-foreground hover:text-foreground',
-            )}
-          >
-            {range === 365 ? '1 year' : `${range} days`}
-          </button>
-        ))}
-      </div>
+      <RangePicker value={days} onChange={setDays} />
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       <div className="grid gap-4 sm:grid-cols-3">

@@ -66,13 +66,13 @@ module.exports = {
           yellow: 'rgb(var(--tint-yellow) / <alpha-value>)',
           rose: 'rgb(var(--tint-rose) / <alpha-value>)',
         },
-        // Brand palette: ink #11120D (primary), paper #FFFBF4 (white),
-        // stone #565449 (muted); CTAs use the white accent, #6C91C2 is `live`. Surfaces and text
+        // Brand palette: ink #0C111D (primary), paper #F9FAFB (white),
+        // stone #374151 (muted); CTAs use the white accent, #315EDE is `live`. Surfaces and text
         // steps in index.css are blends of these.
-        ink: '#11120D',
-        paper: '#FFFBF4',
-        stone: '#565449',
-        white: '#FFFBF4',
+        ink: '#0C111D',
+        paper: '#F9FAFB',
+        stone: '#374151',
+        white: '#F9FAFB',
         surface: {
           DEFAULT: 'rgb(var(--surface) / <alpha-value>)',
           rail: 'rgb(var(--surface-rail) / <alpha-value>)',
@@ -97,7 +97,7 @@ module.exports = {
           [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950].map((k) => [k, `rgb(var(--accent-${k}) / <alpha-value>)`]),
         ),
         'on-accent': 'rgb(var(--on-accent) / <alpha-value>)',
-        // #6C91C2 — reserved for what is live / on screen.
+        // #315EDE — reserved for what is live / on screen.
         live: 'rgb(var(--live) / <alpha-value>)',
         // Existing components use slate extensively; neutralize its blue cast.
         slate: {

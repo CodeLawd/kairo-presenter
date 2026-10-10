@@ -131,6 +131,16 @@ export interface AppSettings {
   propresenterResources: PPResourceBindings
   /** Transitions, messages, props, logo, stage displays, program audio. */
   presentation: import('./program').PresentationSettings
+  /**
+   * Anonymous usage statistics (counts of features used + system info, never
+   * content). On by default; the operator can switch it off in Settings.
+   */
+  usage: { shareStats: boolean }
+  /**
+   * The theme each content kind uses by default (ids in `themeLibrary`): new
+   * screens start with it. Absent / dangling ids mean "no default chosen".
+   */
+  themeDefaults: Partial<Record<OverlayContentKind, string>>
 }
 
 // ─── Workspace ────────────────────────────────────────────────────────────────
@@ -366,6 +376,12 @@ export interface CustomOverlayTheme {
   createdAt: number
   updatedAt: number
   theme: OverlayTheme
+  /**
+   * The theme's default — what Reset returns to. Edits save to `theme` as they
+   * happen; "Set as default" copies `theme` here. Missing on themes saved before
+   * this existed; the first edit fills it from the theme as it was.
+   */
+  baseline?: OverlayTheme
 }
 
 // ─── Overlay theme (phase 2 — NDI in-app renderer) ────────────────────────────
@@ -426,7 +442,48 @@ export interface OverlayTextStyle {
   box: OverlayBox
 }
 
+/** `shape` draws a preset from the shape catalog (src/lib/overlay-shapes.ts), named by `shape`. */
+export type OverlayElementKind = 'rectangle' | 'ellipse' | 'shape' | 'image' | 'video'
+
+/**
+ * A shape, image or video placed on the slide, like a design tool's layer.
+ * Elements draw in array order (later on top), under the verse and reference
+ * unless `aboveText`. Media fields apply to image/video, shape fields to the rest.
+ */
+export interface OverlayElement {
+  id: string
+  kind: OverlayElementKind
+  /** Kind 'shape': the catalog id ('triangle', 'arrow-right', 'star-5'…). */
+  shape?: string
+  box: OverlayBox
+  /** Drawn over the verse and reference instead of under them. */
+  aboveText: boolean
+  /** Whole-element opacity, 0–1. */
+  opacity: number
+  /** Clockwise turn about the box centre, -180–180°. */
+  rotationDeg: number
+  /** Shapes: fill colour and its opacity. */
+  fill: string
+  fillOpacity: number
+  /** Shapes: a border drawn inside the box. */
+  stroke: { enabled: boolean; color: string; opacity: number; widthPx: number }
+  /** Rectangles: corner radius in px of the 1920×1080 frame. */
+  radiusPx: number
+  /** Image/video: absolute local path, served over pa-media:// like the background. */
+  mediaPath?: string
+  mediaFit: 'cover' | 'contain' | 'fill'
+  /** Videos only. */
+  mediaLoop: boolean
+  hue: number
+  saturation: number
+  brightness: number
+  contrast: number
+  blurPx: number
+}
+
 export interface OverlayTheme {
+  /** Shapes and media on the slide; [] for a theme that has none. */
+  elements: OverlayElement[]
   background: {
     type: 'color' | 'gradient' | 'transparent' | 'image' | 'video'
     color: string          // '#0b1220'
@@ -445,6 +502,8 @@ export interface OverlayTheme {
     saturation?: number
     brightness?: number
     contrast?: number
+    /** Image/video blur in px of the 1920×1080 frame, 0–40. Default 0. */
+    blurPx?: number
   }
   verse: OverlayTextStyle
   reference: OverlayTextStyle & {
@@ -539,10 +598,12 @@ export interface OverlayOutput {
   /** Display size (DIP) at bind time — pairs with `displayLabel` for re-matching. */
   displaySize: { width: number; height: number } | null
   /**
-   * `screen` only. `letterbox` keeps the 16:9 frame the Theme preview shows;
-   * `fill` renders at the display's own shape so boxes reach its edges.
+   * `screen` only. The shape it draws in — see `OUTPUT_ASPECTS` in displays.ts.
+   * `letterbox` (16:9) matches the Theme preview; `fill` follows the display.
    */
-  aspect: 'letterbox' | 'fill'
+  aspect: import('./displays').OutputAspect
+  /** `screen` with `aspect: 'custom'`: the ratio, e.g. 32 × 9 for an LED wall. */
+  customAspect: { width: number; height: number }
   /** `ndi` / `screen`: which kinds of content this output shows. All on by default. */
   show: import('./program').OutputShowFilter
   /**
@@ -1119,6 +1180,11 @@ export interface LyricsSongSection {
    * `null` / missing = use auto gloss detection + Settings gloss color.
    */
   lineColors?: (string | null)[]
+  /**
+   * One key (A–Z or 0–9, stored upper-case) that jumps to this section's first
+   * slide and puts it live — ProPresenter-style group hotkeys. Unique per song.
+   */
+  hotkey?: string
 }
 
 export interface LyricsSong {
@@ -1332,7 +1398,7 @@ export interface LyricsAPI {
 // ─── NDI ───────────────────────────────────────────────────────────────────────
 
 export interface NdiStatus {
-  /** grandiose-mac loaded and sender created successfully. */
+  /** NDI binding loaded and sender created successfully. */
   available: boolean
   /** Frame loop currently pushing frames to the NDI sender. */
   sending: boolean
@@ -1461,10 +1527,24 @@ export interface DisplayInfo {
   hostsMainWindow: boolean
 }
 
+export interface TestPatternInput {
+  displayId: number
+  /** The output's name, shown on the pattern. */
+  name: string
+  aspect: import('./displays').OutputAspect
+  customAspect: { width: number; height: number }
+}
+
 export interface DisplaysAPI {
   list: () => Promise<DisplayInfo[]>
   /** Flashes a numbered label on every display for a few seconds. */
   identify: () => Promise<void>
+  /**
+   * Shows a test pattern on one display for a few seconds: the area an output
+   * of this shape fills (yellow) and the black bars around it. False when the
+   * display is not connected.
+   */
+  testPattern: (input: TestPatternInput) => Promise<boolean>
   onChanged: (callback: (displays: DisplayInfo[]) => void) => Unsubscribe
 }
 
@@ -1859,6 +1939,7 @@ export const IPC = {
   DISPLAYS: {
     LIST:     'displays:list',      // invoke — DisplayInfo[]
     IDENTIFY: 'displays:identify',  // invoke
+    TEST_PATTERN: 'displays:testPattern', // invoke
     CHANGED:  'displays:changed',   // push (DisplayInfo[])
   },
   ACCOUNT: {
