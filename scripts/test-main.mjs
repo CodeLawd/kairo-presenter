@@ -41,7 +41,9 @@ const electronBin = require('electron')
 
 const result = spawnSync(
   electronBin,
-  ['./node_modules/tsx/dist/cli.mjs', '--test', ...files],
+  // A stuck test fails with its name instead of hanging CI (a Windows release
+  // job once sat in this step for 35 minutes with no output).
+  ['./node_modules/tsx/dist/cli.mjs', '--test', '--test-timeout=60000', ...files],
   {
     stdio: 'inherit',
     env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },

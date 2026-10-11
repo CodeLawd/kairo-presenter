@@ -108,6 +108,7 @@ jobs:
         run: npm run rebuild:native
 
       - name: Quality gates
+        timeout-minutes: 20
         run: npm run typecheck && npm test && npm run test:main
 
       - name: Check production endpoint configuration
