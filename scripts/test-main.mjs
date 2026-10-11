@@ -44,7 +44,8 @@ const result = spawnSync(
   // A stuck test fails with its name instead of hanging CI (a Windows release
   // job once sat in this step for 35 minutes with no output). Generous: the
   // Bible-pack tests take over a minute on GitHub's Intel Mac runners.
-  ['./node_modules/tsx/dist/cli.mjs', '--test', '--test-timeout=300000', ...files],
+  // test-setup.cjs turns off electron-log's file output in every test process.
+  ['./node_modules/tsx/dist/cli.mjs', '--require', './scripts/test-setup.cjs', '--test', '--test-timeout=300000', ...files],
   {
     stdio: 'inherit',
     env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
