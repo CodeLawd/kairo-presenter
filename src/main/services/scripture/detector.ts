@@ -1506,9 +1506,11 @@ const CORRUPTED_CITATION_RE = new RegExp(
 
 // Book, chapter, then optionally a verse and a range end. Groups: 1 book,
 // 2 chapter, 3 verse, 4 range separator, 5 range end. A repeated chapter
-// ("John nineteen nineteen twenty eight to thirty") is skipped.
+// ("John nineteen nineteen twenty eight to thirty") is skipped. Speech-to-text
+// often puts a comma after the book ("Zephaniah, three sixteen"); it is
+// allowed only when a chapter and verse follow, so "Mark, 2 of us" stays prose.
 const CITATION_RE = new RegExp(
-  `\\b(${BOOK_PATTERN})\\b\\s*(?:chapter\\s+)?(\\d+)\\b(?:\\s+\\2(?=\\s+(?:verses?\\s+)?\\d+\\s*(?:-|thru|through|to|and)))?(?:\\s*[:,\\s]\\s*(?:verses?\\s+)?(\\d+)(?:(\\s*,\\s*|\\s*(?:-|thru|through|to|and)\\s*|\\s+)(\\d+))?)?`,
+  `\\b(${BOOK_PATTERN})\\b(?:,(?=\\s*(?:chapter\\s+)?\\d+\\s*[:,\\s]\\s*(?:verses?\\s+)?\\d+))?\\s*(?:chapter\\s+)?(\\d+)\\b(?:\\s+\\2(?=\\s+(?:verses?\\s+)?\\d+\\s*(?:-|thru|through|to|and)))?(?:\\s*[:,\\s]\\s*(?:verses?\\s+)?(\\d+)(?:(\\s*,\\s*|\\s*(?:-|thru|through|to|and)\\s*|\\s+)(\\d+))?)?`,
   "gi",
 );
 
@@ -1859,5 +1861,19 @@ function matchNormalizedCitations(
     } else results.push(ref);
   }
 
-  return results.filter(isValidScriptureReference);
+  return results.map(correctTeenMishearing).filter(isValidScriptureReference);
+}
+
+/**
+ * Speech-to-text hears "sixteen" as "sixty" (and thirteen/thirty … nineteen/
+ * ninety) often enough to matter. When the "-ty" verse does not exist but its
+ * "-teen" twin does — "Zephaniah three sixty" → Zephaniah 3:16 — use the twin.
+ * A verse that exists is never changed.
+ */
+function correctTeenMishearing(ref: ScriptureReference): ScriptureReference {
+  const verse = ref.verseStart;
+  if (ref.verseEnd !== undefined || verse < 30 || verse > 90 || verse % 10 !== 0) return ref;
+  if (isValidScriptureReference(ref)) return ref;
+  const teen = { ...ref, verseStart: verse / 10 + 10 };
+  return isValidScriptureReference(teen) ? teen : ref;
 }

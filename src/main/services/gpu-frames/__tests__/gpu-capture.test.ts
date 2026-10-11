@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { join } from 'node:path'
 import { addonCandidates, loadGpuFrames, type GpuFramesAddon, type GpuFramesLoad } from '../index'
 import { GpuCapture } from '../../output/gpu-capture'
 import { DeckLinkProvider } from '../../video-devices/providers/decklink'
@@ -49,9 +50,10 @@ describe('gpu-frames loader', () => {
   })
 
   it('looks in packaged resources before the dev build', () => {
+    // join(), so the expectations use the separator of the OS running the tests.
     assert.deepEqual(addonCandidates('/App/Resources', '/repo'), [
-      '/App/Resources/gpu-frames/gpu_frames.node',
-      '/repo/native/gpu-frames/build/gpu_frames.node',
+      join('/App/Resources', 'gpu-frames', 'gpu_frames.node'),
+      join('/repo', 'native', 'gpu-frames', 'build', 'gpu_frames.node'),
     ])
   })
 })
