@@ -12,7 +12,7 @@ import {
 import { ScaledOverlayPreview } from '@/components/overlay/ScaledOverlayPreview'
 import SetupChecklist from '@/components/theme/SetupChecklist'
 import { TransitionPanel } from '@/components/theme/PresentationPanels'
-import { FieldRow, LookFields, NdiSoundField, ScreenSourceFields } from './RenderedOutputFields'
+import { FieldRow, FitField, LookFields, NdiSoundField, ScreenSourceFields } from './RenderedOutputFields'
 import { LooksGrid } from './LooksGrid'
 import { useSettings } from '@/hooks/useSettings'
 import { useAppStore } from '@/stores/useAppStore'
@@ -640,12 +640,14 @@ function SidebarRow({
         onClick={onSelect}
         className={cn(
           'flex w-full items-center gap-2 rounded-md px-3 py-2 text-left focus-visible:outline-none',
-          selected ? 'row-selected' : 'hover:bg-surface-tertiary',
+          // Picked is white (the accent); blue is kept for what is on screen.
+          selected ? 'bg-teal-500' : 'hover:bg-surface-tertiary',
         )}
       >
         <span className="min-w-0 flex-1">
-          <span className={cn('block truncate text-[14px] font-medium', enabled === false ? 'text-slate-500' : 'text-white')}>{name}</span>
-          {detail && <span className="mt-0.5 block truncate text-[12px] text-slate-400">{detail}</span>}
+          <span className={cn('block truncate text-[14px] font-medium',
+            selected ? 'text-on-accent' : enabled === false ? 'text-slate-500' : 'text-white')}>{name}</span>
+          {detail && <span className={cn('mt-0.5 block truncate text-[12px]', selected ? 'text-on-accent' : 'text-slate-400')}>{detail}</span>}
         </span>
         {status && (
           <span title={status.text}>
@@ -890,7 +892,7 @@ function Detail({
           <Trash2 size={15} aria-hidden="true" />
         </button>
       </div>
-      {stage && <div className="shrink-0 bg-surface px-6 py-4">{stage}</div>}
+      {stage && <div className="shrink-0 bg-surface-stage px-6 py-4">{stage}</div>}
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto max-w-[760px] px-6 pb-6 pt-5">
           {target && <h3 className="mb-5 truncate text-[15px] font-semibold text-white">{target}</h3>}
@@ -906,6 +908,7 @@ function Detail({
                 fit
                 className="absolute -top-4 left-1/2 w-fit max-w-[calc(100%-2rem)] -translate-x-1/2 overflow-x-auto bg-surface-tertiary"
                 itemClassName="px-3.5 py-1.5"
+                selectedClassName="bg-teal-500 text-on-accent"
               />
             )}
             <div className="space-y-4" role="tabpanel">{children(active)}</div>
@@ -1066,15 +1069,14 @@ function OutputDetail({
         <>
           {active === 'display' && (
             <div className="max-w-[560px] space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              {/* Where it goes and its shape, then what it shows. */}
+              <div className="grid grid-cols-2 gap-x-4 gap-y-5">
                 <FieldRow label="Output" htmlFor={`${output.id}-display`}>
                   <DisplayPicker id={`${output.id}-display`} target={output} displays={displays} others={others} onChange={(patch) => onChange(patch)} />
                 </FieldRow>
-                <div className="space-y-4"><ScreenSourceFields output={output} onChange={onChange} /></div>
+                {output.source === 'playlist' ? <div /> : <FitField output={output} onChange={onChange} />}
+                <ScreenSourceFields output={output} onChange={onChange} fit={false} />
               </div>
-              <p className="text-[11px] text-slate-500">
-                GPU, eGPU, DisplayLink and HDMI matrices fed by this Mac use screens. NDI decoders and LED processors fed by them use NDI feeds.
-              </p>
             </div>
           )}
           {active === 'hardware' && (

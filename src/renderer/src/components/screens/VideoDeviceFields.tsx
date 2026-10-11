@@ -140,8 +140,8 @@ export function VideoConnectorTile({ output, snapshot }: { output: OverlayOutput
   return (
     <div className="flex h-40 items-center justify-center">
       <div className={cn(
-        'flex aspect-video h-full flex-col items-center rounded-md bg-surface-elevated pt-3',
-        sending ? 'outline outline-2 outline-live' : 'outline outline-1 outline-surface-border',
+        'flex aspect-video h-full flex-col items-center rounded-md bg-surface-display pt-3',
+        sending && 'outline outline-2 outline-live',
       )}>
         <p className="truncate px-3 text-[13px] text-slate-200">{port?.portName ?? (output.devicePortLabel || 'No output chosen')}</p>
       </div>

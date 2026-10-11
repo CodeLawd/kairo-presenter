@@ -29,7 +29,7 @@ of a universal Electron application.
 | 005 | Add native CI, signing, and release publication | P1 | L | 003, 004 | IN PROGRESS (ci.yml + release.yml SHA-pinned + package:ci scripts + signing docs written; needs first green PR run + `release`-environment secrets) |
 | 006 | Qualify updates and physical-machine acceptance | P1 | M | 005 | TODO (docs/release-checklist.md created; blocked on signed builds + physical machines) |
 | 007 | Hardware video outputs (DeckLink first, vendor-neutral) | P2 | L | 002, 003 | IN PROGRESS (provider/loader/service, device routing + surfaces, IPC + Outputs UI implemented with fake-device tests; native binding, hardware acceptance and packaging await Step 0 qualification) |
-| 008 | GPU shared-texture frame capture for offscreen outputs | P3 | L | 007, 003 | TODO (Step 0 gate: baseline CPU-path numbers on the Duo 2 decide go / reject) |
+| 008 | GPU shared-texture frame capture for offscreen outputs | P3 | L | 007, 003 | IN PROGRESS (Step 0 gate waived by owner; Metal addon, shm ring + helper `--play-shm`, NDI UYVA, per-surface CPU fallback and mac packaging implemented; byte-exact golden tests pass; Step 6 hardware/ProPresenter qualification outstanding — docs/decisions/008-gpu-frame-capture.md) |
 
 Status values: `TODO`, `IN PROGRESS`, `DONE`, `BLOCKED (<reason>)`, or
 `REJECTED (<reason>)`.

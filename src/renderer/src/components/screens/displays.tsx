@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { MonitorPlay } from '@/icons'
 import type { DisplayInfo, OverlayOutput } from '@shared/ipc'
 import { bindingForDisplay, describeDisplay, resolveDisplay } from '@shared/displays'
 
@@ -28,7 +27,7 @@ export function useDisplays(): DisplayInfo[] {
   return displays
 }
 
-/** Which physical display an output fills — a dropdown plus Identify. */
+/** Which physical display an output fills. Identify lives in the sidebar footer. */
 export function DisplayPicker({
   id,
   target,
@@ -86,21 +85,9 @@ export function DisplayPicker({
             )
           })}
         </select>
-        <button
-          type="button"
-          className="btn-secondary flex shrink-0 items-center gap-1.5 px-3 text-[12px]"
-          onClick={() => void window.api.displays.identify()}
-          title="Show each display’s name on the display itself"
-        >
-          <MonitorPlay size={12} aria-hidden="true" />
-          Identify
-        </button>
       </div>
       {bound?.hostsMainWindow && (
-        <p className="text-[11px] leading-snug text-slate-500">
-          Kairo’s controls are on this display, so it opens as a rehearsal window instead of full
-          screen.
-        </p>
+        <p className="text-[12px] text-slate-500">Opens as a window — Kairo’s controls are here.</p>
       )}
     </div>
   )

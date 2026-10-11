@@ -51,7 +51,12 @@ export abstract class ManagedWindow {
   protected async ensureWindow(): Promise<BrowserWindow | null> {
     if (this.destroyed || this.parked) return null
     if (this.win && !this.win.isDestroyed()) return this.win
-    if (this.creating) return this.creating
+    if (this.creating) {
+      await this.creating
+      // A rebuild may invalidate a window while it is still loading. Wait
+      // for that creation to drain, then retry against the current lifecycle.
+      return this.ensureWindow()
+    }
     this.creating = this.createWindow()
     try {
       return await this.creating

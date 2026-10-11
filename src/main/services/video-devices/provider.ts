@@ -11,6 +11,12 @@ export interface VideoOutputSink {
    * their buffer. Conversion and scheduling must not depend on JS paint timing.
    */
   setFrame(bgra: Buffer, width: number, height: number): void
+  /**
+   * GPU capture path (plan 008): a shared-memory ring of UYVY frames at the
+   * output raster that the provider's reader repeats on the hardware clock.
+   * Absent when the provider has no such path; `setFrame` always still works.
+   */
+  frameRing?: import('../gpu-frames').FrameRing | null
   /** Asynchronous driver/helper failure; revoke readiness immediately. */
   onError?(listener: (error: Error) => void): () => void
   /** Release scheduled frames and ports; repeated close must be safe. */

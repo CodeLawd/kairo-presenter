@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { SegmentedControl } from '@/components/shared/SegmentedControl'
+import { MonitorPlay } from '@/icons'
 import { useSettings } from '@/hooks/useSettings'
 import type { MediaPlaylist, OverlayOutput } from '@shared/ipc'
 import { aspectRatioOf, OUTPUT_ASPECTS } from '@shared/displays'
@@ -38,7 +39,12 @@ function useMediaPlaylists(): MediaPlaylist[] {
  * What a screen shows: the service (every push lands here) or its own media
  * playlist — a lobby or foyer display that ignores pushes and Clear.
  */
-export function ScreenSourceFields({ output, onChange }: { output: OverlayOutput; onChange: Patch }): React.ReactElement {
+export function ScreenSourceFields({ output, onChange, fit = true }: {
+  output: OverlayOutput
+  onChange: Patch
+  /** Include Fit after Content. Off where the caller places Fit beside the display picker. */
+  fit?: boolean
+}): React.ReactElement {
   const playlists = useMediaPlaylists()
   const lobby = output.source === 'playlist'
   const missing = lobby && output.playlistId !== '' && !playlists.some((p) => p.id === output.playlistId)
@@ -91,7 +97,7 @@ export function ScreenSourceFields({ output, onChange }: { output: OverlayOutput
             </div>
           </FieldRow>
         </>
-      ) : output.kind === 'screen' ? (
+      ) : fit && output.kind === 'screen' ? (
         <FitField output={output} onChange={onChange} />
       ) : null}
     </>
@@ -266,7 +272,7 @@ export function NdiSoundField(): React.ReactElement {
  * The shape an output draws in, with a test pattern on the real display so the
  * operator sees the result — shown on each change and on demand.
  */
-function FitField({
+export function FitField({
   output,
   onChange,
 }: {
@@ -300,17 +306,18 @@ function FitField({
           onChange={(e) => change({ aspect: e.target.value as OverlayOutput['aspect'], customAspect: output.customAspect })}
         >
           {OUTPUT_ASPECTS.map((option) => (
-            <option key={option.value} value={option.value}>{option.label}</option>
+            <option key={option.value} value={option.value} title={option.label}>{option.label.split(' — ')[0]}</option>
           ))}
         </select>
         <button
           type="button"
-          className="btn-secondary shrink-0 px-3 text-[12px]"
+          className="grid w-[38px] shrink-0 place-items-center rounded-md bg-surface-tertiary text-slate-400 hover:bg-surface-elevated hover:text-slate-200 disabled:opacity-40"
           disabled={output.displayId == null}
           onClick={() => preview({ aspect: output.aspect, customAspect: output.customAspect })}
-          title={output.displayId == null ? 'Choose a display first' : 'Show a test pattern on this display for a few seconds'}
+          title={output.displayId == null ? 'Choose a display first' : 'Show the frame on this display for a few seconds'}
+          aria-label="Show the frame on this display"
         >
-          Test pattern
+          <MonitorPlay size={14} aria-hidden="true" />
         </button>
       </div>
       {output.aspect === 'custom' && (
@@ -349,15 +356,14 @@ function clampRatio(value: string): number {
 function fitHint(output: OverlayOutput): string | undefined {
   const display = output.displaySize
   if (!display || display.width <= 0 || display.height <= 0) {
-    return output.aspect === 'fill' ? 'Takes the shape of the display once one is chosen.' : undefined
+    return undefined
   }
   const screen = display.width / display.height
   const frame = aspectRatioOf(output.aspect, output.customAspect, display) ?? screen
   const shape = describeRatio(screen)
-  if (Math.abs(frame - screen) / screen < 0.02) return `Fills the display (${shape}) edge to edge.`
-  return frame < screen
-    ? `Your display is ${shape} — black bars at the sides.`
-    : `Your display is ${shape} — black bars above and below.`
+  // Silent when it fits; one short line when the shape leaves bars.
+  if (Math.abs(frame - screen) / screen < 0.02) return undefined
+  return frame < screen ? `${shape} display — bars at the sides` : `${shape} display — bars top and bottom`
 }
 
 /** 1.777… → "16:9", 1.6 → "16:10"; anything unusual as "2.4:1". */

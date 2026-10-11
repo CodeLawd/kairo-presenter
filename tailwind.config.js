@@ -81,6 +81,8 @@ module.exports = {
           tertiary: 'rgb(var(--surface-tertiary) / <alpha-value>)',
           elevated: 'rgb(var(--surface-elevated) / <alpha-value>)',
           border: 'rgb(var(--surface-border) / <alpha-value>)',
+          stage: 'rgb(var(--surface-stage) / <alpha-value>)',
+          display: 'rgb(var(--surface-display) / <alpha-value>)',
         },
         // Legacy class name retained to avoid an app-wide class migration:
         // `teal-*` is the accent — white in dark, ink in light (index.css

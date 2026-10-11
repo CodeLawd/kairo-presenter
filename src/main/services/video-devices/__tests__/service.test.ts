@@ -11,6 +11,16 @@ function setup(): { provider: FakeVideoDeviceProvider; service: VideoDeviceServi
   return { provider, service: new VideoDeviceService([provider], 0) }
 }
 
+it('exposes the provider frame ring through the managed sink', async () => {
+  const { provider, service } = setup()
+  const ring = { name: '/test', width: 1920, height: 1080, handle: {}, close: () => {} }
+  provider.openOutput = async () => ({ frameRing: ring as never, setFrame: () => {}, close: async () => {} })
+  try {
+    await service.reconcile([output])
+    assert.equal(service.sinkFor(output.id)?.frameRing, ring)
+  } finally { await service.close() }
+})
+
 it('counts valid captured frames and keeps snapshot diagnostics isolated', async () => {
   const { service } = setup()
   await service.reconcile([output])

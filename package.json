@@ -31,9 +31,9 @@
     "seed:bible:all": "npx tsx scripts/seed-bible.ts --translations KJV,BBE",
     "build:bible-pack": "cross-env ELECTRON_RUN_AS_NODE=1 electron ./node_modules/tsx/dist/cli.mjs scripts/build-bible-pack.ts",
     "import:translation": "cross-env ELECTRON_RUN_AS_NODE=1 electron ./node_modules/tsx/dist/cli.mjs scripts/import-translation.ts",
-    "build:mac": "npm run typecheck && electron-vite build && electron-builder --mac --arm64",
-    "build:mac:arm64": "npm run typecheck && electron-vite build && electron-builder --mac --arm64",
-    "build:mac:x64": "npm run typecheck && electron-vite build && electron-builder --mac --x64",
+    "build:mac": "npm run typecheck && npm run prepare:mac-natives && electron-vite build && electron-builder --mac --arm64",
+    "build:mac:arm64": "npm run typecheck && npm run prepare:mac-natives && electron-vite build && electron-builder --mac --arm64",
+    "build:mac:x64": "npm run typecheck && npm run prepare:mac-natives && electron-vite build && electron-builder --mac --x64",
     "build:win:x64": "npm run typecheck && electron-vite build && electron-builder --win --x64",
     "build:linux:x64": "npm run typecheck && electron-vite build && electron-builder --linux --x64",
     "package:ci:mac-arm64": "electron-builder --mac --arm64 -c.mac.identity=null -c.mac.notarize=false --publish never",
@@ -42,10 +42,13 @@
     "package:ci:linux-x64": "electron-builder --linux --x64 --publish never",
     "verify:package": "node scripts/verify-package.mjs",
     "release": "node scripts/release.mjs",
-    "release:mac": "npm run typecheck && electron-vite build && electron-builder --mac --arm64 --publish always",
-    "build:mac:unsigned": "npm run typecheck && electron-vite build && CSC_IDENTITY_AUTO_DISCOVERY=false KAIRO_ADHOC_SIGN=1 electron-builder --mac --arm64 -c.mac.identity=null -c.mac.notarize=false",
+    "release:mac": "npm run typecheck && npm run prepare:mac-natives && electron-vite build && electron-builder --mac --arm64 --publish always",
+    "build:mac:unsigned": "npm run typecheck && npm run prepare:mac-natives && electron-vite build && CSC_IDENTITY_AUTO_DISCOVERY=false KAIRO_ADHOC_SIGN=1 electron-builder --mac --arm64 -c.mac.identity=null -c.mac.notarize=false",
     "build:dir": "electron-vite build && electron-builder --dir -c.mac.identity=null -c.mac.notarize=false",
     "build:decklink": "node native/decklink/build.mjs",
+    "build:gpu-frames": "node native/gpu-frames/build.mjs",
+    "prepare:mac-natives": "node scripts/prepare-mac-natives.mjs",
+    "test:gpu-frames": "node --test native/gpu-frames/tests/*.test.mjs",
     "test:decklink": "node --test native/decklink/tests/*.test.mjs && node --import tsx --test native/decklink/tests/client.test.ts"
   },
   "dependencies": {
@@ -170,6 +173,7 @@
     ],
     "asarUnpack": [
       "**/*.node",
+      "out/main/decklink-playback-worker.js",
       "**/node_modules/@grandi/**",
       "**/node_modules/better-sqlite3/**"
     ],
@@ -186,6 +190,16 @@
         }
       ],
       "darkModeSupport": true,
+      "extraResources": [
+        {
+          "from": "native/gpu-frames/build/gpu_frames.node",
+          "to": "gpu-frames/gpu_frames.node"
+        },
+        {
+          "from": "native/decklink/build/decklink-helper",
+          "to": "decklink/decklink-helper"
+        }
+      ],
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",

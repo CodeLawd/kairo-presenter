@@ -8,7 +8,7 @@ import { createPlaybackSink, type PlaybackSink } from './client'
 import type { PlaybackWorkerCommand, PlaybackWorkerData, PlaybackWorkerEvent } from './worker-protocol'
 
 const port = parentPort!
-const { helperPath, portId, modeId } = workerData as PlaybackWorkerData
+const { helperPath, portId, modeId, ringName } = workerData as PlaybackWorkerData
 const post = (event: PlaybackWorkerEvent): void => port.postMessage(event)
 const reason = (error: unknown): string => error instanceof Error ? error.message : 'DeckLink playback failed'
 
@@ -38,11 +38,14 @@ port.on('message', (command: PlaybackWorkerCommand) => {
   post({ type: 'ack' })
 })
 
-createPlaybackSink(spawn(helperPath, ['--play', portId, modeId], { stdio: 'pipe' })).then((started) => {
+// With a ring the helper also reads GPU frames from shared memory; stdin BGRA
+// keeps working in both modes, as the CPU fallback.
+const args = ringName ? ['--play-shm', portId, modeId, ringName] : ['--play', portId, modeId]
+createPlaybackSink(spawn(helperPath, args, { stdio: 'pipe' })).then((started) => {
   sink = started
   if (closing) { void started.close(); return }
   started.onError((error) => post({ type: 'error', reason: error.message }))
-  post({ type: 'started' })
+  post({ type: 'started', ring: started.ring() })
   statsTimer = setInterval(() => {
     const diagnostics = sink?.diagnostics()
     if (diagnostics) post({ type: 'stats', diagnostics })

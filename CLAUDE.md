@@ -79,6 +79,7 @@ Services are not imported by the renderer directly — expose their output throu
 Brand palette: onyx `#0C111D` (primary, `ink`), off-white `#F9FAFB` (`paper`), slate `#374151` (muted, `stone`), cobalt `#315EDE` (live).
 Every UI color is a token in `src/renderer/src/index.css` (dark + light), blended from these four — don't add raw hex for chrome.
 - `surface` / `surface-secondary` / `surface-tertiary` / `surface-rail` / `surface-header` / `surface-elevated` / `surface-border` — background layers
+- `surface-stage` / `surface-display` — the only untinted (neutral black/grey) tones: the band behind a screen canvas and the displays drawn on it, so not every layer reads navy. Use sparingly
 - `teal-{50-950}` — legacy name for the accent: white (paper) in dark, ink in light, via `--accent-*` vars. CTAs are `bg-teal-500 text-on-accent hover:bg-teal-600`
 - `live` / `bg-tint-live` — `#315EDE`, used ONLY for what is on screen (live slide/media/page outline, live row). Picked/selected stays white, so the two never look alike. One exception: the header update pill (`UpdatePill.tsx`) is solid blue so a pending update is noticed
 - `ink`, `paper`, `stone` — the raw brand colors; Tailwind `white` is paper

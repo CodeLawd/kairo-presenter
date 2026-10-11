@@ -23,6 +23,7 @@ const PATTERNS = [
   'src/main/services/ndi/__tests__/*.test.ts',
   'src/main/services/video-devices/__tests__/*.test.ts',
   'src/main/services/documents/__tests__/*.test.ts',
+  'src/main/services/gpu-frames/__tests__/*.test.ts',
 ]
 
 const files = PATTERNS.flatMap((pattern) => {

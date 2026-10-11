@@ -1,6 +1,8 @@
 import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { promisify } from 'node:util'
+import log from 'electron-log/main'
+import { createFrameRing, gpuFrames, type FrameRing, type GpuFramesLoad } from '../../../gpu-frames'
 import type { VideoDeviceProvider, VideoOutputSink, VideoPort, VideoProviderStatus } from '../../provider'
 import { openWorkerPlayback } from './worker-sink'
 const execute = promisify(execFile)
@@ -16,6 +18,9 @@ export class DeckLinkProvider implements VideoDeviceProvider {
     /** Built `playback-worker.ts`; frames go to the helper from there, off the main thread. */
     private readonly workerPath: string,
     private readonly runtimePath = '/Library/Frameworks/DeckLinkAPI.framework',
+    /** The gpu-frames addon; injectable for tests. */
+    private readonly loadGpu: () => GpuFramesLoad = gpuFrames,
+    private readonly openPlayback: typeof openWorkerPlayback = openWorkerPlayback,
   ) {}
   status(): VideoProviderStatus {
     if (process.platform !== 'darwin') return { available: false, reason: 'DeckLink is supported on macOS in this build' }
@@ -52,7 +57,42 @@ export class DeckLinkProvider implements VideoDeviceProvider {
     if (opts.keyFill) throw new Error('DeckLink key/fill is not qualified in this build')
     const port = this.ports.find((candidate) => candidate.id === portId)
     if (!port) throw new Error('Device disconnected')
-    if (!port.modes.some((mode) => mode.id === modeId)) throw new Error('Unsupported video mode')
-    return openWorkerPlayback(this.workerPath, { helperPath: this.helperPath, portId, modeId })
+    const mode = port.modes.find((candidate) => candidate.id === modeId)
+    if (!mode) throw new Error('Unsupported video mode')
+    // GPU capture (plan 008): a shared ring at the mode's raster that the
+    // helper reads on the hardware clock. Without it, frames go down stdin.
+    const gpu = this.loadGpu()
+    let ring: FrameRing | null = null
+    if (gpu.ok) {
+      try {
+        ring = createFrameRing(gpu.addon, mode.width, mode.height)
+      } catch (error) {
+        log.warn('[DeckLink] GPU frame ring unavailable — using CPU frames', { reason: (error as Error).message })
+      }
+    }
+    let sink: Awaited<ReturnType<typeof openWorkerPlayback>>
+    try {
+      sink = await this.openPlayback(this.workerPath, { helperPath: this.helperPath, portId, modeId, ringName: ring?.name })
+    } catch (error) {
+      ring?.close()
+      throw error
+    }
+    if (ring && !sink.ringStatus?.ok) {
+      log.warn('[DeckLink] helper did not attach the GPU frame ring — using CPU frames', {
+        reason: sink.ringStatus && !sink.ringStatus.ok ? sink.ringStatus.reason : 'no ring response',
+      })
+      ring.close()
+      ring = null
+    }
+    if (!ring) return sink
+    const attached = ring
+    const close = sink.close.bind(sink)
+    return {
+      ...sink,
+      frameRing: attached,
+      // The helper stops reading first; any surface still writing keeps the
+      // mapping alive until its GPU work drains (see gpu_frames.mm Ring).
+      close: () => close().finally(() => attached.close()),
+    }
   }
 }

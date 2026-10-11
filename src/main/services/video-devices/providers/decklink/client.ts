@@ -3,6 +3,8 @@ import type { ChildProcessWithoutNullStreams } from 'node:child_process'
 
 export interface PlaybackSink {
   diagnostics(): VideoPlaybackDiagnostics | null
+  /** `--play-shm` only: whether the helper attached the GPU frame ring. */
+  ring(): { ok: true } | { ok: false; reason: string } | null
   setFrame(frame: Buffer, width: number, height: number): void
   onError(listener: (error: Error) => void): () => void
   close(): Promise<void>
@@ -13,6 +15,7 @@ export function createPlaybackSink(child: ChildProcessWithoutNullStreams, timeou
     let ready = false, closing = false, exited = false, waitingDrain = false
     let failure: Error | null = null, newest: Buffer | null = null
     let hardware: VideoPlaybackDiagnostics | null = null
+    let ring: { ok: true } | { ok: false; reason: string } | null = null
     let lines = '', diagnostics = '', closingPromise: Promise<void> | null = null
     const listeners = new Set<(error: Error) => void>()
     const fail = (error: Error): void => {
@@ -43,6 +46,7 @@ export function createPlaybackSink(child: ChildProcessWithoutNullStreams, timeou
     })
     const sink: PlaybackSink = {
       diagnostics: () => hardware ? { ...hardware } : null,
+      ring: () => ring,
       setFrame(frame, width, height) {
         if (failure) throw failure
         if (closing || exited) throw new Error('DeckLink output closed')
@@ -80,6 +84,11 @@ export function createPlaybackSink(child: ChildProcessWithoutNullStreams, timeou
         const line = lines.slice(0, end); lines = lines.slice(end + 1)
         try {
           const event = JSON.parse(line) as Partial<VideoPlaybackDiagnostics> & { event?: string; reason?: string }
+          // Sent before 'started' in --play-shm mode.
+          if (event.event === 'ring') {
+            const raw = event as { ok?: unknown; reason?: unknown }
+            ring = raw.ok === true ? { ok: true } : { ok: false, reason: typeof raw.reason === 'string' ? raw.reason : 'Frame ring unavailable' }
+          }
           if (event.event === 'started' && !ready && !failure) { ready = true; clearTimeout(timer); resolve(sink) }
           if (event.event === 'stats' && ['completed', 'late', 'dropped', 'repeated', 'received', 'outputFps'].every((key) => {
             const value = event[key as keyof VideoPlaybackDiagnostics]

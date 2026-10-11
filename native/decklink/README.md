@@ -25,6 +25,11 @@ a qualification tool. `--play PORT MODE` accepts 12-byte little-endian
 width/height/payload-length headers followed by immutable BGRA bytes. Conversion
 and nearest-neighbor scaling run in the native helper. Chromium premultiplied RGB
 is composited against black for opaque output; external key/fill stays disabled.
+`--play-shm PORT MODE RING` does the same and also reads UYVY frames, already
+at the mode raster, from Kairo's GPU frame ring (plan 008, `native/gpu-frames/ring.h`).
+It prints `{"event":"ring","ok":...}` before `started`; stdin BGRA keeps working
+as the CPU fallback, and the helper unlinks the ring when it exits. The BGRA→UYVY
+conversion lives in `uyvy.h`, shared with the gpu-frames golden tests.
 Only HD modes are advertised until SD Rec.601 is implemented. Key/fill,
 source frame transport, profile changes and packaging remain to be qualified.
 

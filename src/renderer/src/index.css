@@ -14,6 +14,10 @@
     --surface-rail: 28 35 49;
     --surface-header: 24 30 43;
     --surface-border: 35 43 57;
+    /* Neutral (untinted) tones, used sparingly so not every layer reads navy:
+       the black band behind a screen canvas, and the grey of a display on it. */
+    --surface-stage: 4 4 5;
+    --surface-display: 64 66 70;
     /* Accent is white in dark, ink in light; #315EDE (cobalt) marks only what is live. */
     --control-accent: 249 250 251;
     --accent-50: 249 250 251;
@@ -80,6 +84,8 @@
     --surface-border: 202 205 210;
     --surface-rail: 212 215 219;
     --surface-header: 226 228 231;
+    --surface-stage: 206 207 209;
+    --surface-display: 250 250 250;
     --control-accent: 12 17 29;
     --accent-50: 12 17 29;
     --accent-100: 12 17 29;

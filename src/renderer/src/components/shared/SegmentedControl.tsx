@@ -12,6 +12,7 @@ export function SegmentedControl<T extends string>({
   role = 'radiogroup',
   className,
   itemClassName,
+  selectedClassName = 'bg-surface-elevated text-white',
   fit = false,
 }: {
   value: T
@@ -24,6 +25,8 @@ export function SegmentedControl<T extends string>({
   /** Container overrides — e.g. a different strip colour or a fixed width. */
   className?: string
   itemClassName?: string
+  /** The chosen option's fill — e.g. the white accent where a choice should stand out. */
+  selectedClassName?: string
   /**
    * Never cut a label off: each option is at least as wide as its label, and
    * extra room is shared out — so it works in a content-wide strip (tabs) and
@@ -47,7 +50,7 @@ export function SegmentedControl<T extends string>({
             className={cn(
               fit ? 'flex-auto shrink-0 whitespace-nowrap' : 'min-w-0 flex-1 truncate',
               'rounded-md px-2 py-1 text-[12px] font-medium transition-colors',
-              selected ? 'bg-surface-elevated text-white' : 'text-slate-500 hover:text-slate-300',
+              selected ? selectedClassName : 'text-slate-500 hover:text-slate-300',
               itemClassName,
             )}
           >

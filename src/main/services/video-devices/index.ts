@@ -1,5 +1,5 @@
-import { resolve } from 'node:path'
 import { DeckLinkProvider } from './providers/decklink'
+import { deckLinkEnabled, deckLinkHelperPath, deckLinkWorkerPath } from './providers/decklink/paths'
 import type { VideoDeviceSnapshot, VideoOutputState, VideoPort } from '../../../lib/video-devices'
 import type { VideoDeviceProvider, VideoOutputSink } from './provider'
 
@@ -211,6 +211,7 @@ export class VideoDeviceService {
           const mode = port!.modes.find((candidate) => candidate.id === binding.deviceModeId)!
           const frameRate = mode.frameRateN / mode.frameRateD
           const entry: Entry = { captures: 0, sampledCaptures: 0, sampledAt: Date.now(), captureFps: 0, binding, active: true, sink: {
+            frameRing: native.frameRing,
             diagnostics: () => native.diagnostics?.() ?? null,
             frameRate: Number.isFinite(frameRate) && frameRate > 0 ? frameRate : undefined,
             setFrame: (frame, width, height) => {
@@ -271,11 +272,9 @@ export class VideoDeviceService {
   }
 }
 
-// Explicit development preview; shipment still requires physical/package qualification.
-const previewProviders: VideoDeviceProvider[] = process.env.KAIRO_ENABLE_DECKLINK === '1'
-  ? [new DeckLinkProvider(
-    resolve(process.cwd(), 'native/decklink/build/decklink-helper'),
-    resolve(__dirname, 'decklink-playback-worker.js'),
-  )]
+// On in every macOS build. Without Blackmagic Desktop Video or the bundled
+// helper the provider reports why it is unavailable instead of failing.
+const providers: VideoDeviceProvider[] = deckLinkEnabled()
+  ? [new DeckLinkProvider(deckLinkHelperPath(), deckLinkWorkerPath())]
   : []
-export const videoDeviceService = new VideoDeviceService(previewProviders)
+export const videoDeviceService = new VideoDeviceService(providers)

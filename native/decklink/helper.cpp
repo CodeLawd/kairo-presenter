@@ -2,6 +2,12 @@
 // the user's Desktop Video installation supplies the runtime framework.
 #include "DeckLinkAPI.h"
 #include "frame-input.h"
+#include "uyvy.h"
+#include "../gpu-frames/ring.h"
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -54,14 +60,6 @@ static std::string id(IDeckLink* device) {
 static int64_t nextTime(int64_t next, int64_t now, int64_t duration) {
  return std::max(next, ((now / duration) + 1) * duration);
 }
-static uint8_t clamp(int x) { return static_cast<uint8_t>(std::clamp(x, 0, 255)); }
-// Limited-range Rec.709 from opaque/composited BGRA, two pixels per UYVY group.
-static void uyvy(const uint8_t* p, uint8_t* d) {
- auto y=[](const uint8_t* v) { return clamp(((47*v[2]+157*v[1]+16*v[0]+128)>>8)+16); };
- int b=(p[0]+p[4])/2, g=(p[1]+p[5])/2, r=(p[2]+p[6])/2;
- d[0]=clamp(((-26*r-87*g+112*b+128)>>8)+128); d[1]=y(p);
- d[2]=clamp(((112*r-102*g-10*b+128)>>8)+128); d[3]=y(p+4);
-}
 static void list() {
  Ref<IDeckLinkIterator> iter; iter.p=CreateDeckLinkIteratorInstance();
  if (!iter.p) throw std::runtime_error("Blackmagic Desktop Video runtime unavailable");
@@ -95,6 +93,30 @@ static void list() {
  }
  std::cout << "]}" << std::endl;
 }
+// Read side of the gpu-frames ring (plan 008): UYVY frames Kairo converted on
+// the GPU, already at the output raster. Unlinked here too, so a Kairo crash
+// cannot leave the segment behind once the helper exits.
+class ShmInput {
+ std::string name;
+ void* base=nullptr; size_t bytes=0;
+public:
+ const kairo_ring::Header* header=nullptr;
+ ShmInput(const std::string& n, long width, long height):name(n) {
+  const int fd=shm_open(name.c_str(),O_RDONLY,0);
+  if (fd<0) throw std::runtime_error("Frame ring not found");
+  struct stat info{};
+  if (fstat(fd,&info)!=0 || info.st_size<static_cast<off_t>(kairo_ring::HEADER_BYTES)) { ::close(fd); throw std::runtime_error("Frame ring too small"); }
+  bytes=static_cast<size_t>(info.st_size);
+  base=mmap(nullptr,bytes,PROT_READ,MAP_SHARED,fd,0); ::close(fd);
+  if (base==MAP_FAILED) { base=nullptr; throw std::runtime_error("Frame ring map failed"); }
+  header=static_cast<const kairo_ring::Header*>(base);
+  if (!kairo_ring::compatible(header,uint32_t(width),uint32_t(height)) || bytes<kairo_ring::totalBytes(header->slotBytes)) {
+   munmap(base,bytes); base=nullptr; throw std::runtime_error("Frame ring raster does not match the output mode");
+  }
+ }
+ ~ShmInput() { if (base) munmap(base,bytes); shm_unlink(name.c_str()); }
+ const void* data() const { return base; }
+};
 class Playback : public IDeckLinkVideoOutputCallback {
  std::atomic<ULONG> refs{1};
  std::mutex lock; std::condition_variable stopped;
@@ -105,6 +127,8 @@ class Playback : public IDeckLinkVideoOutputCallback {
 public:
  Ref<IDeckLinkOutput> output;
  std::vector<IDeckLinkMutableVideoFrame*> frames;
+ std::unique_ptr<ShmInput> shm;
+ uint64_t shmPublished=0;
  BMDTimeValue duration=0; BMDTimeScale scale=0;
  std::atomic<uint64_t> completed{0}, late{0}, dropped{0}, flushed{0}, errors{0}, received{0}, repeated{0};
  ~Playback() { for (auto* f: frames) f->Release(); }
@@ -125,6 +149,12 @@ public:
   if (stopping || result==bmdOutputFrameFlushed) return S_OK;
   BMDTimeValue now=0; double speed=0;
   if (output->GetScheduledStreamTime(scale,&now,&speed)!=S_OK) { fail(); return S_OK; }
+  if (shm) {
+   // Newest complete GPU frame, if one arrived. A slot being rewritten is
+   // skipped and the previous frame repeats, on the hardware clock as ever.
+   auto fresh=std::make_shared<std::vector<uint8_t>>(kairo_ring::frameBytes(uint32_t(frames[0]->GetWidth()),uint32_t(frames[0]->GetHeight())));
+   if (kairo_ring::readNewest(shm->header,shm->data(),shmPublished,fresh->data(),fresh->size())) { latest=fresh; ++received; }
+  }
   if (latest) {
    const auto version=received.load();
    if (version==lastScheduledVersion) ++repeated;
@@ -142,6 +172,7 @@ public:
   if (output->ScheduleVideoFrame(frame,next,duration,scale)!=S_OK) fail();
   next+=duration; return S_OK;
  }
+ std::mutex& frameLock() { return lock; }
  void fail() {
   if (++errors==1) emitEvent("{\"event\":\"error\",\"reason\":\"DeckLink playback failed\"}");
  }
@@ -149,14 +180,7 @@ public:
   if (frames.empty()) throw std::runtime_error("Output not started");
   const long w=frames[0]->GetWidth(), h=frames[0]->GetHeight();
   auto converted=std::make_shared<std::vector<uint8_t>>(w*h*2);
-  for (long y=0;y<h;++y) for (long x=0;x<w;x+=2) {
-   uint8_t pair[8];
-   for (int p=0;p<2;++p) {
-    const size_t offset=((y*height/h)*width+((x+p)*width/w))*4;
-    std::memcpy(pair+p*4,bgra.data()+offset,4);
-   }
-   uyvy(pair,converted->data()+(y*w+x)*2);
-  }
+  convertFrame(bgra.data(),width,height,converted->data(),w,h);
   std::lock_guard<std::mutex> guard(lock); latest=converted; ++received;
  }
  HRESULT ScheduledPlaybackHasStopped() override {
@@ -196,6 +220,8 @@ public:
  }
 };
 // Reports SDK counters even when the producer is idle. RAII joins before playback closes.
+static long frames0Width(Playback& p) { return p.frames.at(0)->GetWidth(); }
+static long frames0Height(Playback& p) { return p.frames.at(0)->GetHeight(); }
 class PlaybackReporter {
  Playback& playback;
  std::atomic<bool> stopping{false};
@@ -231,17 +257,19 @@ int main(int argc,char** argv) {
    std::cout << "{\"ok\":true}" << std::endl; return 0;
   }
   if (argc==2 && std::string(argv[1])=="--list") { list(); return 0; }
-  const bool stream=argc==4 && std::string(argv[1])=="--play";
+  const bool shmMode=argc==5 && std::string(argv[1])=="--play-shm";
+  const bool stream=(argc==4 && std::string(argv[1])=="--play") || shmMode;
   const bool probe=argc==5 && std::string(argv[1])=="--probe";
-  if ((!stream && !probe) || std::string(argv[2]).rfind("decklink:",0)!=0 || std::string(argv[3]).rfind("decklink:",0)!=0) { std::cerr << "Invalid arguments: --list, --play PORT MODE, or --probe PORT MODE SECONDS\n"; return 2; }
+  if ((!stream && !probe) || std::string(argv[2]).rfind("decklink:",0)!=0 || std::string(argv[3]).rfind("decklink:",0)!=0) { std::cerr << "Invalid arguments: --list, --play PORT MODE, --play-shm PORT MODE RING, or --probe PORT MODE SECONDS\n"; return 2; }
   int seconds=0; BMDDisplayMode selected;
   try {
    size_t used=0; std::string modeText=std::string(argv[3]).substr(9);
    unsigned long number=std::stoul(modeText,&used);
    if (used!=modeText.size() || number>std::numeric_limits<uint32_t>::max()) throw std::invalid_argument("mode");
    selected=static_cast<BMDDisplayMode>(number);
+   if (shmMode && (argv[4][0]!='/' || std::string(argv[4]).size()>30)) throw std::invalid_argument("ring");
    if (probe) { std::string text=argv[4]; seconds=std::stoi(text,&used); if (used!=text.size() || seconds<1 || seconds>3600) throw std::invalid_argument("duration"); }
-  } catch (...) { std::cerr << "Invalid mode or probe duration\n"; return 2; }
+  } catch (...) { std::cerr << "Invalid mode, ring name or probe duration\n"; return 2; }
   Ref<IDeckLinkIterator> iter; iter.p=CreateDeckLinkIteratorInstance(); if (!iter.p) throw std::runtime_error("Blackmagic Desktop Video runtime unavailable");
   Ref<IDeckLink> found;
   for (;;) { Ref<IDeckLink> device; if (iter->Next(device.out())!=S_OK) break; if (id(device.p)==argv[2]) { found.p=device.p; device.p=nullptr; break; } }
@@ -249,6 +277,16 @@ int main(int argc,char** argv) {
   Playback* playback=new Playback();
   try {
    playback->start(found.p,selected,!stream);
+   if (shmMode) {
+    // stdin BGRA keeps working either way: it is Kairo's CPU fallback.
+    try {
+     auto input=std::make_unique<ShmInput>(argv[4],frames0Width(*playback),frames0Height(*playback));
+     { std::lock_guard<std::mutex> guard(playback->frameLock()); playback->shm=std::move(input); }
+     emitEvent("{\"event\":\"ring\",\"ok\":true}");
+    } catch (const std::exception& e) {
+     emitEvent("{\"event\":\"ring\",\"ok\":false,\"reason\":"+quote(e.what())+"}");
+    }
+   }
    std::cout << "{\"event\":\"started\",\"port\":" << quote(argv[2]) << "}" << std::endl;
    if (stream) {
     PlaybackReporter reporter(*playback);

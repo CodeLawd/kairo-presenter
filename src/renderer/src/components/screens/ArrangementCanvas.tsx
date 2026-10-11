@@ -63,8 +63,9 @@ export function ArrangementCanvas({
               title={canBind ? `Show the selected screen on ${display.label || 'this display'}` : undefined}
               className={cn(
                 'absolute flex flex-col items-center justify-center gap-1 overflow-hidden rounded-md p-2 text-center transition-colors',
-                selected ? 'bg-surface-elevated' : 'bg-surface-tertiary',
-                canBind && !selected && 'hover:bg-surface-elevated',
+                'bg-surface-display',
+                selected && 'outline outline-2 outline-teal-500',
+                canBind && !selected && 'hover:outline hover:outline-1 hover:outline-slate-400',
                 !canBind && 'cursor-default',
               )}
               style={{
@@ -75,10 +76,10 @@ export function ArrangementCanvas({
                 height: `calc(${(display.bounds.height / height) * 100}% - 6px)`,
               }}
             >
-              <span className="text-[22px] font-semibold leading-none text-slate-500">{index + 1}</span>
-              <span className="max-w-full truncate text-[11px] text-slate-400">{describeDisplay(display)}</span>
+              <span className="text-[22px] font-semibold leading-none text-slate-300">{index + 1}</span>
+              <span className="max-w-full truncate text-[11px] text-slate-200">{describeDisplay(display)}</span>
               {display.hostsMainWindow && (
-                <span className="text-[10px] uppercase tracking-wider text-slate-500">Kairo controls</span>
+                <span className="text-[10px] uppercase tracking-wider text-slate-400">Kairo controls</span>
               )}
               <span className="mt-1 flex max-w-full flex-wrap justify-center gap-1">
                 {on.map((b) => (
@@ -87,10 +88,10 @@ export function ArrangementCanvas({
                     className={cn(
                       'max-w-full truncate rounded px-1.5 py-0.5 text-[10px] font-medium',
                       b.key === selectedKey
-                        ? 'bg-slate-200 text-surface'
+                        ? 'bg-teal-500 text-on-accent'
                         : b.enabled
-                          ? 'bg-surface-secondary text-slate-200'
-                          : 'bg-surface-secondary text-slate-500',
+                          ? 'bg-surface-stage text-slate-200'
+                          : 'bg-surface-stage text-slate-500',
                     )}
                   >
                     {b.role === 'Stage' ? 'Stage · ' : ''}

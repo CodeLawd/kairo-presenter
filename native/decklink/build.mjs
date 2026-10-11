@@ -8,7 +8,9 @@ if (process.platform !== 'darwin' || !sdk) throw new Error('Build on macOS with 
 const includes = resolve(sdk, 'Mac/include')
 if (!existsSync(resolve(includes, 'DeckLinkAPI.h'))) throw new Error('DeckLink Mac headers not found')
 mkdirSync(resolve(root, 'build'), { recursive: true })
-const result = spawnSync('xcrun', ['clang++', '-std=c++17', '-O2', '-Wall', '-Wextra', '-pthread', '-I', includes,
+// Universal, so the same helper ships in the Apple Silicon and Intel builds.
+const result = spawnSync('xcrun', ['clang++', '-std=c++17', '-O2', '-Wall', '-Wextra', '-pthread',
+  '-arch', 'arm64', '-arch', 'x86_64', '-mmacosx-version-min=11.0', '-I', includes,
   resolve(root, 'helper.cpp'), resolve(includes, 'DeckLinkAPIDispatch.cpp'), '-framework', 'CoreFoundation',
   '-o', resolve(root, 'build/decklink-helper')], { stdio: 'inherit' })
 process.exit(result.status ?? 1)

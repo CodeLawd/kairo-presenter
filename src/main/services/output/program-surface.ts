@@ -10,6 +10,8 @@ import type { ConfidenceInfo } from '@shared/program'
 import type { DocumentSlide, DocumentPlaybackStatus, DocumentVideoCommand } from '@shared/documents'
 import { mediaFilterCss } from '@shared/media-playback'
 import type { NdiService } from '../ndi'
+import { gpuFrames, type GpuFramesLoad } from '../gpu-frames'
+import { GpuCapture, type CaptureTarget } from './gpu-capture'
 import type { VideoOutputSink } from '../video-devices/provider'
 import { createDisplayWindow, needsRebuild, sameBounds, showDisplayWindow, type DisplaySink } from './display-window'
 import { ManagedWindow } from './managed-window'
@@ -135,10 +137,16 @@ export class ProgramSurface extends ManagedWindow {
   private config: SurfaceConfig = DEFAULT_CONFIG
   private layers: SurfaceLayers = EMPTY_LAYERS
   private fadeTimer: ReturnType<typeof setTimeout> | null = null
+  /** GPU capture for the current offscreen window, when it uses shared textures. */
+  private capture: GpuCapture | null = null
+  /** Set once GPU capture fails on this surface; it stays on CPU for the session. */
+  private gpuDisabled: string | null = null
 
   constructor(
     label: string,
     private sink: SurfaceSink,
+    /** The gpu-frames addon; injectable for tests. */
+    private readonly loadGpu: () => GpuFramesLoad = gpuFrames,
   ) {
     super(label, 'Output')
   }
@@ -192,6 +200,8 @@ export class ProgramSurface extends ManagedWindow {
   }
 
   protected override onClosed(): void {
+    this.capture?.close()
+    this.capture = null
     this.paintWaiters.splice(0).forEach((resolve) => resolve())
     if (this.fadeTimer) clearTimeout(this.fadeTimer)
     this.fadeTimer = null
@@ -219,6 +229,22 @@ export class ProgramSurface extends ManagedWindow {
     return this.recover(reason)
   }
 
+  /** Where GPU-converted frames for `sink` go, or null when it has no GPU path. */
+  private captureTarget(sink: Exclude<SurfaceSink, DisplaySink>): CaptureTarget | null {
+    if (sink.kind === 'ndi') {
+      return { kind: 'ndi', deliver: (uyva, width, height) => sink.channel.updateConvertedFrame(uyva, width, height) }
+    }
+    return sink.sink.frameRing ? { kind: 'ring', ring: sink.sink.frameRing } : null
+  }
+
+  /** GPU capture failed: this surface rebuilds on the CPU path and keeps its picture. */
+  private gpuFallback(reason: string): void {
+    if (this.gpuDisabled || this.destroyed) return
+    this.gpuDisabled = reason
+    log.warn(`[Output] ${this.label} GPU capture failed — falling back to CPU capture for this session`, { reason })
+    void this.recover('GPU capture fell back to CPU', false)
+  }
+
   private createOffscreenWindow(sink: Exclude<SurfaceSink, DisplaySink>): BrowserWindow {
     // Offscreen pages paint at the display's pixel ratio — 3840×2160 on a Retina
     // Mac — and every frame then had to be shrunk on the main thread. A window
@@ -226,6 +252,14 @@ export class ProgramSurface extends ManagedWindow {
     // exactly 1920×1080. (Zoom set here stays on this window; it does not
     // spread to other file:// windows.)
     const scale = captureScale()
+    this.capture?.close()
+    this.capture = null
+    const opened = this.gpuDisabled
+      ? { reason: this.gpuDisabled }
+      : GpuCapture.create(this.loadGpu(), this.captureTarget(sink), (reason) => this.gpuFallback(reason))
+    if ('capture' in opened) this.capture = opened.capture
+    log.info(`[Output] ${this.label} capture: ${this.capture ? 'gpu' : 'cpu'}`, 'reason' in opened ? { reason: opened.reason } : {})
+    const capture = this.capture
     const win = new BrowserWindow({
       width: WIDTH / scale,
       height: HEIGHT / scale,
@@ -235,7 +269,9 @@ export class ProgramSurface extends ManagedWindow {
       transparent: true,
       backgroundColor: '#00000000',
       webPreferences: {
-        offscreen: true,
+        // Shared textures only when this surface can convert them; a window
+        // built that way paints no bitmap, so the CPU path needs a plain one.
+        offscreen: capture ? { useSharedTexture: true } : true,
         backgroundThrottling: false,
         contextIsolation: true,
         nodeIntegration: false,
@@ -248,18 +284,26 @@ export class ProgramSurface extends ManagedWindow {
 
     win.webContents.setFrameRate(this.captureFrameRate(OSR_FRAME_RATE))
 
-    win.webContents.on('paint', (_event, _dirty, image) => {
-      // Normally exactly WIDTH×HEIGHT (see captureScale). A display change after
-      // the window was built can still change the paint size — normalize that.
-      const { width, height } = image.getSize()
-      const frame = width === WIDTH && height === HEIGHT
-        ? image
-        : image.resize({ width: WIDTH, height: HEIGHT })
-      try {
-        if (sink.kind === 'ndi') sink.channel.updateFrame(frame.getBitmap(), WIDTH, HEIGHT)
-        else sink.sink.setFrame(frame.getBitmap(), WIDTH, HEIGHT)
-      } catch (error) {
-        log.warn(`[Output] ${this.label} frame delivery failed`, (error as Error).message)
+    win.webContents.on('paint', (event, _dirty, image) => {
+      const texture = (event as { texture?: Electron.OffscreenSharedTexture }).texture
+      if (texture) {
+        // GPU path. The converter scales any paint size to its raster, and
+        // releases the texture as soon as the GPU is done with it.
+        if (capture && this.capture === capture) capture.handle(texture)
+        else texture.release()
+      } else {
+        // CPU path. Normally exactly WIDTH×HEIGHT (see captureScale). A display
+        // change after the window was built can still change the paint size.
+        const { width, height } = image.getSize()
+        const frame = width === WIDTH && height === HEIGHT
+          ? image
+          : image.resize({ width: WIDTH, height: HEIGHT })
+        try {
+          if (sink.kind === 'ndi') sink.channel.updateFrame(frame.getBitmap(), WIDTH, HEIGHT)
+          else sink.sink.setFrame(frame.getBitmap(), WIDTH, HEIGHT)
+        } catch (error) {
+          log.warn(`[Output] ${this.label} frame delivery failed`, (error as Error).message)
+        }
       }
       // Anyone awaiting "this page is really on the wire" is released here —
       // the capture, not a guess at how long painting takes.

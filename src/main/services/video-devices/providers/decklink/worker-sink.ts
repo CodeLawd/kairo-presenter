@@ -1,6 +1,6 @@
 import { Worker } from 'node:worker_threads'
 import type { VideoOutputSink } from '../../provider'
-import type { PlaybackWorkerCommand, PlaybackWorkerData, PlaybackWorkerEvent } from './worker-protocol'
+import type { PlaybackWorkerCommand, PlaybackWorkerData, PlaybackWorkerEvent, RingStatus } from './worker-protocol'
 
 /** The slice of `Worker` this sink uses — tests pass a double. */
 export interface PlaybackWorkerLike {
@@ -25,7 +25,7 @@ export function openWorkerPlayback(
   data: PlaybackWorkerData,
   createWorker: (path: string, data: PlaybackWorkerData) => PlaybackWorkerLike =
     (path, workerData) => new Worker(path, { workerData }),
-): Promise<VideoOutputSink> {
+): Promise<VideoOutputSink & { ringStatus: RingStatus }> {
   const worker = createWorker(workerPath, data)
   return new Promise((resolve, reject) => {
     let started = false, closed = false, exited = false
@@ -53,7 +53,8 @@ export function openWorkerPlayback(
     }
     const timer = setTimeout(() => fail(new Error('DeckLink helper startup timed out')), STARTUP_TIMEOUT_MS)
 
-    const sink: VideoOutputSink = {
+    const sink: VideoOutputSink & { ringStatus: RingStatus } = {
+      ringStatus: null,
       diagnostics: () => hardware ? { ...hardware } : null,
       setFrame(frame, width, height) {
         if (failure) throw failure
@@ -94,6 +95,7 @@ export function openWorkerPlayback(
     worker.on('message', (event) => {
       if (event.type === 'started' && !started && !failure) {
         started = true
+        sink.ringStatus = event.ring ?? null
         clearTimeout(timer)
         resolve(sink)
       } else if (event.type === 'stats') {

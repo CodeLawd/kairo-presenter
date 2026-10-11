@@ -24,6 +24,12 @@ const FRAME_FORMAT_PROGRESSIVE = 1
  * macOS, so this is the correct fourCC for frames sourced from `getBitmap()`.
  */
 const FOURCC_BGRA = 1095911234
+/**
+ * 'UYVA' (`NDIlib_FourCC_video_type_UYVA`, grandi `FourCC.UYVA`): a UYVY plane,
+ * stride width×2, followed by a width×height alpha plane. The GPU capture path
+ * (plan 008) sends this so NDI keeps its transparency for keying.
+ */
+const FOURCC_UYVA = 1096178005
 
 /** Backoff between sender-creation attempts, so repeated pushes cannot hammer NDI. */
 const RETRY_COOLDOWN_MS = 5000
@@ -50,6 +56,8 @@ class NdiService {
   /** Set when new pixels arrive, so the next content reaches NDI immediately. */
   private frameDirty = false
   private currentFrame: Buffer
+  /** Pixel format of `currentFrame` — BGRA from the CPU path, UYVA from the GPU path. */
+  private currentFourCC = FOURCC_BGRA
   private starting: Promise<void> | null = null
   /** Why the last sender attempt failed, surfaced in status and logs. */
   private senderError: string | null = null
@@ -187,9 +195,10 @@ class NdiService {
       frameRateD: FRAME_RATE_D,
       pictureAspectRatio: WIDTH / HEIGHT,
       frameFormatType: FRAME_FORMAT_PROGRESSIVE,
-      lineStrideBytes: WIDTH * 4,
+      // UYVA's stride covers the UYVY plane; the alpha plane follows it.
+      lineStrideBytes: this.currentFourCC === FOURCC_UYVA ? WIDTH * 2 : WIDTH * 4,
       data: this.currentFrame,
-      fourCC: FOURCC_BGRA,
+      fourCC: this.currentFourCC,
     }
     await this.sender.sendVideo(frame)
   }
@@ -201,9 +210,25 @@ class NdiService {
       return
     }
     this.currentFrame = bgraBuffer
+    this.currentFourCC = FOURCC_BGRA
     this.frameDirty = true
     // New pixels go out now instead of waiting for the next repeat tick — that
     // wait was pure latency between a page turn and the wall.
+    if (!this.sendingFrame) void this.pushFrame()
+  }
+
+  /**
+   * GPU capture path: a UYVA frame (UYVY Rec.709 limited + alpha plane) the
+   * caller hands over and does not reuse.
+   */
+  updateConvertedFrame(uyva: Buffer, width: number, height: number): void {
+    if (width !== WIDTH || height !== HEIGHT || uyva.length !== WIDTH * HEIGHT * 3) {
+      log.warn('[NDI] updateConvertedFrame size mismatch — ignoring frame', { width, height, bytes: uyva.length })
+      return
+    }
+    this.currentFrame = uyva
+    this.currentFourCC = FOURCC_UYVA
+    this.frameDirty = true
     if (!this.sendingFrame) void this.pushFrame()
   }
 
@@ -236,6 +261,7 @@ class NdiService {
   /** Resets the repeating frame back to fully transparent (D2 clear semantics). */
   clearFrame(): void {
     this.currentFrame = Buffer.alloc(WIDTH * HEIGHT * 4, 0)
+    this.currentFourCC = FOURCC_BGRA
     this.frameDirty = true
     if (!this.sendingFrame) void this.pushFrame()
   }

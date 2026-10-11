@@ -12,6 +12,7 @@
 
 ## Status
 
+- **State**: IN PROGRESS — Steps 1–5 and 7 implemented 2026-10-11; Step 0 gate waived by the owner; Step 6 qualification outstanding. See `docs/decisions/008-gpu-frame-capture.md`.
 - **Priority**: P3 (raise to P2 if Step 0 shows the CPU path cannot carry the
   required output count)
 - **Effort**: L
