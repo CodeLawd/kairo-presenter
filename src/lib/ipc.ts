@@ -102,7 +102,6 @@ export interface AppSettings {
     /** Max verses per push; 0 = no cap (whole detected range) */
     maxVerses: number
     /** Auto-clear overlay after N seconds; 0 = manual clear only */
-    autoClearSec: number
     // — phase 3 (new) — one entry per destination; see OverlayOutput below.
     outputs: OverlayOutput[]
     // — phase 2 (legacy — migrated into `outputs`, kept only so the migration
@@ -528,7 +527,7 @@ export interface OverlayTheme {
 // a (PP layer, content, styling) triple. Defaults, normalizer and the layer map
 // live in src/lib/overlay-outputs.ts.
 
-export type OverlayOutputKind = 'ndi' | 'library' | 'message' | 'stage' | 'screen'
+export type OverlayOutputKind = 'ndi' | 'library' | 'message' | 'stage' | 'screen' | 'device'
 
 /**
  * What is being pushed. Scripture and lyrics land on the same outputs but rarely
@@ -595,6 +594,10 @@ export interface OverlayOutput {
   displayId: number | null
   /** `Display.label` at bind time — for re-matching after an id change and for the UI. */
   displayLabel: string
+  devicePortId: string
+  devicePortLabel: string
+  deviceModeId: string
+  deviceKeyFill: boolean
   /** Display size (DIP) at bind time — pairs with `displayLabel` for re-matching. */
   displaySize: { width: number; height: number } | null
   /**
@@ -1672,6 +1675,12 @@ export interface KairoAPI {
   resilience: ResilienceAPI
   ndi: NdiAPI
   displays: DisplaysAPI
+  videoDevices: {
+    setTestPattern: (outputId: string, pattern: import('./video-devices').VideoTestPattern | null) => Promise<boolean>
+    listPorts: () => Promise<import('./video-devices').VideoPort[]>
+    status: () => Promise<import('./video-devices').VideoDeviceSnapshot>
+    onChanged: (callback: (snapshot: import('./video-devices').VideoDeviceSnapshot) => void) => Unsubscribe
+  }
   /** Kairo's own outputs as a whole: every screen, NDI feed and enabled integration. */
   output: OutputAPI
   /** Program layers and show controls: messages, logo, props, camera, timer. */
@@ -1941,6 +1950,12 @@ export const IPC = {
     IDENTIFY: 'displays:identify',  // invoke
     TEST_PATTERN: 'displays:testPattern', // invoke
     CHANGED:  'displays:changed',   // push (DisplayInfo[])
+  },
+  VIDEO_DEVICES: {
+    LIST_PORTS: 'videoDevices:listPorts',
+    STATUS: 'videoDevices:status',
+    TEST_PATTERN: 'videoDevices:testPattern',
+    CHANGED: 'videoDevices:changed',
   },
   ACCOUNT: {
     GET_SESSION:            'account:getSession',            // invoke — SessionSnapshot

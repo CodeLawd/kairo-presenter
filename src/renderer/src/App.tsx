@@ -173,6 +173,9 @@ const views: Record<Exclude<NavRoute, 'operator' | 'theme' | 'documents'>, React
 }
 
 const SETTINGS_FRAME = { w: 780, h: 700 }
+const SCREENS_FRAME = { w: 1180, h: 760 }
+const SETTINGS_MIN = { w: 640, h: 480 }
+const SCREENS_MIN = { w: 760, h: 480 }
 const SETTINGS_DRAG_EDGE = 48
 
 function isSettingsChromeDrag(target: EventTarget | null): boolean {
@@ -187,86 +190,167 @@ function isSettingsChromeDrag(target: EventTarget | null): boolean {
   return Boolean(target.closest('[data-settings-drag]'))
 }
 
-function clampSettingsOffset(x: number, y: number): { x: number; y: number } {
+/** Keeps a dragged window's title bar reachable: it can leave the screen only partly. */
+function clampFrameOffset(x: number, y: number, size: FrameSize): { x: number; y: number } {
   const viewW = window.innerWidth
   const viewH = window.innerHeight
-  const left = (viewW - SETTINGS_FRAME.w) / 2 + x
-  const top = (viewH - SETTINGS_FRAME.h) / 2 + y
-  const nextLeft = Math.min(Math.max(left, SETTINGS_DRAG_EDGE - SETTINGS_FRAME.w), viewW - SETTINGS_DRAG_EDGE)
+  const left = (viewW - size.w) / 2 + x
+  const top = (viewH - size.h) / 2 + y
+  const nextLeft = Math.min(Math.max(left, SETTINGS_DRAG_EDGE - size.w), viewW - SETTINGS_DRAG_EDGE)
   const nextTop = Math.min(Math.max(top, 8), viewH - SETTINGS_DRAG_EDGE)
   return {
-    x: nextLeft - (viewW - SETTINGS_FRAME.w) / 2,
-    y: nextTop - (viewH - SETTINGS_FRAME.h) / 2,
+    x: nextLeft - (viewW - size.w) / 2,
+    y: nextTop - (viewH - size.h) / 2,
   }
 }
 
-function DraggableSettingsFrame({
-  onClose,
-  initialSection,
+interface FrameSize { w: number; h: number }
+
+/** The window never outgrows the app window (16px margin) or shrinks below `min`. */
+function clampFrameSize(size: FrameSize, min: FrameSize): FrameSize {
+  const maxW = Math.max(min.w, window.innerWidth - 32)
+  const maxH = Math.max(min.h, window.innerHeight - 32)
+  return {
+    w: Math.round(Math.min(Math.max(size.w, min.w), maxW)),
+    h: Math.round(Math.min(Math.max(size.h, min.h), maxH)),
+  }
+}
+
+/** A remembered window size — a per-machine convenience, so storage failures are ignored. */
+function readFrameSize(key: string): FrameSize | null {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(key) ?? 'null') as Partial<FrameSize> | null
+    return parsed && Number.isFinite(parsed.w) && Number.isFinite(parsed.h) ? { w: parsed.w!, h: parsed.h! } : null
+  } catch {
+    return null
+  }
+}
+
+function writeFrameSize(key: string, size: FrameSize): void {
+  try { localStorage.setItem(key, JSON.stringify(size)) } catch { /* Size is not remembered. */ }
+}
+
+/** Resize handles: which edges move. `x` -1 = left edge, 1 = right; `y` 1 = bottom. The top is the title bar. */
+const RESIZE_HANDLES: ReadonlyArray<{ x: -1 | 0 | 1; y: 0 | 1; className: string }> = [
+  { x: 1, y: 0, className: 'right-0 top-3 bottom-3 w-1.5 cursor-ew-resize' },
+  { x: -1, y: 0, className: 'left-0 top-3 bottom-3 w-1.5 cursor-ew-resize' },
+  { x: 0, y: 1, className: 'bottom-0 left-3 right-3 h-1.5 cursor-ns-resize' },
+  { x: 1, y: 1, className: 'bottom-0 right-0 h-3 w-3 cursor-nwse-resize' },
+  { x: -1, y: 1, className: 'bottom-0 left-0 h-3 w-3 cursor-nesw-resize' },
+]
+
+type FrameGesture =
+  | { kind: 'move'; pointerId: number; startX: number; startY: number; origX: number; origY: number }
+  | { kind: 'resize'; pointerId: number; startX: number; startY: number; origX: number; origY: number
+      origW: number; origH: number; edgeX: -1 | 0 | 1; edgeY: 0 | 1 }
+
+/**
+ * A modal window the operator can move by its title bar (any `[data-settings-drag]`
+ * area that is not a control) and resize from its sides and bottom corners —
+ * Settings and Screens alike. The size is remembered per window.
+ */
+function DraggableFrame({
+  frame,
+  min,
+  storageKey,
+  className,
+  children,
 }: {
-  onClose: () => void
-  initialSection: SettingsSectionId
+  /** Default size. */
+  frame: FrameSize
+  /** Smallest size the content still lays out at. */
+  min: FrameSize
+  /** Where the chosen size is remembered. */
+  storageKey: string
+  /** Window chrome (radius, ring, animation) — the size comes from the frame. */
+  className?: string
+  children: React.ReactNode
 }): React.ReactElement {
   const [offset, setOffset] = useState({ x: 0, y: 0 })
-  const [dragging, setDragging] = useState(false)
-  const drag = useRef<{
-    pointerId: number
-    startX: number
-    startY: number
-    origX: number
-    origY: number
-  } | null>(null)
+  const [size, setSize] = useState<FrameSize>(() => clampFrameSize(readFrameSize(storageKey) ?? frame, min))
+  const [gesture, setGesture] = useState<FrameGesture['kind'] | null>(null)
+  const active = useRef<FrameGesture | null>(null)
+  const root = useRef<HTMLDivElement>(null)
   const offsetRef = useRef(offset)
   offsetRef.current = offset
+  const sizeRef = useRef(size)
+  sizeRef.current = size
+
+  // The app window shrank: keep the frame inside it.
+  useEffect(() => {
+    const onResize = (): void => setSize((current) => clampFrameSize(current, min))
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [min])
+
+  const begin = (event: PointerEvent<HTMLDivElement>, next: FrameGesture): void => {
+    event.preventDefault()
+    active.current = next
+    setGesture(next.kind)
+    root.current?.setPointerCapture(event.pointerId)
+  }
 
   const onPointerDown = (event: PointerEvent<HTMLDivElement>): void => {
+    if (event.button !== 0 || !isSettingsChromeDrag(event.target)) return
+    begin(event, { kind: 'move', pointerId: event.pointerId, startX: event.clientX, startY: event.clientY,
+      origX: offsetRef.current.x, origY: offsetRef.current.y })
+  }
+
+  const onResizeDown = (event: PointerEvent<HTMLDivElement>, edgeX: -1 | 0 | 1, edgeY: 0 | 1): void => {
     if (event.button !== 0) return
-    if (!isSettingsChromeDrag(event.target)) return
-    event.preventDefault()
-    drag.current = {
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      origX: offsetRef.current.x,
-      origY: offsetRef.current.y,
-    }
-    setDragging(true)
-    event.currentTarget.setPointerCapture(event.pointerId)
+    event.stopPropagation()
+    begin(event, { kind: 'resize', pointerId: event.pointerId, startX: event.clientX, startY: event.clientY,
+      origX: offsetRef.current.x, origY: offsetRef.current.y, origW: sizeRef.current.w, origH: sizeRef.current.h, edgeX, edgeY })
   }
 
   const onPointerMove = (event: PointerEvent<HTMLDivElement>): void => {
-    const active = drag.current
-    if (!active || event.pointerId !== active.pointerId) return
-    setOffset(
-      clampSettingsOffset(
-        active.origX + event.clientX - active.startX,
-        active.origY + event.clientY - active.startY,
-      ),
-    )
+    const current = active.current
+    if (!current || event.pointerId !== current.pointerId) return
+    const dx = event.clientX - current.startX
+    const dy = event.clientY - current.startY
+    if (current.kind === 'move') {
+      setOffset(clampFrameOffset(current.origX + dx, current.origY + dy, sizeRef.current))
+      return
+    }
+    const next = clampFrameSize({ w: current.origW + current.edgeX * dx, h: current.origH + current.edgeY * dy }, min)
+    // The frame is centred, so growing by d moves each edge d/2. Shift by the
+    // same amount so only the dragged edge moves.
+    setSize(next)
+    setOffset({
+      x: current.origX + (current.edgeX * (next.w - current.origW)) / 2,
+      y: current.origY + (current.edgeY * (next.h - current.origH)) / 2,
+    })
   }
 
-  const endDrag = (event: PointerEvent<HTMLDivElement>): void => {
-    if (!drag.current || event.pointerId !== drag.current.pointerId) return
-    drag.current = null
-    setDragging(false)
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId)
-    }
+  const endGesture = (event: PointerEvent<HTMLDivElement>): void => {
+    const current = active.current
+    if (!current || event.pointerId !== current.pointerId) return
+    active.current = null
+    setGesture(null)
+    if (current.kind === 'resize') writeFrameSize(storageKey, sizeRef.current)
+    if (root.current?.hasPointerCapture(event.pointerId)) root.current.releasePointerCapture(event.pointerId)
   }
 
   return (
     <div
-      className={dragging ? 'relative cursor-grabbing select-none' : 'relative'}
+      ref={root}
+      className={gesture ? `relative select-none ${gesture === 'move' ? 'cursor-grabbing' : ''}` : 'relative'}
       style={{ transform: `translate(${offset.x}px, ${offset.y}px)` }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
-      onPointerUp={endDrag}
-      onPointerCancel={endDrag}
+      onPointerUp={endGesture}
+      onPointerCancel={endGesture}
       onClick={(event) => event.stopPropagation()}
     >
-      <div className="h-[min(700px,calc(100vh-32px))] w-[min(780px,calc(100vw-32px))] overflow-hidden rounded-xl ring-1 ring-white/10 animate-spring-in">
-        <Settings onClose={onClose} initialSection={initialSection} />
-      </div>
+      <div className={className} style={{ width: size.w, height: size.h }}>{children}</div>
+      {RESIZE_HANDLES.map((handle) => (
+        <div
+          key={`${handle.x}:${handle.y}`}
+          aria-hidden="true"
+          className={`absolute z-10 ${handle.className}`}
+          onPointerDown={(event) => onResizeDown(event, handle.x, handle.y)}
+        />
+      ))}
     </div>
   )
 }
@@ -590,12 +674,13 @@ export default function App(): React.ReactElement {
       {screensWindow && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 animate-fade-in">
           <div className="absolute inset-0" onClick={() => useAppStore.getState().closeScreens()} />
-          <div className="relative h-[min(760px,90vh)] w-[min(1180px,94vw)] overflow-hidden rounded-xl animate-spring-in">
+          <DraggableFrame frame={SCREENS_FRAME} min={SCREENS_MIN} storageKey="kairo.frame.screens"
+            className="overflow-hidden rounded-xl animate-spring-in">
             <ScreenConfiguration
               initialSelect={screensWindow.select}
               onClose={() => useAppStore.getState().closeScreens()}
             />
-          </div>
+          </DraggableFrame>
         </div>
       )}
 
@@ -606,10 +691,10 @@ export default function App(): React.ReactElement {
             className="absolute inset-0"
             onClick={() => setSettingsOpen(false)}
           />
-          <DraggableSettingsFrame
-            initialSection={settingsSection}
-            onClose={() => setSettingsOpen(false)}
-          />
+          <DraggableFrame frame={SETTINGS_FRAME} min={SETTINGS_MIN} storageKey="kairo.frame.settings"
+            className="overflow-hidden rounded-xl ring-1 ring-white/10 animate-spring-in">
+            <Settings onClose={() => setSettingsOpen(false)} initialSection={settingsSection} />
+          </DraggableFrame>
         </div>
       )}
     </div>

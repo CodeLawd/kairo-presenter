@@ -1,6 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { DEFAULT_PRESENTATION_SETTINGS, EMPTY_PROGRAM_STATE, type PresentationSettings, type ProgramState } from '@shared/program'
 import { useSettings } from './useSettings'
+import { useAppStore } from '../stores/useAppStore'
 
 /** The `presentation` settings section (transition, messages, props, logo, audio). */
 export function usePresentation(): [PresentationSettings, (next: PresentationSettings) => Promise<void>] {
@@ -17,6 +18,11 @@ function subscribeProgram(listener: () => void): () => void {
   programListeners.add(listener)
   if (!stopProgramFeed) {
     const publish = (next: ProgramState): void => {
+      // Timed clears run in main, without the renderer's manual-clear helper.
+      // Mirror a slide being taken down so the preview and Live badge follow it.
+      if (programState.current && !next.current) {
+        useAppStore.getState().clearScriptureLiveOutput()
+      }
       programState = next
       programListeners.forEach((l) => l())
     }

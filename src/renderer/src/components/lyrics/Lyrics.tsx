@@ -253,6 +253,67 @@ const TRANSLATE_SOURCES = [
 const SLIDE_ZOOM_MIN = 60
 const SLIDE_ZOOM_MAX = 200
 
+/** 1-based number of each section's first slide in `song`. */
+function sectionStarts(song: LyricsSong): number[] {
+  let next = 1
+  return song.sections.map((section) => {
+    const start = next
+    next += sectionSlideChunks(section).length
+    return start
+  })
+}
+
+const NO_SLIDES: ReadonlySet<number> = new Set()
+/** How long a scroll the app makes itself keeps the playlist view from re-selecting. */
+const FOLLOW_PAUSE_MS = 500
+const noop = (): void => {}
+
+/**
+ * The band that opens each song in the playlist view, where every song is laid
+ * out in order. Stays pinned while its slides scroll past, so the song on
+ * screen is always named. White, in the accent; the selected song's band is
+ * solid — it is the one Edit and ⋯ act on — and clicking another selects it.
+ */
+function SongDivider({
+  song,
+  position,
+  current = false,
+  onSelect,
+}: {
+  song: LyricsSong
+  /** 1-based place in the playlist. */
+  position: number
+  current?: boolean
+  onSelect?: () => void
+}): React.ReactElement {
+  const slideCount = song.sections.reduce((total, section) => total + sectionSlideChunks(section).length, 0)
+  return (
+    // Full bleed: the band runs edge to edge of the song view, past its gutter.
+    <div className="sticky top-0 z-10 -mx-4 bg-surface">
+      <button
+        type="button"
+        onClick={onSelect}
+        disabled={current}
+        aria-current={current || undefined}
+        className={cn(
+          'flex h-7 w-full min-w-0 items-center gap-2.5 px-4 text-left text-on-accent transition-colors disabled:cursor-default',
+          current ? 'bg-teal-500' : 'bg-teal-500/80 hover:bg-teal-500',
+        )}
+        title={current ? undefined : `Select ${song.title}`}
+      >
+        <span className="shrink-0 text-xs font-semibold tabular-nums opacity-60">{position}</span>
+        <span className="min-w-0 truncate text-[13px] font-semibold">
+          {song.title}
+        </span>
+        {song.artist && <span className="min-w-0 truncate text-xs opacity-60">{song.artist}</span>}
+        <span className="ml-auto shrink-0 text-[11px] tabular-nums opacity-60">
+          {slideCount} slide{slideCount === 1 ? '' : 's'}
+        </span>
+      </button>
+    </div>
+  )
+}
+
 function SectionBadge({ type }: { type: LyricsSectionType }): React.ReactElement {
   const label =
     type === 'pre-chorus' ? 'Pre-C'
@@ -288,7 +349,14 @@ function SectionSlideGrid({
   quickEdit = null,
   onQuickEditSave,
   onQuickEditCancel,
+  passive = false,
 }: {
+  /**
+   * A song shown beside the selected one in a playlist: a click goes live and
+   * nothing else — no drag, select or paint, and no `data-` hooks that the
+   * selected song's arrows and rubber band look up.
+   */
+  passive?: boolean
   /** The slide being quick-edited, with its starting text. */
   quickEdit?: { slide: number; text: string } | null
   onQuickEditSave?: (slide: number, text: string) => void
@@ -334,7 +402,7 @@ function SectionSlideGrid({
       className={cn('-mx-2 space-y-1.5 rounded-xl px-2 py-1 transition-colors duration-150', isDestination && 'bg-surface-secondary')}
       // Anywhere in the section that is not a card: join it, at the end.
       onDragOver={(event) => {
-        if (reorderBusy || !slideDrag || chunks.length === 0 || !event.dataTransfer.types.includes(SLIDE_DRAG_TYPE)) return
+        if (passive || reorderBusy || !slideDrag || chunks.length === 0 || !event.dataTransfer.types.includes(SLIDE_DRAG_TYPE)) return
         event.preventDefault()
         event.dataTransfer.dropEffect = 'move'
         if (slideDrag.over?.index !== lastSlide || slideDrag.over.side !== 'after') {
@@ -342,7 +410,7 @@ function SectionSlideGrid({
         }
       }}
       onDrop={(event) => {
-        if (chunks.length === 0) return
+        if (passive || chunks.length === 0) return
         event.preventDefault()
         const from = Number(event.dataTransfer.getData(SLIDE_DRAG_TYPE))
         onSlideDrag(null)
@@ -389,13 +457,13 @@ function SectionSlideGrid({
             <button
               key={i}
               type="button"
-              data-lyric-slide={zeroBased}
-              data-lyric-section={sectionIndex}
-              data-select-id={zeroBased}
+              data-lyric-slide={passive ? undefined : zeroBased}
+              data-lyric-section={passive ? undefined : sectionIndex}
+              data-select-id={passive ? undefined : zeroBased}
               disabled={reorderBusy}
               // The whole card drags. Pressing ⌘ first starts a rubber band
               // instead (MarqueeSelect cancels the native drag).
-              draggable={!reorderBusy && paintColor === undefined}
+              draggable={!passive && !reorderBusy && paintColor === undefined}
               onDragStart={(event) => {
                 event.dataTransfer.setData(SLIDE_DRAG_TYPE, String(zeroBased))
                 event.dataTransfer.effectAllowed = 'move'
@@ -407,7 +475,7 @@ function SectionSlideGrid({
               }}
               onDragEnd={() => onSlideDrag(null)}
               onDragOver={(event) => {
-                if (reorderBusy || !event.dataTransfer.types.includes(SLIDE_DRAG_TYPE)) return
+                if (passive || reorderBusy || !event.dataTransfer.types.includes(SLIDE_DRAG_TYPE)) return
                 event.preventDefault()
                 event.stopPropagation()
                 event.dataTransfer.dropEffect = 'move'
@@ -418,6 +486,7 @@ function SectionSlideGrid({
                 }
               }}
               onDrop={(event) => {
+                if (passive) return
                 event.preventDefault()
                 event.stopPropagation()
                 const from = Number(event.dataTransfer.getData(SLIDE_DRAG_TYPE))
@@ -431,6 +500,7 @@ function SectionSlideGrid({
                 // Finishing a text selection inside the tile is not a request
                 // to put the slide on screen.
                 if (hasTextSelection()) return
+                if (passive) { onPushSlide(zeroBased); return }
                 // ⌘/Shift-click picks slides without going live, in or out of
                 // select mode — the same gestures as Finder.
                 const gesture = selectGesture(event)
@@ -456,7 +526,7 @@ function SectionSlideGrid({
               )}
               aria-pressed={selecting ? isPicked : undefined}
               aria-label={selecting ? `Select slide ${slideNo}` : `Show slide ${slideNo}`}
-              title={selecting ? 'Select this slide' : 'Click to go live · drag to move · ⌘-click to select'}
+              title={passive ? 'Click to go live' : selecting ? 'Select this slide' : 'Click to go live · drag to move · ⌘-click to select'}
             >
               {i === 0 && section.hotkey && (
                 // ProPresenter-style group hotkey, on the section's first slide.
@@ -2337,6 +2407,8 @@ export default function Lyrics(): React.ReactElement {
   // ── Live slide push ──────────────────────────────────────────────────────────
   /** Zero-based index of the slide last pushed to ProPresenter, if any. */
   const [liveSlideIndex, setLiveSlideIndex] = useState<number | null>(null)
+  /** The song `liveSlideIndex` belongs to — in a playlist it need not be the selected one. */
+  const [liveSongId, setLiveSongId] = useState<string | null>(null)
   const [pushingSlideIndex, setPushingSlideIndex] = useState<number | null>(null)
 
   // ── Action bar ───────────────────────────────────────────────────────────────
@@ -2359,15 +2431,14 @@ export default function Lyrics(): React.ReactElement {
     [selectedSong, glossColor]
   )
 
-  const sectionSlideStarts = useMemo(() => {
-    if (!selectedSong) return [] as number[]
-    let next = 1
-    return selectedSong.sections.map((section) => {
-      const start = next
-      next += sectionSlideChunks(section).length
-      return start
-    })
-  }, [selectedSong])
+  const sectionSlideStarts = useMemo(() => (selectedSong ? sectionStarts(selectedSong) : []), [selectedSong])
+
+  /** The open playlist's songs, in its order — the song view lays them all out. */
+  const setlistSongs = useMemo(() => {
+    if (!viewingSetlist) return []
+    const byId = new Map(songs.map((song) => [song.id, song]))
+    return viewingSetlist.songIds.map((id) => byId.get(id)).filter((song): song is LyricsSong => !!song)
+  }, [viewingSetlist, songs])
 
   const filteredSongs = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -2581,7 +2652,6 @@ export default function Lyrics(): React.ReactElement {
     setSendStatus('idle')
     setSendError(null)
     setTranslateError(null)
-    setLiveSlideIndex(null)
   }, [leaveEditor, setSelectedId])
 
   // ── Edit mode ────────────────────────────────────────────────────────────────
@@ -2913,27 +2983,48 @@ export default function Lyrics(): React.ReactElement {
   }, [selectedId, selectedSong, songSlides])
 
   /**
-   * Clicking a slide tile puts it on screen. Errors surface in the same action-bar
-   * slot the whole-song push uses, so there is one place to look when PP refuses.
+   * Puts slide `zeroBased` of `song` on screen. Errors surface in the same
+   * action-bar slot the whole-song push uses, so there is one place to look
+   * when PP refuses.
+   *
+   * A song other than the selected one (a playlist shows them all) becomes the
+   * selected one. `fromView` keeps the view where it is — the operator is
+   * already looking at the slide they clicked.
    */
-  const handlePushSlide = useCallback(async (zeroBased: number): Promise<void> => {
-    if (!selectedId) return
+  const keepScrollRef = useRef(false)
+  const followPausedUntilRef = useRef(0)
+  const followFrameRef = useRef(0)
+  const handlePushSongSlide = useCallback(async (song: LyricsSong, zeroBased: number, fromView = true): Promise<void> => {
+    if (song.id !== selectedId) {
+      keepScrollRef.current = fromView
+      handleSelect(song.id)
+    }
     setPushingSlideIndex(zeroBased)
     setSendError(null)
     try {
-      await window.api.lyrics.pushSlide(selectedId, zeroBased)
+      await window.api.lyrics.pushSlide(song.id, zeroBased)
       setLiveSlideIndex(zeroBased)
-      if (selectedSong) {
-        useAppStore.getState().setLiveOutputPreview(
-          buildLyricsLiveOutputPayload(selectedSong, songSlides[zeroBased]),
-        )
-      }
+      setLiveSongId(song.id)
+      useAppStore.getState().setLiveOutputPreview(
+        buildLyricsLiveOutputPayload(song, buildSlides(song, { glossColor })[zeroBased]),
+      )
     } catch (err) {
       setSendError(cleanIpcError(err))
     } finally {
       setPushingSlideIndex(null)
     }
-  }, [selectedId, selectedSong, songSlides])
+  }, [selectedId, handleSelect, glossColor])
+
+  /** Clicking a slide tile of the selected song. */
+  const handlePushSlide = useCallback(async (zeroBased: number): Promise<void> => {
+    if (selectedSong) await handlePushSongSlide(selectedSong, zeroBased)
+  }, [selectedSong, handlePushSongSlide])
+
+  /** A playlist with the selected song in it: the song view lays out every song. */
+  const showsSetlist = setlistSongs.length > 1 && !!selectedSong && setlistSongs.some((song) => song.id === selectedSong.id)
+
+  /** The live slide when it belongs to the selected song, else null. */
+  const selectedLiveSlide = liveSongId === selectedId ? liveSlideIndex : null
 
   const handleReorderSlide = async (from: number, target: number, side: 'before' | 'after'): Promise<void> => {
     if (!selectedSong || reorderLock.current || !Number.isInteger(from)) return
@@ -2946,6 +3037,18 @@ export default function Lyrics(): React.ReactElement {
     } catch (error) { setSendError(cleanIpcError(error)) }
     finally { reorderLock.current = false; setReorderBusy(false) }
   }
+
+  // Picking a song in the playlist's list brings it into view in the song
+  // view. Not when the pick came from the view itself — that song is on screen.
+  useEffect(() => {
+    if (keepScrollRef.current) { keepScrollRef.current = false; return }
+    if (!viewingSetlist || !selectedId || editMode) return
+    const block = songScrollRef.current?.querySelector(`[data-setlist-song="${CSS.escape(selectedId)}"]`)
+    if (!block) return
+    followPausedUntilRef.current = Date.now() + FOLLOW_PAUSE_MS
+    block.scrollIntoView({ block: 'start' })
+  }, [selectedId, viewingSetlist, editMode])
+
 
   // ── Picking songs in the setlist on screen: ⌘/Shift-click, ⌘A, Delete ─────
   const setlistSongIds = useMemo(
@@ -3078,7 +3181,7 @@ export default function Lyrics(): React.ReactElement {
     const sections = replaceLyricSlide(selectedSong.sections, slide, text.split('\n'))
     if (sections === selectedSong.sections) return
     // On screen right now: show the corrected words there too.
-    if (await saveSections(sections, 'Could not save that slide') && liveSlideIndex === slide) {
+    if (await saveSections(sections, 'Could not save that slide') && selectedLiveSlide === slide) {
       void handlePushSlide(slide)
     }
   }
@@ -3134,6 +3237,33 @@ export default function Lyrics(): React.ReactElement {
     finally { reorderLock.current = false; setReorderBusy(false) }
   }
 
+  // Scrolling the playlist selects the song under its pinned title, so the
+  // header — and Edit, and the ⋯ menu — follow what is on screen. Scrolls the
+  // app makes itself (a pick from the list, an arrow key) pause this briefly,
+  // or a short song picked near the end would hand the header to the last one.
+  const followScroll = useCallback((): void => {
+    if (!viewingSetlist || editMode || followFrameRef.current) return
+    // Mid-gesture on the selected song: changing it would drop the gesture.
+    if (slideDrag || quickEdit || selectingSlides || pickedSlides.size > 0) return
+    followFrameRef.current = requestAnimationFrame(() => {
+      followFrameRef.current = 0
+      const box = songScrollRef.current
+      if (!box || Date.now() < followPausedUntilRef.current) return
+      const blocks = Array.from(box.querySelectorAll<HTMLElement>('[data-setlist-song]'))
+      if (blocks.length < 2) return
+      // The last song may be too short to reach the top; at the bottom it is the one.
+      const atBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 2
+      const line = box.getBoundingClientRect().top + 28
+      const block = atBottom ? blocks[blocks.length - 1] : blocks.filter((b) => b.getBoundingClientRect().top <= line).pop() ?? blocks[0]
+      const id = block.dataset.setlistSong
+      if (id && id !== selectedId) {
+        keepScrollRef.current = true
+        setSelectedId(id)
+      }
+    })
+  }, [viewingSetlist, editMode, selectedId, setSelectedId, slideDrag, quickEdit, selectingSlides, pickedSlides])
+  useEffect(() => () => cancelAnimationFrame(followFrameRef.current), [])
+
   useEffect(() => {
     const navigate = (event: KeyboardEvent) => {
       if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key) || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.repeat || event.isComposing) return
@@ -3141,14 +3271,34 @@ export default function Lyrics(): React.ReactElement {
       if (editMode || !selectedSong || showImport || deleteTarget || webPreviewResult || reorderBusy || pushingSlideIndex !== null || !document.hasFocus() || document.querySelector('.kairo-pp-settings, [role="dialog"], [role="menu"]') || target?.closest('input, textarea, select, [contenteditable="true"], [role="separator"]')) return
       event.preventDefault(); event.stopImmediatePropagation()
       const delta = event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 1
-      const next = liveSlideIndex === null ? 0 : Math.max(0, Math.min(songSlides.length - 1, liveSlideIndex + delta))
-      if (next === liveSlideIndex || !songSlides.length) return
-      document.querySelector(`[data-lyric-slide="${next}"]`)?.scrollIntoView({ block: 'nearest' })
-      void handlePushSlide(next)
+      // Arrows step from what is live — in a playlist that can be a song
+      // scrolled out of view — and fall back to the selected song.
+      const liveSong = (liveSongId && songs.find((song) => song.id === liveSongId)) || selectedSong
+      const current = liveSong.id === liveSongId ? liveSlideIndex : null
+      const count = liveSong.id === selectedSong.id ? songSlides.length : buildSlides(liveSong, { glossColor }).length
+      // In a playlist, stepping off either end of a song carries on into the
+      // next (first slide) or previous (last slide) song that has slides.
+      const stepped = current === null ? 0 : current + delta
+      if (current !== null && (stepped < 0 || stepped >= count)) {
+        const at = setlistSongs.findIndex((song) => song.id === liveSong.id)
+        for (let i = at + delta; at >= 0 && i >= 0 && i < setlistSongs.length; i += delta) {
+          const length = buildSlides(setlistSongs[i], { glossColor }).length
+          if (length === 0) continue
+          void handlePushSongSlide(setlistSongs[i], delta > 0 ? 0 : length - 1, false)
+          return
+        }
+      }
+      const next = current === null ? 0 : Math.max(0, Math.min(count - 1, stepped))
+      if (next === current || !count) return
+      if (liveSong.id === selectedSong.id) {
+        followPausedUntilRef.current = Date.now() + FOLLOW_PAUSE_MS
+        document.querySelector(`[data-lyric-slide="${next}"]`)?.scrollIntoView({ block: 'nearest' })
+      }
+      void handlePushSongSlide(liveSong, next, false)
     }
     window.addEventListener('keydown', navigate, true)
     return () => window.removeEventListener('keydown', navigate, true)
-  }, [editMode, selectedSong, showImport, deleteTarget, webPreviewResult, reorderBusy, pushingSlideIndex, liveSlideIndex, songSlides.length, handlePushSlide])
+  }, [editMode, selectedSong, showImport, deleteTarget, webPreviewResult, reorderBusy, pushingSlideIndex, liveSlideIndex, liveSongId, songs, songSlides.length, setlistSongs, glossColor, handlePushSongSlide])
 
   // Section hotkeys (ProPresenter-style): one key puts that section's first
   // slide live. Same guards as the arrows — never while typing or in a dialog.
@@ -3271,7 +3421,13 @@ export default function Lyrics(): React.ReactElement {
               setFilter('all')
             }}
             onSelectSource={(next) => { setViewingSetlistId(null); setFilter(next) }}
-            onSelectSetlist={setViewingSetlistId}
+            onSelectSetlist={(listId) => {
+              setViewingSetlistId(listId)
+              // The song view lays the whole playlist out; land on its first
+              // song unless the one already open is part of it.
+              const list = setlistState.lists.find((entry) => entry.id === listId)
+              if (list?.songIds[0] && !(selectedId && list.songIds.includes(selectedId))) handleSelect(list.songIds[0])
+            }}
           />
 
           {/* The list's header, as in ProPresenter: what's here, then one menu
@@ -3573,7 +3729,7 @@ export default function Lyrics(): React.ReactElement {
           ) : (
             <>
               {/* Editor header */}
-              <div className={cn("z-20 flex flex-shrink-0 flex-wrap items-center justify-between gap-3 bg-surface px-4 py-3", editMode && "sticky top-0")}>
+              <div className={cn("z-20 flex flex-shrink-0 flex-wrap items-center justify-between gap-3 bg-surface px-4", showsSetlist && !editMode ? "py-2" : "py-3", editMode && "sticky top-0")}>
                 <div className="flex-1 min-w-0">
                   {editMode && editState ? (
                     // The song's details, edited where the view shows them:
@@ -3604,6 +3760,12 @@ export default function Lyrics(): React.ReactElement {
                         ))}
                       </div>
                     </div>
+                  ) : showsSetlist && viewingSetlist ? (
+                    // Each song is titled by its band below; the header names the playlist.
+                    <p className="flex min-w-0 items-baseline gap-2">
+                      <span className="truncate text-sm font-semibold text-white">{viewingSetlist.name}</span>
+                      <span className="shrink-0 text-xs tabular-nums text-slate-500">{setlistSongs.length}</span>
+                    </p>
                   ) : selectedSong ? (
                     <div className="min-w-0">
                       <p className="truncate text-base font-semibold tracking-tight text-white">{selectedSong.title}</p>
@@ -3639,7 +3801,7 @@ export default function Lyrics(): React.ReactElement {
                   {!editMode && selectedSong && (
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon-sm" aria-label="Song actions" title="Song actions">
+                        <Button variant="ghost" size="icon-sm" aria-label="Song actions" title={showsSetlist && selectedSong ? `Actions for ${selectedSong.title}` : "Song actions"}>
                           {translating ? <Loader2 className="animate-spin" /> : <MoreHorizontal />}
                         </Button>
                       </DropdownMenuTrigger>
@@ -3725,7 +3887,12 @@ export default function Lyrics(): React.ReactElement {
                       </Button>
                     </>
                   ) : (
-                    <Button variant="outline" size="sm" onClick={handleEdit}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleEdit}
+                      title={showsSetlist && selectedSong ? `Edit ${selectedSong.title}` : undefined}
+                    >
                       <Edit2 data-icon="inline-start" /> Edit
                     </Button>
                   )}
@@ -3741,7 +3908,13 @@ export default function Lyrics(): React.ReactElement {
               )}
 
               {/* Scrollable content */}
-              <div ref={songScrollRef} className={cn("flex-1 min-h-0", editMode ? "overflow-hidden pt-1" : "overflow-y-auto space-y-4 px-4 py-4")}>
+              <div
+                ref={songScrollRef}
+                onScroll={showsSetlist ? followScroll : undefined}
+                // In a playlist the pinned song titles sit flush with the top
+                // edge, so no padding there for slides to scroll through.
+                className={cn("flex-1 min-h-0", editMode ? "overflow-hidden pt-1" : cn("overflow-y-auto space-y-4 px-4 pb-4", showsSetlist ? "pt-0" : "pt-4"))}
+              >
                 {editMode && editState ? (
                   /* Edit mode: the whole song as one text, slides beside it */
                   <div className="flex h-full min-h-0 flex-col">
@@ -3758,8 +3931,45 @@ export default function Lyrics(): React.ReactElement {
                     />
                   </div>
                 ) : selectedSong && (
-                  /* View mode: stage filmstrips in push order */
+                  /* View mode: stage filmstrips in push order. In a playlist,
+                     every song in it, in order, each under its title. */
                   <>
+                    {(showsSetlist ? setlistSongs : [selectedSong]).map((song, songIndex) => song.id !== selectedSong.id ? (
+                      <div key={song.id} data-setlist-song={song.id} className={cn(songIndex > 0 && 'pt-6')}>
+                        <SongDivider
+                          song={song}
+                          position={songIndex + 1}
+                          onSelect={() => { keepScrollRef.current = true; handleSelect(song.id) }}
+                        />
+                        <div className="space-y-5 pt-3">
+                          {song.sections.map((section, i) => (
+                            <SectionSlideGrid
+                              key={i}
+                              passive
+                              zoom={slideZoom}
+                              selectedSlides={NO_SLIDES}
+                              selecting={false}
+                              onSelectSlide={noop}
+                              section={section}
+                              onReorder={noop}
+                              reorderBusy={reorderBusy}
+                              sectionIndex={i}
+                              startIndex={sectionStarts(song)[i] ?? 1}
+                              glossColor={glossColor}
+                              paintColor={undefined}
+                              liveSlideIndex={song.id === liveSongId ? liveSlideIndex : null}
+                              pushingSlideIndex={null}
+                              onSetLineColor={noop}
+                              onPushSlide={(zeroBased) => void handlePushSongSlide(song, zeroBased)}
+                              slideDrag={null}
+                              onSlideDrag={noop}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                    <div key={song.id} data-setlist-song={song.id} className={cn(showsSetlist && songIndex > 0 && 'pt-6')}>
+                    {showsSetlist && <SongDivider song={song} position={songIndex + 1} current />}
                     <SlideContextMenu
                       target={slideMenu}
                       onTarget={setSlideMenu}
@@ -3777,7 +3987,7 @@ export default function Lyrics(): React.ReactElement {
                       onDelete={() => void handleDeleteSlides(menuSlides)}
                     >
                     <MarqueeSelect
-                      className="space-y-5"
+                      className={cn('space-y-5', showsSetlist && 'pt-3')}
                       onBegin={slideSelect.beginMarquee}
                       onChange={(ids) => slideSelect.updateMarquee(ids.map(Number))}
                     >
@@ -3795,7 +4005,7 @@ export default function Lyrics(): React.ReactElement {
                           startIndex={sectionSlideStarts[i] ?? 1}
                           glossColor={glossColor}
                           paintColor={paintColor}
-                          liveSlideIndex={liveSlideIndex}
+                          liveSlideIndex={selectedLiveSlide}
                           pushingSlideIndex={pushingSlideIndex}
                           onSetLineColor={(si, li, c) => void handleSetLineColor(si, li, c)}
                           onPushSlide={(zeroBased) => {
@@ -3811,6 +4021,8 @@ export default function Lyrics(): React.ReactElement {
                       ))}
                     </MarqueeSelect>
                     </SlideContextMenu>
+                    </div>
+                    ))}
                     <p className="pt-1 text-center text-[11px] text-slate-600">
                       {paintColor !== undefined
                         ? 'Click a lyric line to paint · Esc turns paint off'

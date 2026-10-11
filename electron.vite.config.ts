@@ -11,6 +11,15 @@ export default defineConfig({
         '@shared': resolve('src/lib'),
       },
     },
+    build: {
+      rollupOptions: {
+        // The DeckLink playback worker runs as its own entry, next to index.js.
+        input: {
+          index: resolve('src/main/index.ts'),
+          'decklink-playback-worker': resolve('src/main/services/video-devices/providers/decklink/playback-worker.ts'),
+        },
+      },
+    },
   },
   preload: {
     plugins: [externalizeDepsPlugin()],

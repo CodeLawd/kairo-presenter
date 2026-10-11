@@ -109,6 +109,15 @@ test('themeWithLiveMedia lays the file under the theme', () => {
   assert.equal(next.background.brightness, 0.5)
 })
 
+test('a dock file plays sharp even when the theme blurs its own backdrop', () => {
+  const blurred = { ...DEFAULT_OVERLAY_THEME, background: { ...DEFAULT_OVERLAY_THEME.background, type: 'video' as const, mediaPath: '/media/backdrop.mp4', blurPx: 7 } }
+  const next = themeWithLiveMedia(blurred, { kind: 'video', path: '/media/sermon-clip.mp4' })
+  assert.equal(next.background.blurPx, 0)
+  assert.doesNotMatch(renderOverlayHTML(next, '', ''), /blur\(/)
+  // The theme's own backdrop keeps its blur.
+  assert.match(renderOverlayHTML(blurred, '', ''), /filter:blur\(7px\)/)
+})
+
 test('overlay color grade lands on the background layer', () => {
   const background = applyPlaybackToBackground(
     { ...DEFAULT_OVERLAY_THEME.background, type: 'video', mediaPath: '/media/loop.mp4' },

@@ -47,6 +47,8 @@ class UpdaterService {
   private wired = false
   /** Unsigned macOS build: Kairo installs its own updates (decided at init). */
   private selfUpdate = false
+  /** Runs before the install quit — releases hardware so the quit is never cancelled. */
+  private beforeInstall: (() => Promise<void>) | null = null
   /** The release `update-available` reported — the files and their hashes. */
   private pending: { version: string; files: UpdateFileInfo[] } | null = null
   /** An unpacked, verified update waiting for quit. */
@@ -191,6 +193,10 @@ class UpdaterService {
     return this.status
   }
 
+  setBeforeInstall(hook: () => Promise<void>): void {
+    this.beforeInstall = hook
+  }
+
   /**
    * Quits and installs. Only valid once downloaded — a live service must never
    * be torn down by a stray call, so anything else is a no-op.
@@ -205,11 +211,12 @@ class UpdaterService {
     }
     if (!this.enabled || this.status.state !== 'downloaded') return
     log.info('[Updater] quitting to install')
+    const ready = this.beforeInstall?.().catch(() => {}) ?? Promise.resolve()
     if (this.selfUpdate) {
-      if (this.swapOnQuit(true)) app.quit()
+      if (this.swapOnQuit(true)) void ready.then(() => app.quit())
       return
     }
-    setImmediate(() => autoUpdater.quitAndInstall())
+    void ready.then(() => autoUpdater.quitAndInstall())
   }
 
   /**

@@ -20,6 +20,8 @@ import {
 import { store } from '../../db'
 import { getMainWindow } from '../../main-window'
 import { ndiService, type NdiService } from '../ndi'
+import { videoDeviceService } from '../video-devices'
+import type { VideoOutputSink } from '../video-devices/provider'
 import type { DisplaySink } from './display-window'
 import { LobbyPlayer } from './lobby-player'
 import { ProgramSurface, type SurfaceLayers } from './program-surface'
@@ -64,7 +66,18 @@ interface NdiEntry {
 // every overlay / presentation settings write, and on display changes.
 
 class SurfaceManager {
+  videoTestPattern(id: string): import('@shared/video-devices').VideoTestPattern | null {
+    return this.deviceEntries.get(id)?.surface.testPattern ?? null
+  }
+  async setVideoTestPattern(id: string, pattern: import('@shared/video-devices').VideoTestPattern | null): Promise<boolean> {
+    if (!videoDeviceService.outputStatus(id).ready) return false
+    const surface = this.deviceEntries.get(id)?.surface
+    return surface ? surface.setTestPattern(pattern) : false
+  }
+
   private ndiEntries = new Map<string, NdiEntry>()
+  private deviceEntries = new Map<string, { surface: ProgramSurface; sink: VideoOutputSink; player?: LobbyPlayer }>()
+  private unsubscribeDevices: (() => void) | null = null
   /** Screens that follow the service. Pushes, backgrounds and Clear reach these. */
   private screens = new Map<string, ProgramSurface>()
   /** Screens running their own playlist, each with its player. Nothing from the service reaches them. */
@@ -84,11 +97,17 @@ class SurfaceManager {
   private sentStageStatus = ''
   private initialized = false
   private reconciling: Promise<void> = Promise.resolve()
+  private reconcilingDevices = false
   private displayChangeTimer: ReturnType<typeof setTimeout> | null = null
 
   init(): void {
     if (this.initialized) return
     this.initialized = true
+    // Hotplug and playback faults. Changes this manager's own device reconcile
+    // causes are already handled in that pass — re-running it would be a second full pass.
+    this.unsubscribeDevices = videoDeviceService.onChanged(() => {
+      if (!this.reconcilingDevices) void this.reconcile()
+    })
     const onDisplaysChanged = (): void => this.displaysChanged()
     screen.on('display-added', onDisplaysChanged)
     screen.on('display-removed', onDisplaysChanged)
@@ -249,11 +268,17 @@ class SurfaceManager {
     const repersist = new Map<string, number>()
 
     this.reconcileNdi(outputs)
-    const usedDisplays = await this.reconcileScreens(outputs, displays, repersist)
-    await this.reconcileStages(presentation, displays, usedDisplays)
+    // Independent: a slow video card driver must not hold up ordinary screens.
+    await Promise.all([
+      this.reconcileDevices(outputs),
+      this.reconcileScreens(outputs, displays, repersist)
+        .then((usedDisplays) => this.reconcileStages(presentation, displays, usedDisplays)),
+    ])
+    if (!this.initialized) return
     this.emitStageStatus()
 
     const liveWindows = [...this.states.values()].some((s) => s.ready) ||
+      [...this.deviceEntries.keys()].some((id) => videoDeviceService.outputStatus(id).ready) ||
       [...this.stageStates.values()].some((s) => s.ready)
     this.updatePowerBlocker(liveWindows)
     if (repersist.size > 0) this.repersistDisplayIds(repersist)
@@ -301,6 +326,53 @@ class SurfaceManager {
       entry.channel.clearFrame()
     }
     this.ndiEntries.delete(id)
+  }
+
+  private async reconcileDevices(outputs: readonly OverlayOutput[]): Promise<void> {
+    const devices = outputs.filter((output) => output.kind === 'device')
+    this.reconcilingDevices = true
+    try {
+      await videoDeviceService.reconcile(devices)
+    } finally {
+      this.reconcilingDevices = false
+    }
+    if (!this.initialized) return
+    const keep = new Set<string>()
+    const loads: Promise<void>[] = []
+    for (const output of devices.filter((o) => o.enabled)) {
+      keep.add(output.id)
+      const sink = videoDeviceService.sinkFor(output.id)
+      const lobby = !followsProgram(output)
+      let entry = this.deviceEntries.get(output.id)
+      if (entry && !!entry.player !== lobby) {
+        this.dropDevice(output.id)
+        entry = undefined
+      }
+      if (!sink) {
+        entry?.player?.stop()
+        entry?.surface.close()
+        continue
+      }
+      if (entry) {
+        if (entry.sink !== sink) { entry.sink = sink; loads.push(entry.surface.retargetDevice(sink)) }
+        entry.player?.update(output)
+        continue
+      }
+      const surface = new ProgramSurface(`Video card (${output.name})`, { kind: 'device', sink })
+      const player = lobby ? new LobbyPlayer(surface, output) : undefined
+      this.deviceEntries.set(output.id, { surface, sink, player })
+      loads.push(surface.restore())
+      // Player begins after the shared config has been applied below.
+    }
+    for (const id of this.deviceEntries.keys()) if (!keep.has(id)) this.dropDevice(id)
+    await Promise.all(loads)
+  }
+
+  private dropDevice(id: string): void {
+    const entry = this.deviceEntries.get(id)
+    entry?.player?.stop()
+    entry?.surface.destroy()
+    this.deviceEntries.delete(id)
   }
 
   /** Returns the ids of displays now showing a screen output. */
@@ -502,7 +574,7 @@ class SurfaceManager {
         : [],
     )
     await Promise.all(
-      [...this.ndiSurfaces, ...this.screens.values(), ...this.lobbySurfaces()].map((surface) =>
+      [...this.ndiSurfaces, ...this.screens.values(), ...this.lobbySurfaces(), ...this.deviceSurfaces()].map((surface) =>
         surface.configure({
           transitionMs: ms,
           audio: { enabled: enabled && surface === audioSurface, volume, outputLabel },
@@ -511,6 +583,9 @@ class SurfaceManager {
         }).catch(() => undefined),
       ),
     )
+    for (const [id, entry] of this.deviceEntries) {
+      if (videoDeviceService.outputStatus(id).ready) entry.player?.start()
+    }
   }
 
   /** Whether any NDI feed can carry sound on this machine (NDI 6 binding loaded). */
@@ -559,7 +634,7 @@ class SurfaceManager {
     const layersFor = (output: OverlayOutput): SurfaceLayers => ({
       ...programLayersFor(output, state, presentation),
       // A lobby shows its playlist, never the service camera.
-      camera: output.show.backgrounds && !this.lobbies.has(output.id) ? camera : null,
+      camera: output.show.backgrounds && followsProgram(output) ? camera : null,
       info: confidenceFor(output, state, presentation),
     })
     const surfaceWork = this.outputs
@@ -601,12 +676,17 @@ class SurfaceManager {
   private surfaceOf(output: OverlayOutput): ProgramSurface | null {
     if (output.kind === 'ndi') return this.ndiEntries.get(output.id)?.surface ?? null
     if (output.kind === 'screen') return this.screenSurface(output.id) ?? null
+    if (output.kind === 'device') return this.deviceEntries.get(output.id)?.surface ?? null
     return null
   }
 
   /** The surface a service push to this output lands on, when it can take one. Never a lobby. */
   surfaceFor(output: OverlayOutput): ProgramSurface | null {
-    if (!output.enabled) return null
+    if (!output.enabled || !followsProgram(output)) return null
+    if (output.kind === 'device') {
+      const surface = this.deviceEntries.get(output.id)?.surface
+      return videoDeviceService.outputStatus(output.id).ready && surface?.available() ? surface : null
+    }
     const surface = output.kind === 'ndi'
       ? this.ndiEntries.get(output.id)?.surface
       : output.kind === 'screen' && this.states.get(output.id)?.ready
@@ -637,6 +717,13 @@ class SurfaceManager {
     return this.states.get(outputId) ?? { ready: false, reason: 'Display not connected' }
   }
 
+  /** Ready/reason for any rendered output — the one place that knows where each kind's state lives. */
+  outputState(output: OverlayOutput): ScreenOutputState {
+    if (output.kind === 'screen') return this.screenState(output.id)
+    if (output.kind === 'device') return videoDeviceService.outputStatus(output.id)
+    return this.surfaceFor(output) ? { ready: true, reason: '' } : { ready: false, reason: 'NDI sender unavailable' }
+  }
+
   /** Every NDI surface — cleared with the `presentation` layer. */
   get ndiSurfaces(): ProgramSurface[] {
     return [...this.ndiEntries.values()].map((e) => e.surface)
@@ -644,7 +731,11 @@ class SurfaceManager {
 
   /** Screens that follow the service — lobby screens are left out of pushes and Clear. */
   get screenSurfaces(): ProgramSurface[] {
-    return [...this.screens.values()]
+    return [...this.screens.values(), ...this.deviceSurfaces((entry) => !entry.player)]
+  }
+
+  private deviceSurfaces(filter: (entry: { player?: LobbyPlayer }) => boolean = () => true): ProgramSurface[] {
+    return [...this.deviceEntries.values()].filter(filter).map((entry) => entry.surface)
   }
 
   private lobbySurfaces(): ProgramSurface[] {
@@ -690,7 +781,12 @@ class SurfaceManager {
     this.updatePowerBlocker(false)
   }
 
-  destroyAll(): void {
+  destroyAll(): Promise<void> {
+    this.initialized = false
+    this.unsubscribeDevices?.()
+    this.unsubscribeDevices = null
+    for (const id of this.deviceEntries.keys()) this.dropDevice(id)
+    const deviceShutdown = videoDeviceService.close()
     if (this.displayChangeTimer) clearTimeout(this.displayChangeTimer)
     this.displayChangeTimer = null
     for (const { player, surface } of this.lobbies.values()) {
@@ -705,6 +801,7 @@ class SurfaceManager {
     this.stageStates.clear()
     for (const [id, entry] of this.ndiEntries) this.dropNdi(id, entry)
     this.updatePowerBlocker(false)
+    return deviceShutdown
   }
 }
 

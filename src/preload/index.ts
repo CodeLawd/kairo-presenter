@@ -791,7 +791,13 @@ const songUsage: KairoAPI['songUsage'] = {
   clear: (before) => ipcRenderer.invoke(SONG_USAGE.CLEAR, before),
 }
 
-const api: KairoAPI = { transfer, passages, libraries, setlist, services, documents, app: appApi, propresenter, audio, scripture, transcription, workspace, lyrics, settings, orchestrator, resilience, ndi, displays, output, program, songUsage, media, tracks, onboarding, account, updates }
+const videoDevices: KairoAPI['videoDevices'] = {
+  setTestPattern: (id, pattern) => ipcRenderer.invoke(IPC.VIDEO_DEVICES.TEST_PATTERN, id, pattern),
+  listPorts: () => ipcRenderer.invoke(IPC.VIDEO_DEVICES.LIST_PORTS),
+  status: () => ipcRenderer.invoke(IPC.VIDEO_DEVICES.STATUS),
+  onChanged: (callback) => subscribe(IPC.VIDEO_DEVICES.CHANGED, callback),
+}
+const api: KairoAPI = { transfer, passages, libraries, setlist, services, documents, app: appApi, propresenter, audio, scripture, transcription, workspace, lyrics, settings, orchestrator, resilience, ndi, displays, videoDevices, output, program, songUsage, media, tracks, onboarding, account, updates }
 
 if (process.contextIsolated) {
   try {

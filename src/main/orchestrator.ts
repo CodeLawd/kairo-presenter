@@ -17,6 +17,7 @@ import type {
   OverlayDispatchResult,
   OverlayLayer,
   OverlayOutput,
+  OverlayOutputKind,
   OverlayTheme,
 } from "@shared/ipc";
 import { normalizeOverlaySettings } from "@shared/overlay-defaults";
@@ -119,6 +120,11 @@ interface PreparedScriptureProjection {
 
 /** Milliseconds to let the offscreen overlay window paint at least once before triggering the PP video input (D — NDI push sequence). */
 const NDI_PAINT_SETTLE_MS = 150;
+/** Why a rendered output's window could not take a slide; NDI falls back to "NDI sender unavailable". */
+const SURFACE_GONE: Partial<Record<OverlayOutputKind, string>> = {
+  screen: "Screen window is not available",
+  device: "Video card surface is not available",
+};
 /** How long a confirmed ProPresenter video input is trusted without re-listing. */
 const VIDEO_INPUT_MEMO_MS = 30_000;
 
@@ -167,9 +173,6 @@ class Orchestrator {
     string,
     Pick<ScriptureReference, "book" | "chapter" | "verseStart">
   >();
-
-  /** Single pending auto-clear timer for the scripture overlay (one at a time). */
-  private overlayClearTimer: NodeJS.Timeout | null = null;
 
   /** D2 — mechanism-aware clear semantics. Set on EVERY successful present (including library). */
   /**
@@ -898,7 +901,7 @@ class Orchestrator {
   /**
    * The destination-agnostic half of a push: everything below here cares only
    * about `content`, so lyric slides ride the exact same output fan-out,
-   * layer bookkeeping and auto-clear timer that scripture does.
+   * layer bookkeeping that scripture does.
    *
    * `suggestion` is only needed by the `library` output kind, which searches
    * ProPresenter for a presentation matching a scripture reference. Callers
@@ -921,10 +924,6 @@ class Orchestrator {
         ? ppLive
         : !isRenderedKind(output.kind) || output.show[kind],
     );
-
-    // A fresh present is starting — any auto-clear timer left over from a
-    // *different* prior push must not fire later and clear this one.
-    this.cancelOverlayAutoClear();
 
     // A Look is whole-system state: triggering several in a row would just
     // leave the last one standing, so fire exactly the first one configured.
@@ -951,7 +950,6 @@ class Orchestrator {
       }
     }
 
-    if (results.some((r) => r.ok)) this.scheduleOverlayAutoClear(overlay.autoClearSec);
     return results;
   }
 
@@ -1003,6 +1001,7 @@ class Orchestrator {
           break;
         case "ndi":
         case "screen":
+        case "device":
           reason = await this.pushRendered(output, kind, content);
           break;
         case "stage":
@@ -1186,11 +1185,11 @@ class Orchestrator {
   ): Promise<string | null> {
     const surface = surfaceManager.surfaceFor(output);
     if (!surface) {
-      return output.kind === "screen" ? surfaceManager.screenState(output.id).reason : "NDI sender unavailable";
+      return surfaceManager.outputState(output).reason;
     }
     const theme = withLiveBackground(outputThemeFor(output, kind), kind === "lyrics", output.show.backgrounds);
     const shown = await surface.showSlide(output.id, content.reference, content.text, theme, content.coloredLines);
-    if (!shown) return output.kind === "screen" ? "Screen window is not available" : "NDI sender unavailable";
+    if (!shown) return SURFACE_GONE[output.kind] ?? "NDI sender unavailable";
     await this.cutToVideoInput(output, "Slide");
     return null;
   }
@@ -1295,7 +1294,6 @@ class Orchestrator {
     if (targets.length === 0) {
       return false;
     }
-    this.cancelOverlayAutoClear();
     this.notePpLayerFor(targets);
 
     const shown = await Promise.all(
@@ -1489,13 +1487,12 @@ class Orchestrator {
 
   /**
    * Removes verse / lyric / message text and leaves the dock background running.
-   * Used by Clear text, Backspace, and the verse auto-clear timer.
+   * Used by Clear text and Backspace.
    *
    * ProPresenter calls only run while it is connected — offline they can only
    * time out — so an offline Clear succeeds once Kairo's own surfaces are clear.
    */
   async clearText(): Promise<boolean> {
-    this.cancelOverlayAutoClear();
     const client = proPresenterService.rawClient;
     const connected = ppConnected();
 
@@ -1550,7 +1547,6 @@ class Orchestrator {
    * and IPC OUTPUT.CLEAR_ALL use this.
    */
   async clearOverlay(): Promise<boolean> {
-    this.cancelOverlayAutoClear();
     const client = proPresenterService.rawClient;
     const connected = ppConnected();
 
@@ -1584,25 +1580,6 @@ class Orchestrator {
     programService.clearProgram();
     this.activeLayers.clear();
     return results.every(Boolean);
-  }
-
-  private scheduleOverlayAutoClear(autoClearSec: number): void {
-    this.cancelOverlayAutoClear();
-    if (autoClearSec > 0) {
-      this.overlayClearTimer = setTimeout(() => {
-        this.overlayClearTimer = null;
-        this.clearText().catch((err) => {
-          log.error("[Orchestrator] Overlay auto-clear failed", (err as Error).message);
-        });
-      }, autoClearSec * 1_000);
-    }
-  }
-
-  private cancelOverlayAutoClear(): void {
-    if (this.overlayClearTimer) {
-      clearTimeout(this.overlayClearTimer);
-      this.overlayClearTimer = null;
-    }
   }
 
   // ─── Helpers ───────────────────────────────────────────────────────────────

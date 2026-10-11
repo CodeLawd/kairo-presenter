@@ -21,6 +21,7 @@ import { useTracksPlaybackStore } from '@/stores/useTracksPlaybackStore'
 import { clearLiveAll } from '@/lib/clear-live-output'
 import { useBootstrapStore } from '@/bootstrap/useBootstrapStore'
 import { propresenterEnabled } from '@shared/pp-connect-gate'
+import { isRenderedKind } from '@shared/overlay-outputs'
 import UpdatePill from './UpdatePill'
 import { cn } from '@/lib/utils'
 import { hueStyle, railHueClass, type Hue } from '@/lib/hue'
@@ -213,7 +214,7 @@ function useScreensStatus(): { detail: string; state: 'ready' | 'warning' | 'off
     }
   }, [])
 
-  const rendered = outputs.filter((o) => o.enabled && (o.kind === 'screen' || o.kind === 'ndi'))
+  const rendered = outputs.filter((o) => o.enabled && isRenderedKind(o.kind))
   if (rendered.length === 0) return { detail: 'No screens set up — click to add one', state: 'offline' }
   const problems = rendered.filter((o) => {
     const s = status?.outputs.find((x) => x.id === o.id)

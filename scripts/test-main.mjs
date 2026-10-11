@@ -21,6 +21,7 @@ const PATTERNS = [
   'src/main/services/propresenter/__tests__/*.test.ts',
   'src/main/services/cloud/__tests__/*.test.ts',
   'src/main/services/ndi/__tests__/*.test.ts',
+  'src/main/services/video-devices/__tests__/*.test.ts',
   'src/main/services/documents/__tests__/*.test.ts',
 ]
 

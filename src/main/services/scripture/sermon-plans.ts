@@ -11,6 +11,7 @@ import type {
   SermonPlanDraft,
 } from '@shared/ipc'
 import { plainTextToEditorHtml } from '@shared/sermon-notes-review'
+import { looksLikeRtf, rtfToPlainText } from '@shared/rtf-text'
 import { buildTranslationAliasMap } from '@shared/bible-translations'
 import { BOOKS } from './bible-db'
 
@@ -107,7 +108,10 @@ export async function readSermonDocument(filePath: string): Promise<SermonDocume
     return { text, html: plainTextToEditorHtml(text) }
   }
   if (ext === '.txt' || ext === '.md' || ext === '.rtf') {
-    const text = await fs.readFile(filePath, 'utf8')
+    const raw = await fs.readFile(filePath, 'utf8')
+    // TextEdit and WordPad save RTF markup; scanning it raw leaves `\'96`
+    // escapes between verse numbers, which cuts every range short.
+    const text = ext === '.rtf' || looksLikeRtf(raw) ? rtfToPlainText(raw) : raw
     return { text, html: plainTextToEditorHtml(text) }
   }
   throw new Error('Unsupported document. Choose a DOCX, PDF, TXT, MD, or RTF file.')

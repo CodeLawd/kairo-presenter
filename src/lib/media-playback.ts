@@ -66,7 +66,11 @@ export function applyPlaybackToBackground(
   }
 }
 
-/** Puts a dock background under a theme without touching verse styling. */
+/**
+ * Puts a dock background under a theme without touching verse styling. The
+ * theme's blur belongs to its own backdrop — a file the operator plays from the
+ * dock always goes out sharp, whatever theme the output uses.
+ */
 export function themeWithLiveMedia(
   theme: OverlayTheme,
   item: { kind: MediaKind; path: string } | null,
@@ -81,6 +85,7 @@ export function themeWithLiveMedia(
         type: item.kind === 'video' ? 'video' : 'image',
         mediaPath: item.path,
         mediaFit: theme.background.mediaFit ?? 'cover',
+        blurPx: 0,
       },
       playback,
       item.kind,

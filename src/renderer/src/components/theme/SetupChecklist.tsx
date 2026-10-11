@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react'
 import { Check, Circle, CircleDashed, Loader, X } from '@/icons'
 import { cn } from '@/lib/utils'
-import { findNdiOutput } from '@shared/overlay-outputs'
+import { findNdiOutput, isRenderedKind } from '@shared/overlay-outputs'
 import type { NdiStatus, OverlayOutput, PPLook } from '@shared/ipc'
 
 // ─── Manual acknowledgements ───────────────────────────────────────────────────
@@ -88,8 +88,9 @@ export default function SetupChecklist({
 
   const manual = (id: string): StepState => (acks[id] ? 'ok' : 'manual')
 
-  const rendered = enabled.filter((o) => o.kind === 'screen' || o.kind === 'ndi')
   const readiness = (id: string) => ndiStatus.outputs.find((o) => o.id === id)
+  // A video card only counts once it can take a picture — without a driver it never will.
+  const rendered = enabled.filter((o) => isRenderedKind(o.kind) && (o.kind !== 'device' || readiness(o.id)?.ready))
 
   // Kairo's own screens first — they are the product. ProPresenter steps only
   // appear once the integration is switched on in Settings.
@@ -97,7 +98,7 @@ export default function SetupChecklist({
     {
       id: 'outputs',
       label: 'A screen is on',
-      hint: 'Add a Kairo screen (or an NDI feed) in the Screens list and turn it on.',
+      hint: 'Add a Kairo screen, video card or NDI feed in the Screens list and turn it on.',
       state: rendered.length > 0 ? 'ok' : 'todo',
     },
   ]

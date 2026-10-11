@@ -91,9 +91,9 @@ export function ScreenSourceFields({ output, onChange }: { output: OverlayOutput
             </div>
           </FieldRow>
         </>
-      ) : (
+      ) : output.kind === 'screen' ? (
         <FitField output={output} onChange={onChange} />
-      )}
+      ) : null}
     </>
   )
 }
@@ -111,8 +111,8 @@ export function FieldRow({
   children: React.ReactNode
 }): React.ReactElement {
   return (
-    <div className="grid grid-cols-[120px_minmax(0,1fr)] items-start gap-x-4">
-      <label htmlFor={htmlFor} className="pt-2 text-[12px] text-slate-400">{label}</label>
+    <div className="space-y-1.5">
+      <label htmlFor={htmlFor} className="block text-[13px] text-slate-200">{label}</label>
       <div className="space-y-1">
         {children}
         {hint && <p className="text-[11px] leading-snug text-slate-500">{hint}</p>}
@@ -142,12 +142,12 @@ export function LookFields({ output, onChange }: { output: OverlayOutput; onChan
         const keys = group.keys.filter((key) => lookKeyApplies(output, key))
         if (keys.length === 0) return null
         return (
-          <div key={group.title} className="space-y-1">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">{group.title}</p>
+          <FieldGroup key={group.title} title={group.title}>
+            <div className="-mx-2 space-y-0.5">
             {keys.map((key) => (
               <label
                 key={key}
-                className="flex items-center justify-between rounded-md px-2 py-1.5 text-[12px] text-slate-300 hover:bg-surface-tertiary"
+                className="flex cursor-pointer items-center justify-between rounded-md px-2 py-1.5 text-[13px] text-slate-200 hover:bg-surface-secondary"
               >
                 {outputShowLabel(key)}
                 <input
@@ -158,10 +158,11 @@ export function LookFields({ output, onChange }: { output: OverlayOutput; onChan
                 />
               </label>
             ))}
+            </div>
             {group.title === 'Confidence' && keys.some((key) => output.show[key]) && (
               <ConfidenceLayoutFields output={output} onChange={onChange} />
             )}
-          </div>
+          </FieldGroup>
         )
       })}
     </div>
@@ -364,4 +365,17 @@ function describeRatio(ratio: number): string {
   const known: Array<[number, string]> = [[16 / 9, '16:9'], [16 / 10, '16:10'], [4 / 3, '4:3'], [21 / 9, '21:9'], [32 / 9, '32:9'], [9 / 16, '9:16'], [1, '1:1'], [64 / 27, '21:9']]
   const match = known.find(([value]) => Math.abs(value - ratio) / ratio < 0.02)
   return match ? match[1] : `${ratio.toFixed(2).replace(/\.?0+$/, '')}:1`
+}
+
+/**
+ * A titled box inside the tabbed panel — ProPresenter's grouped boxes
+ * (Name/Size, Video Delay), drawn with a lighter fill instead of a border.
+ */
+export function FieldGroup({ title, children }: { title?: string; children: React.ReactNode }): React.ReactElement {
+  return (
+    <section className="space-y-3 rounded-md bg-surface-secondary p-4">
+      {title && <h3 className="text-[13px] font-medium text-slate-200">{title}</h3>}
+      {children}
+    </section>
+  )
 }

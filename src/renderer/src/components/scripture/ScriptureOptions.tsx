@@ -1,23 +1,15 @@
 import type { ReactNode } from 'react'
 import { Popover } from 'radix-ui'
 import { ChevronDown, ChevronRight, SlidersHorizontal } from '@/icons'
-import { SegmentedControl } from '@/components/shared/SegmentedControl'
 import { BAR_BUTTON } from './ScriptureSearchBar'
 import { useBootstrapStore } from '@/bootstrap/useBootstrapStore'
 import { useAppStore } from '@/stores/useAppStore'
 import { Switch } from '@/components/ui/switch'
 import type { AppSettings, ScriptureTranslation } from '@shared/ipc'
 
-const AUTO_CLEAR: Array<{ value: number; label: string }> = [
-  { value: 0, label: 'Never' },
-  { value: 15, label: '15s' },
-  { value: 30, label: '30s' },
-  { value: 60, label: '1 min' },
-]
-
 /**
  * The few choices that change how scripture goes out, one short panel read top
- * to bottom: what a slide shows, when it clears, which Bible. Everything saves
+ * to bottom: what a slide shows and which Bible. Everything saves
  * as it changes. Downloads and detection live in Settings, one link away.
  */
 export function ScriptureOptions(): React.ReactElement {
@@ -77,16 +69,6 @@ export function ScriptureOptions(): React.ReactElement {
                 onChange={(on) => saveOverlay({ maxVerses: on ? 1 : 0 })}
               />
             </div>
-          </Section>
-
-          <Section title="Clear automatically">
-            <SegmentedControl
-              label="Clear automatically"
-              value={String(overlay.autoClearSec)}
-              options={AUTO_CLEAR.map((option) => ({ value: String(option.value), label: option.label }))}
-              onChange={(value) => saveOverlay({ autoClearSec: Number(value) })}
-              className="bg-surface-secondary"
-            />
           </Section>
 
           <Section

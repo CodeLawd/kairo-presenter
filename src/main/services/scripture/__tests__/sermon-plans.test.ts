@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { analyzeScriptureReferences, extractScriptureReferences } from '../sermon-plans'
+import fs from 'node:fs/promises'
+import os from 'node:os'
+import path from 'node:path'
+import { analyzeScriptureReferences, extractScriptureReferences, readSermonDocument } from '../sermon-plans'
 import {
   appendScriptureResultToPlan,
   appendScriptureResultsToPlan,
@@ -205,4 +208,25 @@ test('extends a playlist item in place when previous/next stays on the same pass
   assert.equal(updated.items[0]?.reference, 'John 1:1–2')
   assert.equal(updated.items[0]?.verses.length, 2)
   assert.equal(updated.updatedAt, 50)
+})
+
+test('reads an RTF sermon document as plain text so verse ranges survive', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'kairo-sermon-'))
+  const file = path.join(dir, 'notes.rtf')
+  await fs.writeFile(
+    file,
+    "{\\rtf1\\ansi\\ansicpg1252\\cocoartf2907\n{\\fonttbl\\f0\\fswiss\\fcharset0 Helvetica;}\n{\\*\\expandedcolortbl;;}\n" +
+      "\\f0\\fs24 \\cf0 TOPIC - Kingdom Family\\\n1. Luke 11:1\\'962\\\n2. Deuteronomy 10:14\\\n3. 2 Corinthians 10:3\\'966}",
+  )
+  try {
+    const { text } = await readSermonDocument(file)
+    assert.ok(!text.includes('\\'), 'no RTF markup left in the text')
+    assert.deepEqual(extractScriptureReferences(text, 'NKJV').map((item) => item.reference), [
+      'Luke 11:1–2',
+      'Deuteronomy 10:14',
+      '2 Corinthians 10:3–6',
+    ])
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true })
+  }
 })

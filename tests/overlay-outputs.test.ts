@@ -22,6 +22,7 @@ import {
   withContentPatch,
 } from "../src/lib/overlay-outputs";
 import { themeForPush, withoutBackground } from "../src/lib/media-playback";
+import { createOverlayElement } from "../src/lib/overlay-elements";
 
 const legacy = {
   mode: "auto" as const,
@@ -174,6 +175,28 @@ test("lyrics inheriting scripture do not take Fit to box with them", () => {
   assert.equal(outputThemeFor(output, "lyrics").layout.autoFitText, false);
   assert.equal(outputThemeFor(output, "lyrics").verse.color, "#ff0000");
   assert.equal(inheritLyricsTheme(fitted).layout.autoFitText, false);
+});
+
+test("lyrics inheriting scripture leave its backdrop and elements behind", () => {
+  const boxed = {
+    ...RED_THEME,
+    elements: [createOverlayElement("rectangle", undefined, "logo")],
+    layout: { ...RED_THEME.layout, backdropBox: true },
+  };
+  const output = makeOverlayOutput("main", "ndi", { theme: boxed });
+
+  assert.equal(outputThemeFor(output, "scripture").layout.backdropBox, true);
+  assert.equal(outputThemeFor(output, "scripture").elements.length, 1);
+  assert.equal(outputThemeFor(output, "lyrics").layout.backdropBox, false);
+  assert.deepEqual(outputThemeFor(output, "lyrics").elements, []);
+  // Turning the lyrics override on seeds from the same clean look.
+  const override = setContentOverride(output, "lyrics", true);
+  assert.equal(outputThemeFor(override, "lyrics").layout.backdropBox, false);
+  assert.deepEqual(outputThemeFor(override, "lyrics").elements, []);
+});
+
+test("a new theme has no backdrop box until the operator adds one", () => {
+  assert.equal(DEFAULT_OVERLAY_THEME.layout.backdropBox, false);
 });
 
 test("an applied lyrics theme keeps its own Fit to box", () => {
@@ -490,4 +513,10 @@ test("themeForPush: backgrounds off strips, own background wins unless forced", 
   assert.equal(themeForPush(owned, { showsBackgrounds: true, live, force: true }).background.mediaPath, "/loop.mp4");
   assert.equal(themeForPush(bare, { showsBackgrounds: true, live }).background.type, "video");
   assert.equal(themeForPush(bare, { showsBackgrounds: true, live: null }), bare);
+});
+
+test('retired auto-clear values are discarded from saved overlay settings', () => {
+  const settings = normalizeOverlaySettings({ ...DEFAULT_OVERLAY_SETTINGS, autoClearSec: 15 });
+  assert.equal(Object.hasOwn(settings, 'autoClearSec'), false);
+  assert.equal(Object.hasOwn(DEFAULT_OVERLAY_SETTINGS, 'autoClearSec'), false);
 });

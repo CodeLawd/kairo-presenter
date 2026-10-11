@@ -31,7 +31,7 @@ import type {
   PPResourceKind,
 } from "@shared/propresenter-resources";
 import { normalizeOverlaySettings } from "@shared/overlay-defaults";
-import { findNdiOutput, outputRequiresPropresenter, surfaceOutputs } from "@shared/overlay-outputs";
+import { findNdiOutput, isLocalKind, outputRequiresPropresenter, surfaceOutputs } from "@shared/overlay-outputs";
 import { propresenterEnabled } from "@shared/pp-connect-gate";
 import { normalizeThemeLibrary } from "@shared/theme-library";
 import {
@@ -70,6 +70,7 @@ import { orchestrator } from "../orchestrator";
 import { resilienceManager } from "../services/resilience";
 import { updaterService } from "../services/updater";
 import { ndiService } from "../services/ndi";
+import { videoDeviceService } from "../services/video-devices";
 import { mediaService, MEDIA_FILE_EXTENSIONS } from "../services/media";
 import { tracksService } from "../services/tracks";
 import { TRACK_FILE_EXTENSIONS } from "@shared/tracks";
@@ -802,8 +803,8 @@ function backgroundTargetProblem(): string {
     (o) => o.show.backgrounds,
   );
   if (outputs.length === 0) return "No screen is on";
-  const screen = outputs.find((o) => o.kind === "screen");
-  if (screen) return `${screen.name}: ${surfaceManager.screenState(screen.id).reason}`;
+  const screen = outputs.find((o) => isLocalKind(o.kind));
+  if (screen) return `${screen.name}: ${surfaceManager.outputState(screen).reason}`;
   return "The NDI feed is not available";
 }
 
@@ -1075,6 +1076,23 @@ function registerOutputHandlers(): void {
 }
 
 function registerDisplayHandlers(): void {
+  handle(IPC.VIDEO_DEVICES.LIST_PORTS, async () => {
+    await videoDeviceService.refresh();
+    return videoDeviceService.snapshot().ports;
+  });
+  const deviceSnapshot = (): ReturnType<typeof videoDeviceService.snapshot> => {
+    const snapshot = videoDeviceService.snapshot();
+    for (const [id, output] of Object.entries(snapshot.outputs)) output.testPattern = surfaceManager.videoTestPattern(id);
+    return snapshot;
+  };
+  handle(IPC.VIDEO_DEVICES.STATUS, deviceSnapshot);
+  handle(IPC.VIDEO_DEVICES.TEST_PATTERN, async (_event, id: unknown, pattern: unknown) => {
+    if (typeof id !== 'string' || ![null, 'bars', 'text', 'motion'].includes(pattern as string | null)) throw new Error('Invalid video test pattern');
+    const shown = await surfaceManager.setVideoTestPattern(id, pattern as import('@shared/video-devices').VideoTestPattern | null);
+    broadcast(IPC.VIDEO_DEVICES.CHANGED, deviceSnapshot());
+    return shown;
+  });
+  videoDeviceService.onChanged(() => broadcast(IPC.VIDEO_DEVICES.CHANGED, deviceSnapshot()));
   ipcMain.handle(IPC.DISPLAYS.LIST, () => surfaceManager.listDisplays());
   ipcMain.handle(IPC.DISPLAYS.IDENTIFY, () => surfaceManager.identify());
   ipcMain.handle(IPC.DISPLAYS.TEST_PATTERN, (_event, input: TestPatternInput) => surfaceManager.showTestPattern(input));
@@ -1103,7 +1121,7 @@ function registerNdiHandlers(): void {
       .filter((o) => o.enabled)
       .map((o) => {
         // Kairo screens never depend on ProPresenter — their state is the display's.
-        if (o.kind === "screen") return { id: o.id, ...surfaceManager.screenState(o.id) };
+        if (isLocalKind(o.kind)) return { id: o.id, ...surfaceManager.outputState(o) };
         if (outputRequiresPropresenter(o.kind)) {
           if (!ppOn) return { id: o.id, ready: false, reason: "ProPresenter integration is off" };
           return connected ? { id: o.id, ready: true } : { id: o.id, ready: false, reason: "Waiting for ProPresenter" };

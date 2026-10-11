@@ -1,7 +1,7 @@
 import type { CustomOverlayTheme, OverlayContentKind, OverlayOutput, OverlayTheme } from './ipc'
 import { DEFAULT_OVERLAY_SETTINGS, normalizeOverlayTheme } from './overlay-defaults'
 import { applyLayoutPreset } from './overlay-boxes'
-import { setContentOverride, withContentPatch } from './overlay-outputs'
+import { isRenderedKind, setContentOverride, withContentPatch } from './overlay-outputs'
 
 function newId(): string {
   return globalThis.crypto?.randomUUID?.() ?? `theme-${Date.now()}-${Math.random().toString(36).slice(2)}`
@@ -271,8 +271,12 @@ export function isUntouchedThemeLibrary(library: readonly CustomOverlayTheme[]):
   if (library.length === 0) return true
   if (library.length !== 1) return false
   const only = library[0]
-  return only.kind === 'scripture' && only.name === 'My current theme' &&
-    JSON.stringify(normalizeOverlayTheme(only.theme)) === JSON.stringify(normalizeOverlayTheme(DEFAULT_OVERLAY_SETTINGS.theme))
+  if (only.kind !== 'scripture' || only.name !== 'My current theme') return false
+  const stored = JSON.stringify(normalizeOverlayTheme(only.theme))
+  const current = normalizeOverlayTheme(DEFAULT_OVERLAY_SETTINGS.theme)
+  // Libraries written before the backdrop defaulted off still count as untouched.
+  const legacy = { ...current, layout: { ...current.layout, backdropBox: true } }
+  return stored === JSON.stringify(current) || stored === JSON.stringify(legacy)
 }
 
 /**
@@ -297,7 +301,7 @@ export function withDefaultThemes(
   library: readonly CustomOverlayTheme[],
   defaults: Partial<Record<CustomOverlayTheme['kind'], string>> | undefined,
 ): OverlayOutput {
-  if (output.kind !== 'screen' && output.kind !== 'ndi') return output
+  if (!isRenderedKind(output.kind)) return output
   let next = output
   for (const kind of ['scripture', 'lyrics'] as const) {
     const theme = library.find((entry) => entry.id === defaults?.[kind] && entry.kind === kind)

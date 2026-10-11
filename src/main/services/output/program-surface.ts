@@ -1,4 +1,6 @@
-import { BrowserWindow } from 'electron'
+import { outputTestPatternHTML } from '@shared/output-test-pattern'
+import type { VideoTestPattern } from '@shared/video-devices'
+import { BrowserWindow, screen } from 'electron'
 import { join } from 'path'
 import log from 'electron-log/main'
 import overlayHtml from './overlay.html?asset'
@@ -8,6 +10,7 @@ import type { ConfidenceInfo } from '@shared/program'
 import type { DocumentSlide, DocumentPlaybackStatus, DocumentVideoCommand } from '@shared/documents'
 import { mediaFilterCss } from '@shared/media-playback'
 import type { NdiService } from '../ndi'
+import type { VideoOutputSink } from '../video-devices/provider'
 import { createDisplayWindow, needsRebuild, sameBounds, showDisplayWindow, type DisplaySink } from './display-window'
 import { ManagedWindow } from './managed-window'
 
@@ -26,6 +29,20 @@ const OSR_FRAME_RATE_FADE = 30
 /** Longest a page turn waits for its own frame before giving up. */
 const PAINT_WAIT_MS = 400
 
+/**
+ * The pixel ratio offscreen windows paint at — the primary display's scale
+ * factor. Only whole ratios are compensated; anything else falls back to the
+ * per-frame resize in the paint handler.
+ */
+function captureScale(): number {
+  try {
+    const factor = screen.getPrimaryDisplay().scaleFactor
+    return Number.isInteger(factor) && factor >= 1 && factor <= 4 ? factor : 1
+  } catch {
+    return 1
+  }
+}
+
 // ─── Sinks ────────────────────────────────────────────────────────────────────
 
 /**
@@ -35,7 +52,7 @@ const PAINT_WAIT_MS = 400
  * its NDI sender. `display` — a visible window on one physical display; the
  * compositor is the delivery, so nothing is captured.
  */
-export type SurfaceSink = { kind: 'ndi'; channel: NdiService } | DisplaySink
+export type SurfaceSink = { kind: 'ndi'; channel: NdiService } | { kind: 'device'; sink: VideoOutputSink } | DisplaySink
 
 /** Per-surface shell settings — see `window.__configure` in overlay.html. */
 export interface SurfaceConfig {
@@ -87,6 +104,21 @@ interface RenderState {
 // and the Theme preview cannot disagree about what a slide looks like.
 
 export class ProgramSurface extends ManagedWindow {
+  testPattern: VideoTestPattern | null = null
+
+  async setTestPattern(pattern: VideoTestPattern | null): Promise<boolean> {
+    if (!this.available()) return false
+    const win = await this.ensureWindow()
+    if (!win || win.isDestroyed()) return false
+    await this.applyTestPattern(win, pattern)
+    this.testPattern = pattern
+    return true
+  }
+
+  private async applyTestPattern(win: BrowserWindow, pattern: VideoTestPattern | null): Promise<void> {
+    const html = pattern ? outputTestPatternHTML(pattern, this.label) : ''
+    await win.webContents.executeJavaScript(`document.getElementById("kairo-diagnostic-pattern")?.remove();document.body.insertAdjacentHTML("beforeend",${JSON.stringify(html)})`)
+  }
   /** Which output last rendered here — a page swap only continues its own deck. */
   private lastOutputId: string | null = null
   /** True while the surface is showing a document page and nothing else. */
@@ -109,6 +141,11 @@ export class ProgramSurface extends ManagedWindow {
     private sink: SurfaceSink,
   ) {
     super(label, 'Output')
+  }
+
+  /** Captured offscreen (NDI or a video card) rather than shown in a display window. */
+  private get offscreen(): boolean {
+    return this.sink.kind !== 'display'
   }
 
   private get frameHeight(): number {
@@ -139,11 +176,19 @@ export class ProgramSurface extends ManagedWindow {
     if (!sameBounds(previous.bounds, sink.bounds)) showDisplayWindow(this.win, sink)
   }
 
+  /** Keep the current slide/document when the hardware acquisition is replaced. */
+  async retargetDevice(sink: VideoOutputSink): Promise<void> {
+    if (this.sink.kind !== 'device' || this.destroyed) return
+    this.sink = { kind: 'device', sink }
+    this.parked = false
+    await this.recover('video device restored', false)
+  }
+
   // ─── Window lifecycle (ManagedWindow) ───────────────────────────────────────
 
   /** A display surface whose display is gone stays parked; NDI reopens on its next paint. */
   protected override parksOnClose(): boolean {
-    return this.sink.kind === 'display'
+    return this.sink.kind !== 'ndi'
   }
 
   protected override onClosed(): void {
@@ -154,7 +199,7 @@ export class ProgramSurface extends ManagedWindow {
 
   protected build(): BrowserWindow {
     const sink = this.sink
-    return sink.kind === 'ndi' ? this.createNdiWindow(sink.channel) : createDisplayWindow(this.label, sink)
+    return sink.kind === 'display' ? createDisplayWindow(this.label, sink) : this.createOffscreenWindow(sink)
   }
 
   protected async load(win: BrowserWindow): Promise<void> {
@@ -166,6 +211,7 @@ export class ProgramSurface extends ManagedWindow {
   protected async ready(win: BrowserWindow): Promise<void> {
     await this.applyConfig(win)
     await this.applyLayers(win)
+    if (this.testPattern) await this.applyTestPattern(win, this.testPattern)
     if (this.sink.kind === 'display' && !win.isDestroyed()) showDisplayWindow(win, this.sink)
   }
 
@@ -173,10 +219,17 @@ export class ProgramSurface extends ManagedWindow {
     return this.recover(reason)
   }
 
-  private createNdiWindow(channel: NdiService): BrowserWindow {
+  private createOffscreenWindow(sink: Exclude<SurfaceSink, DisplaySink>): BrowserWindow {
+    // Offscreen pages paint at the display's pixel ratio — 3840×2160 on a Retina
+    // Mac — and every frame then had to be shrunk on the main thread. A window
+    // 1/scale the size, zoomed by 1/scale, keeps the 1920-px layout but paints
+    // exactly 1920×1080. (Zoom set here stays on this window; it does not
+    // spread to other file:// windows.)
+    const scale = captureScale()
     const win = new BrowserWindow({
-      width: WIDTH,
-      height: HEIGHT,
+      width: WIDTH / scale,
+      height: HEIGHT / scale,
+      useContentSize: true,
       show: false,
       frame: false,
       transparent: true,
@@ -187,21 +240,27 @@ export class ProgramSurface extends ManagedWindow {
         contextIsolation: true,
         nodeIntegration: false,
         autoplayPolicy: 'no-user-gesture-required',
+        zoomFactor: 1 / scale,
         // One capability only: hand program sound to this surface's NDI sender.
         preload: join(__dirname, '../preload/program.js'),
       },
     })
 
-    win.webContents.setFrameRate(OSR_FRAME_RATE)
+    win.webContents.setFrameRate(this.captureFrameRate(OSR_FRAME_RATE))
 
     win.webContents.on('paint', (_event, _dirty, image) => {
-      // On Retina displays the offscreen bitmap arrives at devicePixelRatio
-      // scale (e.g. 3840×2160) — normalize to the fixed NDI frame size.
+      // Normally exactly WIDTH×HEIGHT (see captureScale). A display change after
+      // the window was built can still change the paint size — normalize that.
       const { width, height } = image.getSize()
       const frame = width === WIDTH && height === HEIGHT
         ? image
         : image.resize({ width: WIDTH, height: HEIGHT })
-      channel.updateFrame(frame.getBitmap(), WIDTH, HEIGHT)
+      try {
+        if (sink.kind === 'ndi') sink.channel.updateFrame(frame.getBitmap(), WIDTH, HEIGHT)
+        else sink.sink.setFrame(frame.getBitmap(), WIDTH, HEIGHT)
+      } catch (error) {
+        log.warn(`[Output] ${this.label} frame delivery failed`, (error as Error).message)
+      }
       // Anyone awaiting "this page is really on the wire" is released here —
       // the capture, not a guess at how long painting takes.
       const waiters = this.paintWaiters
@@ -297,8 +356,8 @@ export class ProgramSurface extends ManagedWindow {
     }
     if (calls.length === 0) return
     this.bumpForFade()
-    // A camera going live (or away) changes the capture rate NDI needs.
-    if (this.sink.kind === 'ndi' && !this.fadeTimer) win.webContents.setFrameRate(this.idleFrameRate())
+    // A camera going live (or away) changes the capture rate an offscreen surface needs.
+    if (this.offscreen && !this.fadeTimer) win.webContents.setFrameRate(this.idleFrameRate())
     try {
       await win.webContents.executeJavaScript(calls.join(';'))
     } catch (err) {
@@ -306,12 +365,12 @@ export class ProgramSurface extends ManagedWindow {
     }
   }
 
-  /** NDI captures slowly between changes; run it at motion rate while a fade plays. */
+  /** Offscreen capture runs slowly between changes; run it at motion rate while a fade plays. */
   private bumpForFade(): void {
-    if (this.sink.kind !== 'ndi' || this.config.transitionMs <= 0) return
+    if (!this.offscreen || this.config.transitionMs <= 0) return
     const win = this.win
     if (!win || win.isDestroyed()) return
-    win.webContents.setFrameRate(OSR_FRAME_RATE_FADE)
+    win.webContents.setFrameRate(this.captureFrameRate(OSR_FRAME_RATE_FADE))
     if (this.fadeTimer) clearTimeout(this.fadeTimer)
     this.fadeTimer = setTimeout(() => {
       this.fadeTimer = null
@@ -323,7 +382,15 @@ export class ProgramSurface extends ManagedWindow {
   private idleFrameRate(): number {
     const theme = this.lastRender?.theme
     const video = theme?.background.type === 'video' && !!theme.background.mediaPath
-    return video || this.documentSlide?.videos.length || this.layers.camera ? OSR_FRAME_RATE_VIDEO : OSR_FRAME_RATE
+    return this.captureFrameRate(video || this.documentSlide?.videos.length || this.layers.camera ? OSR_FRAME_RATE_VIDEO : OSR_FRAME_RATE)
+  }
+
+  /** Electron accepts integer capture rates; the card retains its exact rational clock. */
+  private captureFrameRate(fallback: number): number {
+    const rate = this.sink.kind === 'device' ? this.sink.sink.frameRate : undefined
+    return rate !== undefined && Number.isFinite(rate) && rate > 0
+      ? Math.min(240, Math.ceil(rate))
+      : fallback
   }
 
   // ─── Content ────────────────────────────────────────────────────────────────
@@ -429,7 +496,7 @@ export class ProgramSurface extends ManagedWindow {
     const html = renderOverlayHTML(theme, reference, text, WIDTH, this.frameHeight, { coloredLines })
     this.documentMode = false
     this.documentSlide = null
-    if (this.sink.kind === 'ndi') {
+    if (this.offscreen) {
       if (!instant && this.config.transitionMs > 0) this.bumpForFade()
       else if (!this.fadeTimer) win.webContents.setFrameRate(this.idleFrameRate())
     }
@@ -452,7 +519,7 @@ export class ProgramSurface extends ManagedWindow {
     this.documentSlide = slide
     const payload = { ...slide, path: overlayMediaUrl(slide.path), videos: slide.videos.map((video) => ({ ...video, file: overlayMediaUrl(video.file) })) }
     await this.win.webContents.executeJavaScript(`window.__setDocumentVideos(${JSON.stringify(payload)})`)
-    if (this.sink.kind === 'ndi') this.win.webContents.setFrameRate(this.idleFrameRate())
+    if (this.offscreen) this.win.webContents.setFrameRate(this.idleFrameRate())
     await this.nextPaint(PAINT_WAIT_MS)
   }
 
@@ -511,7 +578,7 @@ export class ProgramSurface extends ManagedWindow {
     if (!this.documentMode || !current || this.lastOutputId !== outputId) return false
     if (!this.win || this.win.isDestroyed()) return false
     const url = overlayMediaUrl(mediaPath)
-    const ndi = this.sink.kind === 'ndi'
+
     // Static pages are captured at a slow offscreen frame rate, so a turn would
     // otherwise sit up to a frame interval before anything is grabbed. Burst
     // the capture rate around the swap, wait for the frame that actually
@@ -519,7 +586,7 @@ export class ProgramSurface extends ManagedWindow {
     // CPU goes back to idle between pages. A display has no capture to burst.
     let swapped = false
     try {
-      if (ndi) this.win.webContents.setFrameRate(OSR_FRAME_RATE_SWAP)
+      if (this.offscreen) this.win.webContents.setFrameRate(this.captureFrameRate(OSR_FRAME_RATE_SWAP))
       swapped = await this.win.webContents.executeJavaScript(
         `window.__swapDocumentPage(${JSON.stringify(url)})`,
       )
@@ -528,7 +595,7 @@ export class ProgramSurface extends ManagedWindow {
       log.warn(`[Output] ${this.label} document page swap failed`, (err as Error).message)
       return false
     } finally {
-      if (ndi && this.win && !this.win.isDestroyed()) this.win.webContents.setFrameRate(this.idleFrameRate())
+      if (this.offscreen && this.win && !this.win.isDestroyed()) this.win.webContents.setFrameRate(this.idleFrameRate())
     }
     if (!swapped) return false
     this.documentSlide = null

@@ -19,6 +19,8 @@ import { useAppStore } from '@/stores/useAppStore'
 import { useBootstrapStore } from '@/bootstrap/useBootstrapStore'
 import { DEFAULT_OVERLAY_SETTINGS, makeOverlayOutput } from '@shared/overlay-defaults'
 import {
+  isLocalKind,
+  isRenderedKind,
   MAX_NDI_OUTPUTS,
   outputTemplateFor,
   outputThemeFor,
@@ -46,6 +48,8 @@ import type {
 } from '@shared/ipc'
 import { ArrangementCanvas, type CanvasBinding } from './ArrangementCanvas'
 import { DisplayPicker, useDisplays, type DisplayBound } from './displays'
+import { VideoConnectorTile, VideoDeviceFields } from './VideoDeviceFields'
+import type { VideoDeviceSnapshot } from '@shared/video-devices'
 
 // ─── Screens ──────────────────────────────────────────────────────────────────
 // Where things go, kept apart from how they look. Modelled on ProPresenter's
@@ -67,6 +71,7 @@ type Status = { tone: 'live' | 'warn' | 'off'; text: string }
 
 const KIND_TITLE: Record<OverlayOutputKind, string> = {
   screen: 'Kairo screen',
+  device: 'Video card',
   ndi: 'NDI feed',
   library: 'Library match',
   message: 'Message layer',
@@ -98,6 +103,7 @@ export default function ScreenConfiguration({
   const ppConnected = useAppStore((s) => s.ppState === 'connected') && ppEnabled
   const displays = useDisplays()
   const ndiStatus = useNdiStatus()
+  const devices = useVideoDevices()
   const stageStatus = useStageStatus(presentation.stageDisplays.length)
   const [looks, setLooks] = useState<PPLook[]>([])
   const [videoInputs, setVideoInputs] = useState<PPVideoInputInfo[]>([])
@@ -112,6 +118,7 @@ export default function ScreenConfiguration({
   const outputs = overlay.outputs
   const stages = presentation.stageDisplays
   const screens = outputs.filter((o) => o.kind === 'screen')
+  const cards = outputs.filter((o) => o.kind === 'device')
   const feeds = outputs.filter((o) => o.kind === 'ndi')
   const ppOutputs = outputs.filter((o) => o.kind === 'library' || o.kind === 'message' || o.kind === 'stage')
 
@@ -194,8 +201,8 @@ export default function ScreenConfiguration({
     const s = ndiStatus.outputs.find((x) => x.id === o.id)
     if (!s) return { tone: 'warn', text: 'Checking…' }
     if (!s.ready) return { tone: 'warn', text: s.reason ?? 'Not ready' }
-    // A lobby screen on its own playlist is doing exactly what it was set to do.
-    if (o.kind === 'screen' && o.source === 'playlist') return { tone: 'live', text: 'Playing its own playlist' }
+    // A lobby screen or card on its own playlist is doing exactly what it was set to do.
+    if (isLocalKind(o.kind) && o.source === 'playlist') return { tone: 'live', text: 'Playing its own playlist' }
     if (s.reason && s.reason !== 'Live') return { tone: 'warn', text: s.reason }
     return { tone: 'live', text: o.kind === 'screen' ? 'Live' : 'Ready' }
   }
@@ -230,11 +237,11 @@ export default function ScreenConfiguration({
 
   // ─── Render ─────────────────────────────────────────────────────────────────
 
-  const rendered = outputs.filter((o) => o.kind === 'screen' || o.kind === 'ndi')
+  const rendered = outputs.filter((o) => isRenderedKind(o.kind))
   const toggleLook = (id: string, key: keyof OutputShowFilter, on: boolean): void =>
     updateOutput(id, (o) => ({ ...o, show: { ...o.show, [key]: on } }))
   const canvas = (
-    <div className="h-52 overflow-hidden rounded-lg bg-surface-secondary">
+    <div className="h-40 overflow-hidden rounded-md">
       <ArrangementCanvas
         displays={displays}
         bindings={bindings}
@@ -247,10 +254,9 @@ export default function ScreenConfiguration({
 
   return (
     <div className="flex h-full w-full flex-col bg-surface text-slate-200">
-      <header className="flex h-11 shrink-0 items-center gap-3 bg-surface-secondary px-4" data-settings-drag>
-        <h1 className="text-[13px] font-semibold text-white">Screens</h1>
+      <header className="flex h-11 shrink-0 items-center gap-3 bg-surface-header px-4 shadow-[inset_0_-1px_0_rgb(var(--surface-border))]" data-settings-drag>
+        <h1 className="text-[13px] font-semibold text-slate-200">Screen Configuration</h1>
         <div className="flex-1" />
-        <TestButtons />
         <button
           type="button"
           onClick={onClose}
@@ -261,9 +267,15 @@ export default function ScreenConfiguration({
         </button>
       </header>
 
-      <div className="grid min-h-0 flex-1 grid-cols-[240px_minmax(0,1fr)]">
-        <nav className="flex min-h-0 flex-col overflow-y-auto bg-surface-secondary px-2 py-2" aria-label="Screens">
-          <SidebarSection title="Audience" add={[{ label: 'Add screen', onSelect: () => addOutput('screen') }]}>
+      <div className="grid min-h-0 flex-1 grid-cols-[260px_minmax(0,1fr)]">
+        <div className="flex min-h-0 flex-col bg-surface-rail shadow-[inset_-1px_0_0_rgb(var(--surface-border))]">
+        <nav className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 py-3" aria-label="Screens">
+          <SidebarSection title="Audience" add={[
+            { label: 'Add screen', onSelect: () => addOutput('screen') },
+            // Offered only once a video card driver is built in; outputs already
+            // saved stay listed so they can be removed.
+            ...(devices?.providers.length ? [{ label: 'Video card', onSelect: () => addOutput('device') }] : []),
+          ]}>
             {screens.map((o) => (
               <SidebarRow
                 key={o.id}
@@ -276,6 +288,11 @@ export default function ScreenConfiguration({
               />
             ))}
             {screens.length === 0 && <EmptyRow label="Add a screen" onClick={() => addOutput('screen')} />}
+            {cards.map((output) => (
+              <SidebarRow key={output.id} name={output.name} detail={describeCard(output, devices) ?? 'Video card'}
+                status={outputStatus(output)} enabled={output.enabled} selected={selected === output.id}
+                onSelect={() => setSelected(output.id)} />
+            ))}
           </SidebarSection>
 
           <SidebarSection title="Stage" add={[{ label: 'Add stage display', onSelect: addStage }]}>
@@ -347,6 +364,8 @@ export default function ScreenConfiguration({
             ))}
           </SidebarSection>
         </nav>
+        <SidebarFooter />
+        </div>
 
         <main className="min-h-0 min-w-0 overflow-hidden bg-surface">
           {selected === LOOKS_KEY && (
@@ -388,9 +407,11 @@ export default function ScreenConfiguration({
               key={selectedOutput.id}
               output={selectedOutput}
               status={outputStatus(selectedOutput)}
-              resolution={selectedOutput.kind === 'screen' ? describeBinding(selectedOutput, displays) : null}
+              resolution={selectedOutput.kind === 'screen' ? describeBinding(selectedOutput, displays)
+                : selectedOutput.kind === 'device' ? describeCard(selectedOutput, devices) : null}
               canvas={canvas}
               displays={displays}
+              devices={devices}
               others={othersOnDisplays(selectedOutput.id)}
               themeLibrary={themeLibrary}
               looks={looks}
@@ -431,6 +452,34 @@ export default function ScreenConfiguration({
 }
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
+
+function useVideoDevices(): VideoDeviceSnapshot | null {
+  const [snapshot, setSnapshot] = useState<VideoDeviceSnapshot | null>(null)
+  useEffect(() => {
+    let active = true
+    // A pushed snapshot is newer than the initial fetch, whichever resolves first.
+    let pushed = false
+    const unsubscribe = window.api.videoDevices.onChanged((next) => {
+      pushed = true
+      if (active) setSnapshot(next)
+    })
+    window.api.videoDevices.status().then((next) => {
+      if (active && !pushed) setSnapshot(next)
+    }).catch(() => {
+      if (active && !pushed) setSnapshot({ ports: [], providers: [{ name: 'hardware', available: false, reason: 'Could not read video device status' }], outputs: {} })
+    })
+    let polling = false
+    const timer = setInterval(() => {
+      if (polling) return
+      polling = true
+      void window.api.videoDevices.status().then((next) => {
+        if (active) setSnapshot(next)
+      }).catch(() => undefined).finally(() => { polling = false })
+    }, 1000)
+    return () => { active = false; clearInterval(timer); unsubscribe() }
+  }, [])
+  return snapshot
+}
 
 function useNdiStatus(): NdiStatus {
   const [status, setStatus] = useState<NdiStatus>({ available: false, sending: false, ppInputConfigured: false, outputs: [] })
@@ -495,18 +544,18 @@ function SidebarSection({
   children: React.ReactNode
 }): React.ReactElement {
   return (
-    <section className="pb-3">
-      <div className="flex h-7 items-center justify-between px-2.5">
-        <SectionLabel>{title}</SectionLabel>
+    <section className="pb-4">
+      <div className="flex h-9 items-center justify-between px-2">
+        <h2 className="text-[16px] font-semibold text-white">{title}</h2>
         {add && add.length === 1 && (
           <button
             type="button"
-            className="grid h-5 w-5 place-items-center rounded text-slate-500 hover:bg-surface-tertiary hover:text-slate-200"
+            className="grid h-7 w-7 place-items-center rounded-md text-slate-400 hover:bg-surface-elevated hover:text-white"
             aria-label={add[0].label}
             title={add[0].label}
             onClick={add[0].onSelect}
           >
-            <Plus size={12} aria-hidden="true" />
+            <Plus size={16} aria-hidden="true" />
           </button>
         )}
         {add && add.length > 1 && (
@@ -514,10 +563,10 @@ function SidebarSection({
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                className="grid h-5 w-5 place-items-center rounded text-slate-500 hover:bg-surface-tertiary hover:text-slate-200"
+                className="grid h-7 w-7 place-items-center rounded-md text-slate-400 hover:bg-surface-elevated hover:text-white"
                 aria-label={`Add to ${title}`}
               >
-                <Plus size={12} aria-hidden="true" />
+                <Plus size={16} aria-hidden="true" />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
@@ -530,7 +579,7 @@ function SidebarSection({
           </DropdownMenu>
         )}
       </div>
-      <ul>{children}</ul>
+      <ul className="mt-1 space-y-0.5">{children}</ul>
     </section>
   )
 }
@@ -542,9 +591,9 @@ function EmptyRow({ label, onClick }: { label: string; onClick: () => void }): R
       <button
         type="button"
         onClick={onClick}
-        className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12px] text-slate-500 hover:bg-surface-tertiary hover:text-slate-300"
+        className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-[13px] text-slate-500 hover:bg-surface-tertiary hover:text-slate-300"
       >
-        <Plus size={11} aria-hidden="true" /> {label}
+        <Plus size={12} aria-hidden="true" /> {label}
       </button>
     </li>
   )
@@ -590,13 +639,13 @@ function SidebarRow({
         type="button"
         onClick={onSelect}
         className={cn(
-          'flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left focus-visible:outline-none',
+          'flex w-full items-center gap-2 rounded-md px-3 py-2 text-left focus-visible:outline-none',
           selected ? 'row-selected' : 'hover:bg-surface-tertiary',
         )}
       >
         <span className="min-w-0 flex-1">
-          <span className={cn('block truncate text-[12px]', enabled === false ? 'text-slate-500' : 'text-slate-200')}>{name}</span>
-          {detail && <span className="block truncate text-[10px] text-slate-500">{detail}</span>}
+          <span className={cn('block truncate text-[14px] font-medium', enabled === false ? 'text-slate-500' : 'text-white')}>{name}</span>
+          {detail && <span className="mt-0.5 block truncate text-[12px] text-slate-400">{detail}</span>}
         </span>
         {status && (
           <span title={status.text}>
@@ -705,41 +754,68 @@ function useTestPush(): {
   }
 }
 
-function TestButtons(): React.ReactElement {
+/** Pinned under the list, like ProPresenter's Identify Screens / Test Patterns. */
+function SidebarFooter(): React.ReactElement {
   const test = useTestPush()
   return (
-    <div className="flex items-center gap-2">
+    <div className="shrink-0 space-y-2 px-3 pb-3 pt-3 shadow-[inset_0_1px_0_rgb(var(--surface-border))]">
       {test.status !== 'idle' && (
-        <span
+        <p
+          role="status"
           className={cn(
-            'flex items-center gap-1 text-[11px]',
+            'flex items-center gap-1.5 text-[12px]',
             test.status === 'testing' && 'text-slate-400',
             test.status === 'ok' && 'text-teal-400',
             test.status === 'fail' && 'text-red-400',
           )}
         >
-          {test.status === 'testing' && <Loader size={11} className="animate-spin" aria-hidden="true" />}
-          {test.status === 'ok' && <Check size={11} aria-hidden="true" />}
-          {test.status === 'fail' && <XCircle size={11} aria-hidden="true" />}
-          {test.message}
-        </span>
+          {test.status === 'testing' && <Loader size={12} className="animate-spin" aria-hidden="true" />}
+          {test.status === 'ok' && <Check size={12} aria-hidden="true" />}
+          {test.status === 'fail' && <XCircle size={12} aria-hidden="true" />}
+          <span className="truncate">{test.message}</span>
+        </p>
       )}
-      <button type="button" className="btn-secondary flex items-center gap-1.5 px-2.5 py-1 text-[11px]" onClick={test.send} disabled={test.status === 'testing'}>
-        <Send size={11} aria-hidden="true" /> Test verse
+      <button type="button" className="btn-secondary w-full py-1.5 text-[13px]" onClick={() => void window.api.displays.identify()}>
+        Identify screens
       </button>
-      <button type="button" className="btn-secondary px-2.5 py-1 text-[11px]" onClick={test.clear} disabled={test.status === 'testing'}>
-        Clear
-      </button>
+      <div className="flex gap-2">
+        <button type="button" className="btn-secondary flex flex-1 items-center justify-center gap-1.5 py-1.5 text-[13px]" onClick={test.send} disabled={test.status === 'testing'}>
+          <Send size={12} aria-hidden="true" /> Test verse
+        </button>
+        <button type="button" className="btn-secondary flex-1 py-1.5 text-[13px]" onClick={test.clear} disabled={test.status === 'testing'}>
+          Clear
+        </button>
+      </div>
     </div>
   )
 }
 
 // ─── Detail pages ─────────────────────────────────────────────────────────────
 
-type DetailTab = 'display' | 'look' | 'theme' | 'sound' | 'text' | 'propresenter' | 'layout' | 'output'
+/** The display a screen is on, by name — titles its settings like ProPresenter's "Sceptre Z27". */
+function boundDisplayName(target: DisplayBound, displays: DisplayInfo[]): string | null {
+  if (target.displayId === null) return null
+  return resolveDisplay(target, displays)?.label || target.displayLabel || null
+}
+
+/** "DeckLink Duo (2)" — the connector a video card output uses. */
+function cardPortName(output: OverlayOutput, devices: VideoDeviceSnapshot | null): string | null {
+  return devices?.ports.find((candidate) => candidate.id === output.devicePortId)?.portName || output.devicePortLabel || null
+}
+
+/** "DeckLink Duo (2) · 1080i50" — the connector and its format, like a screen's size. */
+function describeCard(output: OverlayOutput, devices: VideoDeviceSnapshot | null): string | null {
+  const port = devices?.ports.find((candidate) => candidate.id === output.devicePortId)
+  const mode = port?.modes.find((candidate) => candidate.id === output.deviceModeId)
+  const name = port?.portName ?? output.devicePortLabel
+  return name ? [name, mode?.label].filter(Boolean).join(' · ') : null
+}
+
+type DetailTab = 'display' | 'hardware' | 'look' | 'theme' | 'sound' | 'text' | 'propresenter' | 'layout' | 'output'
 
 const TAB_LABEL: Record<DetailTab, string> = {
   display: 'Display',
+  hardware: 'Hardware',
   look: 'Look',
   theme: 'Theme',
   sound: 'Sound',
@@ -762,6 +838,8 @@ function Detail({
   onRename,
   onToggle,
   onRemove,
+  stage,
+  target,
   children,
 }: {
   name: string
@@ -775,52 +853,64 @@ function Detail({
   onRename: (name: string) => void
   onToggle: (enabled: boolean) => void
   onRemove: () => void
+  /** The darker band under the header — the display canvas, or a video card's connector. */
+  stage?: React.ReactNode
+  /** What this output is bound to ("Sceptre Z27", "DeckLink Duo (2)") — titles the settings below. */
+  target?: string | null
   children: (tab: DetailTab) => React.ReactNode
 }): React.ReactElement {
   const [draft, setDraft] = useState(name)
   useEffect(() => setDraft(name), [name])
   const active = tabs.includes(tab) ? tab : tabs[0]
+  const tabbed = tabs.length > 1
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex shrink-0 items-start gap-3 px-8 pt-6">
+    <div className="flex h-full flex-col bg-surface-secondary">
+      <div className="flex shrink-0 items-center gap-3 bg-surface-header px-6 py-4">
         <div className="min-w-0 flex-1">
           <input
-            className="w-full bg-transparent text-[20px] font-semibold text-white outline-none focus:underline"
+            className="w-full bg-transparent text-[20px] font-semibold leading-tight text-white outline-none focus:underline"
             value={draft}
             aria-label="Name"
             onChange={(e) => setDraft(e.target.value)}
             onBlur={() => draft.trim() && draft !== name && onRename(draft.trim())}
             onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
           />
-          <p className="mt-0.5 text-[12px] text-slate-500">
+          <p className="mt-0.5 text-[13px] text-slate-400">
             {[...new Set([resolution ?? kind, status.tone === 'live' ? null : status.text])].filter(Boolean).join(' · ')}
           </p>
         </div>
         <Switch checked={enabled} onCheckedChange={onToggle} aria-label={`Turn ${name} on or off`} />
         <button
           type="button"
-          className="grid h-7 w-7 place-items-center rounded-md text-slate-500 hover:bg-surface-tertiary hover:text-red-400"
+          className="grid h-8 w-8 place-items-center rounded-md text-slate-500 hover:bg-surface-tertiary hover:text-red-400"
           aria-label={`Remove ${name}`}
           title="Remove"
           onClick={onRemove}
         >
-          <Trash2 size={14} aria-hidden="true" />
+          <Trash2 size={15} aria-hidden="true" />
         </button>
       </div>
-      {tabs.length > 1 && (
-        <SegmentedControl
-          role="tablist"
-          label="Settings"
-          value={active}
-          options={tabs.map((t) => ({ value: t, label: TAB_LABEL[t] }))}
-          onChange={onTab}
-          fit
-          className="mx-8 mt-4 w-fit max-w-[calc(100%-4rem)] shrink-0 overflow-x-auto bg-surface-secondary"
-          itemClassName="px-3.5"
-        />
-      )}
-      <div className="min-h-0 flex-1 overflow-y-auto" role="tabpanel">
-        <div className="max-w-[720px] space-y-6 px-8 py-6">{children(active)}</div>
+      {stage && <div className="shrink-0 bg-surface px-6 py-4">{stage}</div>}
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto max-w-[760px] px-6 pb-6 pt-5">
+          {target && <h3 className="mb-5 truncate text-[15px] font-semibold text-white">{target}</h3>}
+          {/* ProPresenter's tabbed box: the tabs sit on the panel's top edge. */}
+          <div className={cn('relative rounded-lg bg-surface px-5 pb-5', tabbed ? 'mt-4 pt-9' : 'pt-5')}>
+            {tabbed && (
+              <SegmentedControl
+                role="tablist"
+                label="Settings"
+                value={active}
+                options={tabs.map((t) => ({ value: t, label: TAB_LABEL[t] }))}
+                onChange={onTab}
+                fit
+                className="absolute -top-4 left-1/2 w-fit max-w-[calc(100%-2rem)] -translate-x-1/2 overflow-x-auto bg-surface-tertiary"
+                itemClassName="px-3.5 py-1.5"
+              />
+            )}
+            <div className="space-y-4" role="tabpanel">{children(active)}</div>
+          </div>
+        </div>
       </div>
     </div>
   )
@@ -913,6 +1003,7 @@ function OutputDetail({
   resolution,
   canvas,
   displays,
+  devices,
   others,
   themeLibrary,
   looks,
@@ -930,6 +1021,7 @@ function OutputDetail({
   resolution: string | null
   canvas: React.ReactNode
   displays: DisplayInfo[]
+  devices: VideoDeviceSnapshot | null
   others: CanvasBinding[]
   themeLibrary: CustomOverlayTheme[]
   looks: PPLook[]
@@ -944,7 +1036,9 @@ function OutputDetail({
 }): React.ReactElement {
   const templated = output.kind === 'message' || output.kind === 'stage'
   const tabs: DetailTab[] =
-    output.kind === 'screen'
+    output.kind === 'device'
+      ? ['hardware', 'look', 'theme']
+      : output.kind === 'screen'
       ? ['display', 'look', 'theme']
       : output.kind === 'ndi'
         ? ['look', 'theme', 'sound', ...(ppEnabled ? (['propresenter'] as const) : [])]
@@ -963,22 +1057,37 @@ function OutputDetail({
       onRename={(name) => onChange({ name })}
       onToggle={(enabled) => onChange({ enabled })}
       onRemove={onRemove}
+      stage={output.kind === 'screen' ? canvas
+        : output.kind === 'device' && devices ? <VideoConnectorTile output={output} snapshot={devices} /> : undefined}
+      target={output.kind === 'screen' ? boundDisplayName(output, displays)
+        : output.kind === 'device' ? cardPortName(output, devices) : null}
     >
       {(active) => (
         <>
           {active === 'display' && (
-            <>
-              {canvas}
-              <div className="max-w-[560px] space-y-3">
+            <div className="max-w-[560px] space-y-4">
+              <div className="grid grid-cols-2 gap-4">
                 <FieldRow label="Output" htmlFor={`${output.id}-display`}>
                   <DisplayPicker id={`${output.id}-display`} target={output} displays={displays} others={others} onChange={(patch) => onChange(patch)} />
                 </FieldRow>
-                <ScreenSourceFields output={output} onChange={onChange} />
+                <div className="space-y-4"><ScreenSourceFields output={output} onChange={onChange} /></div>
               </div>
-            </>
+              <p className="text-[11px] text-slate-500">
+                GPU, eGPU, DisplayLink and HDMI matrices fed by this Mac use screens. NDI decoders and LED processors fed by them use NDI feeds.
+              </p>
+            </div>
+          )}
+          {active === 'hardware' && (
+            <div className="max-w-[560px]">
+              {devices
+                ? <VideoDeviceFields output={output} snapshot={devices} onChange={onChange}
+                    onRefresh={() => { void window.api.videoDevices.listPorts().catch((error) => console.error(error)) }}
+                    source={<ScreenSourceFields output={output} onChange={onChange} />} />
+                : <p role="status" className="text-[12px] text-slate-400">Checking video devices…</p>}
+            </div>
           )}
           {active === 'look' && (
-            <div className="max-w-sm space-y-3">
+            <div className="max-w-[560px] space-y-4">
               {output.kind === 'screen' && output.displayId === null && (
                 <p className="rounded-lg bg-surface-secondary px-3 py-2 text-[12px] text-slate-300">
                   Nothing shows until this screen is on a display.{' '}
@@ -1127,17 +1236,16 @@ function StageDetail({
       onRename={(name) => onChange({ name })}
       onToggle={(enabled) => onChange({ enabled })}
       onRemove={onRemove}
+      stage={canvas}
+      target={boundDisplayName(stage, displays)}
     >
       {(active) =>
         active === 'display' ? (
-          <>
-            {canvas}
-            <div className="max-w-[560px]">
-              <FieldRow label="Output" htmlFor={`${stage.id}-display`}>
-                <DisplayPicker id={`${stage.id}-display`} target={stage} displays={displays} others={others} onChange={onChange} />
-              </FieldRow>
-            </div>
-          </>
+          <div className="max-w-[560px]">
+            <FieldRow label="Output" htmlFor={`${stage.id}-display`}>
+              <DisplayPicker id={`${stage.id}-display`} target={stage} displays={displays} others={others} onChange={onChange} />
+            </FieldRow>
+          </div>
         ) : (
           <div className="max-w-sm space-y-1">
             {([

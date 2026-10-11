@@ -25,7 +25,7 @@ import type {
   OverlayTheme,
 } from './ipc'
 import { boxesForLayoutPreset, clampOverlayBox } from './overlay-boxes'
-import { MAX_NDI_OUTPUTS, OVERLAY_OUTPUT_KINDS } from './overlay-outputs'
+import { isLocalKind, MAX_NDI_OUTPUTS, OVERLAY_OUTPUT_KINDS } from './overlay-outputs'
 import { normalizeOverlayElements } from './overlay-elements'
 import { DEFAULT_CONFIDENCE_LAYOUT, DEFAULT_SHOW_FILTER, normalizeConfidenceLayout, normalizeShowFilter } from './program'
 import {
@@ -107,7 +107,9 @@ export const DEFAULT_OVERLAY_THEME: OverlayTheme = {
     position: 'lower-third',
     maxWidthPct: 82,
     paddingPx: 48,
-    backdropBox: true,
+    // Off until the operator turns it on — a theme should not arrive with a
+    // dark box behind the text that nobody asked for.
+    backdropBox: false,
     backdropColor: 'rgba(3, 10, 20, 0.75)',
     backdropRadiusPx: 0,
     autoFitText: false,
@@ -143,6 +145,10 @@ export function makeOverlayOutput(
     lyrics: null,
     displayId: null,
     displayLabel: '',
+    devicePortId: '',
+    devicePortLabel: '',
+    deviceModeId: '',
+    deviceKeyFill: false,
     displaySize: null,
     aspect: 'letterbox',
     customAspect: { width: 16, height: 9 },
@@ -200,7 +206,6 @@ export const DEFAULT_OVERLAY_SETTINGS: AppSettings['overlay'] = {
   showTranslation: true,
   showVerseNumbers: true,
   maxVerses: 0,
-  autoClearSec: 0,
   // — phase 3 —
   outputs: DEFAULT_OVERLAY_OUTPUTS,
   // — phase 2 (legacy, migrated into `outputs`) —
@@ -459,6 +464,7 @@ export function normalizeOverlayOutputs(raw: unknown, legacy: LegacyOverlayField
     seenIds.add(id)
 
     const kind = safeEnum(r.kind, OVERLAY_OUTPUT_KINDS, 'message')
+    const device = kind === 'device'
     let enabled = safeBool(r.enabled, false)
     if (kind === 'ndi' && enabled) {
       if (ndiEnabled >= MAX_NDI_OUTPUTS) enabled = false
@@ -487,12 +493,16 @@ export function normalizeOverlayOutputs(raw: unknown, legacy: LegacyOverlayField
       lyrics: normalizeOutputVariant(r.lyrics, legacy.template),
       displayId,
       displayLabel: kind === 'screen' ? safeString(r.displayLabel, '').trim() : '',
+      devicePortId: device ? safeString(r.devicePortId, '').trim() : '',
+      devicePortLabel: device ? safeString(r.devicePortLabel, '').trim() : '',
+      deviceModeId: device ? safeString(r.deviceModeId, '').trim() : '',
+      deviceKeyFill: device && safeBool(r.deviceKeyFill, false),
       displaySize: kind === 'screen' ? normalizeDisplaySize(r.displaySize) : null,
       aspect: kind === 'screen' ? safeEnum(r.aspect, OUTPUT_ASPECT_VALUES, 'letterbox') : 'letterbox',
       customAspect: normalizeCustomAspect(r.customAspect),
       show: normalizeShowFilter(r.show),
-      source: kind === 'screen' ? safeEnum(r.source, ['program', 'playlist'] as const, 'program') : 'program',
-      playlistId: kind === 'screen' ? safeString(r.playlistId, '').trim() : '',
+      source: isLocalKind(kind) ? safeEnum(r.source, ['program', 'playlist'] as const, 'program') : 'program',
+      playlistId: isLocalKind(kind) ? safeString(r.playlistId, '').trim() : '',
       slideSec: Math.round(clampNum(r.slideSec, 3, 600, 8)),
       confidence: normalizeConfidenceLayout(r.confidence),
     })
@@ -535,7 +545,6 @@ export function normalizeOverlaySettings(raw: unknown): AppSettings['overlay'] {
     showTranslation: safeBool(r.showTranslation, d.showTranslation),
     showVerseNumbers: safeBool(r.showVerseNumbers, d.showVerseNumbers),
     maxVerses: nonNegNumber(r.maxVerses, d.maxVerses),
-    autoClearSec: nonNegNumber(r.autoClearSec, d.autoClearSec),
     outputs: normalizeOverlayOutputs(r.outputs, { mode, ppVideoInputUuid, theme, template }),
     // Legacy fields are preserved verbatim rather than deleted: the store keeps
     // healing itself on every launch, so dropping them would re-run the
@@ -553,8 +562,8 @@ export type OutputRoute = 'screen' | 'propresenter' | 'both'
 
 /** The route an output list currently expresses, or null when nothing is on. */
 export function outputRouteOf(outputs: readonly OverlayOutput[]): OutputRoute | null {
-  const screen = outputs.some((o) => o.enabled && o.kind === 'screen')
-  const propresenter = outputs.some((o) => o.enabled && o.kind !== 'screen')
+  const screen = outputs.some((o) => o.enabled && isLocalKind(o.kind))
+  const propresenter = outputs.some((o) => o.enabled && !isLocalKind(o.kind))
   if (screen && propresenter) return 'both'
   if (screen) return 'screen'
   if (propresenter) return 'propresenter'
@@ -582,10 +591,13 @@ export function applyOutputRoute(outputs: readonly OverlayOutput[], route: Outpu
 
   const firstScreenId = next.find((o) => o.enabled && o.kind === 'screen')?.id
     ?? next.find((o) => o.kind === 'screen')?.id
-  const ppOn = next.some((o) => o.enabled && o.kind !== 'screen')
+  const ppOn = next.some((o) => o.enabled && !isLocalKind(o.kind))
 
   next = next.map((o) => {
     if (o.kind === 'screen') return { ...o, enabled: wantScreen && o.id === firstScreenId }
+    // A card with a port chosen comes back on with the local route, the way the
+    // first screen does — a round trip through 'propresenter' must not lose it.
+    if (o.kind === 'device') return { ...o, enabled: wantScreen && (o.enabled || o.devicePortId !== '') }
     if (!wantPp) return { ...o, enabled: false }
     return ppOn ? o : { ...o, enabled: PROPRESENTER_PRESET_IDS.has(o.id) }
   })

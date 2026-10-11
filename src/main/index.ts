@@ -33,6 +33,7 @@ import { scriptureService } from "./services/scripture";
 import { initOfflineBibles } from "./services/scripture/offline-bibles";
 import { ndiService } from "./services/ndi";
 import { surfaceManager } from "./services/output/surface-manager";
+import { videoDeviceService } from "./services/video-devices";
 import { getMainWindow, setMainWindow } from "./main-window";
 import { cloudSession } from "./services/cloud/session";
 import { sermonUploader } from "./services/service-records";
@@ -510,11 +511,53 @@ app.on("window-all-closed", () => {
   }
 });
 
-app.on("before-quit", () => {
-  surfaceManager.destroyAll();
-  ndiService.stop().catch((err) => {
-    log.error("[NDI] stop() failed during quit:", (err as Error).message);
-  });
+/** Longest quit waits for a video card to release its port — a hung driver must not block Cmd+Q. */
+const HARDWARE_RELEASE_TIMEOUT_MS = 2000;
+let outputsReleased = false;
+let releasingOutputs: Promise<void> | null = null;
+let ndiStopped = false;
+
+/** Tears down every output; settles once hardware is released or the timeout passes. */
+function releaseOutputs(): Promise<void> {
+  if (!releasingOutputs) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<void>((resolve) => {
+      timer = setTimeout(() => {
+        log.warn("[Output] hardware release timed out — quitting anyway");
+        resolve();
+      }, HARDWARE_RELEASE_TIMEOUT_MS);
+    });
+    const shutdown = surfaceManager.destroyAll().catch((error) => {
+      log.error("[Output] hardware shutdown failed:", error);
+    });
+    releasingOutputs = Promise.race([shutdown, timeout]).then(() => {
+      clearTimeout(timer);
+      outputsReleased = true;
+    });
+  }
+  return releasingOutputs;
+}
+
+// The updater releases hardware before its own quit, so `before-quit` never
+// has to cancel (and re-issue) the quit `quitAndInstall` started.
+updaterService.setBeforeInstall(releaseOutputs);
+
+app.on("before-quit", (event) => {
+  if (!ndiStopped) {
+    ndiStopped = true;
+    ndiService.stop().catch((err) => {
+      log.error("[NDI] stop() failed during quit:", (err as Error).message);
+    });
+  }
+  if (outputsReleased) return;
+  if (!videoDeviceService.holdsHardware()) {
+    outputsReleased = true;
+    void releaseOutputs();
+    return;
+  }
+  // A held or still-acquiring port must be released before Electron exits.
+  event.preventDefault();
+  void releaseOutputs().then(() => app.quit());
 });
 
 process.on("uncaughtException", (error) => {

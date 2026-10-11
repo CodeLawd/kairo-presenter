@@ -76,7 +76,7 @@ type UpdateFn = <K extends keyof AppSettings>(section: K, partial: Partial<AppSe
 // own heading (see INTEGRATION_SECTIONS).
 const SECTION_NAV: { id: Section; label: string; hint: string; icon?: Icon }[] = [
   { id: 'general', label: 'General', hint: 'Theme, fonts, lyrics color & storage', icon: SlidersHorizontal },
-  { id: 'overlay', label: 'Verses on screen', hint: 'Translation, verse numbers & auto-clear', icon: MonitorPlay },
+  { id: 'overlay', label: 'Verses on screen', hint: 'Translation & verse numbers', icon: MonitorPlay },
   { id: 'scripture', label: 'Scripture', hint: 'Detection & display', icon: BookOpen },
   { id: 'audio', label: 'Audio', hint: 'Input device & levels', icon: Mic },
   { id: 'apikeys', label: 'API Keys', hint: 'Deepgram, Claude, Bible, Brave', icon: Key },
@@ -1629,22 +1629,6 @@ function OverlaySection({
             aria-label="Maximum verses per overlay push"
           />
         </PrefRow>
-        <PrefRow label="Auto-clear" hint="0 keeps it until you clear">
-          <div className="flex items-center gap-1.5">
-            <input
-              type="number"
-              min={0}
-              max={600}
-              value={ov.autoClearSec}
-              onChange={(e) =>
-                update('overlay', { autoClearSec: Math.max(0, parseInt(e.target.value) || 0) })
-              }
-              className={cn(PREF_INPUT, 'w-[64px] text-center')}
-              aria-label="Auto-clear overlay after N seconds"
-            />
-            <span className="text-[12px] text-white/40">sec</span>
-          </div>
-        </PrefRow>
         <PrefRow label="Test" hint={testMsg || 'Sends John 3:16 to every screen that is on'}>
           <div className="flex items-center gap-1.5">
             <button
@@ -2177,7 +2161,6 @@ export default function Settings({
           showTranslation: o.showTranslation,
           showVerseNumbers: o.showVerseNumbers,
           maxVerses: o.maxVerses,
-          autoClearSec: o.autoClearSec,
         })
         .then(() => showSaved('overlay'))
     },

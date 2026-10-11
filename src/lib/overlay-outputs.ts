@@ -38,6 +38,7 @@ export const OVERLAY_OUTPUT_KINDS: readonly OverlayOutputKind[] = [
   'message',
   'stage',
   'screen',
+  'device',
 ] as const
 
 /**
@@ -56,6 +57,7 @@ const LAYER_OF: Record<OverlayOutputKind, OverlayLayer | null> = {
   message: 'messages',
   stage: 'stage',
   screen: null,
+  device: null,
 }
 
 /** Stable ProPresenter layer order — only affects reporting; layers run concurrently. */
@@ -83,6 +85,7 @@ export function competesForPpLayer(output: OverlayOutput, outputs: readonly Over
 export function outputDestinationLabel(kind: OverlayOutputKind): string {
   switch (kind) {
     case 'screen': return 'Kairo screen'
+    case 'device': return 'Video card'
     case 'ndi': return 'NDI feed'
     case 'library': return 'ProPresenter presentation layer'
     case 'message': return 'ProPresenter messages layer'
@@ -101,7 +104,15 @@ export function outputRequiresPropresenter(kind: OverlayOutputKind): boolean {
 
 /** Kinds Kairo renders itself, through a `ProgramSurface`. */
 export function isRenderedKind(kind: OverlayOutputKind): boolean {
-  return kind === 'ndi' || kind === 'screen'
+  return kind === 'ndi' || kind === 'screen' || kind === 'device'
+}
+
+/**
+ * Kairo drives a physical output directly — a display or a video card. These
+ * count as the "screen" route and can run their own playlist instead of the service.
+ */
+export function isLocalKind(kind: OverlayOutputKind): boolean {
+  return kind === 'screen' || kind === 'device'
 }
 
 /**
@@ -109,7 +120,7 @@ export function isRenderedKind(kind: OverlayOutputKind): boolean {
  * its own playlist (a lobby display) — it ignores pushes and Clear alike.
  */
 export function followsProgram(output: Pick<OverlayOutput, 'kind' | 'source'>): boolean {
-  return !(output.kind === 'screen' && output.source === 'playlist')
+  return !(isLocalKind(output.kind) && output.source === 'playlist')
 }
 
 /** Enabled outputs Kairo renders itself — documents and backgrounds go to these. */
@@ -124,6 +135,7 @@ export function surfaceOutputs(outputs: readonly OverlayOutput[]): OverlayOutput
 export function primaryRenderedOutput(outputs: readonly OverlayOutput[]): OverlayOutput | null {
   return (
     outputs.find((o) => o.kind === 'screen' && o.enabled) ??
+    outputs.find((o) => o.kind === 'device' && o.enabled) ??
     outputs.find((o) => o.kind === 'ndi' && o.enabled) ??
     findNdiOutput(outputs)
   )
@@ -295,17 +307,20 @@ export function overlayLayerLabel(kind: OverlayContentKind, layer: 'verse' | 're
 }
 
 /**
- * Look lyrics inherit from scripture when no lyrics theme is applied.
- * The scripture background stays behind: a song with no theme of its own takes
- * the dock's motion loop. A lyrics theme can set a background on purpose.
+ * Look lyrics inherit from scripture when no lyrics theme is applied: the type
+ * and boxes only. The scripture background, backdrop box and theme elements
+ * stay behind — a song with no theme of its own takes the dock's motion loop
+ * with nothing of the scripture overlay drawn over it. A lyrics theme can add
+ * any of them on purpose.
  * Fit-to-box stays off — that toggle lives on the scripture theme and must
  * not grow a couplet to fill the verse box on a lyric push.
  */
 export function inheritLyricsTheme(scriptureTheme: OverlayTheme): OverlayTheme {
   return {
     ...scriptureTheme,
+    elements: [],
     background: { ...scriptureTheme.background, type: 'transparent' },
-    layout: { ...scriptureTheme.layout, autoFitText: false },
+    layout: { ...scriptureTheme.layout, backdropBox: false, autoFitText: false },
   }
 }
 

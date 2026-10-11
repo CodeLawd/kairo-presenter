@@ -8,6 +8,7 @@
 // for (see `deriveCompletedSteps`).
 
 import type { AppSettings, OnboardingState, OnboardingStepId } from '../ipc'
+import { isLocalKind } from '../overlay-outputs'
 import { setupUsesPropresenter } from '../pp-connect-gate'
 
 /**
@@ -207,7 +208,7 @@ export function seedOnboardingFromSettings(
   }
   // Pre-wizard installs with a working integration should not be interrupted.
   if (!state.completedSteps.includes('output') && settings.propresenter.host.trim() &&
-      settings.overlay.outputs.some((output) => output.enabled && output.kind !== 'screen')) {
+      settings.overlay.outputs.some((output) => output.enabled && !isLocalKind(output.kind))) {
     state.completedSteps.push('output')
   }
   const resume = nextIncompleteStep(state)

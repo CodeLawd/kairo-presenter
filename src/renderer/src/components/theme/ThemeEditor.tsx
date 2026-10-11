@@ -4,6 +4,7 @@ import { Check, Copy, Film, Image, Loader, MoreHorizontal, Plus, Redo, RotateCcw
 import { cn } from '@/lib/utils'
 import {
   contentKindLabel,
+  isRenderedKind,
   liveOverlayTheme,
   OVERLAY_CONTENT_KINDS,
   primaryRenderedOutput,
@@ -473,7 +474,7 @@ export default function ThemeEditor(): React.ReactElement {
     void window.api.settings.set('themeDefaults', next)
     writeOutputs(
       overlayRef.current.outputs.map((o) =>
-        o.kind === 'screen' || o.kind === 'ndi' ? assignThemeToOutput(o, entry) : o,
+        isRenderedKind(o.kind) ? assignThemeToOutput(o, entry) : o,
       ),
     )
     flashSaved()
@@ -499,7 +500,7 @@ export default function ThemeEditor(): React.ReactElement {
 
   const themes = themesForKind(library, kind)
   const selected = themes.find((t) => t.id === selectedId) ?? null
-  const screens = overlay.outputs.filter((o) => o.kind === 'screen' || o.kind === 'ndi')
+  const screens = overlay.outputs.filter((o) => isRenderedKind(o.kind))
   const tabs: InspectorTab[] = ['background', 'type', 'layout']
   const activeTab = tabs.includes(tab) ? tab : tabs[0]
   const selectedElement = draft.elements.find((el) => el.id === selectedLayer) ?? null

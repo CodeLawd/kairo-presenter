@@ -118,6 +118,11 @@ but that is best-effort and untested.
 
 ### Per-platform notes
 
+- **Hardware video outputs**: vendor-neutral routing, configuration and recovery
+  are implemented. DeckLink has an opt-in macOS development preview with native
+  scheduled playback (`KAIRO_ENABLE_DECKLINK=1 npm run dev` after building the
+  helper; see `native/decklink/README.md`). Physical picture and release packaging
+  qualification remain pending in [Plan 007](plans/007-hardware-video-outputs.md).
 - **NDI®**: release candidates bundle their runtime and must pass native discovery,
   send, and shutdown acceptance before that target is declared supported.
   NDI® is a registered trademark of Vizrt NDI AB. See
