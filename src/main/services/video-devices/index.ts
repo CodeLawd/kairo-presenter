@@ -11,6 +11,7 @@ export interface DeviceOutputBinding {
   deviceKeyFill: boolean
 }
 interface Entry { captures: number; sampledCaptures: number; sampledAt: number; captureFps: number; binding: DeviceOutputBinding; sink: VideoOutputSink; active: boolean; unsubscribe?: () => void }
+const NO_CARDS = 'No video cards detected. Check the card in Blackmagic Desktop Video Setup and that its driver is allowed in System Settings → Privacy & Security, then refresh.'
 const message = (error: unknown): string => error instanceof Error ? error.message : 'Video device operation failed'
 
 /** Owns acquisition and lifecycle. Providers own conversion and hardware clocks. */
@@ -127,10 +128,12 @@ export class VideoDeviceService {
       try {
         const status = provider.status()
         const ports = status.available ? await provider.listPorts() : []
-        this.providerStates.push({ name: provider.name, ...status })
+        this.providerStates.push({ name: provider.name, ...provider.status() })
         this.ports.push(...ports.filter((port) => port.provider === provider.name))
       } catch (error) {
-        this.providerStates.push({ name: provider.name, available: false, reason: message(error) })
+        let diagnostic: ReturnType<VideoDeviceProvider['status']> = { available: false }
+        try { diagnostic = provider.status() } catch { /* A broken provider must not prevent other scans. */ }
+        this.providerStates.push({ name: provider.name, ...diagnostic, available: false, reason: message(error) })
       }
     }
     this.scanned = true
@@ -149,7 +152,10 @@ export class VideoDeviceService {
   private problemFor(binding: DeviceOutputBinding, port: VideoPort | undefined, owners: Map<string, string>): string | null {
     const fault = this.faults.get(binding.id)
     if (fault) return fault.reason
-    if (!binding.devicePortId) return 'Choose a video port'
+    if (!binding.devicePortId) {
+      // The driver answered but listed nothing: picking a port is not the problem.
+      return this.ports.length === 0 && this.providerStates.some((provider) => provider.available) ? NO_CARDS : 'Choose a video port'
+    }
     if (!port) {
       const failed = this.providerStates.find((provider) =>
         !provider.available && binding.devicePortId.startsWith(`${provider.name}:`))

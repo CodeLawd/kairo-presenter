@@ -52,6 +52,8 @@ export function createOverlayElement(
     aboveText: false,
     opacity: 1,
     rotationDeg: 0,
+    flipX: false,
+    flipY: false,
     fill: '#ffffff',
     fillOpacity: 1,
     // A line is nothing but its stroke.
@@ -94,6 +96,8 @@ export function normalizeOverlayElement(raw: unknown): OverlayElement | null {
     aboveText: safeBool(r.aboveText, d.aboveText),
     opacity: clampNum(r.opacity, 0, 1, d.opacity),
     rotationDeg: clampNum(r.rotationDeg, -180, 180, d.rotationDeg),
+    flipX: safeBool(r.flipX, false),
+    flipY: safeBool(r.flipY, false),
     fill: safeColor(r.fill, d.fill),
     fillOpacity: clampNum(r.fillOpacity, 0, 1, d.fillOpacity),
     stroke: {
@@ -137,6 +141,20 @@ export function updateOverlayElement(
   patch: Partial<Omit<OverlayElement, 'id' | 'kind'>>,
 ): OverlayElement[] {
   return elements.map((el) => (el.id === id ? { ...el, ...patch } : el))
+}
+
+export type ElementAlignment = 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom'
+
+/** Align the element's layout box to the slide, preserving its size. */
+export function alignOverlayElement(element: Pick<OverlayElement, 'box'>, alignment: ElementAlignment): OverlayBox {
+  const box = clampOverlayBox(element.box, ELEMENT_BOX_MIN)
+  const patch = alignment === 'left' ? { xPct: 0 }
+    : alignment === 'center' ? { xPct: (100 - box.widthPct) / 2 }
+    : alignment === 'right' ? { xPct: 100 - box.widthPct }
+    : alignment === 'top' ? { yPct: 0 }
+    : alignment === 'middle' ? { yPct: (100 - box.heightPct) / 2 }
+    : { yPct: 100 - box.heightPct }
+  return { ...box, ...patch }
 }
 
 export function removeOverlayElement(elements: readonly OverlayElement[], id: string): OverlayElement[] {

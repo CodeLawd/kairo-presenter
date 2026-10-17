@@ -21,6 +21,10 @@ export interface VideoProviderStatus {
   available: boolean
   version?: string
   reason?: string
+  driver?: {
+    state: 'current' | 'compatibility' | 'unsupported' | 'missing'
+    message: string
+  }
 }
 export type VideoTestPattern = 'bars' | 'text' | 'motion'
 export interface VideoPlaybackDiagnostics {

@@ -15,6 +15,28 @@ const port = { id: 'fake:1', provider: 'fake', deviceName: 'Test card', portName
   supportsKeyFill: false, unavailableReason: null,
   modes: [{ id: 'fake:mode', label: '1080p29.97', width: 1920, height: 1080, frameRateN: 30000, frameRateD: 1001, interlaced: false }] }
 
+it('shows working compatibility mode without an update button', async () => {
+  const markup = await render({ ports: [port], providers: [{ name: 'decklink', available: true,
+    driver: { state: 'compatibility', message: 'Desktop Video 15.3.1 detected. Kairo is using compatibility mode.' } }], outputs: {} })
+  assert.match(markup, /15\.3\.1.*compatibility mode/)
+  assert.doesNotMatch(markup, /Open download page/)
+})
+
+it('offers driver downloads for an unsupported driver even without output controls', async () => {
+  const markup = await render({ ports: [], providers: [{ name: 'decklink', available: false,
+    driver: { state: 'unsupported', message: 'Desktop Video 14.4 is unsupported. Update Blackmagic Desktop Video.' } }], outputs: {} })
+  assert.match(markup, /14\.4.*Update Blackmagic Desktop Video/)
+  assert.match(markup, /Open download page/)
+})
+
+it('does not offer a driver update for supported-driver scan errors', async () => {
+  const markup = await render({ ports: [], providers: [{ name: 'decklink', available: false, reason: 'Read modes: SDK error -1',
+    driver: { state: 'current', message: 'Desktop Video 16.4 detected.' } }], outputs: {} })
+  assert.match(markup, /16\.4 detected/)
+  assert.match(markup, /Read modes: SDK error/)
+  assert.doesNotMatch(markup, /Open download page/)
+})
+
 it('says video cards are unsupported when no provider is built in', async () => {
   const markup = await render({ ports: [], providers: [], outputs: {} })
   assert.match(markup, /cannot drive video cards yet/)

@@ -1076,6 +1076,9 @@ function registerOutputHandlers(): void {
 }
 
 function registerDisplayHandlers(): void {
+  handle(IPC.VIDEO_DEVICES.OPEN_DRIVER_DOWNLOADS, async () => {
+    await shell.openExternal('https://www.blackmagicdesign.com/support');
+  });
   handle(IPC.VIDEO_DEVICES.LIST_PORTS, async () => {
     await videoDeviceService.refresh();
     return videoDeviceService.snapshot().ports;

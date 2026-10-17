@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { SegmentedControl } from '@/components/shared/SegmentedControl'
+import { RowContextMenu } from '@/components/shared/RowContextMenu'
+import { saveOutputSettings } from '@/lib/output-settings'
+import type { OutputEdit } from '@shared/output-settings'
 import { Check, Loader, Plus, Send, Trash2, X, XCircle } from '@/icons'
 import { cn } from '@/lib/utils'
 import { Switch } from '@/components/ui/switch'
@@ -17,7 +20,7 @@ import { LooksGrid } from './LooksGrid'
 import { useSettings } from '@/hooks/useSettings'
 import { useAppStore } from '@/stores/useAppStore'
 import { useBootstrapStore } from '@/bootstrap/useBootstrapStore'
-import { DEFAULT_OVERLAY_SETTINGS, makeOverlayOutput } from '@shared/overlay-defaults'
+import { makeOverlayOutput } from '@shared/overlay-defaults'
 import {
   isLocalKind,
   isRenderedKind,
@@ -92,7 +95,8 @@ export default function ScreenConfiguration({
   initialSelect: string | null
   onClose: () => void
 }): React.ReactElement {
-  const [overlay, saveOverlay] = useSettings('overlay', DEFAULT_OVERLAY_SETTINGS)
+  const overlay = useBootstrapStore((s) => s.settings.overlay)
+  const [saveError, setSaveError] = useState('')
   const [presentation, savePresentation] = useSettings('presentation', DEFAULT_PRESENTATION_SETTINGS)
   const rawLibrary = useBootstrapStore((s) => s.settings.themeLibrary)
   const themeLibrary = useMemo(
@@ -135,14 +139,17 @@ export default function ScreenConfiguration({
 
   // ─── Writes ─────────────────────────────────────────────────────────────────
 
-  const setOutputs = (next: OverlayOutput[]): void => {
-    void saveOverlay({ ...overlay, outputs: next }).catch((err) => console.error(err))
+  const setOutputs = (edit: OutputEdit): void => {
+    setSaveError('')
+    void saveOutputSettings(edit).catch(() => setSaveError('Screen changes could not be saved. Please try again.'))
   }
   const updateOutput = (id: string, patch: Partial<OverlayOutput> | ((o: OverlayOutput) => OverlayOutput)): void => {
-    setOutputs(outputs.map((o) => (o.id === id ? (typeof patch === 'function' ? patch(o) : { ...o, ...patch }) : o)))
+    setOutputs((current) => current.map((o) => (o.id === id ? (typeof patch === 'function' ? patch(o) : { ...o, ...patch }) : o)))
   }
   const setStages = (next: StageDisplayConfig[]): void => {
-    void savePresentation({ ...presentation, stageDisplays: next }).catch((err) => console.error(err))
+    setSaveError('')
+    void savePresentation({ ...useBootstrapStore.getState().settings.presentation, stageDisplays: next })
+      .catch(() => setSaveError('Stage display changes could not be saved. Please try again.'))
   }
   const updateStage = (id: string, patch: Partial<StageDisplayConfig>): void => {
     setStages(stages.map((s) => (s.id === id ? { ...s, ...patch } : s)))
@@ -150,14 +157,15 @@ export default function ScreenConfiguration({
 
   const addOutput = (kind: OverlayOutputKind): void => {
     const id = `${kind}-${Date.now().toString(36)}`
-    const count = outputs.filter((o) => o.kind === kind).length
-    setOutputs([
-      ...outputs,
+    const current = useBootstrapStore.getState().settings.overlay.outputs
+    const count = current.filter((o) => o.kind === kind).length
+    setOutputs((latest) => [
+      ...latest,
       withDefaultThemes(
         makeOverlayOutput(id, kind, {
           name: count === 0 ? KIND_TITLE[kind] : `${KIND_TITLE[kind]} ${count + 1}`,
           enabled: true,
-          order: outputs.length,
+          order: latest.length,
         }),
         themeLibrary,
         useBootstrapStore.getState().settings.themeDefaults,
@@ -183,16 +191,21 @@ export default function ScreenConfiguration({
     ])
     setSelected(STAGE_PREFIX + id)
   }
-  const removeSelected = (): void => {
-    if (selectedOutput) {
-      if (!window.confirm(`Remove “${selectedOutput.name}”?`)) return
-      setOutputs(outputs.filter((o) => o.id !== selectedOutput.id))
-    } else if (selectedStage) {
-      if (!window.confirm(`Remove “${selectedStage.name}”?`)) return
-      setStages(stages.filter((s) => s.id !== selectedStage.id))
+  const removeScreen = (key: string): void => {
+    const settings = useBootstrapStore.getState().settings
+    const output = settings.overlay.outputs.find((o) => o.id === key)
+    const stage = key.startsWith(STAGE_PREFIX)
+      ? settings.presentation.stageDisplays.find((s) => STAGE_PREFIX + s.id === key) : undefined
+    const target = output ?? stage
+    if (!target || !window.confirm(`Delete “${target.name}”?`)) return
+    if (output) {
+      setOutputs((current) => current.filter((o) => o.id !== output.id))
+    } else if (stage) {
+      setStages(settings.presentation.stageDisplays.filter((s) => s.id !== stage.id))
     }
-    setSelected(null)
+    if (selected === key) setSelected(null)
   }
+  const removeSelected = (): void => { if (selected) removeScreen(selected) }
 
   // ─── Status ─────────────────────────────────────────────────────────────────
 
@@ -266,6 +279,7 @@ export default function ScreenConfiguration({
           <X size={14} aria-hidden="true" />
         </button>
       </header>
+      {saveError && <p role="alert" className="px-4 py-2 text-[12px] text-red-400">{saveError}</p>}
 
       <div className="grid min-h-0 flex-1 grid-cols-[260px_minmax(0,1fr)]">
         <div className="flex min-h-0 flex-col bg-surface-rail shadow-[inset_-1px_0_0_rgb(var(--surface-border))]">
@@ -285,13 +299,14 @@ export default function ScreenConfiguration({
                 enabled={o.enabled}
                 selected={selected === o.id}
                 onSelect={() => setSelected(o.id)}
+                onRemove={() => removeScreen(o.id)}
               />
             ))}
             {screens.length === 0 && <EmptyRow label="Add a screen" onClick={() => addOutput('screen')} />}
             {cards.map((output) => (
               <SidebarRow key={output.id} name={output.name} detail={describeCard(output, devices) ?? 'Video card'}
                 status={outputStatus(output)} enabled={output.enabled} selected={selected === output.id}
-                onSelect={() => setSelected(output.id)} />
+                onSelect={() => setSelected(output.id)} onRemove={() => removeScreen(output.id)} />
             ))}
           </SidebarSection>
 
@@ -305,6 +320,7 @@ export default function ScreenConfiguration({
                 enabled={s.enabled}
                 selected={selected === STAGE_PREFIX + s.id}
                 onSelect={() => setSelected(STAGE_PREFIX + s.id)}
+                onRemove={() => removeScreen(STAGE_PREFIX + s.id)}
               />
             ))}
             {stages.length === 0 && <EmptyRow label="Add a stage display" onClick={addStage} />}
@@ -323,6 +339,7 @@ export default function ScreenConfiguration({
                 enabled={o.enabled}
                 selected={selected === o.id}
                 onSelect={() => setSelected(o.id)}
+                onRemove={() => removeScreen(o.id)}
               />
             ))}
             {feeds.length === 0 && <EmptyRow label="Add an NDI feed" onClick={() => addOutput('ndi')} />}
@@ -360,6 +377,7 @@ export default function ScreenConfiguration({
                 enabled={o.enabled}
                 selected={selected === o.id}
                 onSelect={() => setSelected(o.id)}
+                onRemove={() => removeScreen(o.id)}
               />
             ))}
           </SidebarSection>
@@ -625,6 +643,7 @@ function SidebarRow({
   enabled,
   selected,
   onSelect,
+  onRemove,
 }: {
   name: string
   detail?: string
@@ -632,9 +651,9 @@ function SidebarRow({
   enabled?: boolean
   selected: boolean
   onSelect: () => void
+  onRemove?: () => void
 }): React.ReactElement {
-  return (
-    <li>
+  const button = (
       <button
         type="button"
         onClick={onSelect}
@@ -655,8 +674,12 @@ function SidebarRow({
           </span>
         )}
       </button>
-    </li>
   )
+  return <li>{onRemove ? (
+    <RowContextMenu items={[{ label: 'Delete', icon: <Trash2 size={14} aria-hidden="true" />, destructive: true, onSelect: onRemove }]}>
+      {button}
+    </RowContextMenu>
+  ) : button}</li>
 }
 
 // ─── Centre pages ─────────────────────────────────────────────────────────────

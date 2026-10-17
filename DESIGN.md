@@ -16,6 +16,28 @@ Video output refresh stays icon-only. Rotate the refresh icon while its scan is
 pending, disable repeat clicks, and respect reduced motion. Report the result or
 detection error inline afterward, including when the inventory is unchanged.
 Unavailable card channels retain their specific profile/compatibility explanation.
+The Hardware tab shows the detected Desktop Video version. Working legacy
+interfaces show a muted compatibility-mode note; only missing or unsupported
+drivers offer the Blackmagic download page. Card profile and empty-inventory
+problems keep their own guidance rather than recommending a driver update.
+
+Added screens and feeds offer Delete in their right-click menu, targeting that
+row even when another screen is selected. Keep the existing confirmation and
+header delete action. Screen edits persist immediately; deferred theme edits
+use the current shared screen list. An explicitly empty list stays empty after
+restart, and save failures show an inline error rather than silently succeeding.
+
+Shape editing opens immediately after insertion. Keep Elements available in every
+theme-settings tab, with a clear Edit action and a route back from the element
+inspector. Show horizontal/vertical flip as labelled pressed-state buttons and
+six labelled alignment actions grouped under Align to slide. Alignment positions
+the element's layout box without resizing it. Flips mirror inside that box before
+rotation; all edits use the normal theme save and undo/redo flow.
+
+Detected scripture cards use the same VerseThemePreview chrome as the Scripture
+tab: themed 16:9 preview, reference-and-number footer, and shared selected/live
+border treatment. Detection state and provenance stay below the card without a
+second reference label; cue, queue and dismiss actions keep their existing behavior.
 
 ## First-run onboarding
 

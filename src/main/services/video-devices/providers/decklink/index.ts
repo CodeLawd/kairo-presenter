@@ -7,11 +7,31 @@ import type { VideoDeviceProvider, VideoOutputSink, VideoPort, VideoProviderStat
 import { openWorkerPlayback } from './worker-sink'
 const execute = promisify(execFile)
 
+/** Oldest Desktop Video whose interfaces the helper negotiates (see sdk-compatibility.h). */
+const MIN_DRIVER = [15, 3, 1]
+
+/** True when `version` ("16.4", "15.3.1") is older than 15.3.1; unparseable versions pass. */
+export function driverTooOld(version: string | undefined): boolean {
+  const match = version?.match(/^(\d+)(?:\.(\d+))?(?:\.(\d+))?/)
+  if (!match) return false
+  const parts = match.slice(1).map((part) => Number(part ?? 0))
+  for (let i = 0; i < MIN_DRIVER.length; i++) if (parts[i] !== MIN_DRIVER[i]) return parts[i] < MIN_DRIVER[i]
+  return false
+}
+
+/** The helper's own message (last stderr line), not Node's "Command failed: …" wrapper. */
+function helperError(error: unknown): Error {
+  const stderr = (error as { stderr?: unknown }).stderr
+  const line = typeof stderr === 'string' ? stderr.trim().split('\n').pop() : ''
+  return line ? new Error(line) : error as Error
+}
+
 /** Qualified native boundary: enumeration and playback execute out of process. */
 export class DeckLinkProvider implements VideoDeviceProvider {
   readonly name = 'decklink'
   private scanned = false
   private version?: string
+  private driver?: VideoProviderStatus['driver']
   private ports: VideoPort[] = []
   constructor(
     private readonly helperPath: string,
@@ -24,17 +44,46 @@ export class DeckLinkProvider implements VideoDeviceProvider {
   ) {}
   status(): VideoProviderStatus {
     if (process.platform !== 'darwin') return { available: false, reason: 'DeckLink is supported on macOS in this build' }
-    if (!existsSync(this.runtimePath)) return { available: false, reason: 'Install Blackmagic Desktop Video to use DeckLink cards' }
+    if (!existsSync(this.runtimePath)) return { available: false,
+      reason: 'Install Blackmagic Desktop Video to use DeckLink cards',
+      driver: { state: 'missing', message: 'Install Blackmagic Desktop Video to use this card, then restart the Mac.' } }
     if (!existsSync(this.helperPath)) return { available: false, reason: 'DeckLink native helper is not included in this build' }
-    return { available: true, version: this.version }
+    return { available: true, version: this.version, driver: this.driver }
+  }
+  private describeDriver(version: string, compatibilityMode?: boolean): VideoProviderStatus['driver'] {
+    this.version = version || undefined
+    if (driverTooOld(version)) {
+      this.driver = { state: 'unsupported', message: `Desktop Video ${version} is too old. Update Blackmagic Desktop Video to 15.3.1 or later, then restart the Mac.` }
+    } else if (compatibilityMode ?? /^15\./.test(version)) {
+      this.driver = { state: 'compatibility', message: `Desktop Video ${version || '(version unknown)'} detected. Kairo is using compatibility mode.` }
+    } else {
+      this.driver = version ? { state: 'current', message: `Desktop Video ${version} detected.` } : undefined
+    }
+    return this.driver
   }
   async listPorts(): Promise<VideoPort[]> {
     if (!this.status().available) return []
+    this.driver = undefined
+    this.version = undefined
+    this.ports = []
     const { stdout } = await execute(this.helperPath, ['--list'], { timeout: 8000, maxBuffer: 1024 * 1024 })
-    const result = JSON.parse(stdout) as { version: string; ports: VideoPort[] }
+      .catch(async (error: unknown) => {
+        // Attribute/output enumeration may fail before an older driver can
+        // return inventory. Version discovery must not depend on those APIs.
+        try {
+          const result = await execute(this.helperPath, ['--version'], { timeout: 3000, maxBuffer: 4096 })
+          const info = JSON.parse(result.stdout) as { version?: unknown }
+          if (typeof info.version === 'string') this.describeDriver(info.version, false)
+        } catch { /* Preserve the original enumeration failure. */ }
+        if (this.driver?.state === 'unsupported') throw new Error(this.driver.message)
+        throw helperError(error)
+      })
+    const result = JSON.parse(stdout) as { version: string; compatibilityMode?: boolean; ports: VideoPort[] }
     if (!Array.isArray(result.ports)) throw new Error('Invalid DeckLink inventory')
+    // Older drivers list cards but answer none of the output interfaces the helper asks for.
+    const driver = this.describeDriver(typeof result.version === 'string' ? result.version : '', result.compatibilityMode)
+    if (driver?.state === 'unsupported') throw new Error(driver.message)
     this.scanned = true
-    this.version = result.version
     this.ports = result.ports.map((port) => ({ ...port, unavailableReason: port.unavailableReason || (port.modes.length ? null : 'No output modes available in the current device profile') }))
     return structuredClone(this.ports)
   }

@@ -461,6 +461,9 @@ export interface OverlayElement {
   opacity: number
   /** Clockwise turn about the box centre, -180–180°. */
   rotationDeg: number
+  /** Mirror the element within its box, before rotation. */
+  flipX: boolean
+  flipY: boolean
   /** Shapes: fill colour and its opacity. */
   fill: string
   fillOpacity: number
@@ -1676,6 +1679,7 @@ export interface KairoAPI {
   ndi: NdiAPI
   displays: DisplaysAPI
   videoDevices: {
+    openDriverDownloads: () => Promise<void>
     setTestPattern: (outputId: string, pattern: import('./video-devices').VideoTestPattern | null) => Promise<boolean>
     listPorts: () => Promise<import('./video-devices').VideoPort[]>
     status: () => Promise<import('./video-devices').VideoDeviceSnapshot>
@@ -1952,6 +1956,7 @@ export const IPC = {
     CHANGED:  'displays:changed',   // push (DisplayInfo[])
   },
   VIDEO_DEVICES: {
+    OPEN_DRIVER_DOWNLOADS: 'videoDevices:openDriverDownloads',
     LIST_PORTS: 'videoDevices:listPorts',
     STATUS: 'videoDevices:status',
     TEST_PATTERN: 'videoDevices:testPattern',

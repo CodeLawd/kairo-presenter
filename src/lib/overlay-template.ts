@@ -174,7 +174,8 @@ function backgroundLayerHTML(theme: OverlayTheme): string {
 // ─── Elements ───────────────────────────────────────────────────────────────────
 
 function elementHTML(el: OverlayElement): string {
-  const turn = el.rotationDeg ? ` transform:rotate(${el.rotationDeg}deg);` : ''
+  const transforms = [el.rotationDeg ? `rotate(${el.rotationDeg}deg)` : '', el.flipX ? 'scaleX(-1)' : '', el.flipY ? 'scaleY(-1)' : ''].filter(Boolean)
+  const turn = transforms.length ? ` transform:${transforms.join(' ')};` : ''
   const frame = `${overlayBoxStyle(el.box)} opacity:${el.opacity};${turn}`
   if (el.kind === 'image' || el.kind === 'video') {
     if (!el.mediaPath) return ''

@@ -5,6 +5,31 @@ import { FakeVideoDeviceProvider, fakePort } from './fake-provider'
 
 const output = { id: 'card', enabled: true, devicePortId: fakePort.id,
   deviceModeId: 'fake:1080p', deviceKeyFill: false }
+
+it('publishes driver diagnostics discovered by the first scan', async () => {
+  const provider = new FakeVideoDeviceProvider()
+  provider.listPorts = async () => {
+    provider.availability = { available: true, version: '15.3.1', driver: { state: 'compatibility', message: 'Compatibility mode' } }
+    return []
+  }
+  const service = new VideoDeviceService([provider])
+  await service.refresh()
+  assert.equal(service.snapshot().providers[0].driver?.state, 'compatibility')
+  assert.equal(service.snapshot().providers[0].version, '15.3.1')
+  await service.close()
+})
+
+it('preserves version and update advice when driver enumeration fails', async () => {
+  const provider = new FakeVideoDeviceProvider()
+  provider.availability = { available: true, version: '14.4', driver: { state: 'unsupported', message: 'Update Desktop Video' } }
+  provider.enumerationError = new Error('Update Desktop Video')
+  const service = new VideoDeviceService([provider])
+  await service.refresh()
+  assert.equal(service.snapshot().providers[0].available, false)
+  assert.equal(service.snapshot().providers[0].driver?.state, 'unsupported')
+  assert.equal(service.snapshot().providers[0].version, '14.4')
+  await service.close()
+})
 function setup(): { provider: FakeVideoDeviceProvider; service: VideoDeviceService } {
   const provider = new FakeVideoDeviceProvider()
   provider.ports = [structuredClone(fakePort)]
@@ -312,5 +337,14 @@ it('exposes the selected hardware frame rate and refreshes it when modes change'
     assert.equal(service.sinkFor(output.id)?.frameRate, 30000 / 1001)
     await service.reconcile([{ ...output, deviceModeId: 'fake:1080i50' }])
     assert.equal(service.sinkFor(output.id)?.frameRate, 25)
+  } finally { await service.close() }
+})
+
+it('says no cards were detected, not "choose a port", when the driver lists none', async () => {
+  const provider = new FakeVideoDeviceProvider()
+  const service = new VideoDeviceService([provider], 0)
+  try {
+    await service.reconcile([{ ...output, devicePortId: '', deviceModeId: '' }])
+    assert.match(service.outputStatus(output.id).reason, /^No video cards detected/)
   } finally { await service.close() }
 })

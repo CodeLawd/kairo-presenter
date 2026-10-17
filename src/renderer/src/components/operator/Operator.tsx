@@ -5,6 +5,7 @@ import {
   shortcutFromEvent,
 } from "@shared/keyboard-shortcuts";
 import { ReferenceLibrary } from "./ReferenceLibrary";
+import { CARD_BASE_WIDTH as OPERATOR_CARD_WIDTH, CARD_BASE_HEIGHT as OPERATOR_CARD_HEIGHT } from "../scripture/types";
 import { ServicePanel, useServiceRecords } from "./ServicePanel";
 import { DeepgramKeyDialog } from "./DeepgramKeyDialog";
 import { Switch } from "@/components/ui/switch";
@@ -92,9 +93,6 @@ const TRIGGER_PHRASES = [
   "chapter",
   "verse",
 ];
-
-const OPERATOR_CARD_WIDTH = 200;
-const OPERATOR_CARD_HEIGHT = Math.round((OPERATOR_CARD_WIDTH * 9) / 16);
 
 type DetectionState = "live" | "reading" | "next" | null;
 
@@ -2069,9 +2067,8 @@ export default function Operator(): React.ReactElement {
                                 responsive
                                 width={OPERATOR_CARD_WIDTH}
                                 height={OPERATOR_CARD_HEIGHT}
-                                // One white outline only: the selected card
-                                // (where Enter sends). Reading is its label.
-                                isActive={selectedSuggestionId === s.id && !isLive}
+                                footer={{ number: cardIndex + 1 }}
+                                isActive={selectedSuggestionId === s.id}
                                 isFocused={
                                   isReading ||
                                   isUpNext ||
@@ -2113,11 +2110,8 @@ export default function Operator(): React.ReactElement {
                                   <X size={12} />
                                 </button>
                               </div>
-                              {/* Which verse this is, exactly, and what it is doing. */}
-                              <div className="mt-1.5 flex min-w-0 items-center justify-between gap-2">
-                                <span className={cn("truncate text-[11px] font-semibold tabular-nums", state === "live" || state === "reading" ? "text-zinc-100" : "text-zinc-400")}>
-                                  {s.reference}
-                                </span>
+                              {/* The shared card footer owns the reference; keep detection state separate. */}
+                              {(state || source) && <div className="mt-1.5 flex min-w-0 items-center justify-end gap-2">
                                 <span key={state ?? "none"} className="shrink-0 motion-safe:animate-[detect-state-in_.3s_ease-out_both]">
                                   {state === "live" ? (
                                     <span className="flex items-center gap-1 text-[10px] font-semibold text-live">
@@ -2132,7 +2126,7 @@ export default function Operator(): React.ReactElement {
                                     <span className="text-[10px] text-zinc-500">{source}</span>
                                   ) : null}
                                 </span>
-                              </div>
+                              </div>}
                             </article>
                           );
                         })}

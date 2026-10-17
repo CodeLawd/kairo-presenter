@@ -63,12 +63,14 @@ static int64_t nextTime(int64_t next, int64_t now, int64_t duration) {
 static void listPorts(IDeckLinkIterator& iter, const std::string& version) {
  std::cout << "{\"version\":" << quote(version) << ",\"ports\":[";
  bool comma=false;
+ bool compatibilityMode=false;
  for (;;) {
   Ref<IDeckLink> device; if (iter.Next(device.out()) != S_OK) break;
   OutputAPI output;
   const bool hasOutput=output.acquire(device.p)==S_OK;
   AttributesAPI attrs;
   check(attrs.acquire(device.p), "Read card profile (requires Desktop Video 15.3.1 or newer)");
+  compatibilityMode=compatibilityMode || output.legacy() || attrs.legacy();
   int64_t duplex=0;
   const bool inactive=attrs.GetInt(BMDDeckLinkDuplex,&duplex)==S_OK && duplex==bmdDuplexInactive;
   CFStringRef model=nullptr, name=nullptr; device->GetModelName(&model); device->GetDisplayName(&name);
@@ -93,7 +95,7 @@ static void listPorts(IDeckLinkIterator& iter, const std::string& version) {
   const auto reason=outputUnavailable(inactive,hasOutput,modeComma);
   std::cout << "],\"unavailableReason\":" << (reason.empty() ? "null" : quote(reason)) << "}";
  }
- std::cout << "]}" << std::endl;
+ std::cout << "],\"compatibilityMode\":" << (compatibilityMode ? "true" : "false") << "}" << std::endl;
 }
 static void list() {
  Ref<IDeckLinkIterator> iter; iter.p=CreateDeckLinkIteratorInstance();
@@ -101,6 +103,13 @@ static void list() {
  Ref<IDeckLinkAPIInformation> info; info.p=CreateDeckLinkAPIInformationInstance();
  CFStringRef version=nullptr; if (info.p) info->GetString(BMDDeckLinkAPIVersion, &version);
  listPorts(*iter.p,str(version));
+}
+static void version() {
+ Ref<IDeckLinkAPIInformation> info; info.p=CreateDeckLinkAPIInformationInstance();
+ if (!info.p) throw std::runtime_error("Blackmagic Desktop Video runtime unavailable");
+ CFStringRef value=nullptr;
+ check(info->GetString(BMDDeckLinkAPIVersion,&value),"Read Desktop Video version");
+ std::cout << "{\"version\":" << quote(str(value)) << "}" << std::endl;
 }
 // Read side of the gpu-frames ring (plan 008): UYVY frames Kairo converted on
 // the GPU, already at the output raster. Unlinked here too, so a Kairo crash
@@ -266,6 +275,7 @@ int main(int argc,char** argv) {
    std::cout << "{\"ok\":true}" << std::endl; return 0;
   }
   if (argc==2 && std::string(argv[1])=="--list") { list(); return 0; }
+  if (argc==2 && std::string(argv[1])=="--version") { version(); return 0; }
   const bool shmMode=argc==5 && std::string(argv[1])=="--play-shm";
   const bool stream=(argc==4 && std::string(argv[1])=="--play") || shmMode;
   const bool probe=argc==5 && std::string(argv[1])=="--probe";

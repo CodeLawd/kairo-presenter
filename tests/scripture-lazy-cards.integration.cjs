@@ -80,6 +80,8 @@ app.whenReady().then(async () => {
       showTranslation: true, showVerseNumbers: true, maxVerses: 0,
       gridRef: { current: null }, cardRefs: { current: [] }, rowRefs: { current: new Map() },
       onSelectCard: () => {},
+      pickedCards: new Set(), onPickCard: () => {},
+      onMarqueeBegin: () => {}, onMarqueeChange: () => {},
     }));
     await frame();
 

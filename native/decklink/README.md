@@ -22,6 +22,11 @@ The helper negotiates current interfaces first, then the SDK's explicit
 The buffer interfaces have different vtable layouts and are called through
 their own types. Drivers older than 15.3.1 are outside this compatibility target.
 The same negotiation is used for discovery, test patterns, and live playback.
+Inventory includes `compatibilityMode` from actual negotiated output/attribute
+interfaces. `decklink-helper --version` reads the runtime version independently
+of device enumeration, so an unsupported runtime can still receive update
+guidance when its device interfaces fail. The Hardware tab offers downloads only
+for missing/unsupported drivers; working compatibility mode is informational.
 
 Every enumerated sub-device is listed, including unavailable ones. Inactive
 channels show guidance to check connector mapping in Desktop Video Setup. A

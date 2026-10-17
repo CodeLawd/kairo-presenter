@@ -5,6 +5,14 @@
  * every glyph renders with Phosphor `weight="regular"` for a more crafted look.
  */
 import {
+  FlipHorizontal as PhFlipHorizontal,
+  FlipVertical as PhFlipVertical,
+  AlignLeftSimple as PhAlignLeftSimple,
+  AlignCenterHorizontalSimple as PhAlignCenterHorizontalSimple,
+  AlignRightSimple as PhAlignRightSimple,
+  AlignTopSimple as PhAlignTopSimple,
+  AlignCenterVerticalSimple as PhAlignCenterVerticalSimple,
+  AlignBottomSimple as PhAlignBottomSimple,
   type Icon as PhosphorIcon,
   type IconProps,
   Pulse as PhPulse,
@@ -132,6 +140,14 @@ function wrap(Ph: PhosphorIcon) {
 }
 
 export type Icon = ReturnType<typeof wrap>
+export const FlipHorizontal = wrap(PhFlipHorizontal)
+export const FlipVertical = wrap(PhFlipVertical)
+export const ObjectAlignLeft = wrap(PhAlignLeftSimple)
+export const ObjectAlignCenter = wrap(PhAlignCenterHorizontalSimple)
+export const ObjectAlignRight = wrap(PhAlignRightSimple)
+export const ObjectAlignTop = wrap(PhAlignTopSimple)
+export const ObjectAlignMiddle = wrap(PhAlignCenterVerticalSimple)
+export const ObjectAlignBottom = wrap(PhAlignBottomSimple)
 /** @deprecated Use `Icon` — kept while call sites migrate off Lucide naming. */
 export type LucideIcon = Icon
 

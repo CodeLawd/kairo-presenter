@@ -792,6 +792,7 @@ const songUsage: KairoAPI['songUsage'] = {
 }
 
 const videoDevices: KairoAPI['videoDevices'] = {
+  openDriverDownloads: () => ipcRenderer.invoke(IPC.VIDEO_DEVICES.OPEN_DRIVER_DOWNLOADS),
   setTestPattern: (id, pattern) => ipcRenderer.invoke(IPC.VIDEO_DEVICES.TEST_PATTERN, id, pattern),
   listPorts: () => ipcRenderer.invoke(IPC.VIDEO_DEVICES.LIST_PORTS),
   status: () => ipcRenderer.invoke(IPC.VIDEO_DEVICES.STATUS),

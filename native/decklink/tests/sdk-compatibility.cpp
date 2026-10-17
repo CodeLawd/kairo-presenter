@@ -139,6 +139,7 @@ int main() {
   listPorts(iterator,modern?"16.4":"15.3.1");
   std::cout.rdbuf(previous);
   const auto json=captured.str();
+  assert(json.find(modern ? "\"compatibilityMode\":false" : "\"compatibilityMode\":true")!=std::string::npos);
   for (int i=0;i<4;++i) assert(json.find("decklink:123:"+std::to_string(i))!=std::string::npos);
   assert(json.find("Inactive in the current card profile")!=std::string::npos);
   assert(json.find("No compatible video-output interface")!=std::string::npos);

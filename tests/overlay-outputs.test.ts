@@ -85,8 +85,7 @@ test("NDI outputs beyond the sender limit are disabled, not deleted — the oper
   );
   const outputs = normalizeOverlayOutputs([...ndi, makeOverlayOutput("stage", "stage", { enabled: true })], legacy);
 
-  // `projector` is the disabled Kairo screen every older store is given.
-  assert.deepEqual(outputs.map((o) => o.id), [...ndi.map((o) => o.id), "stage", "projector"]);
+  assert.deepEqual(outputs.map((o) => o.id), [...ndi.map((o) => o.id), "stage"]);
   assert.deepEqual(
     outputs.filter((o) => o.kind === "ndi").map((o) => o.enabled),
     [...Array(MAX_NDI_OUTPUTS).fill(true), false],
@@ -105,12 +104,12 @@ test("duplicate, blank and unknown-kind entries are healed rather than trusted",
     legacy,
   );
 
-  assert.deepEqual(outputs.map((o) => o.id), ["a", "b", "projector"]);
+  assert.deepEqual(outputs.map((o) => o.id), ["a", "b"]);
   assert.equal(outputs[1].kind, "message");
 });
 
-test("an empty or non-array outputs value falls back to the migration, never to nothing", () => {
-  assert.ok(normalizeOverlayOutputs([], legacy).length > 0);
+test("an empty saved list stays empty; missing output lists migrate", () => {
+  assert.deepEqual(normalizeOverlayOutputs([], legacy), []);
   assert.ok(normalizeOverlayOutputs("nope", legacy).length > 0);
   assert.ok(normalizeOverlayOutputs(null, legacy).length > 0);
 });
@@ -432,13 +431,11 @@ test("a second enabled screen on the same display is disabled, not deleted", () 
   assert.deepEqual(outputs.map((o) => [o.id, o.enabled]), [["a", true], ["b", false], ["c", true]]);
 });
 
-test("an older store gets one disabled Projector output — once", () => {
+test("explicit output lists do not recreate a removed Projector; legacy migrations still include it", () => {
   const once = normalizeOverlayOutputs([makeOverlayOutput("main", "ndi", { enabled: true })], legacy);
-  const projector = once.find((o) => o.id === "projector")!;
-  assert.equal(projector.kind, "screen");
-  assert.equal(projector.enabled, false);
+  assert.equal(once.some((o) => o.kind === "screen"), false);
   const twice = normalizeOverlayOutputs(once, legacy);
-  assert.equal(twice.filter((o) => o.kind === "screen").length, 1);
+  assert.equal(twice.filter((o) => o.kind === "screen").length, 0);
   // Fresh installs and legacy migrations carry it too, still off.
   const migrated = normalizeOverlayOutputs(undefined, legacy);
   assert.equal(migrated.filter((o) => o.kind === "screen" && !o.enabled).length, 1);

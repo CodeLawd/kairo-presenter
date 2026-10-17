@@ -528,7 +528,7 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
             )}
           </div>
 
-          <div ref={importMenuRef} className="relative shrink-0" data-tour="documents-import">
+          {current && <div ref={importMenuRef} className="relative shrink-0" data-tour="documents-import">
             <div className="flex">
               <button
                 type="button"
@@ -576,7 +576,7 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
                 </button>
               </div>
             )}
-          </div>
+          </div>}
         </div>,
         toolbarSlot,
       )}
@@ -705,6 +705,7 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
               <button
                 type="button"
                 className="btn-secondary flex h-8 items-center gap-1.5 px-3 text-xs"
+                data-tour="documents-import"
                 disabled={busy}
                 onClick={() => void importDocument()}
               >

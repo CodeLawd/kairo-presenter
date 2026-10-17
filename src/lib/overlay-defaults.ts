@@ -508,11 +508,9 @@ export function normalizeOverlayOutputs(raw: unknown, legacy: LegacyOverlayField
     })
   }
 
-  if (normalized.length === 0) return migrateLegacyOutputs(legacy)
-  // Stores written before Kairo drew screens itself get the (disabled)
-  // Projector output once. Keyed on the kind, not the id, so an operator who
-  // renamed or replaced it does not get a second one.
-  if (!normalized.some((o) => o.kind === 'screen')) normalized.push(makeProjectorOutput(0))
+  // An explicit array is the operator's saved list, including an empty one.
+  // Only a missing array above needs legacy migration; otherwise deleted
+  // screens would be recreated on the next write or restart.
   return normalized
 }
 

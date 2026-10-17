@@ -1,9 +1,10 @@
-import { ChevronDown, Copy, Eye, EyeOff, Trash2 } from '@/icons'
+import { ChevronDown, Copy, Eye, EyeOff, Trash2, FlipHorizontal, FlipVertical,
+  ObjectAlignLeft, ObjectAlignCenter, ObjectAlignRight, ObjectAlignTop, ObjectAlignMiddle, ObjectAlignBottom } from '@/icons'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import type { OverlayBox, OverlayElement } from '@shared/ipc'
 import { clampOverlayBox, ELEMENT_BOX_MIN } from '@shared/overlay-boxes'
-import { isLineElement, isMediaElement, overlayElementLabel } from '@shared/overlay-elements'
+import { alignOverlayElement, isLineElement, isMediaElement, overlayElementLabel } from '@shared/overlay-elements'
 import { overlayShape } from '@shared/overlay-shapes'
 import { ShapeMenuItems, ShapeThumb } from './ShapeGallery'
 import { LabeledSegmented, MediaAdjustments, MediaPicker } from './fields'
@@ -21,6 +22,7 @@ export function ThemeElementPanel({
   onDuplicate,
   onDelete,
   onPickMedia,
+  onDone,
 }: {
   element: OverlayElement
   onChange: (patch: ElementPatch) => void
@@ -28,6 +30,7 @@ export function ThemeElementPanel({
   onDuplicate: () => void
   onDelete: () => void
   onPickMedia: () => void
+  onDone?: () => void
 }): React.ReactElement {
   const media = isMediaElement(element)
   const line = isLineElement(element)
@@ -38,8 +41,10 @@ export function ThemeElementPanel({
 
   return (
     <div className="space-y-4">
+      {onDone && <button type="button" className="text-[12px] text-slate-400 hover:text-white" onClick={onDone}>← Theme settings</button>}
       <div className="flex items-center justify-between">
-        <p className="text-[13px] font-semibold text-white">{label}</p>
+        <div><h3 className="text-[14px] font-semibold text-white">Edit {media ? 'element' : 'shape'}</h3>
+          <p className="text-[12px] text-slate-400">{label}</p></div>
         <div className="flex items-center">
           {[
             { name: 'Duplicate', icon: Copy, run: onDuplicate },
@@ -58,6 +63,37 @@ export function ThemeElementPanel({
           ))}
         </div>
       </div>
+
+      <fieldset className="space-y-2">
+        <legend className="mb-1 text-[11px] font-medium text-zinc-500">Flip</legend>
+        <div className="grid grid-cols-2 gap-2">
+          {([
+            ['flipX', 'Horizontal', FlipHorizontal], ['flipY', 'Vertical', FlipVertical],
+          ] as const).map(([key, text, Icon]) => <button key={key} type="button" aria-label={`Flip ${text.toLowerCase()}`}
+            aria-pressed={element[key]} title={`Mirror ${text.toLowerCase()}`}
+            onClick={() => onChange({ [key]: !element[key] })}
+            className={cn('flex items-center justify-center gap-2 rounded-md px-2 py-2 text-[12px]',
+              element[key] ? 'bg-teal-500 text-on-accent' : 'bg-surface-tertiary text-slate-300 hover:bg-surface-elevated')}>
+            <Icon size={16} aria-hidden="true" />{text}
+          </button>)}
+        </div>
+      </fieldset>
+
+      <fieldset className="space-y-2">
+        <legend className="mb-1 text-[11px] font-medium text-zinc-500">Align to slide</legend>
+        <div className="grid grid-cols-3 gap-1">
+          {([
+            ['left', 'Left', ObjectAlignLeft], ['center', 'Centre', ObjectAlignCenter], ['right', 'Right', ObjectAlignRight],
+            ['top', 'Top', ObjectAlignTop], ['middle', 'Middle', ObjectAlignMiddle], ['bottom', 'Bottom', ObjectAlignBottom],
+          ] as const).map(([alignment, text, Icon]) => (
+            <button key={alignment} type="button" aria-label={`Align ${text.toLowerCase()} to slide`} title={`Align ${text.toLowerCase()} to slide`}
+              className="flex flex-col items-center gap-1 rounded-md bg-surface-tertiary px-1 py-2 text-[11px] text-slate-300 hover:bg-surface-elevated hover:text-white"
+              onClick={() => onChange({ box: alignOverlayElement(element, alignment) })}>
+              <Icon size={16} aria-hidden="true" />{text}
+            </button>
+          ))}
+        </div>
+      </fieldset>
 
       {media && (
         <>

@@ -3,7 +3,7 @@ import { cn } from '@/lib/utils'
 import { ChevronRight, RefreshCw } from '@/icons'
 import { SegmentedControl } from '@/components/shared/SegmentedControl'
 import type { OverlayOutput } from '@shared/ipc'
-import type { VideoDeviceSnapshot, VideoMode, VideoTestPattern } from '@shared/video-devices'
+import type { VideoDeviceSnapshot, VideoMode, VideoTestPattern, VideoProviderStatus } from '@shared/video-devices'
 import { FieldRow } from './RenderedOutputFields'
 
 type PatternChoice = VideoTestPattern | 'off'
@@ -17,6 +17,20 @@ const PATTERNS: ReadonlyArray<{ value: PatternChoice; label: string }> = [
 
 const fpsOf = (mode: VideoMode): number => mode.frameRateN / mode.frameRateD
 const formatFps = (fps: number): string => fps.toFixed(2).replace(/\.?0+$/, '')
+
+function DriverNotice({ driver }: { driver: VideoProviderStatus['driver'] }): React.ReactElement | null {
+  const [error, setError] = useState('')
+  if (!driver) return null
+  const needsDownload = driver.state === 'missing' || driver.state === 'unsupported'
+  return <div className="space-y-2">
+    <p role="status" className={cn('text-[12px]', needsDownload ? 'text-amber-400' : 'text-slate-400')}>{driver.message}</p>
+    {needsDownload && <button type="button" className="btn-secondary text-[12px]" onClick={() => {
+      setError('')
+      void window.api.videoDevices.openDriverDownloads().catch(() => setError('Could not open the download page. Visit blackmagicdesign.com/support.'))
+    }}>Open download page</button>}
+    {error && <p role="alert" className="text-[12px] text-red-400">{error}</p>}
+  </div>
+}
 
 
 /**
@@ -44,6 +58,8 @@ export function VideoDeviceFields({ output, snapshot, onChange, onRefresh, sourc
   const providerReason = snapshot.providers.length === 0
     ? 'This version of Kairo cannot drive video cards yet'
     : snapshot.providers.find((provider) => provider.reason)?.reason || 'Install Blackmagic Desktop Video to use DeckLink cards'
+  const driver = snapshot.providers.find((provider) => provider.name === 'decklink')?.driver
+  const driverExplainsFailure = driver?.state === 'missing' || driver?.state === 'unsupported'
 
   const setPattern = async (choice: PatternChoice): Promise<void> => {
     setBusy(true)
@@ -66,7 +82,8 @@ export function VideoDeviceFields({ output, snapshot, onChange, onRefresh, sourc
     try {
       const next = await onRefresh()
       const failure = next.providers.find((provider) => !provider.available && provider.reason)
-      if (failure) setError(failure.reason || 'Could not refresh video outputs. Try again.')
+      if (failure) setError(failure.driver?.state === 'unsupported' || failure.driver?.state === 'missing'
+        ? '' : failure.reason || 'Could not refresh video outputs. Try again.')
       else setRefreshResult(next.ports.length
         ? `Found ${next.ports.length} video output${next.ports.length === 1 ? '' : 's'}.`
         : 'No video outputs found. Check Desktop Video Setup, then refresh again.')
@@ -78,10 +95,14 @@ export function VideoDeviceFields({ output, snapshot, onChange, onRefresh, sourc
     }
   }
 
-  if (!available && !onRefresh) return <p className="text-[12px] text-slate-400" role="status">{providerReason}</p>
+  if (!available && !onRefresh) return <div className="space-y-3">
+    <DriverNotice driver={driver} />
+    {!driverExplainsFailure && <p className="text-[12px] text-slate-400" role="status">{providerReason}</p>}
+  </div>
 
   return (
     <div className="space-y-5">
+      <DriverNotice driver={driver} />
       <div className="grid grid-cols-2 gap-x-4 gap-y-5">
         <FieldRow label="Output" htmlFor={`${output.id}-port`}>
           <div className="flex gap-2">
@@ -139,7 +160,7 @@ export function VideoDeviceFields({ output, snapshot, onChange, onRefresh, sourc
       )}
 
       {/* Only a problem earns a line; a healthy output says nothing. */}
-      {!state?.ready && !refreshResult && !error && (
+      {!state?.ready && !refreshResult && !error && !driverExplainsFailure && (
         <p role="status" className="text-[13px] text-amber-400">
           {!available
             ? providerReason

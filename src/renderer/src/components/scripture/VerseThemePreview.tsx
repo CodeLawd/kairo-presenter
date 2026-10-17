@@ -59,7 +59,8 @@ export interface VerseThemePreviewProps {
   lazy?: boolean;
   /**
    * A Songs-style label bar under the slide: the reference on the left, the
-   * card's number on the right. Off for the live monitor and Operator cards.
+   * card's number on the right. Shared by Scripture and Detected cards;
+   * off for the live monitor.
    */
   footer?: { number: number } | null;
 }

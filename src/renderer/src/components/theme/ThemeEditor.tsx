@@ -5,7 +5,6 @@ import { cn } from '@/lib/utils'
 import {
   contentKindLabel,
   isRenderedKind,
-  liveOverlayTheme,
   OVERLAY_CONTENT_KINDS,
   primaryRenderedOutput,
 } from '@shared/overlay-outputs'
@@ -18,9 +17,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useAppStore } from '@/stores/useAppStore'
+import { saveOutputSettings } from '@/lib/output-settings'
+import type { OutputEdit } from '@shared/output-settings'
 import { overlayMediaUrl, renderOverlayHTML } from '@shared/overlay-template'
-import { DEFAULT_OVERLAY_SETTINGS, DEFAULT_OVERLAY_THEME, normalizeOverlaySettings, normalizeOverlayTheme } from '@shared/overlay-defaults'
-import type { AppSettings, CustomOverlayTheme, OverlayBox, OverlayContentKind, OverlayElement, OverlayOutput, OverlayTextStyle, OverlayTheme } from '@shared/ipc'
+import { DEFAULT_OVERLAY_THEME, normalizeOverlaySettings, normalizeOverlayTheme } from '@shared/overlay-defaults'
+import type { CustomOverlayTheme, OverlayBox, OverlayContentKind, OverlayElement, OverlayOutput, OverlayTextStyle, OverlayTheme } from '@shared/ipc'
 import {
   assignThemeToOutput,
   createCustomTheme,
@@ -145,7 +146,7 @@ type InspectorTab = 'background' | 'type' | 'layout'
 const SAVE_DELAY_MS = 400
 
 export default function ThemeEditor(): React.ReactElement {
-  const [overlay, setOverlay] = useState<AppSettings['overlay']>(DEFAULT_OVERLAY_SETTINGS)
+  const overlay = useBootstrapStore((s) => s.settings.overlay)
   const [library, setLibrary] = useState<CustomOverlayTheme[]>([])
   const [loading, setLoading] = useState(true)
   const [kind, setKind] = useState<OverlayContentKind>('scripture')
@@ -154,17 +155,20 @@ export default function ThemeEditor(): React.ReactElement {
   const [name, setName] = useState('')
   const [tab, setTab] = useState<InspectorTab>('background')
   const [selectedLayer, setSelectedLayer] = useState<CanvasLayerId | null>('verse')
+  const inspectorRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    inspectorRef.current?.scrollTo({ top: 0 })
+  }, [selectedLayer])
   const [sampleLength, setSampleLength] = useState<'short' | 'long'>('short')
   const [saved, setSaved] = useState(false)
+  const [saveError, setSaveError] = useState('')
   const setThemeViewState = useAppStore((s) => s.setThemeViewState)
   const [stageRef, frameWidth] = useFitFrame()
   const history = useThemeHistory()
 
   // Latest values for the debounced save, which outlives the render that scheduled it.
-  const overlayRef = useRef(overlay)
   const libraryRef = useRef(library)
   const themeDefaults = useBootstrapStore((s) => s.settings.themeDefaults) ?? {}
-  overlayRef.current = overlay
   libraryRef.current = library
   // The draft edits build on — read before React re-renders, so back-to-back edits chain.
   const draftRef = useRef(draft)
@@ -192,7 +196,6 @@ export default function ThemeEditor(): React.ReactElement {
         // The bootstrap snapshot is enough if IPC fails mid-session.
       }
       if (cancelled) return
-      setOverlay(storedOverlay)
       setLibrary(storedLibrary)
 
       const remembered = storedLibrary.find((item) => item.id === useAppStore.getState().themeSelectedId)
@@ -223,14 +226,12 @@ export default function ThemeEditor(): React.ReactElement {
   }, [flashSaved])
 
   // Only the fields this page owns; main merges them onto the stored overlay.
-  const writeOutputs = useCallback((outputs: OverlayOutput[]) => {
-    const current = overlayRef.current
-    const next = { ...current, outputs, theme: liveOverlayTheme({ ...current, outputs }, 'scripture') }
-    overlayRef.current = next
-    setOverlay(next)
-    const store = useBootstrapStore.getState()
-    store.patchSettings('overlay', { ...store.settings.overlay, ...next })
-    void window.api.settings.set('overlay', { outputs: next.outputs, theme: next.theme })
+  const writeOutputs = useCallback((edit: OutputEdit) => {
+    setSaveError('')
+    void saveOutputSettings(edit).catch((error) => {
+      console.error('Could not save screen themes', error)
+      setSaveError('Screen changes could not be saved. Please try again.')
+    })
   }, [])
 
   /** Writes the pending edit to the library and to every screen using the theme. */
@@ -247,8 +248,8 @@ export default function ThemeEditor(): React.ReactElement {
     writeLibrary(nextLibrary)
     const entry = nextLibrary.find((item) => item.id === edit.id)
     if (!entry) return
-    const outputs = overlayRef.current.outputs
-    if (outputs.some((o) => outputUsesTheme(o, entry))) writeOutputs(syncThemeToOutputs(outputs, entry))
+    const outputs = useBootstrapStore.getState().settings.overlay.outputs
+    if (outputs.some((o) => outputUsesTheme(o, entry))) writeOutputs((current) => syncThemeToOutputs(current, entry))
   }, [writeLibrary, writeOutputs])
 
   useEffect(() => () => flush(), [flush])
@@ -426,13 +427,13 @@ export default function ThemeEditor(): React.ReactElement {
   }
 
   const remove = (item: CustomOverlayTheme): void => {
-    const users = overlayRef.current.outputs.filter((o) => outputUsesTheme(o, item))
+    const users = useBootstrapStore.getState().settings.overlay.outputs.filter((o) => outputUsesTheme(o, item))
     const note = users.length > 0 ? ` ${users.map((o) => o.name).join(', ')} will keep its current look.` : ''
     if (!window.confirm(`Delete “${item.name}”?${note}`)) return
     flush()
     const next = libraryRef.current.filter((t) => t.id !== item.id)
     writeLibrary(next)
-    if (users.length > 0) writeOutputs(detachThemeFromOutputs(overlayRef.current.outputs, item))
+    if (users.length > 0) writeOutputs((current) => detachThemeFromOutputs(current, item))
     if (selectedId === item.id) {
       const fallback = themesForKind(next, kind)[0]
       if (fallback) open(fallback)
@@ -454,11 +455,10 @@ export default function ThemeEditor(): React.ReactElement {
     flush()
     const entry = libraryRef.current.find((t) => t.id === selectedId)
     if (!entry) return
-    const outputs = overlayRef.current.outputs.map((o) => {
+    writeOutputs((outputs) => outputs.map((o) => {
       if (o.id !== output.id) return o
       return outputUsesTheme(o, entry) ? unassignThemeFromOutput(o, entry) : assignThemeToOutput(o, entry)
-    })
-    writeOutputs(outputs)
+    }))
   }
 
   /**
@@ -473,7 +473,7 @@ export default function ThemeEditor(): React.ReactElement {
     useBootstrapStore.getState().patchSettings('themeDefaults', next)
     void window.api.settings.set('themeDefaults', next)
     writeOutputs(
-      overlayRef.current.outputs.map((o) =>
+      (outputs) => outputs.map((o) =>
         isRenderedKind(o.kind) ? assignThemeToOutput(o, entry) : o,
       ),
     )
@@ -554,7 +554,8 @@ export default function ThemeEditor(): React.ReactElement {
                 onChange={(e) => rename(e.target.value)}
                 onBlur={flush}
               />
-              <span className={cn('text-[11px] text-slate-400 transition-opacity', saved ? 'opacity-100' : 'opacity-0')}>Saved</span>
+              {saveError ? <span role="alert" className="text-[11px] text-red-400">{saveError}</span>
+                : <span className={cn('text-[11px] text-slate-400 transition-opacity', saved ? 'opacity-100' : 'opacity-0')}>Saved</span>}
               {isKindDefault ? (
                 <span className="shrink-0 rounded-md bg-surface-secondary px-2.5 py-1 text-[12px] font-medium text-slate-300">
                   Default theme
@@ -683,7 +684,7 @@ export default function ThemeEditor(): React.ReactElement {
       {/* Inspector */}
       <aside className="flex min-h-0 flex-col bg-surface-secondary">
         {selected && (
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+          <div ref={inspectorRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
             {selectedElement ? (
               <ThemeElementPanel
                 key={selectedElement.id}
@@ -693,9 +694,12 @@ export default function ThemeEditor(): React.ReactElement {
                 onDuplicate={() => duplicateElement(selectedElement.id)}
                 onDelete={() => deleteLayer(selectedElement.id)}
                 onPickMedia={() => void replaceElementMedia(selectedElement)}
+                onDone={() => setSelectedLayer(null)}
               />
             ) : (
             <>
+            {draft.elements.length > 0 && <ElementList elements={draft.elements} onSelect={setSelectedLayer} />}
+            <p className="text-[12px] text-slate-400">Select a shape on the slide or in Elements to edit its look, flip it, or align it.</p>
             <SegmentedControl
               role="tablist"
               label="Theme settings"
@@ -749,9 +753,6 @@ export default function ThemeEditor(): React.ReactElement {
               />
             )}
 
-            {activeTab === 'layout' && draft.elements.length > 0 && (
-              <ElementList elements={draft.elements} onSelect={setSelectedLayer} />
-            )}
             </>
             )}
           </div>
@@ -898,13 +899,14 @@ function ElementList({ elements, onSelect }: { elements: OverlayElement[]; onSel
             key={el.id}
             type="button"
             onClick={() => onSelect(el.id)}
+            aria-label={`Edit ${overlayElementLabel(el).toLowerCase()}`}
             className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] text-slate-300 transition-colors hover:bg-surface-tertiary hover:text-white"
           >
             <ElementIcon element={el} />
             <span className="min-w-0 flex-1 truncate">
               {el.mediaPath ? el.mediaPath.split(/[\\/]/).pop() : overlayElementLabel(el)}
             </span>
-            <span className="shrink-0 text-[11px] text-slate-500">{el.aboveText ? 'Over text' : 'Under text'}</span>
+            <span className="shrink-0 text-[11px] text-slate-500">Edit</span>
           </button>
         )
       })}

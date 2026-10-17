@@ -4,6 +4,7 @@ import { DEFAULT_OVERLAY_THEME, normalizeOverlayTheme } from '../src/lib/overlay
 import { ELEMENT_BOX_MIN, resizeOverlayBox, resizeOverlayBoxKeepingAspect } from '../src/lib/overlay-boxes'
 import {
   createOverlayElement,
+  alignOverlayElement,
   duplicateOverlayElement,
   MAX_OVERLAY_ELEMENTS,
   normalizeOverlayElements,
@@ -181,4 +182,25 @@ test('a shape the catalog does not know is dropped on load', () => {
     { id: 'kept', kind: 'shape', shape: 'heart' },
   ])
   assert.deepEqual(elements.map((el) => [el.id, el.shape]), [['kept', 'heart']])
+})
+
+test('flips persist through theme reload and combine with rotation in the output', () => {
+  const arrow = { ...createOverlayElement('shape', undefined, 'arrow', 'arrow-right'), flipX: true, flipY: true, rotationDeg: 30 }
+  const theme = normalizeOverlayTheme(JSON.parse(JSON.stringify({ ...DEFAULT_OVERLAY_THEME, elements: [arrow] })))
+  assert.equal(theme.elements[0].flipX, true)
+  assert.equal(theme.elements[0].flipY, true)
+  assert.match(renderOverlayHTML(theme, '', ''), /rotate\(30deg\) scaleX\(-1\) scaleY\(-1\)/)
+  const legacy = normalizeOverlayElements([{ id: 'legacy', kind: 'rectangle' }])[0]
+  assert.equal(legacy.flipX, false)
+  assert.equal(legacy.flipY, false)
+})
+
+test('alignment moves to slide edges and centres without resizing or changing the other axis', () => {
+  const shape = rect('s', { box: { xPct: 17, yPct: 23, widthPct: 30, heightPct: 20 } })
+  for (const [direction, x, y] of [
+    ['left', 0, 23], ['center', 35, 23], ['right', 70, 23],
+    ['top', 17, 0], ['middle', 17, 40], ['bottom', 17, 80],
+  ] as const) {
+    assert.deepEqual(alignOverlayElement(shape, direction), { xPct: x, yPct: y, widthPct: 30, heightPct: 20 })
+  }
 })
