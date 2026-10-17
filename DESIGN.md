@@ -12,6 +12,11 @@ palette is ink #11120D, paper #FFFBF4 and stone #565449; all tokens blend from
 these. The accent (`teal-*`) is white in dark and ink in light, so CTAs are white
 buttons with ink text. #6C91C2 (`live`) marks only what is on screen.
 
+Video output refresh stays icon-only. Rotate the refresh icon while its scan is
+pending, disable repeat clicks, and respect reduced motion. Report the result or
+detection error inline afterward, including when the inventory is unchanged.
+Unavailable card channels retain their specific profile/compatibility explanation.
+
 ## First-run onboarding
 
 Modelled on ProPresenter's welcome window, shown **once per install, on first

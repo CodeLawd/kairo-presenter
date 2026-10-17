@@ -302,72 +302,6 @@ function openProviderDocs(url: string): void {
   window.open(url, '_blank', 'noopener,noreferrer')
 }
 
-/** The model names each provider actually serves, as suggestions not limits. */
-const MODEL_SUGGESTIONS: Record<'anthropic' | 'deepseek', string[]> = {
-  anthropic: ['claude-haiku-4-5', 'claude-sonnet-5', 'claude-opus-5'],
-  deepseek: ['deepseek-flash', 'deepseek-v4-pro'],
-}
-
-/**
- * Which model does the scripture detection.
- *
- * A free text field on purpose: providers ship new models faster than this app
- * ships releases, and being unable to type a name that already works is worse
- * than the risk of a typo. The suggestions are a convenience; the provider is
- * the authority, and its error comes back verbatim in the status bar.
- */
-function DetectionModelRow({
-  provider,
-  value,
-  onSave,
-}: {
-  provider: 'anthropic' | 'deepseek'
-  value: string
-  onSave: (model: string) => void
-}): React.ReactElement {
-  const [draft, setDraft] = useState(value)
-  useEffect(() => { setDraft(value) }, [value])
-  const fallback = provider === 'deepseek' ? 'deepseek-flash' : 'claude-haiku-4-5'
-  const dirty = draft.trim() !== value.trim()
-
-  return (
-    <div className="space-y-1.5">
-      <div className="flex items-baseline justify-between gap-3">
-        <label htmlFor="detection-model" className="text-xs font-medium text-white/80">
-          Detection model
-        </label>
-        <span className="font-mono text-[10px] text-white/35">{provider}</span>
-      </div>
-      <div className="flex gap-2">
-        <input
-          id="detection-model"
-          list="detection-model-options"
-          className="input flex-1 font-mono text-xs"
-          placeholder={fallback}
-          value={draft}
-          onChange={event => setDraft(event.target.value)}
-          onKeyDown={event => { if (event.key === 'Enter' && dirty) onSave(draft.trim()) }}
-        />
-        <datalist id="detection-model-options">
-          {MODEL_SUGGESTIONS[provider].map(model => <option key={model} value={model} />)}
-        </datalist>
-        <button
-          type="button"
-          disabled={!dirty}
-          className="btn-secondary shrink-0 text-xs disabled:opacity-40"
-          onClick={() => onSave(draft.trim())}
-        >
-          Save
-        </button>
-      </div>
-      <p className="text-[10px] leading-relaxed text-white/35">
-        Leave empty to use {fallback}. Any model your provider serves will work — if it rejects the
-        name, the reason appears in the status bar.
-      </p>
-    </div>
-  )
-}
-
 /**
  * Fixed choices rather than a free-text field: four options are easy to reason
  * about and to test, and nobody needs 1,750ms.
@@ -1208,8 +1142,7 @@ function ApiKeysSection({
     clearStt.length > 0 ||
     clearLyrics.length > 0 ||
     secrets.some((secret) => secret.draft.trim().length > 0) ||
-    settings.stt.llmProvider !== storedStt.llmProvider ||
-    (settings.stt.llmModel ?? '') !== (storedStt.llmModel ?? '')
+    settings.stt.llmProvider !== storedStt.llmProvider
 
   /** Row props shared by every provider: saved state, draft, remove/undo. */
   const keyRow = (
@@ -1314,13 +1247,6 @@ function ApiKeysSection({
             aria-label="DeepSeek API Key"
           />
         )}
-        <PrefPad>
-          <DetectionModelRow
-            provider={llmProvider}
-            value={settings.stt.llmModel ?? ''}
-            onSave={model => update('stt', { llmModel: model })}
-          />
-        </PrefPad>
       </PrefGroup>
 
       <PrefGroup title="Lookups" description="Optional. Each unlocks an extra feature.">

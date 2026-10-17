@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { ChevronRight, RefreshCw } from '@/icons'
 import { SegmentedControl } from '@/components/shared/SegmentedControl'
@@ -28,16 +28,22 @@ export function VideoDeviceFields({ output, snapshot, onChange, onRefresh, sourc
   output: OverlayOutput
   snapshot: VideoDeviceSnapshot
   onChange: (patch: Partial<OverlayOutput>) => void
-  onRefresh?: () => void
+  onRefresh?: () => Promise<VideoDeviceSnapshot>
   /** The Content field (follows the service / own playlist), placed after the format. */
   source?: React.ReactNode
 }): React.ReactElement {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [refreshing, setRefreshing] = useState(false)
+  const refreshInFlight = useRef(false)
+  const [refreshResult, setRefreshResult] = useState('')
   const port = snapshot.ports.find((candidate) => candidate.id === output.devicePortId)
   const available = snapshot.providers.some((provider) => provider.available)
   const state = snapshot.outputs[output.id]
   const mode = port?.modes.find((candidate) => candidate.id === output.deviceModeId)
+  const providerReason = snapshot.providers.length === 0
+    ? 'This version of Kairo cannot drive video cards yet'
+    : snapshot.providers.find((provider) => provider.reason)?.reason || 'Install Blackmagic Desktop Video to use DeckLink cards'
 
   const setPattern = async (choice: PatternChoice): Promise<void> => {
     setBusy(true)
@@ -51,14 +57,28 @@ export function VideoDeviceFields({ output, snapshot, onChange, onRefresh, sourc
     } finally { setBusy(false) }
   }
 
-  if (!available) return (
-    <p className="text-[12px] text-slate-400" role="status">
-      {snapshot.providers.length === 0
-        ? 'This version of Kairo cannot drive video cards yet'
-        : snapshot.providers.find((provider) => provider.reason)?.reason ??
-          'Install Blackmagic Desktop Video to use DeckLink cards'}
-    </p>
-  )
+  const refresh = async (): Promise<void> => {
+    if (!onRefresh || refreshInFlight.current) return
+    refreshInFlight.current = true
+    setRefreshing(true)
+    setRefreshResult('')
+    setError('')
+    try {
+      const next = await onRefresh()
+      const failure = next.providers.find((provider) => !provider.available && provider.reason)
+      if (failure) setError(failure.reason || 'Could not refresh video outputs. Try again.')
+      else setRefreshResult(next.ports.length
+        ? `Found ${next.ports.length} video output${next.ports.length === 1 ? '' : 's'}.`
+        : 'No video outputs found. Check Desktop Video Setup, then refresh again.')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not refresh video outputs. Try again.')
+    } finally {
+      refreshInFlight.current = false
+      setRefreshing(false)
+    }
+  }
+
+  if (!available && !onRefresh) return <p className="text-[12px] text-slate-400" role="status">{providerReason}</p>
 
   return (
     <div className="space-y-5">
@@ -82,9 +102,10 @@ export function VideoDeviceFields({ output, snapshot, onChange, onRefresh, sourc
                 <option value={output.devicePortId}>{output.devicePortLabel || 'Saved output'} — disconnected</option>}
             </select>
             {onRefresh && (
-              <button type="button" onClick={onRefresh} title="Look for video cards again" aria-label="Look for video cards again"
-                className="grid w-[38px] shrink-0 place-items-center rounded-md bg-surface-tertiary text-slate-400 hover:bg-surface-elevated hover:text-slate-200">
-                <RefreshCw size={14} aria-hidden="true" />
+              <button type="button" onClick={() => void refresh()} disabled={refreshing} aria-busy={refreshing}
+                title="Look for video cards again" aria-label="Look for video cards again"
+                className="grid w-[38px] shrink-0 place-items-center rounded-md bg-surface-tertiary text-slate-400 hover:bg-surface-elevated hover:text-slate-200 disabled:cursor-wait disabled:opacity-60">
+                <RefreshCw size={14} aria-hidden="true" className={cn(refreshing && 'animate-spin motion-reduce:animate-none')} />
               </button>
             )}
           </div>
@@ -118,11 +139,14 @@ export function VideoDeviceFields({ output, snapshot, onChange, onRefresh, sourc
       )}
 
       {/* Only a problem earns a line; a healthy output says nothing. */}
-      {!state?.ready && (
+      {!state?.ready && !refreshResult && !error && (
         <p role="status" className="text-[13px] text-amber-400">
-          {state?.reason || (snapshot.ports.length ? 'Choose an output' : 'No video cards detected')}
+          {!available
+            ? providerReason
+            : state?.reason || (snapshot.ports.length ? 'Choose an output' : 'No video cards detected')}
         </p>
       )}
+      <p role="status" className="text-[13px] text-slate-400">{refreshResult}</p>
       {error && <p role="alert" className="text-[13px] text-red-400">{error}</p>}
 
       <SignalDetails output={output} snapshot={snapshot} mode={mode} />

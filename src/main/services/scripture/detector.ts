@@ -456,7 +456,12 @@ export class ScriptureDetector extends EventEmitter {
   }
 
   private initClient(): void {
-    if (this.cfg.provider === "deepseek") {
+    // No key runs the local matchers only (analyze() never calls the model).
+    // The OpenAI SDK throws on an empty key, so build no client at all.
+    if (!this.cfg.apiKey?.trim()) {
+      this.anthropic = null;
+      this.openaiCompat = null;
+    } else if (this.cfg.provider === "deepseek") {
       this.openaiCompat = new OpenAI({
         apiKey: this.cfg.apiKey,
         baseURL: DEEPSEEK_BASE_URL,

@@ -314,3 +314,10 @@ for (const citation of [
     });
   }
 }
+
+test("a detector with no LLM key starts for every provider", () => {
+  for (const provider of ["anthropic", "deepseek"] as const) {
+    const detector = new ScriptureDetector({ provider, apiKey: "" });
+    detector.destroy();
+  }
+});

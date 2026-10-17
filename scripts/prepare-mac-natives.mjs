@@ -21,6 +21,8 @@ const PREBUILT_SOURCE = 'native/decklink/prebuilt/SOURCE_SHA256'
 /** Everything compiled into the helper that lives in this repo. */
 const SOURCES = [
   'native/decklink/helper.cpp',
+  'native/decklink/compatibility.h',
+  'native/decklink/sdk-compatibility.h',
   'native/decklink/frame-input.h',
   'native/decklink/uyvy.h',
   'native/gpu-frames/ring.h',

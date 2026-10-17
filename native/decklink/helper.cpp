@@ -1,6 +1,6 @@
 // Kairo-owned implementation. SDK headers/dispatch are supplied at build time;
 // the user's Desktop Video installation supplies the runtime framework.
-#include "DeckLinkAPI.h"
+#include "sdk-compatibility.h"
 #include "frame-input.h"
 #include "uyvy.h"
 #include "../gpu-frames/ring.h"
@@ -49,36 +49,37 @@ static std::string quote(const std::string& s) {
  return r + "\"";
 }
 static std::string id(IDeckLink* device) {
- Ref<IDeckLinkProfileAttributes> attrs;
- check(device->QueryInterface(IID_IDeckLinkProfileAttributes, reinterpret_cast<void**>(attrs.out())), "Read device attributes");
+ AttributesAPI attrs;
+ check(attrs.acquire(device), "Read device attributes (requires Desktop Video 15.3.1 or newer)");
  int64_t persistent=0, sub=0;
- check(attrs->GetInt(BMDDeckLinkPersistentID, &persistent), "Read persistent device id");
- check(attrs->GetInt(BMDDeckLinkSubDeviceIndex, &sub), "Read sub-device index");
+ check(attrs.GetInt(BMDDeckLinkPersistentID, &persistent), "Read persistent device id");
+ check(attrs.GetInt(BMDDeckLinkSubDeviceIndex, &sub), "Read sub-device index");
  return "decklink:" + std::to_string(persistent) + ":" + std::to_string(sub);
 }
 // Never schedule into the past after a late callback. Time is SDK stream time.
 static int64_t nextTime(int64_t next, int64_t now, int64_t duration) {
  return std::max(next, ((now / duration) + 1) * duration);
 }
-static void list() {
- Ref<IDeckLinkIterator> iter; iter.p=CreateDeckLinkIteratorInstance();
- if (!iter.p) throw std::runtime_error("Blackmagic Desktop Video runtime unavailable");
- Ref<IDeckLinkAPIInformation> info; info.p=CreateDeckLinkAPIInformationInstance();
- CFStringRef version=nullptr; if (info.p) info->GetString(BMDDeckLinkAPIVersion, &version);
- std::cout << "{\"version\":" << quote(str(version)) << ",\"ports\":[";
+static void listPorts(IDeckLinkIterator& iter, const std::string& version) {
+ std::cout << "{\"version\":" << quote(version) << ",\"ports\":[";
  bool comma=false;
  for (;;) {
-  Ref<IDeckLink> device; if (iter->Next(device.out()) != S_OK) break;
-  Ref<IDeckLinkOutput> output;
-  if (device->QueryInterface(IID_IDeckLinkOutput, reinterpret_cast<void**>(output.out())) != S_OK) continue;
+  Ref<IDeckLink> device; if (iter.Next(device.out()) != S_OK) break;
+  OutputAPI output;
+  const bool hasOutput=output.acquire(device.p)==S_OK;
+  AttributesAPI attrs;
+  check(attrs.acquire(device.p), "Read card profile (requires Desktop Video 15.3.1 or newer)");
+  int64_t duplex=0;
+  const bool inactive=attrs.GetInt(BMDDeckLinkDuplex,&duplex)==S_OK && duplex==bmdDuplexInactive;
   CFStringRef model=nullptr, name=nullptr; device->GetModelName(&model); device->GetDisplayName(&name);
   if (comma) std::cout << ','; comma=true;
   std::cout << "{\"id\":" << quote(id(device.p)) << ",\"provider\":\"decklink\",\"deviceName\":" << quote(str(model))
     << ",\"portName\":" << quote(str(name)) << ",\"supportsKeyFill\":false,\"modes\":[";
-  Ref<IDeckLinkDisplayModeIterator> modes; check(output->GetDisplayModeIterator(modes.out()), "Read modes");
+  Ref<IDeckLinkDisplayModeIterator> modes;
+  if (hasOutput && !inactive) check(output->GetDisplayModeIterator(modes.out()), "Read modes");
   bool modeComma=false;
   for (;;) {
-   Ref<IDeckLinkDisplayMode> mode; if (modes->Next(mode.out()) != S_OK) break;
+   Ref<IDeckLinkDisplayMode> mode; if (!modes.p || modes->Next(mode.out()) != S_OK) break;
    bool supported=false; BMDDisplayMode actual;
    output->DoesSupportVideoMode(bmdVideoConnectionUnspecified, mode->GetDisplayMode(), bmdFormat8BitYUV, bmdNoVideoOutputConversion, bmdSupportedVideoModeDefault, &actual, &supported);
    // Initial qualification is HD only; SD requires a Rec.601 conversion path.
@@ -89,9 +90,17 @@ static void list() {
     << ",\"width\":" << mode->GetWidth() << ",\"height\":" << mode->GetHeight() << ",\"frameRateN\":" << scale
     << ",\"frameRateD\":" << duration << ",\"interlaced\":" << (mode->GetFieldDominance()==bmdUpperFieldFirst || mode->GetFieldDominance()==bmdLowerFieldFirst ? "true" : "false") << '}';
   }
-  std::cout << "],\"unavailableReason\":" << (modeComma ? "null" : quote("No output modes available in the current device profile")) << "}";
+  const auto reason=outputUnavailable(inactive,hasOutput,modeComma);
+  std::cout << "],\"unavailableReason\":" << (reason.empty() ? "null" : quote(reason)) << "}";
  }
  std::cout << "]}" << std::endl;
+}
+static void list() {
+ Ref<IDeckLinkIterator> iter; iter.p=CreateDeckLinkIteratorInstance();
+ if (!iter.p) throw std::runtime_error("Blackmagic Desktop Video runtime unavailable");
+ Ref<IDeckLinkAPIInformation> info; info.p=CreateDeckLinkAPIInformationInstance();
+ CFStringRef version=nullptr; if (info.p) info->GetString(BMDDeckLinkAPIVersion, &version);
+ listPorts(*iter.p,str(version));
 }
 // Read side of the gpu-frames ring (plan 008): UYVY frames Kairo converted on
 // the GPU, already at the output raster. Unlinked here too, so a Kairo crash
@@ -125,7 +134,7 @@ class Playback : public IDeckLinkVideoOutputCallback {
  int64_t next=0;
  uint64_t lastScheduledVersion=0;
 public:
- Ref<IDeckLinkOutput> output;
+ OutputAPI output;
  std::vector<IDeckLinkMutableVideoFrame*> frames;
  std::unique_ptr<ShmInput> shm;
  uint64_t shmPublished=0;
@@ -159,13 +168,13 @@ public:
    const auto version=received.load();
    if (version==lastScheduledVersion) ++repeated;
    lastScheduledVersion=version;
-   Ref<IDeckLinkVideoBuffer> buffer;
-   HRESULT hr=frame->QueryInterface(IID_IDeckLinkVideoBuffer,reinterpret_cast<void**>(buffer.out()));
-   if (hr==S_OK) hr=buffer->StartAccess(bmdBufferAccessWrite);
+   FrameBufferAPI buffer;
+   HRESULT hr=buffer.acquire(frame);
+   if (hr==S_OK) hr=buffer.StartAccess();
    if (hr!=S_OK) { fail(); return S_OK; }
-   void* bytes=nullptr; hr=buffer->GetBytes(&bytes);
+   void* bytes=nullptr; hr=buffer.GetBytes(&bytes);
    if (hr==S_OK) std::memcpy(bytes,latest->data(),latest->size());
-   HRESULT end=buffer->EndAccess(bmdBufferAccessWrite);
+   HRESULT end=buffer.EndAccess();
    if (hr!=S_OK || end!=S_OK) { fail(); return S_OK; }
   }
   next=nextTime(next,now,duration);
@@ -187,7 +196,7 @@ public:
   std::lock_guard<std::mutex> guard(lock); didStop=true; if (!stopping) fail(); stopped.notify_all(); return S_OK;
  }
  void start(IDeckLink* device, BMDDisplayMode selected, bool red=true) {
-  check(device->QueryInterface(IID_IDeckLinkOutput, reinterpret_cast<void**>(output.out())), "Acquire output");
+  check(output.acquire(device), "Acquire output (requires Desktop Video 15.3.1 or newer)");
   Ref<IDeckLinkDisplayMode> mode; check(output->GetDisplayMode(selected,mode.out()), "Read selected mode");
   check(mode->GetFrameRate(&duration,&scale), "Read frame rate");
   if (duration<=0 || scale<=0 || mode->GetWidth()<=0 || mode->GetWidth()%2 || mode->GetHeight()<720) throw std::runtime_error("Invalid output raster or clock");
@@ -199,20 +208,20 @@ public:
   for (int i=0;i<3;++i) {
    IDeckLinkMutableVideoFrame* frame=nullptr;
    check(output->CreateVideoFrame(mode->GetWidth(),mode->GetHeight(),mode->GetWidth()*2,bmdFormat8BitYUV,bmdFrameFlagDefault,&frame), "Create preroll frame");
-   frames.push_back(frame); Ref<IDeckLinkVideoBuffer> buffer;
-   check(frame->QueryInterface(IID_IDeckLinkVideoBuffer,reinterpret_cast<void**>(buffer.out())),"Acquire frame buffer");
-   check(buffer->StartAccess(bmdBufferAccessWrite),"Access frame buffer"); void* data=nullptr;
-   check(buffer->GetBytes(&data),"Read frame buffer");
+   frames.push_back(frame); FrameBufferAPI buffer;
+   check(buffer.acquire(frame),"Acquire frame buffer");
+   check(buffer.StartAccess(),"Access frame buffer"); void* data=nullptr;
+   check(buffer.GetBytes(&data),"Read frame buffer");
    const uint8_t color[8]={0,0,static_cast<uint8_t>(red?255:0),255,0,0,static_cast<uint8_t>(red?255:0),255}; uint8_t pixel[4]; uyvy(color,pixel);
    auto* bytes=static_cast<uint8_t*>(data);
    for (long n=0;n<mode->GetWidth()*mode->GetHeight()*2;n+=4) std::memcpy(bytes+n,pixel,4);
-   check(buffer->EndAccess(bmdBufferAccessWrite),"Finish frame access");
+   check(buffer.EndAccess(),"Finish frame access");
    check(output->ScheduleVideoFrame(frame,next,duration,scale), "Preroll frame"); next+=duration;
   }
   check(output->StartScheduledPlayback(0,scale,1.0),"Start scheduled playback");
  }
  void close() {
-  if (!output.p) return;
+  if (!output.available()) return;
   { std::lock_guard<std::mutex> guard(lock); stopping=true; }
   output->StopScheduledPlayback(0,nullptr,scale);
   { std::unique_lock<std::mutex> guard(lock); stopped.wait_for(guard,std::chrono::seconds(3),[&]{return didStop;}); }

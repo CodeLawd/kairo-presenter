@@ -126,28 +126,26 @@ export function ServicePanel(): React.ReactElement {
     {active || error ? (
       <div className="shrink-0 px-4 pb-2">
         {active ? (
-          // The session at a glance: recording light + talk time, the name, and
-          // the two things you can do with it. The clock stops while paused.
-          <div className="flex min-w-0 items-center gap-3 rounded-lg bg-surface-tertiary py-1.5 pl-3 pr-1.5">
-            <span className="flex shrink-0 items-center gap-2" title={paused ? 'Paused — the clock is stopped' : 'Recording'}>
+          // The session at a glance on one row: recording light + talk time and
+          // the name (click it to review), then End. The clock stops while paused.
+          <div className="flex min-w-0 items-center gap-1 rounded-lg bg-surface-tertiary p-1">
+            <button
+              type="button"
+              onClick={() => setViewId(active.id)}
+              title={`Review — ${active.speaker ? `${liveLabel} · ${active.speaker}` : liveLabel}`}
+              className="flex h-7 min-w-0 flex-1 items-center gap-2.5 rounded-md px-2 text-left transition-colors hover:bg-surface-elevated"
+            >
               <span
                 aria-hidden="true"
-                className={cn('size-2 rounded-full', paused ? 'bg-zinc-500' : 'bg-red-500 motion-safe:animate-pulse')}
+                className={cn('size-2 shrink-0 rounded-full', paused ? 'bg-zinc-500' : 'bg-red-500 motion-safe:animate-pulse')}
               />
-              <span className={cn('font-mono text-[13px] tabular-nums', paused ? 'text-zinc-500' : 'text-zinc-100')}>{elapsedLabel}</span>
-              <span className="sr-only">{paused ? 'Paused' : 'Recording'}</span>
-            </span>
-            <p
-              className={cn('min-w-0 flex-1 truncate text-[12px]', active.title ? 'text-zinc-300' : 'text-zinc-500')}
-              title={active.speaker ? `${liveLabel} · ${active.speaker}` : liveLabel}
-            >
-              {liveLabel}
-              {active.speaker ? <span className="text-zinc-500"> · {active.speaker}</span> : null}
-            </p>
-            <div className="flex shrink-0 items-center gap-1">
-              <button type="button" className="h-7 rounded-md px-2.5 text-[11px] font-medium text-zinc-300 transition-colors hover:bg-surface-elevated hover:text-white" onClick={() => setViewId(active.id)}>Review</button>
-              <button type="button" disabled={busy} className="h-7 rounded-md bg-surface-elevated px-2.5 text-[11px] font-medium text-zinc-100 transition-colors hover:bg-surface-border disabled:opacity-40" onClick={() => setConfirmEnd(true)}>End service</button>
-            </div>
+              <span className={cn('shrink-0 font-mono text-[13px] tabular-nums', paused ? 'text-zinc-500' : 'text-zinc-100')}>{elapsedLabel}</span>
+              <span className="sr-only">{paused ? 'Paused' : 'Recording'} — review</span>
+              <span className={cn('min-w-0 truncate text-[12px]', active.title ? 'text-zinc-300' : 'text-zinc-500')}>
+                {liveLabel}
+              </span>
+            </button>
+            <button type="button" disabled={busy} title="End service" className="h-7 shrink-0 rounded-md bg-surface-elevated px-2.5 text-[11px] font-medium text-zinc-100 transition-colors hover:bg-surface-border disabled:opacity-40" onClick={() => setConfirmEnd(true)}>End</button>
           </div>
         ) : null}
         {error && <p role="alert" className="mt-1.5 text-[11px] text-red-400">{error}</p>}

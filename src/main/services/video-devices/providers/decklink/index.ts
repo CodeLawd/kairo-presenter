@@ -35,7 +35,7 @@ export class DeckLinkProvider implements VideoDeviceProvider {
     if (!Array.isArray(result.ports)) throw new Error('Invalid DeckLink inventory')
     this.scanned = true
     this.version = result.version
-    this.ports = result.ports.map((port) => ({ ...port, unavailableReason: port.modes.length ? port.unavailableReason : 'No output modes available in the current device profile' }))
+    this.ports = result.ports.map((port) => ({ ...port, unavailableReason: port.unavailableReason || (port.modes.length ? null : 'No output modes available in the current device profile') }))
     return structuredClone(this.ports)
   }
   onPortsChanged(listener: () => void): () => void {

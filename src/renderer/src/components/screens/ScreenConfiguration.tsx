@@ -1083,7 +1083,10 @@ function OutputDetail({
             <div className="max-w-[560px]">
               {devices
                 ? <VideoDeviceFields output={output} snapshot={devices} onChange={onChange}
-                    onRefresh={() => { void window.api.videoDevices.listPorts().catch((error) => console.error(error)) }}
+                    onRefresh={async () => {
+                      await window.api.videoDevices.listPorts()
+                      return window.api.videoDevices.status()
+                    }}
                     source={<ScreenSourceFields output={output} onChange={onChange} />} />
                 : <p role="status" className="text-[12px] text-slate-400">Checking video devices…</p>}
             </div>

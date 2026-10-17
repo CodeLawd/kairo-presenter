@@ -871,7 +871,6 @@ export default function Transcription(): React.ReactElement {
           sttApiKey:           '',
           sttLanguage:         selectedLanguage,
           llmProvider,
-          scriptureModel: all.stt.llmModel?.trim() || undefined,
           llmApiKey:           '',
           scriptureTranslation: all.scripture.defaultTranslation,
           autoMode:            all.scripture.autoMode,
