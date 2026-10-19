@@ -1156,8 +1156,13 @@ export interface LyricsOnlineResult {
   existingSongId?: string
 }
 
+export type LyricsReview =
+  | { status: 'reviewed'; removedLines: number }
+  | { status: 'unverified'; reason: 'missing-key' | 'unavailable' | 'invalid-response' | 'too-large' }
+
 /** Full lyrics for a search hit — fetched on click, not saved until Import. */
 export interface LyricsOnlinePreview {
+  review?: LyricsReview
   title: string
   artist: string
   provider: LyricsProvider
@@ -1590,6 +1595,9 @@ export interface OrchestratorAPI {
 }
 
 export interface AppAPI {
+  onQuitRequested: (callback: () => void) => Unsubscribe
+  quitPending: () => Promise<boolean>
+  respondToQuit: (confirmed: boolean) => Promise<void>
   onImportRequested: (callback: (kind: import('./import-menu').ImportKind) => void) => Unsubscribe
   /** Loads every local resource the first render needs, in one round trip. */
   bootstrap: () => Promise<AppBootstrapSnapshot>
@@ -1803,6 +1811,9 @@ export const IPC = {
     ERROR:          'audio:error',                  // push
   },
   APP: {
+    QUIT_REQUESTED: 'app:quitRequested',
+    QUIT_PENDING: 'app:quitPending',
+    QUIT_RESPONSE: 'app:quitResponse',
     IMPORT_REQUESTED: 'app:importRequested',
     IMPORT_READY: 'app:importReady',
     BOOTSTRAP:          'app:bootstrap',          // invoke

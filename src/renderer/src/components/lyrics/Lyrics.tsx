@@ -1,3 +1,4 @@
+import { LyricsReviewNotice } from './LyricsReviewNotice'
 import { LibraryRail } from '@/components/lyrics/LibraryRail'
 import { ZoomControl } from '@/components/shared/ZoomControl'
 import { leavesTarget } from '@/lib/drag'
@@ -959,7 +960,7 @@ function OnlinePreviewPane({
         {loading && (
           <div className="flex items-center justify-center gap-2 py-16 text-slate-500">
             <Loader2 size={16} className="animate-spin text-teal-400" />
-            <span className="text-sm">Loading lyrics…</span>
+            <span className="text-sm">Loading and reviewing lyrics…</span>
           </div>
         )}
         {!loading && error && (
@@ -977,6 +978,7 @@ function OnlinePreviewPane({
         )}
         {!loading && !error && preview && (
           <div className="space-y-5 select-text cursor-text">
+            <LyricsReviewNotice review={preview.review} />
             {preview.sections.map((section, i) => (
               <div key={`${section.label}-${i}`}>
                 <p className="text-[10px] font-bold uppercase tracking-widest text-teal-500/80 mb-2">

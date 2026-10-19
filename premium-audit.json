@@ -20,15 +20,6 @@
     },
     {
       "category": "unresolved",
-      "file": "src/renderer/src/components/lyrics/Lyrics.tsx",
-      "line": 802,
-      "message": "Native select is used without an explicit ownership decision.",
-      "remediation": "Record Select/Listbox as native or reuse the authored canonical owner.",
-      "ruleId": "ownership.native-select-undecided",
-      "severity": "error"
-    },
-    {
-      "category": "unresolved",
       "file": "src/renderer/src/components/onboarding/StepChurchProfile.tsx",
       "line": 100,
       "message": "Native select is used without an explicit ownership decision.",
@@ -39,16 +30,7 @@
     {
       "category": "unresolved",
       "file": "src/renderer/src/components/operator/LiveOutputPreview.tsx",
-      "line": 170,
-      "message": "Native select is used without an explicit ownership decision.",
-      "remediation": "Record Select/Listbox as native or reuse the authored canonical owner.",
-      "ruleId": "ownership.native-select-undecided",
-      "severity": "error"
-    },
-    {
-      "category": "unresolved",
-      "file": "src/renderer/src/components/operator/OperatorToolbar.tsx",
-      "line": 108,
+      "line": 198,
       "message": "Native select is used without an explicit ownership decision.",
       "remediation": "Record Select/Listbox as native or reuse the authored canonical owner.",
       "ruleId": "ownership.native-select-undecided",
@@ -66,7 +48,7 @@
     {
       "category": "unresolved",
       "file": "src/renderer/src/components/operator/ServicePanel.tsx",
-      "line": 173,
+      "line": 177,
       "message": "Native select is used without an explicit ownership decision.",
       "remediation": "Record Select/Listbox as native or reuse the authored canonical owner.",
       "ruleId": "ownership.native-select-undecided",
@@ -84,7 +66,7 @@
     {
       "category": "unresolved",
       "file": "src/renderer/src/components/screens/RenderedOutputFields.tsx",
-      "line": 47,
+      "line": 54,
       "message": "Native select is used without an explicit ownership decision.",
       "remediation": "Record Select/Listbox as native or reuse the authored canonical owner.",
       "ruleId": "ownership.native-select-undecided",
@@ -93,7 +75,16 @@
     {
       "category": "unresolved",
       "file": "src/renderer/src/components/screens/ScreenConfiguration.tsx",
-      "line": 839,
+      "line": 960,
+      "message": "Native select is used without an explicit ownership decision.",
+      "remediation": "Record Select/Listbox as native or reuse the authored canonical owner.",
+      "ruleId": "ownership.native-select-undecided",
+      "severity": "error"
+    },
+    {
+      "category": "unresolved",
+      "file": "src/renderer/src/components/screens/VideoDeviceFields.tsx",
+      "line": 109,
       "message": "Native select is used without an explicit ownership decision.",
       "remediation": "Record Select/Listbox as native or reuse the authored canonical owner.",
       "ruleId": "ownership.native-select-undecided",
@@ -102,7 +93,7 @@
     {
       "category": "unresolved",
       "file": "src/renderer/src/components/screens/displays.tsx",
-      "line": 56,
+      "line": 55,
       "message": "Native select is used without an explicit ownership decision.",
       "remediation": "Record Select/Listbox as native or reuse the authored canonical owner.",
       "ruleId": "ownership.native-select-undecided",
@@ -111,7 +102,16 @@
     {
       "category": "unresolved",
       "file": "src/renderer/src/components/scripture/PlaylistSidebar.tsx",
-      "line": 582,
+      "line": 602,
+      "message": "Native select is used without an explicit ownership decision.",
+      "remediation": "Record Select/Listbox as native or reuse the authored canonical owner.",
+      "ruleId": "ownership.native-select-undecided",
+      "severity": "error"
+    },
+    {
+      "category": "unresolved",
+      "file": "src/renderer/src/components/scripture/ScriptureOptions.tsx",
+      "line": 87,
       "message": "Native select is used without an explicit ownership decision.",
       "remediation": "Record Select/Listbox as native or reuse the authored canonical owner.",
       "ruleId": "ownership.native-select-undecided",
@@ -120,7 +120,7 @@
     {
       "category": "unresolved",
       "file": "src/renderer/src/components/scripture/ScriptureSearchBar.tsx",
-      "line": 357,
+      "line": 362,
       "message": "Native select is used without an explicit ownership decision.",
       "remediation": "Record Select/Listbox as native or reuse the authored canonical owner.",
       "ruleId": "ownership.native-select-undecided",
@@ -129,7 +129,7 @@
     {
       "category": "unresolved",
       "file": "src/renderer/src/components/settings/Settings.tsx",
-      "line": 1385,
+      "line": 954,
       "message": "Native select is used without an explicit ownership decision.",
       "remediation": "Record Select/Listbox as native or reuse the authored canonical owner.",
       "ruleId": "ownership.native-select-undecided",
@@ -138,7 +138,7 @@
     {
       "category": "violation",
       "file": "src/renderer/src/components/documents/Documents.tsx",
-      "line": 675,
+      "line": 693,
       "message": "Enabled literal button has no detectable action or submit behavior.",
       "remediation": "Connect the button to a real action, make it a submit button, or disable/remove it.",
       "ruleId": "affordance.actionless-button",
@@ -147,7 +147,7 @@
     {
       "category": "violation",
       "file": "src/renderer/src/components/lyrics/Lyrics.tsx",
-      "line": 839,
+      "line": 3441,
       "message": "Enabled literal button has no detectable action or submit behavior.",
       "remediation": "Connect the button to a real action, make it a submit button, or disable/remove it.",
       "ruleId": "affordance.actionless-button",
@@ -156,7 +156,7 @@
     {
       "category": "violation",
       "file": "src/renderer/src/components/lyrics/Lyrics.tsx",
-      "line": 3444,
+      "line": 3692,
       "message": "Enabled literal button has no detectable action or submit behavior.",
       "remediation": "Connect the button to a real action, make it a submit button, or disable/remove it.",
       "ruleId": "affordance.actionless-button",
@@ -165,7 +165,7 @@
     {
       "category": "violation",
       "file": "src/renderer/src/components/lyrics/Lyrics.tsx",
-      "line": 3461,
+      "line": 3804,
       "message": "Enabled literal button has no detectable action or submit behavior.",
       "remediation": "Connect the button to a real action, make it a submit button, or disable/remove it.",
       "ruleId": "affordance.actionless-button",
@@ -173,8 +173,8 @@
     },
     {
       "category": "violation",
-      "file": "src/renderer/src/components/lyrics/Lyrics.tsx",
-      "line": 3672,
+      "file": "src/renderer/src/components/lyrics/SongReflowEditor.tsx",
+      "line": 431,
       "message": "Enabled literal button has no detectable action or submit behavior.",
       "remediation": "Connect the button to a real action, make it a submit button, or disable/remove it.",
       "ruleId": "affordance.actionless-button",
@@ -182,8 +182,8 @@
     },
     {
       "category": "violation",
-      "file": "src/renderer/src/components/lyrics/Lyrics.tsx",
-      "line": 3768,
+      "file": "src/renderer/src/components/lyrics/SongReflowEditor.tsx",
+      "line": 490,
       "message": "Enabled literal button has no detectable action or submit behavior.",
       "remediation": "Connect the button to a real action, make it a submit button, or disable/remove it.",
       "ruleId": "affordance.actionless-button",
@@ -192,7 +192,7 @@
     {
       "category": "violation",
       "file": "src/renderer/src/components/media/MediaDock.tsx",
-      "line": 1052,
+      "line": 1038,
       "message": "Enabled literal button has no detectable action or submit behavior.",
       "remediation": "Connect the button to a real action, make it a submit button, or disable/remove it.",
       "ruleId": "affordance.actionless-button",
@@ -201,7 +201,7 @@
     {
       "category": "violation",
       "file": "src/renderer/src/components/operator/LiveOutputRail.tsx",
-      "line": 100,
+      "line": 122,
       "message": "Enabled literal button has no detectable action or submit behavior.",
       "remediation": "Connect the button to a real action, make it a submit button, or disable/remove it.",
       "ruleId": "affordance.actionless-button",
@@ -210,7 +210,7 @@
     {
       "category": "violation",
       "file": "src/renderer/src/components/operator/Operator.tsx",
-      "line": 1620,
+      "line": 1601,
       "message": "Enabled literal button has no detectable action or submit behavior.",
       "remediation": "Connect the button to a real action, make it a submit button, or disable/remove it.",
       "ruleId": "affordance.actionless-button",
@@ -219,7 +219,7 @@
     {
       "category": "violation",
       "file": "src/renderer/src/components/operator/Operator.tsx",
-      "line": 2163,
+      "line": 2159,
       "message": "Enabled literal button has no detectable action or submit behavior.",
       "remediation": "Connect the button to a real action, make it a submit button, or disable/remove it.",
       "ruleId": "affordance.actionless-button",
@@ -228,7 +228,7 @@
     {
       "category": "violation",
       "file": "src/renderer/src/components/operator/OperatorToolbar.tsx",
-      "line": 159,
+      "line": 32,
       "message": "Enabled literal button has no detectable action or submit behavior.",
       "remediation": "Connect the button to a real action, make it a submit button, or disable/remove it.",
       "ruleId": "affordance.actionless-button",
@@ -237,7 +237,7 @@
     {
       "category": "violation",
       "file": "src/renderer/src/components/screens/ScreenConfiguration.tsx",
-      "line": 511,
+      "line": 582,
       "message": "Enabled literal button has no detectable action or submit behavior.",
       "remediation": "Connect the button to a real action, make it a submit button, or disable/remove it.",
       "ruleId": "affordance.actionless-button",
@@ -246,7 +246,7 @@
     {
       "category": "violation",
       "file": "src/renderer/src/components/scripture/Scripture.tsx",
-      "line": 1422,
+      "line": 1430,
       "message": "Enabled literal button has no detectable action or submit behavior.",
       "remediation": "Connect the button to a real action, make it a submit button, or disable/remove it.",
       "ruleId": "affordance.actionless-button",
@@ -255,7 +255,7 @@
     {
       "category": "violation",
       "file": "src/renderer/src/components/scripture/Scripture.tsx",
-      "line": 1610,
+      "line": 1600,
       "message": "Enabled literal button has no detectable action or submit behavior.",
       "remediation": "Connect the button to a real action, make it a submit button, or disable/remove it.",
       "ruleId": "affordance.actionless-button",
@@ -264,7 +264,16 @@
     {
       "category": "violation",
       "file": "src/renderer/src/components/settings/Settings.tsx",
-      "line": 512,
+      "line": 437,
+      "message": "Enabled literal button has no detectable action or submit behavior.",
+      "remediation": "Connect the button to a real action, make it a submit button, or disable/remove it.",
+      "ruleId": "affordance.actionless-button",
+      "severity": "error"
+    },
+    {
+      "category": "violation",
+      "file": "src/renderer/src/components/shared/LibrarySection.tsx",
+      "line": 156,
       "message": "Enabled literal button has no detectable action or submit behavior.",
       "remediation": "Connect the button to a real action, make it a submit button, or disable/remove it.",
       "ruleId": "affordance.actionless-button",
@@ -273,7 +282,7 @@
     {
       "category": "violation",
       "file": "src/renderer/src/components/theme/ThemeEditor.tsx",
-      "line": 785,
+      "line": 961,
       "message": "Enabled literal button has no detectable action or submit behavior.",
       "remediation": "Connect the button to a real action, make it a submit button, or disable/remove it.",
       "ruleId": "affordance.actionless-button",
@@ -282,7 +291,16 @@
     {
       "category": "violation",
       "file": "src/renderer/src/components/theme/ThemeEditor.tsx",
-      "line": 930,
+      "line": 1088,
+      "message": "Enabled literal button has no detectable action or submit behavior.",
+      "remediation": "Connect the button to a real action, make it a submit button, or disable/remove it.",
+      "ruleId": "affordance.actionless-button",
+      "severity": "error"
+    },
+    {
+      "category": "violation",
+      "file": "src/renderer/src/components/theme/ThemeElementPanel.tsx",
+      "line": 130,
       "message": "Enabled literal button has no detectable action or submit behavior.",
       "remediation": "Connect the button to a real action, make it a submit button, or disable/remove it.",
       "ruleId": "affordance.actionless-button",
@@ -300,7 +318,16 @@
     {
       "category": "violation",
       "file": "src/renderer/src/components/documents/Documents.tsx",
-      "line": 620,
+      "line": 638,
+      "message": "Application-owned form does not declare its validation owner.",
+      "remediation": "Add noValidate/novalidate and implement the canonical validation contract.",
+      "ruleId": "form.novalidate-missing",
+      "severity": "error"
+    },
+    {
+      "category": "violation",
+      "file": "src/renderer/src/components/operator/DeepgramKeyDialog.tsx",
+      "line": 68,
       "message": "Application-owned form does not declare its validation owner.",
       "remediation": "Add noValidate/novalidate and implement the canonical validation contract.",
       "ruleId": "form.novalidate-missing",
@@ -318,34 +345,16 @@
     {
       "category": "violation",
       "file": "src/renderer/src/components/operator/ServicePanel.tsx",
-      "line": 159,
+      "line": 163,
       "message": "Application-owned form does not declare its validation owner.",
       "remediation": "Add noValidate/novalidate and implement the canonical validation contract.",
       "ruleId": "form.novalidate-missing",
-      "severity": "error"
-    },
-    {
-      "category": "violation",
-      "file": "src/renderer/src/components/scripture/ScriptureSearchBar.tsx",
-      "line": 313,
-      "message": "Application-owned form does not declare its validation owner.",
-      "remediation": "Add noValidate/novalidate and implement the canonical validation contract.",
-      "ruleId": "form.novalidate-missing",
-      "severity": "error"
-    },
-    {
-      "category": "violation",
-      "file": "src/renderer/src/components/lyrics/Lyrics.tsx",
-      "line": 899,
-      "message": "Literal product textarea does not show evidence of the canonical resize-none rule.",
-      "remediation": "Use the shared Textarea owner or apply resize-none/resize: none with adequate height or auto-grow behavior.",
-      "ruleId": "form.textarea-resize-missing",
       "severity": "error"
     },
     {
       "category": "violation",
       "file": "src/renderer/src/components/screens/ScreenConfiguration.tsx",
-      "line": 1079,
+      "line": 1221,
       "message": "Literal product textarea does not show evidence of the canonical resize-none rule.",
       "remediation": "Use the shared Textarea owner or apply resize-none/resize: none with adequate height or auto-grow behavior.",
       "ruleId": "form.textarea-resize-missing",
@@ -363,7 +372,7 @@
     {
       "category": "violation",
       "file": "src/renderer/src/index.css",
-      "line": 170,
+      "line": 215,
       "message": "Scrollbar theme does not provide both standards-based scrollbar properties.",
       "remediation": "Add global scrollbar-color and scrollbar-width standards properties plus fallbacks.",
       "ruleId": "scrollbar.webkit-only",
@@ -374,10 +383,10 @@
   "projectRoot": "/Users/codelawd/Documents/development/kairo-presenter",
   "schemaVersion": 1,
   "summary": {
-    "errors": 41,
-    "total": 41,
+    "errors": 42,
+    "total": 42,
     "unresolved": 15,
-    "violations": 26,
+    "violations": 27,
     "warnings": 0
   }
 }

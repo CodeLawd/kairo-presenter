@@ -1,4 +1,4 @@
-import { Clock, Layers, MessageSquare, Music2, Search } from '@/icons'
+import { BookOpen, Clock, Layers, MessageSquare, Music2, Search } from '@/icons'
 import { MessagesPanel, ShowPanel, TimersPanel } from '@/components/operator/ProgramPanels'
 import type { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
@@ -10,7 +10,7 @@ import { useAppStore } from '@/stores/useAppStore'
 import type { ScriptureResult, ScriptureSuggestion } from '@shared/ipc'
 
 const TABS: Array<{ id: BoothToolboxTab; label: string; icon: typeof Search }> = [
-  { id: 'search', label: 'Search', icon: Search },
+  { id: 'search', label: 'Scripture', icon: BookOpen },
   { id: 'audio', label: 'Audio', icon: Music2 },
   { id: 'timers', label: 'Timers', icon: Clock },
   { id: 'messages', label: 'Messages', icon: MessageSquare },
@@ -93,7 +93,7 @@ function DefaultBoothSearch(): React.ReactElement {
   return (
     <div className="flex h-full min-h-0 flex-col bg-transparent">
       <div className="flex shrink-0 items-center px-3 py-1.5">
-        <p className="text-[11px] font-medium text-zinc-400">Search</p>
+        <p className="text-[11px] font-medium text-zinc-400">Scripture</p>
       </div>
       <div className="px-3 py-2.5">
         <OperatorQueueSearch

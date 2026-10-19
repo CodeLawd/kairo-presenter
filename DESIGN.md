@@ -39,6 +39,14 @@ tab: themed 16:9 preview, reference-and-number footer, and shared selected/live
 border treatment. Detection state and provenance stay below the card without a
 second reference label; cue, queue and dismiss actions keep their existing behavior.
 
+## Search credentials
+
+Settings → API Keys uses the existing ProviderKeyRow controls. DeepSeek stays
+visible under Lookups regardless of the scripture detection provider: the same
+key powers primary lyric search and can also power detection when selected.
+Brave is the optional search fallback. Keep secret drafts and save/clear behavior
+in the shared credential controls.
+
 ## First-run onboarding
 
 Modelled on ProPresenter's welcome window, shown **once per install, on first
@@ -95,3 +103,34 @@ reduced motion.
 The standalone direction and compact visual flow were approved in this chat on
 2026-10-06. Account access is defined in `src/lib/cloud/auth-state.ts`. This change
 introduces no billing, deletion, permission, or legal-policy changes.
+
+## Quit confirmation
+
+Use a branded in-app alert dialog with the existing neutral KairoMark, surface
+fills, and shared buttons. Keep Kairo open receives initial focus; Escape cancels.
+Live outputs remain active until Quit Kairo is confirmed. The modal is global,
+including onboarding and account screens, and sits above workspace overlays.
+
+## Online lyrics review
+
+Online previews wait for source-line selection by DeepSeek when its key is
+configured. Preserve source wording, language, repeats and stanza structure.
+Use the shared LyricsReviewNotice in search and quick-open previews: successful
+cleanup is labelled Reviewed by DeepSeek; missing keys or failed reviews show an
+Unverified lyrics notice explaining that the original text is shown. A review
+that finds no matching lyrics blocks preview/import. Preview and import share a
+short-lived source snapshot so importing does not bypass cleanup.
+
+DeepSeek also classifies retained source lines into verse, chorus, bridge and
+other musical sections, including pages without headings. Section starts must
+cover the retained lyrics in source order and cannot start on a bilingual gloss.
+Kairo generates canonical headings and sequential verse numbers locally; model
+responses never supply replacement lyric text or free-form labels.
+
+Online search retains source text in a bounded, ten-minute main-process cache.
+The top two results not already in the library prepare reviewed previews in the
+background as the list appears. Background work is capped at two concurrent
+previews, deduplicated across searches, and never holds up the results list.
+Candidate lyric pages load concurrently in a bounded batch, retaining search
+order. Selection/import reuses cached or in-flight preparation; review remains
+required before a preview can be labelled reviewed.

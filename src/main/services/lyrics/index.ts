@@ -36,6 +36,8 @@ import { lrclibService } from './lrclib'
 import { searchAllProviders } from './online'
 import { scrapeLyricsPage } from './web-lyrics'
 import { extractLyricLines } from './normalize'
+import { OnlineLyricsPreparation, type ReviewedLyrics } from './review'
+import { onlineLyricsTextCache, OnlinePreviewPrefetcher } from './online-cache'
 import { isSectionLine, parseSectionLabel, type SectionLabelResult } from './section-label'
 
 // ─── Internal types ───────────────────────────────────────────────────────────
@@ -880,6 +882,7 @@ class LyricsService {
    */
   async searchOnline(query: string): Promise<LyricsOnlineResult[]> {
     const results = await searchAllProviders(query, {
+      deepseekApiKey: store.get('stt')?.deepseekApiKey,
       braveApiKey: store.get('lyrics')?.braveApiKey,
     })
     if (results.length === 0) return results
@@ -889,10 +892,12 @@ class LyricsService {
       owned.set(songMatchKey(song.title, song.artist), song.id)
     }
 
-    return results.map((result) => {
+    const marked = results.map((result) => {
       const existingSongId = owned.get(songMatchKey(result.title, result.artist))
       return existingSongId ? { ...result, existingSongId } : result
     })
+    void this.previewPrefetcher.warm(marked, (source) => this.prepareOnlineLyrics(source))
+    return marked
   }
 
   /**
@@ -909,11 +914,12 @@ class LyricsService {
       provider: source.provider,
       title: source.title,
     })
-    const text = await this.fetchOnlineLyricsText(source)
+    const { text, review } = await this.prepareOnlineLyrics(source)
     const song = this.parseOnlineText(text, source.title, source.artist, source.provider)
     return {
       title: song.title,
       artist: song.artist,
+      review,
       provider: source.provider,
       url: source.url,
       sections: song.sections.map((s) => ({
@@ -959,11 +965,28 @@ class LyricsService {
     return song
   }
 
+  private readonly onlinePreparation = new OnlineLyricsPreparation()
+  private readonly previewPrefetcher = new OnlinePreviewPrefetcher()
+
+  private prepareOnlineLyrics(source: {
+    provider: LyricsProvider
+    url: string
+    title: string
+    artist: string
+  }): Promise<ReviewedLyrics> {
+    return this.onlinePreparation.prepare(
+      { ...source, apiKey: store.get('stt')?.deepseekApiKey },
+      () => this.fetchOnlineLyricsText(source),
+    )
+  }
+
   private async fetchOnlineLyricsText(source: {
     provider: LyricsProvider
     url: string
     title?: string
   }): Promise<string> {
+    const cached = onlineLyricsTextCache.get({ ...source, title: source.title ?? '' })
+    if (cached !== undefined) return cached
     if (source.provider === 'lrclib') {
       return lrclibService.fetchLyrics(source.url)
     }
@@ -1049,7 +1072,7 @@ class LyricsService {
           return existing
         }
 
-        const text = await this.fetchOnlineLyricsText(source)
+        const { text } = await this.prepareOnlineLyrics(source)
         song = this.parseOnlineText(text, source.title, source.artist, source.provider)
         this.applyImportSlideBreaks(song)
         this.addSong(song)

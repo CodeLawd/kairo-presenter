@@ -79,7 +79,7 @@ const SECTION_NAV: { id: Section; label: string; hint: string; icon?: Icon }[] =
   { id: 'overlay', label: 'Verses on screen', hint: 'Translation & verse numbers', icon: MonitorPlay },
   { id: 'scripture', label: 'Scripture', hint: 'Detection & display', icon: BookOpen },
   { id: 'audio', label: 'Audio', hint: 'Input device & levels', icon: Mic },
-  { id: 'apikeys', label: 'API Keys', hint: 'Deepgram, Claude, Bible, Brave', icon: Key },
+  { id: 'apikeys', label: 'API Keys', hint: 'Deepgram, Claude, DeepSeek, Bible, Brave', icon: Key },
   { id: 'shortcuts', label: 'Keyboard Shortcuts', hint: 'Commands & key bindings', icon: SlidersHorizontal },
   { id: 'propresenter', label: 'ProPresenter', hint: 'Optional — connection & resources' },
   { id: 'account', label: 'Account', hint: 'Sign in, team sync & setup', icon: CircleUser },
@@ -319,9 +319,9 @@ type SecretDraft = ReturnType<typeof useSecretDraft>
 const PROVIDER_PURPOSE: Record<ProviderId, string> = {
   deepgram: 'Live speech-to-text',
   anthropic: 'Scripture detection',
-  deepseek: 'Scripture detection',
+  deepseek: 'Primary song search; scripture detection when selected',
   bible: 'Online Bible translations',
-  brave: 'Web search for song lyrics',
+  brave: 'Fallback web search for song lyrics',
   google: 'Lyric translation',
 }
 
@@ -1225,7 +1225,7 @@ function ApiKeysSection({
             })}
           </div>
         </PrefRow>
-        {llmProvider === 'anthropic' ? (
+        {llmProvider === 'anthropic' && (
           <ProviderKeyRow
             provider="anthropic"
             name="Anthropic"
@@ -1236,20 +1236,19 @@ function ApiKeysSection({
             aria-label="Anthropic API Key"
             test={{ status: anthropicStatus, message: anthropicMsg, onClick: () => void testAnthropic() }}
           />
-        ) : (
-          <ProviderKeyRow
-            provider="deepseek"
-            name="DeepSeek"
-            docsUrl="https://platform.deepseek.com/api_keys"
-            {...keyRow(deepseek, configured.deepseek, 'deepseekApiKey', 'stt')}
-            placeholder="sk-…"
-            fieldName="deepseek-key"
-            aria-label="DeepSeek API Key"
-          />
         )}
       </PrefGroup>
 
-      <PrefGroup title="Lookups" description="Optional. Each unlocks an extra feature.">
+      <PrefGroup title="Lookups" description="DeepSeek searches song lyrics first, with Brave as fallback. Both search keys are optional.">
+        <ProviderKeyRow
+          provider="deepseek"
+          name="DeepSeek"
+          docsUrl="https://platform.deepseek.com/api_keys"
+          {...keyRow(deepseek, configured.deepseek, 'deepseekApiKey', 'stt')}
+          placeholder="sk-…"
+          fieldName="deepseek-key"
+          aria-label="DeepSeek API Key"
+        />
         <ProviderKeyRow
           provider="bible"
           name="API.Bible"

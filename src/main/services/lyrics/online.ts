@@ -4,6 +4,7 @@ import type { ProviderResult } from './provider-types'
 import { canonicalText } from './normalize'
 import { lyricsScraperService } from './scraper'
 import { lrclibService } from './lrclib'
+import { onlineLyricsTextCache } from './online-cache'
 import { MIN_WEB_QUERY_CHARS, snippetResolver } from './snippet-resolver'
 import { parseSongQuery, queryVariants } from '@shared/lyrics-query'
 
@@ -83,7 +84,7 @@ export { queryVariants }
 
 export async function searchAllProviders(
   query: string,
-  options: { braveApiKey?: string } = {}
+  options: { deepseekApiKey?: string; braveApiKey?: string } = {}
 ): Promise<LyricsOnlineResult[]> {
   const q = query.trim()
   if (q.length < MIN_QUERY_LENGTH) return []
@@ -127,7 +128,7 @@ export async function searchAllProviders(
   }
 
   if (needsWebResolution(q, gathered)) {
-    gathered.push(...(await snippetResolver.resolve(q, options.braveApiKey)))
+    gathered.push(...(await snippetResolver.resolve(q, options)))
   }
 
   return rankResults(q, gathered)
@@ -216,6 +217,7 @@ export function rankResults(query: string, results: ProviderResult[]): LyricsOnl
   return dropWeakResults(dedupe(scored))
     .slice(0, MAX_RESULTS)
     .map(({ result }) => {
+      if (result.lyrics) onlineLyricsTextCache.remember(result, result.lyrics)
       // Keep search-inline lyrics available for preview/import without /api/get.
       if (result.provider === 'lrclib' && result.lyrics) {
         lrclibService.rememberPlainLyrics(result.url, result.lyrics)

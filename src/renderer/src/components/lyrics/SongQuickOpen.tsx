@@ -1,3 +1,4 @@
+import { LyricsReviewNotice } from './LyricsReviewNotice'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Download, Globe, ListMusic, Loader2, Music2, Search, X } from '@/icons'
 import { cn } from '@/lib/utils'
@@ -393,10 +394,11 @@ export function SongQuickOpen({ songs, onClose, onOpen }: SongQuickOpenProps): R
                     </p>
                     {previewLoading ? (
                       <p className="mt-6 flex items-center gap-2 text-[12px] text-zinc-500">
-                        <Loader2 size={13} className="animate-spin" aria-hidden="true" /> Fetching lyrics…
+                        <Loader2 size={13} className="animate-spin" aria-hidden="true" /> Loading and reviewing lyrics…
                       </p>
                     ) : onlinePreview ? (
                       <div className="mt-4 space-y-4">
+                        <LyricsReviewNotice review={onlinePreview.review} />
                         {onlinePreview.sections.map((section, index) => (
                           <div key={`${section.label}-${index}`}>
                             <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-600">

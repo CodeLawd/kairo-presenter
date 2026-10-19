@@ -28,6 +28,7 @@ export interface TranslateSectionsOptions {
   apiKey: string;
   title?: string;
   artist?: string;
+  deepseekApiKey?: string;
   braveApiKey?: string;
   llm?: { provider: "anthropic" | "deepseek"; apiKey: string } | null;
 }
@@ -79,6 +80,8 @@ export async function translateSections(
     ? await fetchOnlineGlossMap({
         title: options.title,
         artist: options.artist,
+        sourceLines: jobs.map((job) => job.text),
+        deepseekApiKey: options.deepseekApiKey,
         braveApiKey: options.braveApiKey,
       })
     : new Map<string, string>();

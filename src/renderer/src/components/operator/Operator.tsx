@@ -4,7 +4,6 @@ import {
   commandForShortcut,
   shortcutFromEvent,
 } from "@shared/keyboard-shortcuts";
-import { ReferenceLibrary } from "./ReferenceLibrary";
 import { CARD_BASE_WIDTH as OPERATOR_CARD_WIDTH, CARD_BASE_HEIGHT as OPERATOR_CARD_HEIGHT } from "../scripture/types";
 import { ServicePanel, useServiceRecords } from "./ServicePanel";
 import { DeepgramKeyDialog } from "./DeepgramKeyDialog";
@@ -19,14 +18,13 @@ import {
   ArrowDown,
   ChevronLeft,
   ChevronRight,
+  Check,
   Loader,
   Plus,
   BookmarkSimple,
   Copy,
   Download,
   Mic,
-  BookOpenText,
-  ChevronUp,
 } from "@/icons";
 import { useAppStore } from "@/stores/useAppStore";
 import { listAudioInputDevices, resolveCaptureDeviceId } from "@/audio/devices";
@@ -34,9 +32,7 @@ import { cn, downloadFile } from "@/lib/utils";
 import { markSuggestionRendered } from "@/lib/markSuggestionRendered";
 import {
   normalizeOperatorPanelWidth,
-  normalizeOperatorReferenceHeight,
   resizeOperatorPanel,
-  resizeOperatorReferenceHeight,
 } from "@shared/operator-layout";
 import type { OperatorPanelSide } from "@shared/operator-layout";
 import { Button } from "@/components/ui/button";
@@ -432,12 +428,6 @@ export default function Operator(): React.ReactElement {
       localStorage.getItem("operator-transcript-width"),
     ),
   );
-  const [referenceHeight, setReferenceHeight] = useState(() =>
-    normalizeOperatorReferenceHeight(
-      localStorage.getItem("operator-reference-height"),
-    ),
-  );
-  const [referenceCollapsed, setReferenceCollapsed] = useState(false);
   // The rail width is shared app state, not local: Operator stays mounted while
   // hidden, so resizing the rail on Lyrics or Scripture must land here too.
   const liveRail = useLiveRailWidth();
@@ -474,14 +464,14 @@ export default function Operator(): React.ReactElement {
     () => partitionOperatorSuggestionGroups(suggestionGroups, activeGroupId, 3),
     [suggestionGroups, activeGroupId],
   );
-  const allDetectedGroups = useMemo(
-    () => [...suggestionGroups].reverse(),
-    [suggestionGroups],
-  );
   const livePlaylist = useMemo(() => {
     if (!livePlan?.planId) return null;
     return sermonPlans.find((plan) => plan.id === livePlan.planId) ?? null;
   }, [livePlan?.planId, sermonPlans]);
+  // Attaching a sermon brings its passage list into view in the right rail.
+  useEffect(() => {
+    if (livePlan?.planId) useBoothToolboxStore.getState().setTab("search");
+  }, [livePlan?.planId]);
   const matchedPlanItemIds = useMemo(() => {
     const ids = new Set<string>();
     for (const suggestion of suggestions) {
@@ -544,47 +534,6 @@ export default function Operator(): React.ReactElement {
     [transcriptWidth],
   );
 
-  const startReferenceResize = useCallback(
-    (event: React.PointerEvent): void => {
-      event.preventDefault();
-      const startY = event.clientY;
-      const startHeight = referenceHeight;
-      let finalHeight = startHeight;
-
-      const handlePointerMove = (pointerEvent: PointerEvent): void => {
-        finalHeight = resizeOperatorReferenceHeight(
-          startHeight,
-          pointerEvent.clientY - startY,
-        );
-        setReferenceHeight(finalHeight);
-      };
-      const handlePointerUp = (): void => {
-        window.removeEventListener("pointermove", handlePointerMove);
-        window.removeEventListener("pointerup", handlePointerUp);
-        document.body.style.cursor = "";
-        document.body.style.userSelect = "";
-        localStorage.setItem(
-          "operator-reference-height",
-          String(finalHeight),
-        );
-      };
-
-      document.body.style.cursor = "row-resize";
-      document.body.style.userSelect = "none";
-      window.addEventListener("pointermove", handlePointerMove);
-      window.addEventListener("pointerup", handlePointerUp, { once: true });
-    },
-    [referenceHeight],
-  );
-
-  const resizeReferenceByKeyboard = useCallback(
-    (deltaY: number): void => {
-      const nextHeight = resizeOperatorReferenceHeight(referenceHeight, deltaY);
-      setReferenceHeight(nextHeight);
-      localStorage.setItem("operator-reference-height", String(nextHeight));
-    },
-    [referenceHeight],
-  );
   useEffect(() => {
     suggestionsRef.current = suggestions;
   }, [suggestions]);
@@ -1494,22 +1443,7 @@ export default function Operator(): React.ReactElement {
             onResizeKeyDown={liveRail.onResizeKeyDown}
             search={
               <div className="flex h-full min-h-0 flex-col overflow-hidden bg-transparent">
-                <div className="flex shrink-0 items-center justify-between gap-3 px-3 pb-1 pt-3">
-                  <label className="text-[10px] font-semibold uppercase tracking-[0.08em] text-zinc-500">
-                    Queue
-                  </label>
-                  {queue.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setQueue([])}
-                      className="text-[10px] font-semibold text-slate-600 transition-colors hover:text-rose-400 focus-visible:text-rose-400 focus-visible:outline-none"
-                    >
-                      Clear all
-                    </button>
-                  )}
-                </div>
-
-                <div className="shrink-0 px-4 py-2.5">
+                <div className="shrink-0 px-4 pb-2.5 pt-3">
                   <OperatorQueueSearch
                     translation={defaultTranslation}
                     inputRef={searchInputRef}
@@ -1518,6 +1452,110 @@ export default function Operator(): React.ReactElement {
                 </div>
 
                 <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+                  {/* The attached sermon's passages, in order — shown only while one is live. */}
+                  {livePlaylist && (
+                    <section aria-label="Sermon passages" className="mb-3">
+                      <div className="flex items-baseline justify-between gap-3 px-1 pb-1.5 pt-1">
+                        <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-zinc-500">
+                          Sermon
+                        </span>
+                        <span className="text-[10px] tabular-nums text-zinc-600">
+                          {livePlaylist.items.length}
+                        </span>
+                      </div>
+                      <p
+                        className="truncate px-1 pb-1.5 text-[11px] text-zinc-400"
+                        title={displayPlanTitle(livePlaylist.title)}
+                      >
+                        {displayPlanTitle(livePlaylist.title)}
+                      </p>
+                      {livePlaylist.items.length === 0 ? (
+                        <p className="px-2 py-3 text-center text-[10px] text-slate-600">
+                          No passages in this sermon.
+                        </p>
+                      ) : (
+                        <ul className="space-y-0.5">
+                          {livePlaylist.items.map((item, index) => {
+                            const isLive =
+                              activeProjection?.reference === item.reference ||
+                              item.verses.some(
+                                (verse) =>
+                                  `${verse.book} ${verse.chapter}:${verse.verse}` ===
+                                  activeProjection?.reference,
+                              );
+                            const isNext = livePlan?.nextPlanItemId === item.id;
+                            const busy = queueBusyId === item.id;
+                            return (
+                              <li key={item.id}>
+                                <button
+                                  type="button"
+                                  onClick={() => void handlePresentPlaylistItem(item)}
+                                  disabled={busy}
+                                  aria-current={isLive ? "true" : undefined}
+                                  title={`Show ${item.reference}`}
+                                  className={cn(
+                                    "flex w-full items-start gap-2 rounded-md px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-teal-400/60 disabled:cursor-wait",
+                                    isLive ? "bg-tint-live" : "hover:bg-surface",
+                                  )}
+                                >
+                                  <span
+                                    aria-hidden="true"
+                                    className="w-4 shrink-0 pt-px text-[10px] tabular-nums text-zinc-600"
+                                  >
+                                    {String(index + 1).padStart(2, "0")}
+                                  </span>
+                                  <span className="min-w-0 flex-1">
+                                    <span className="flex items-center gap-1.5">
+                                      <span
+                                        className={cn(
+                                          "truncate text-[11px] font-semibold",
+                                          isLive ? "text-live" : "text-slate-300",
+                                        )}
+                                      >
+                                        {item.reference}
+                                      </span>
+                                      {isNext && !isLive && (
+                                        <span className="shrink-0 text-[10px] text-zinc-400">
+                                          Up next
+                                        </span>
+                                      )}
+                                    </span>
+                                    {item.verses[0]?.text && (
+                                      <span className="mt-0.5 line-clamp-2 block text-[10px] leading-snug text-slate-500">
+                                        {item.verses[0].text}
+                                      </span>
+                                    )}
+                                  </span>
+                                  <span className="shrink-0 pt-px">
+                                    {busy ? (
+                                      <Loader size={12} className="animate-spin text-zinc-500 motion-reduce:animate-none" />
+                                    ) : matchedPlanItemIds.has(item.id) ? (
+                                      <Check size={12} className="text-teal-500" aria-label="Heard" />
+                                    ) : null}
+                                  </span>
+                                </button>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+                    </section>
+                  )}
+
+                  <div className="flex items-baseline justify-between gap-3 px-1 pb-1.5 pt-1">
+                    <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-zinc-500">
+                      Queue
+                    </span>
+                    {queue.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setQueue([])}
+                        className="text-[10px] font-semibold text-slate-600 transition-colors hover:text-rose-400 focus-visible:text-rose-400 focus-visible:outline-none"
+                      >
+                        Clear all
+                      </button>
+                    )}
+                  </div>
                   {queue.length === 0 ? (
                     <p className="px-2 py-6 text-center text-[10px] leading-relaxed text-slate-600">
                       Stage verses here with{" "}
@@ -2152,62 +2190,6 @@ export default function Operator(): React.ReactElement {
               )}
             </div>
 
-            <aside
-              className="relative shrink-0 overflow-hidden bg-surface-tertiary transition-[height] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
-              style={{ height: referenceCollapsed ? 36 : referenceHeight }}
-            >
-              {!referenceCollapsed && <button
-                type="button"
-                aria-label="Resize reference panel"
-                title="Drag to resize reference panel"
-                className="absolute inset-x-0 -top-1 z-10 h-2 cursor-row-resize bg-transparent outline-none hover:bg-tint-teal focus-visible:bg-tint-teal"
-                onPointerDown={startReferenceResize}
-                onKeyDown={(event) => {
-                  if (event.key === "ArrowUp") resizeReferenceByKeyboard(-16);
-                  if (event.key === "ArrowDown") resizeReferenceByKeyboard(16);
-                }}
-              />}
-              {referenceCollapsed ? (
-                <button
-                  type="button"
-                  onClick={() => setReferenceCollapsed(false)}
-                  className="flex h-9 w-full items-center justify-between px-4 text-[11px] font-medium text-zinc-500 transition-colors hover:bg-surface-elevated hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-teal-400/60"
-                  aria-label="Expand passage library"
-                  title="Expand passage library"
-                >
-                  <span className="flex items-center gap-2">
-                    <BookOpenText size={14} aria-hidden="true" />
-                    Passage library
-                    <span className="tabular-nums text-zinc-600">{allDetectedGroups.length + (livePlaylist?.items.length ?? 0)}</span>
-                  </span>
-                  <span className="flex items-center gap-1.5 text-[10px] text-zinc-600">
-                    Expand <ChevronUp size={13} aria-hidden="true" />
-                  </span>
-                </button>
-              ) : <ReferenceLibrary
-                listening={isTranscribing}
-                onCollapse={() => setReferenceCollapsed(true)}
-                planTitle={livePlaylist ? displayPlanTitle(livePlaylist.title) : undefined}
-                detected={allDetectedGroups.map((group) => ({
-                  id: group.id,
-                  reference: group.reference,
-                  detail: group.suggestions[0]?.verses[0]?.text,
-                  fromSermon: group.suggestions.some((item) => Boolean(item.planMatch)),
-                  live: group.suggestions.some((item) => item.reference === activeProjection?.reference),
-                  present: () => { void handleApproveSuggestion(group.suggestions[0].id); },
-                }))}
-                passages={(livePlaylist?.items ?? []).map((item) => ({
-                  id: item.id,
-                  reference: item.reference,
-                  detail: item.verses[0]?.text,
-                  live: activeProjection?.reference === item.reference || item.verses.some((verse) => `${verse.book} ${verse.chapter}:${verse.verse}` === activeProjection?.reference),
-                  heard: matchedPlanItemIds.has(item.id),
-                  expectedReference: livePlan?.nextPlanItemId === item.id ? livePlan.nextReference ?? undefined : undefined,
-                  busy: queueBusyId === item.id,
-                  present: () => { void handlePresentPlaylistItem(item); },
-                }))}
-              />}
-            </aside>
           </section>
         </div>
       </BoothWorkspace>

@@ -7,6 +7,7 @@ import { lrclibService } from './lrclib'
 import { lyricsScraperService } from './scraper'
 import { isAllowedLyricsUrl, scrapeLyricsPage } from './web-lyrics'
 import { cleanPageTitle } from './page-title'
+import { searchWebProviders, type WebSearchCredentials } from './web-search'
 
 /**
  * Last-resort tier when Genius / LRCLIB miss a song.
@@ -15,12 +16,10 @@ import { cleanPageTitle } from './page-title'
  * A general web index finds the lyric blog posts; this module scrapes the
  * allowlisted pages and returns them as importable results.
  *
- * Brave Search API is preferred when a key is configured. Without one, the
- * public Brave HTML results page is used so the tier still works offline of
- * any paid plan.
+ * DeepSeek Search is preferred, with Brave Search and then keyless HTML
+ * engines as fallbacks. Each tier must produce verified lyric candidates.
  */
 
-const BRAVE_SEARCH_URL = 'https://api.search.brave.com/res/v1/web/search'
 const REQUEST_TIMEOUT_MS = 12_000
 const MIN_REQUEST_GAP_MS = 1_100
 const MAX_WEB_RESULTS = 8
@@ -88,9 +87,9 @@ class SnippetResolver {
   /**
    * Resolves a query the catalogues could not place.
    *
-   * `apiKey` is optional — without it we fall back to Brave's HTML results.
+   * Configured APIs are optional — without them we use keyless HTML engines.
    */
-  async resolve(snippet: string, apiKey?: string): Promise<ProviderResult[]> {
+  async resolve(snippet: string, credentials: WebSearchCredentials = {}): Promise<ProviderResult[]> {
     const query = snippet.trim()
     if (query.length < MIN_WEB_QUERY_CHARS) return []
 
@@ -99,44 +98,27 @@ class SnippetResolver {
     if (cached && cached.expiresAt > Date.now()) return cached.value
     this.cache.delete(cacheKey)
 
-    let webResults: BraveWebResult[] = []
-    let usedApi = false
-    if (apiKey) {
-      try {
-        webResults = await this.searchWebApi(query, apiKey)
-        usedApi = true
-      } catch (err) {
-        // A rejected or exhausted key must not take the tier down with it —
-        // the keyless engines are still there, and a booth mid-service would
-        // otherwise lose every song the catalogues do not carry.
-        log.warn('[SnippetResolver] Brave API search failed, falling back to keyless engines', {
-          error: (err as Error).message,
-        })
-      }
-    }
-
-    if (webResults.length === 0) {
-      try {
-        webResults = await this.searchWebHtml(query)
-      } catch (err) {
-        log.warn('[SnippetResolver] web search failed', err)
-        return []
-      }
-    }
-
-    if (webResults.length === 0) return []
-
     const canonicalSnippet = canonicalText(query)
-    const verified = await this.gatherCandidates(webResults, canonicalSnippet, query)
+    for await (const batch of searchWebProviders(`${query} lyrics`, credentials)) {
+      const verified = await this.gatherCandidates(batch.results, canonicalSnippet, query)
+      if (verified.length === 0) continue
+      this.cache.set(cacheKey, { value: verified, expiresAt: Date.now() + CACHE_TTL_MS })
+      log.info('[SnippetResolver] resolved', {
+        query, web: batch.results.length, verified: verified.length, via: batch.provider,
+      })
+      return verified
+    }
 
-    this.cache.set(cacheKey, { value: verified, expiresAt: Date.now() + CACHE_TTL_MS })
-    log.info('[SnippetResolver] resolved', {
-      query,
-      web: webResults.length,
-      verified: verified.length,
-      via: usedApi ? 'api' : 'html',
-    })
-    return verified
+    try {
+      const results = await this.searchWebHtml(query)
+      const verified = results.length ? await this.gatherCandidates(results, canonicalSnippet, query) : []
+      // Do not cache failures: recovering credentials/network should take effect immediately.
+      if (verified.length) this.cache.set(cacheKey, { value: verified, expiresAt: Date.now() + CACHE_TTL_MS })
+      return verified
+    } catch {
+      log.warn('[SnippetResolver] keyless web search failed')
+      return []
+    }
   }
 
   private async gatherCandidates(
@@ -154,49 +136,49 @@ class SnippetResolver {
       found.push(result)
     }
 
-    // 1. Direct Genius lyric pages from the SERP.
+    // Fetch the small, bounded set of candidate pages together. Awaiting each
+    // page serially made one slow blog delay every result behind it.
     const geniusUrls = webResults
       .map((result) => result.url ?? '')
       .filter((url) => /^https:\/\/(www\.)?genius\.com\/[^/]+-lyrics\/?$/.test(url))
       .slice(0, MAX_DIRECT_PAGES)
-
-    for (const url of geniusUrls) {
-      try {
-        const { title, artist } = titleFromGeniusUrl(url)
-        const lyrics = await lyricsScraperService.fetchLyrics(url, { title })
-        if (!matchesQuery(lyrics, canonicalSnippet) && !titleMatchesQuery(url, rawQuery)) continue
-        push({ id: `genius:${url}`, provider: 'genius', title, artist, url, lyrics })
-      } catch (err) {
-        log.warn('[SnippetResolver] genius page failed', { url, err })
-      }
-    }
-
-    // 2. Scrape allowlisted lyric blogs (African Gospel Lyrics, etc.).
     const scrapeUrls = webResults
       .map((result) => result.url ?? '')
       .filter((url) => isAllowedLyricsUrl(url) && !/\/tag\/|\/category\/|\/page\//i.test(url))
       .slice(0, MAX_SCRAPE_PAGES)
 
-    for (const url of scrapeUrls) {
-      try {
-        const page = await scrapeLyricsPage(url)
-        const lyricHit = matchesQuery(page.lyrics, canonicalSnippet)
-        const titleHit =
-          titleMatchesQuery(page.title, rawQuery) || titleMatchesQuery(`${page.title} ${page.artist}`, rawQuery)
-        if (!lyricHit && !titleHit) continue
-        push({
-          id: `web:${url}`,
-          provider: 'web',
-          title: page.title,
-          artist: page.artist,
-          url: page.url,
-          lyrics: page.lyrics,
-          snippet: lyricHit ? firstMatchingLine(page.lyrics, canonicalSnippet) : undefined,
-        })
-      } catch (err) {
-        log.warn('[SnippetResolver] scrape failed', { url, err })
-      }
-    }
+    const candidates = await Promise.all([
+      ...geniusUrls.map(async (url): Promise<ProviderResult | null> => {
+        try {
+          const { title, artist } = titleFromGeniusUrl(url)
+          const lyrics = await lyricsScraperService.fetchLyrics(url, { title })
+          if (!matchesQuery(lyrics, canonicalSnippet) && !titleMatchesQuery(url, rawQuery)) return null
+          return { id: `genius:${url}`, provider: 'genius', title, artist, url, lyrics }
+        } catch {
+          log.warn('[SnippetResolver] genius page failed', { url })
+          return null
+        }
+      }),
+      ...scrapeUrls.map(async (url): Promise<ProviderResult | null> => {
+        try {
+          const page = await scrapeLyricsPage(url)
+          const lyricHit = matchesQuery(page.lyrics, canonicalSnippet)
+          const titleHit = titleMatchesQuery(page.title, rawQuery) ||
+            titleMatchesQuery(`${page.title} ${page.artist}`, rawQuery)
+          if (!lyricHit && !titleHit) return null
+          return {
+            id: `web:${url}`, provider: 'web', title: page.title, artist: page.artist,
+            url: page.url, lyrics: page.lyrics,
+            snippet: lyricHit ? firstMatchingLine(page.lyrics, canonicalSnippet) : undefined,
+          }
+        } catch {
+          log.warn('[SnippetResolver] scrape failed', { url })
+          return null
+        }
+      }),
+    ])
+    // Promise.all preserves search order even when pages finish out of order.
+    for (const candidate of candidates) if (candidate) push(candidate)
 
     // 3. Re-query LRCLIB with cleaned page titles — covers songs the catalogues
     // do have once we know the real name.
@@ -224,25 +206,6 @@ class SnippetResolver {
     }
 
     return found
-  }
-
-  private async searchWebApi(query: string, apiKey: string): Promise<BraveWebResult[]> {
-    await this.throttle()
-    try {
-      const response = await axios.get(BRAVE_SEARCH_URL, {
-        params: { q: `${query} lyrics`, count: MAX_WEB_RESULTS },
-        headers: {
-          'X-Subscription-Token': apiKey,
-          Accept: 'application/json',
-          'Accept-Encoding': 'gzip',
-        },
-        timeout: REQUEST_TIMEOUT_MS,
-      })
-      const results = (response.data as { web?: { results?: BraveWebResult[] } })?.web?.results
-      return Array.isArray(results) ? results.slice(0, MAX_WEB_RESULTS) : []
-    } catch (err) {
-      throw toFriendlyError(err)
-    }
   }
 
   /**

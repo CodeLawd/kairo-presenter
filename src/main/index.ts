@@ -42,6 +42,25 @@ import { isInsideRoot, mediaService } from "./services/media";
 import { tracksService } from "./services/tracks";
 import { updaterService } from "./services/updater";
 import { usageService } from "./services/usage";
+import { createQuitConfirmation } from "./quit-confirmation";
+
+const quitConfirmation = createQuitConfirmation(() => {
+  const window = getMainWindow();
+  if (!window || window.isDestroyed()) return;
+  if (window.isMinimized()) window.restore();
+  window.show();
+  window.focus();
+  window.webContents.send(IPC.APP.QUIT_REQUESTED);
+});
+
+// IPC handlers live in ./ipc; keep lifecycle state beside the quit handlers.
+function quitConfirmationPending(): boolean {
+  return quitConfirmation.pending();
+}
+
+function respondToQuitConfirmation(confirmed: boolean): void {
+  if (quitConfirmation.respond(confirmed)) app.quit();
+}
 
 log.initialize();
 log.transports.file.level = "info";
@@ -308,6 +327,13 @@ function createWindow(): void {
 
   applicationWindow = mainWindow;
   setMainWindow(mainWindow);
+  mainWindow.on("close", (event) => {
+    // Protect the controls and live outputs for every window-close action,
+    // including the macOS red button and Cmd+W. Confirmation calls app.quit().
+    if (!quitConfirmation.confirm()) {
+      event.preventDefault();
+    }
+  });
   importReady = false;
   mainWindow.webContents.on("did-start-loading", () => {
     importReady = false;
@@ -472,7 +498,7 @@ app.whenReady().then(async () => {
     store.get("scripture").defaultTranslation,
   );
   initOfflineBibles();
-  registerIpcHandlers();
+  registerIpcHandlers({ pending: quitConfirmationPending, respond: respondToQuitConfirmation });
 
   // M0: start the NDI sender unconditionally on launch (hardcoded transparent
   // test frame until the overlay window pushes real content). A missing/broken
@@ -540,9 +566,18 @@ function releaseOutputs(): Promise<void> {
 
 // The updater releases hardware before its own quit, so `before-quit` never
 // has to cancel (and re-issue) the quit `quitAndInstall` started.
-updaterService.setBeforeInstall(releaseOutputs);
+updaterService.setBeforeInstall(() => {
+  quitConfirmation.allow();
+  return releaseOutputs();
+});
 
 app.on("before-quit", (event) => {
+  // Confirm before stopping NDI or releasing any live output. Startup exits
+  // (for example a second instance) have no operator window to protect.
+  if (getMainWindow() && !quitConfirmation.confirm()) {
+    event.preventDefault();
+    return;
+  }
   if (!ndiStopped) {
     ndiStopped = true;
     ndiService.stop().catch((err) => {

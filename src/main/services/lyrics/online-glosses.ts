@@ -6,16 +6,18 @@ import {
   extractInlineGlossPairs,
   glossMatchKey,
   isGlossLine,
+  isLikelyEnglishLyric,
+  shouldApplyGloss,
   lookupOnlineGloss,
 } from '@shared/lyrics-translate'
 import { isAllowedLyricsUrl, structureBilingualHymn } from './web-lyrics'
+import { searchWebProviders } from './web-search'
 
 /**
  * Finds English glosses already published on gospel lyric sites.
  * Prefer these over machine translation for African worship songs.
  */
 
-const BRAVE_SEARCH_URL = 'https://api.search.brave.com/res/v1/web/search'
 const BRAVE_HTML_URL = 'https://search.brave.com/search'
 const REQUEST_TIMEOUT_MS = 12_000
 const USER_AGENT =
@@ -31,6 +33,8 @@ interface WebHit {
 export async function fetchOnlineGlossMap(options: {
   title: string
   artist?: string
+  sourceLines?: string[]
+  deepseekApiKey?: string
   braveApiKey?: string
 }): Promise<Map<string, string>> {
   const title = options.title.trim()
@@ -40,58 +44,57 @@ export async function fetchOnlineGlossMap(options: {
   // Bias search toward bilingual gospel / hymn sites that publish real English.
   const glossQuery = `${query} (site:africangospellyrics.com OR site:lyricsom.com OR site:yorubahymns.blogspot.com OR site:blogspot.com)`
   const seedUrls = buildSeedUrls(title, options.artist)
-  let hits: WebHit[] = []
-  try {
-    hits = options.braveApiKey?.trim()
-      ? await searchBraveApi(glossQuery, options.braveApiKey.trim())
-      : await searchBraveHtml(glossQuery)
-    if (hits.length === 0) {
-      hits = options.braveApiKey?.trim()
-        ? await searchBraveApi(query, options.braveApiKey.trim())
-        : await searchBraveHtml(query)
-    }
-  } catch (err) {
-    log.warn('[OnlineGlosses] search failed', err)
-  }
-
-  const urls = [
-    ...seedUrls,
-    ...hits
-      .map((hit) => hit.url ?? '')
-      .filter((url) => isAllowedLyricsUrl(url) && !/\/tag\/|\/category\/|\/page\//i.test(url)),
-  ]
   const seen = new Set<string>()
-  const uniqueUrls = urls.filter((url) => {
-    if (!url || seen.has(url)) return false
-    seen.add(url)
-    return true
-  }).slice(0, MAX_PAGES + seedUrls.length)
-
   const merged = new Map<string, string>()
-  for (const url of uniqueUrls) {
-    try {
-      const pairs = await scrapeGlossPairs(url)
-      for (const [key, gloss] of pairs) {
-        if (!merged.has(key)) merged.set(key, gloss)
-      }
-    } catch (err) {
-      const status = axios.isAxiosError(err) ? err.response?.status : undefined
-      // Seed URLs are guesses — 404/403 is normal, not a translate failure.
-      if (status === 404 || status === 403 || status === 410) {
-        log.info('[OnlineGlosses] skip missing page', { url, status })
-      } else {
-        log.warn('[OnlineGlosses] scrape failed', {
-          url,
-          status,
-          message: err instanceof Error ? err.message : String(err),
+  const requestedLines = options.sourceLines?.filter((line) => line.trim() && !isLikelyEnglishLyric(line))
+  const hasCoverage = (): boolean => requestedLines?.length
+    ? requestedLines.every((line) => {
+      const gloss = lookupOnlineGloss(line, merged)
+      return Boolean(gloss && shouldApplyGloss(line, gloss, 'und'))
+    })
+    : merged.size > 0
+  const harvest = async (urls: string[]): Promise<void> => {
+    for (const url of urls) {
+      if (seen.has(url)) continue
+      seen.add(url)
+      try {
+        const pairs = await scrapeGlossPairs(url)
+        for (const [key, gloss] of pairs) {
+          if (!merged.has(key)) merged.set(key, gloss)
+        }
+      } catch (err) {
+        log.info('[OnlineGlosses] skip unavailable page', {
+          url, status: axios.isAxiosError(err) ? err.response?.status : undefined,
         })
       }
+    }
+  }
+  const lyricUrls = (hits: WebHit[]): string[] => hits
+    .map((hit) => hit.url ?? '')
+    .filter((url) => isAllowedLyricsUrl(url) && !/\/tag\/|\/category\/|\/page\//i.test(url))
+    .slice(0, MAX_PAGES)
+
+  await harvest(seedUrls)
+
+  // Try both scoped and broad queries per provider, then move to the fallback.
+  // Long scoped queries bypass DeepSeek's limit; the broad query still gets a turn.
+  for await (const batch of searchWebProviders([glossQuery, query], options)) {
+    await harvest(lyricUrls(batch.results))
+    if (hasCoverage()) return merged
+  }
+
+  for (const q of [glossQuery, query]) {
+    try {
+      await harvest(lyricUrls(await searchBraveHtml(q)))
+      if (hasCoverage()) break
+    } catch {
+      log.warn('[OnlineGlosses] keyless search failed')
     }
   }
 
   log.info('[OnlineGlosses] harvested', {
     query,
-    pages: uniqueUrls.length,
+    pages: seen.size,
     pairs: merged.size,
   })
   return merged
@@ -202,19 +205,6 @@ async function scrapeGlossPairs(url: string): Promise<Map<string, string>> {
   }
 
   return pairs
-}
-
-async function searchBraveApi(query: string, apiKey: string): Promise<WebHit[]> {
-  const response = await axios.get(BRAVE_SEARCH_URL, {
-    params: { q: query, count: 8 },
-    headers: {
-      'X-Subscription-Token': apiKey,
-      Accept: 'application/json',
-    },
-    timeout: REQUEST_TIMEOUT_MS,
-  })
-  const results = (response.data as { web?: { results?: WebHit[] } })?.web?.results
-  return Array.isArray(results) ? results : []
 }
 
 async function searchBraveHtml(query: string): Promise<WebHit[]> {

@@ -644,3 +644,7 @@
 .kairo-pp-settings .label {
   @apply mb-0 font-sans text-[13px] font-normal normal-case tracking-normal text-white;
 }
+
+/* Quit sits above startup/onboarding and other workspace dialogs. */
+:root { --z-quit-confirmation: 100; }
+.quit-confirmation-overlay, .quit-confirmation-panel { z-index: var(--z-quit-confirmation); }

@@ -144,6 +144,9 @@ const audio: KairoAPI['audio'] = {
 // ─── app ──────────────────────────────────────────────────────────────────────
 
 const appApi: KairoAPI['app'] = {
+  onQuitRequested: (callback) => subscribe(IPC.APP.QUIT_REQUESTED, callback),
+  quitPending: () => ipcRenderer.invoke(IPC.APP.QUIT_PENDING),
+  respondToQuit: (confirmed) => ipcRenderer.invoke(IPC.APP.QUIT_RESPONSE, confirmed),
   onImportRequested(callback) {
     const unsubscribe = subscribe(IPC.APP.IMPORT_REQUESTED, callback)
     ipcRenderer.send(IPC.APP.IMPORT_READY)

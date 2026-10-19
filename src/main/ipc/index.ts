@@ -75,7 +75,7 @@ import { mediaService, MEDIA_FILE_EXTENSIONS } from "../services/media";
 import { tracksService } from "../services/tracks";
 import { TRACK_FILE_EXTENSIONS } from "@shared/tracks";
 import { surfaceManager } from "../services/output/surface-manager";
-import { dialogParentWindow } from "../main-window";
+import { dialogParentWindow, getMainWindow } from "../main-window";
 import { allowPickedOverlayMedia } from "../services/ndi/media-allowlist";
 import { runBootstrap } from "../bootstrap";
 import { onboardingService } from "../services/cloud/onboarding";
@@ -707,6 +707,7 @@ function registerLyricsHandlers(): void {
       const { translateSections } = await import("../services/lyrics/translate");
       return translateSections(sections, {
         apiKey: lyrics.googleTranslateApiKey ?? "",
+        deepseekApiKey: stt.deepseekApiKey,
         braveApiKey: lyrics.braveApiKey,
         target: options?.target ?? "en",
         sourceLanguage: options?.sourceLanguage ?? "auto",
@@ -1566,7 +1567,17 @@ function registerAppHandlers(): void {
 
 // ─── Entry point ──────────────────────────────────────────────────────────────
 
-export function registerIpcHandlers(): void {
+export function registerIpcHandlers(quit: {
+  pending(): boolean;
+  respond(confirmed: boolean): void;
+}): void {
+  ipcMain.handle(IPC.APP.QUIT_PENDING, (event) => {
+    return event.sender === getMainWindow()?.webContents && quit.pending();
+  });
+  ipcMain.handle(IPC.APP.QUIT_RESPONSE, (event, confirmed: unknown) => {
+    if (event.sender !== getMainWindow()?.webContents || typeof confirmed !== 'boolean') return;
+    quit.respond(confirmed);
+  });
   // Restore the persisted reference playlist before any transcript can arrive.
   livePlanService.init();
   // Derive wizard progress for an install that predates it, before the first
