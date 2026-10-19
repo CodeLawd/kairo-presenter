@@ -28,6 +28,11 @@ export interface SermonPlanIndex {
   expectedIndex: number;
   /** `${book}|${chapter}|${verse}` (lowercased book) → entry. */
   byVerseKey: Map<string, PlanVerseEntry>;
+  /**
+   * Same key plus `|${TRANSLATION}`: a playlist can hold one verse in several
+   * translations, and a preacher who names one gets that one.
+   */
+  byVerseTranslation: Map<string, PlanVerseEntry>;
   /** Entries with enough distinct text to be matched by quotation. */
   quotable: Array<{ entry: PlanVerseEntry; tokens: string[] }>;
 }
@@ -67,6 +72,7 @@ function isUsableItem(item: SermonScriptureItem): boolean {
  */
 export function buildSermonPlanIndex(plan: SermonPlan): SermonPlanIndex {
   const byVerseKey = new Map<string, PlanVerseEntry>();
+  const byVerseTranslation = new Map<string, PlanVerseEntry>();
   const ordered: PlanVerseEntry[] = [];
 
   for (const item of plan.items) {
@@ -84,9 +90,14 @@ export function buildSermonPlanIndex(plan: SermonPlan): SermonPlanIndex {
       };
       ordered.push(entry);
       const key = verseKey(verse.book, verse.chapter, verse.verse);
-      const existing = byVerseKey.get(key);
       // Narrower item wins: a bare single-verse call must not drag a whole
       // passage onto the screen when both are in the playlist.
+      const translationKey = `${key}|${item.translation.toUpperCase()}`;
+      const sameTranslation = byVerseTranslation.get(translationKey);
+      if (!sameTranslation || sameTranslation.itemLength > entry.itemLength) {
+        byVerseTranslation.set(translationKey, entry);
+      }
+      const existing = byVerseKey.get(key);
       if (existing && existing.itemLength <= entry.itemLength) continue;
       byVerseKey.set(key, entry);
     }
@@ -99,17 +110,19 @@ export function buildSermonPlanIndex(plan: SermonPlan): SermonPlanIndex {
     quotable.push({ entry, tokens });
   }
 
-  return { planId: plan.id, byVerseKey, quotable, ordered, expectedIndex: 0 };
+  return { planId: plan.id, byVerseKey, byVerseTranslation, quotable, ordered, expectedIndex: 0 };
 }
 
 /**
  * Resolves a detected reference against the playlist. Returns the covered
  * verses in order, or `[]` when any verse of the range is missing — a partial
  * hit must fall through to the normal Bible lookup so nothing is dropped.
+ * With `translation`, only that translation's entries count.
  */
 export function matchPlanReference(
   index: SermonPlanIndex | null,
   ref: { book: string; chapter: number; verseStart: number; verseEnd?: number },
+  translation?: string,
 ): PlanVerseEntry[] {
   const end =
     ref.verseEnd != null && ref.verseEnd > ref.verseStart
@@ -118,7 +131,10 @@ export function matchPlanReference(
   if (!index) return [];
   const entries: PlanVerseEntry[] = [];
   for (let verse = ref.verseStart; verse <= end; verse++) {
-    const entry = index.byVerseKey.get(verseKey(ref.book, ref.chapter, verse));
+    const key = verseKey(ref.book, ref.chapter, verse);
+    const entry = translation
+      ? index.byVerseTranslation.get(`${key}|${translation.toUpperCase()}`)
+      : index.byVerseKey.get(key);
     if (!entry) return [];
     entries.push(entry);
   }

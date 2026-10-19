@@ -2,7 +2,7 @@ import { Frame } from './Frame'
 import { cx } from '../primitives'
 
 const ROWS = [
-  { k: 'ProPresenter', v: 'Connected' },
+  { k: 'Screen output', v: 'Ready' },
   { k: 'Transcription', v: 'Running' },
   { k: 'Detection', v: 'Running' },
   { k: 'NDI output', v: '1080p · transparent' },

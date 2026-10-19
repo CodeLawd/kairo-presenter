@@ -137,9 +137,9 @@ const features = [
 
 const questions = [
   {
-    question: "Do I need ProPresenter to use Kairo?",
+    question: "Does Kairo run my screens directly?",
     answer:
-      "No. Kairo can run the screens connected to your computer. If your team uses ProPresenter, you can connect it too.",
+      "Yes. Kairo runs the screens connected to your computer. You can also send NDI output to a compatible switcher or stream.",
   },
   {
     question: "Does someone still need to manage what goes live?",
@@ -329,7 +329,7 @@ export default function HomePage(): React.ReactElement {
                 Take a look <span aria-hidden="true">↓</span>
               </a>
               <span className="basis-full text-xs tracking-[.02em] text-[#807D73] min-[701px]:basis-auto">
-                Runs on its own · ProPresenter optional
+                Standalone presentation · NDI output
               </span>
             </div>
           </div>
@@ -480,18 +480,17 @@ export default function HomePage(): React.ReactElement {
           <div className={`${container} py-20 min-[701px]:py-[125px]`}>
             <p className={`${label} text-[#6E6C62]`}>WORKS WITH YOUR SETUP</p>
             <h2 className={`${heading} my-6 max-w-[780px]`} data-reveal="">
-              Use Kairo on its own. Connect ProPresenter if you need it.
+              Run your screens. Send a feed to your stream.
             </h2>
             <p
               className="max-w-[630px] text-[19px] leading-[1.5] text-[#504F44]"
               data-reveal=""
             >
-              Kairo can run your screens without ProPresenter. If it's already
-              part of your setup, you can send to it as well. NDI output is
-              available for a switcher or stream.
+              Kairo runs the screens connected to your computer. NDI output is
+              available for a compatible switcher or stream.
             </p>
             <div className="mt-10 flex flex-wrap gap-3" data-reveal="">
-              {["Kairo screens", "NDI feeds", "ProPresenter · optional"].map(
+              {["Kairo screens", "NDI feeds", "Stage display"].map(
                 (item) => (
                   <span
                     className="rounded-full border border-[#BBB7AF] px-[18px] py-3 text-[13px] text-[#2B2B23]"

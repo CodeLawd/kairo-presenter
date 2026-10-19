@@ -57,7 +57,7 @@ export function LiveLayerStrip({
     },
     {
       id: 'props',
-      label: 'Props & logo',
+      label: 'Props',
       icon: Layers,
       on: program.activePropIds.length > 0 || program.logo,
       clear: async () => {

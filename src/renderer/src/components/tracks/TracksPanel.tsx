@@ -1,4 +1,4 @@
-import { FolderOpen, Pause, Play, Plus, X } from '@/icons'
+import { FolderOpen, Music2, Pause, Play, Plus, X } from '@/icons'
 import { useCallback, useState } from 'react'
 import { formatMediaClock } from '@shared/media-playback'
 import { useTracksPlaybackStore } from '@/stores/useTracksPlaybackStore'
@@ -35,53 +35,71 @@ export function TracksPanel(): React.ReactElement {
     useTracksPlaybackStore.getState().requestSeek(Math.min(cap, Math.max(0, seconds)))
   }
 
+  const addTracks = (): void => void run(() => window.api.tracks.importFiles())
+
+  // Grouped like the other operator panels: the title and its actions above
+  // one rounded box of tracks.
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-center gap-2 bg-surface-tertiary px-3 py-1.5">
-        <p className="min-w-0 flex-1 truncate text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-400">
-          House audio
-        </p>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => void run(() => window.api.tracks.importFiles())}
-          className="flex items-center gap-1 text-[10px] font-semibold text-teal-400/90 hover:text-teal-300 disabled:opacity-50"
-        >
-          <Plus size={11} aria-hidden="true" />
-          Add
-        </button>
+    <div className="flex flex-col px-3 pt-3">
+      <div className="flex min-h-7 shrink-0 items-center gap-1.5 px-1 pb-1.5">
+        <h3 className="min-w-0 flex-1 truncate text-[12px] font-semibold text-zinc-200">House audio</h3>
         <button
           type="button"
           disabled={busy}
           onClick={() => void run(() => window.api.tracks.chooseFolder())}
-          className="grid size-5 place-items-center text-slate-500 hover:text-slate-200"
+          className="grid size-7 place-items-center rounded-md text-slate-400 hover:bg-surface-tertiary hover:text-white disabled:opacity-50"
           title="Choose audio folder"
           aria-label="Choose audio folder"
         >
-          <FolderOpen size={12} aria-hidden="true" />
+          <FolderOpen size={14} aria-hidden="true" />
         </button>
+        {library.items.length > 0 && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={addTracks}
+            className="btn-secondary flex items-center gap-1 px-2.5 py-1 text-[12px]"
+          >
+            <Plus size={12} aria-hidden="true" />
+            Add
+          </button>
+        )}
       </div>
 
       {(error || library.error) && (
-        <p className="px-3 pb-1 text-[10px] leading-snug text-amber-300">{library.error ?? error}</p>
+        <p className="px-1 pb-2 text-[11px] leading-snug text-red-400">{library.error ?? error}</p>
       )}
 
-      <div className="min-h-0 flex-1 overflow-y-auto bg-transparent">
+      <div className="pref-group pref-group-dim shrink-0 overflow-hidden rounded-lg bg-surface">
         {library.items.length === 0 ? (
-          <p className="px-4 py-6 text-center text-[10px] leading-relaxed text-zinc-600">
-            Plays on this Mac, not through ProPresenter.
-            Add walk-in tracks — they sit next to your Media folder.
-          </p>
+          <div className="flex flex-col items-center gap-2 px-4 py-6 text-center">
+            <span className="grid size-9 place-items-center rounded-full bg-surface-tertiary text-zinc-400">
+              <Music2 size={16} aria-hidden="true" />
+            </span>
+            <p className="text-[12px] font-medium text-zinc-300">No walk-in tracks yet</p>
+            <p className="max-w-[16rem] text-[11px] leading-relaxed text-zinc-500">
+              Music for before and after the service. It plays on this Mac, from a folder next to your Media.
+            </p>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={addTracks}
+              className="btn-primary mt-1 flex items-center gap-1 px-3 py-1.5 text-[12px]"
+            >
+              <Plus size={12} aria-hidden="true" />
+              Add tracks
+            </button>
+          </div>
         ) : (
-          <ul>
+          <ul className="pref-group">
             {library.items.map((item) => {
               const active = item.id === library.liveId
               return (
                 <li key={item.id}>
                   <div
                     className={cn(
-                      'px-3 py-1.5',
-                      active && 'bg-surface-elevated',
+                      'px-3.5 py-2',
+                      active && 'bg-surface-tertiary',
                     )}
                   >
                     <div className="flex items-center gap-2">
@@ -100,8 +118,8 @@ export function TracksPanel(): React.ReactElement {
                         className={cn(
                           'grid size-6 shrink-0 place-items-center rounded-md transition-colors',
                           active
-                            ? 'bg-tint-teal text-teal-200 hover:bg-tint-teal'
-                            : 'text-slate-500 hover:bg-surface hover:text-slate-200',
+                            ? 'bg-teal-500 text-on-accent hover:bg-teal-600'
+                            : 'text-slate-400 hover:bg-surface-tertiary hover:text-white',
                         )}
                       >
                         {active && playing
@@ -115,8 +133,8 @@ export function TracksPanel(): React.ReactElement {
                           if (!active) void window.api.tracks.play(item.id)
                         }}
                         className={cn(
-                          'min-w-0 flex-1 truncate text-left text-[11px] font-medium',
-                          active ? 'text-teal-200' : 'text-slate-300 hover:text-white',
+                          'min-w-0 flex-1 truncate text-left text-[12px]',
+                          active ? 'font-semibold text-white' : 'font-medium text-slate-300 hover:text-white',
                         )}
                       >
                         {item.name}
@@ -137,7 +155,7 @@ export function TracksPanel(): React.ReactElement {
                             }}
                             title="Stop and clear"
                             aria-label={`Stop ${item.name}`}
-                            className="grid size-5 shrink-0 place-items-center rounded text-slate-600 hover:bg-surface hover:text-slate-200"
+                            className="grid size-5 shrink-0 place-items-center rounded text-slate-500 hover:bg-surface-elevated hover:text-white"
                           >
                             <X size={11} aria-hidden="true" />
                           </button>

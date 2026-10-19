@@ -229,3 +229,19 @@ test("expected order breaks a quotation tie but never creates a match without ev
   assert.equal(matchPlanQuote(index, wording)?.entry.planItemId, 'expected');
   assert.equal(matchPlanQuote(index, 'good morning church'), null);
 });
+
+test("a verse held in several translations resolves to the one the preacher named", () => {
+  const index = buildSermonPlanIndex(
+    plan([
+      item({ id: "nkjv", reference: "Romans 8:28", translation: "NKJV", verses: [verse("Romans", 8, 28, ROMANS_8_28)] }),
+      item({ id: "nlt", reference: "Romans 8:28", translation: "NLT", verses: [verse("Romans", 8, 28, "And we know that God causes everything to work together for the good of those who love God.")] }),
+    ]),
+  );
+  const ref = { book: "Romans", chapter: 8, verseStart: 28 };
+
+  assert.equal(matchPlanReference(index, ref, "NLT")[0]?.planItemId, "nlt");
+  assert.equal(matchPlanReference(index, ref, "nkjv")[0]?.planItemId, "nkjv");
+  assert.deepEqual(matchPlanReference(index, ref, "NIV"), []);
+  // Unnamed: the playlist's own choice, as before.
+  assert.equal(matchPlanReference(index, ref)[0]?.planItemId, "nkjv");
+});

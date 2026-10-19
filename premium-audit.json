@@ -30,7 +30,7 @@
     {
       "category": "unresolved",
       "file": "src/renderer/src/components/operator/LiveOutputPreview.tsx",
-      "line": 198,
+      "line": 183,
       "message": "Native select is used without an explicit ownership decision.",
       "remediation": "Record Select/Listbox as native or reuse the authored canonical owner.",
       "ruleId": "ownership.native-select-undecided",
@@ -39,7 +39,7 @@
     {
       "category": "unresolved",
       "file": "src/renderer/src/components/operator/ProgramPanels.tsx",
-      "line": 635,
+      "line": 655,
       "message": "Native select is used without an explicit ownership decision.",
       "remediation": "Record Select/Listbox as native or reuse the authored canonical owner.",
       "ruleId": "ownership.native-select-undecided",
@@ -49,15 +49,6 @@
       "category": "unresolved",
       "file": "src/renderer/src/components/operator/ServicePanel.tsx",
       "line": 177,
-      "message": "Native select is used without an explicit ownership decision.",
-      "remediation": "Record Select/Listbox as native or reuse the authored canonical owner.",
-      "ruleId": "ownership.native-select-undecided",
-      "severity": "error"
-    },
-    {
-      "category": "unresolved",
-      "file": "src/renderer/src/components/propresenter/ResourceCatalogue.tsx",
-      "line": 201,
       "message": "Native select is used without an explicit ownership decision.",
       "remediation": "Record Select/Listbox as native or reuse the authored canonical owner.",
       "ruleId": "ownership.native-select-undecided",
@@ -75,7 +66,7 @@
     {
       "category": "unresolved",
       "file": "src/renderer/src/components/screens/ScreenConfiguration.tsx",
-      "line": 960,
+      "line": 861,
       "message": "Native select is used without an explicit ownership decision.",
       "remediation": "Record Select/Listbox as native or reuse the authored canonical owner.",
       "ruleId": "ownership.native-select-undecided",
@@ -102,7 +93,7 @@
     {
       "category": "unresolved",
       "file": "src/renderer/src/components/scripture/PlaylistSidebar.tsx",
-      "line": 602,
+      "line": 623,
       "message": "Native select is used without an explicit ownership decision.",
       "remediation": "Record Select/Listbox as native or reuse the authored canonical owner.",
       "ruleId": "ownership.native-select-undecided",
@@ -129,7 +120,7 @@
     {
       "category": "unresolved",
       "file": "src/renderer/src/components/settings/Settings.tsx",
-      "line": 954,
+      "line": 707,
       "message": "Native select is used without an explicit ownership decision.",
       "remediation": "Record Select/Listbox as native or reuse the authored canonical owner.",
       "ruleId": "ownership.native-select-undecided",
@@ -147,7 +138,7 @@
     {
       "category": "violation",
       "file": "src/renderer/src/components/lyrics/Lyrics.tsx",
-      "line": 3441,
+      "line": 3396,
       "message": "Enabled literal button has no detectable action or submit behavior.",
       "remediation": "Connect the button to a real action, make it a submit button, or disable/remove it.",
       "ruleId": "affordance.actionless-button",
@@ -156,7 +147,7 @@
     {
       "category": "violation",
       "file": "src/renderer/src/components/lyrics/Lyrics.tsx",
-      "line": 3692,
+      "line": 3647,
       "message": "Enabled literal button has no detectable action or submit behavior.",
       "remediation": "Connect the button to a real action, make it a submit button, or disable/remove it.",
       "ruleId": "affordance.actionless-button",
@@ -165,7 +156,7 @@
     {
       "category": "violation",
       "file": "src/renderer/src/components/lyrics/Lyrics.tsx",
-      "line": 3804,
+      "line": 3759,
       "message": "Enabled literal button has no detectable action or submit behavior.",
       "remediation": "Connect the button to a real action, make it a submit button, or disable/remove it.",
       "ruleId": "affordance.actionless-button",
@@ -201,7 +192,7 @@
     {
       "category": "violation",
       "file": "src/renderer/src/components/operator/LiveOutputRail.tsx",
-      "line": 122,
+      "line": 121,
       "message": "Enabled literal button has no detectable action or submit behavior.",
       "remediation": "Connect the button to a real action, make it a submit button, or disable/remove it.",
       "ruleId": "affordance.actionless-button",
@@ -210,16 +201,7 @@
     {
       "category": "violation",
       "file": "src/renderer/src/components/operator/Operator.tsx",
-      "line": 1601,
-      "message": "Enabled literal button has no detectable action or submit behavior.",
-      "remediation": "Connect the button to a real action, make it a submit button, or disable/remove it.",
-      "ruleId": "affordance.actionless-button",
-      "severity": "error"
-    },
-    {
-      "category": "violation",
-      "file": "src/renderer/src/components/operator/Operator.tsx",
-      "line": 2159,
+      "line": 1575,
       "message": "Enabled literal button has no detectable action or submit behavior.",
       "remediation": "Connect the button to a real action, make it a submit button, or disable/remove it.",
       "ruleId": "affordance.actionless-button",
@@ -237,7 +219,7 @@
     {
       "category": "violation",
       "file": "src/renderer/src/components/screens/ScreenConfiguration.tsx",
-      "line": 582,
+      "line": 514,
       "message": "Enabled literal button has no detectable action or submit behavior.",
       "remediation": "Connect the button to a real action, make it a submit button, or disable/remove it.",
       "ruleId": "affordance.actionless-button",
@@ -264,7 +246,7 @@
     {
       "category": "violation",
       "file": "src/renderer/src/components/settings/Settings.tsx",
-      "line": 437,
+      "line": 376,
       "message": "Enabled literal button has no detectable action or submit behavior.",
       "remediation": "Connect the button to a real action, make it a submit button, or disable/remove it.",
       "ruleId": "affordance.actionless-button",
@@ -273,7 +255,7 @@
     {
       "category": "violation",
       "file": "src/renderer/src/components/shared/LibrarySection.tsx",
-      "line": 156,
+      "line": 162,
       "message": "Enabled literal button has no detectable action or submit behavior.",
       "remediation": "Connect the button to a real action, make it a submit button, or disable/remove it.",
       "ruleId": "affordance.actionless-button",
@@ -336,7 +318,7 @@
     {
       "category": "violation",
       "file": "src/renderer/src/components/operator/ProgramPanels.tsx",
-      "line": 345,
+      "line": 365,
       "message": "Application-owned form does not declare its validation owner.",
       "remediation": "Add noValidate/novalidate and implement the canonical validation contract.",
       "ruleId": "form.novalidate-missing",
@@ -353,15 +335,6 @@
     },
     {
       "category": "violation",
-      "file": "src/renderer/src/components/screens/ScreenConfiguration.tsx",
-      "line": 1221,
-      "message": "Literal product textarea does not show evidence of the canonical resize-none rule.",
-      "remediation": "Use the shared Textarea owner or apply resize-none/resize: none with adequate height or auto-grow behavior.",
-      "ruleId": "form.textarea-resize-missing",
-      "severity": "error"
-    },
-    {
-      "category": "violation",
       "file": "src/renderer/src/components/ui/textarea.tsx",
       "line": 10,
       "message": "Literal product textarea does not show evidence of the canonical resize-none rule.",
@@ -372,7 +345,7 @@
     {
       "category": "violation",
       "file": "src/renderer/src/index.css",
-      "line": 215,
+      "line": 228,
       "message": "Scrollbar theme does not provide both standards-based scrollbar properties.",
       "remediation": "Add global scrollbar-color and scrollbar-width standards properties plus fallbacks.",
       "ruleId": "scrollbar.webkit-only",
@@ -383,10 +356,10 @@
   "projectRoot": "/Users/codelawd/Documents/development/kairo-presenter",
   "schemaVersion": 1,
   "summary": {
-    "errors": 42,
-    "total": 42,
-    "unresolved": 15,
-    "violations": 27,
+    "errors": 39,
+    "total": 39,
+    "unresolved": 14,
+    "violations": 25,
     "warnings": 0
   }
 }

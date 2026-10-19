@@ -1,12 +1,5 @@
 // ─── Common ───────────────────────────────────────────────────────────────────
 
-import type {
-  PPResourceBindings,
-  PPResourceCatalogue,
-  PPResourceKind,
-  PPResourcePreview,
-} from './propresenter-resources'
-
 export type Unsubscribe = () => void
 
 // ─── App Settings ─────────────────────────────────────────────────────────────
@@ -20,18 +13,6 @@ export type ScriptureTranslation = string
 export type STTProvider = 'deepgram' | 'whisper' | 'none'
 
 export interface AppSettings {
-  propresenter: {
-    /**
-     * The operator turned the ProPresenter integration on in Settings. Off by
-     * default and absent on older stores (read as off): Kairo is standalone,
-     * and ProPresenter is never probed, prompted for or reported on until
-     * someone opts in.
-     */
-    enabled?: boolean
-    host: string
-    port: number
-    password: string
-  }
   audio: {
     deviceId: string
   }
@@ -93,7 +74,6 @@ export interface AppSettings {
   }
   overlay: {
     // — phase 1 (existing, unchanged) —
-    /** PP message template string. Must contain {Reference} and/or {Text}. */
     template: string
     /** Append translation to reference shown on screen: "John 3:16 (KJV)" */
     showTranslation: boolean
@@ -101,15 +81,10 @@ export interface AppSettings {
     showVerseNumbers: boolean
     /** Max verses per push; 0 = no cap (whole detected range) */
     maxVerses: number
-    /** Auto-clear overlay after N seconds; 0 = manual clear only */
     // — phase 3 (new) — one entry per destination; see OverlayOutput below.
     outputs: OverlayOutput[]
     // — phase 2 (legacy — migrated into `outputs`, kept only so the migration
     //   in normalizeOverlaySettings can still read a pre-phase-3 store) —
-    /** @deprecated Replaced by `outputs`. */
-    mode: 'auto' | 'ndi' | 'message'
-    /** @deprecated Replaced by the `ndi` output's `ppVideoInputUuid`. */
-    ppVideoInputUuid: string
     /** @deprecated Replaced by the `ndi` output's `theme`. */
     theme: OverlayTheme
   }
@@ -126,8 +101,6 @@ export interface AppSettings {
   /** House-audio folder. Empty until derived from the media sibling or picked. */
   tracks: TracksSettings
   church: ChurchProfile
-  /** Stable ProPresenter UUIDs selected for Kairo roles (optional integration). */
-  propresenterResources: PPResourceBindings
   /** Transitions, messages, props, logo, stage displays, program audio. */
   presentation: import('./program').PresentationSettings
   /**
@@ -243,8 +216,6 @@ export type SettingsWithSecretsStatus = AppSettings & {
 export type OnboardingStepId =
   | 'welcome'
   | 'account'
-  | 'propresenter'
-  | 'propresenterResources'
   | 'output'
   | 'apiKeys'
   | 'church'
@@ -525,12 +496,10 @@ export interface OverlayTheme {
 }
 
 // ─── Overlay outputs (phase 3 — one push, many destinations) ──────────────────
-// ProPresenter has no "send this to screen 2" API. The routing primitive is the
-// LAYER, and a Look decides which layers each screen shows. So a destination is
-// a (PP layer, content, styling) triple. Defaults, normalizer and the layer map
-// live in src/lib/overlay-outputs.ts.
+// Every destination is rendered independently by Kairo.
 
-export type OverlayOutputKind = 'ndi' | 'library' | 'message' | 'stage' | 'screen' | 'device'
+/** `syphon`: a Syphon server other apps on this Mac take in (macOS only). */
+export type OverlayOutputKind = 'ndi' | 'screen' | 'device' | 'syphon'
 
 /**
  * What is being pushed. Scripture and lyrics land on the same outputs but rarely
@@ -549,15 +518,10 @@ export interface OverlayOutputVariant {
   themeId: string | null
   /** Resolved copy — rendering never depends on the library still holding `themeId`. */
   theme: OverlayTheme
-  /** Token template for `message`/`stage` kinds; same {Reference}/{Text} syntax. */
+  /** Text formatting template; same {Reference}/{Text} syntax. */
   template: string
 }
 
-/**
- * A ProPresenter layer an output writes to. Outputs on one layer compete;
- * Kairo's own screens and extra NDI feeds are not on any layer.
- */
-export type OverlayLayer = 'presentation' | 'messages' | 'stage'
 
 export interface OverlayOutput {
   id: string
@@ -565,25 +529,15 @@ export interface OverlayOutput {
   name: string
   kind: OverlayOutputKind
   enabled: boolean
-  /** Order within its layer group — lower runs first. */
+  /** Order for fallback destinations — lower runs first. */
   order: number
-  /**
-   * Push only if every non-fallback output failed. This is how the legacy
-   * `auto`/`ndi`/`message` modes' last-resort message overlay survives the move
-   * to fan-out: it is a different layer, so without this it would fire
-   * *alongside* a successful presentation-layer push instead of instead of it.
-   */
+  /** Try only when all regular destinations failed. */
   fallbackOnly: boolean
-  /** PP Look to trigger before pushing; '' leaves the operator's Look alone. */
-  lookId: string
   // — kind: 'ndi' —
   /** Source theme in `themeLibrary`, or null when `theme` is a one-off. Display only. */
   themeId: string | null
   /** Resolved copy — rendering never depends on the library still holding `themeId`. */
   theme: OverlayTheme
-  /** Persisted after discovery — the bound PP video-input uuid for the NDI source. */
-  ppVideoInputUuid: string
-  // — kind: 'message' | 'stage' —
   /** Token template; same {Reference}/{Text} syntax as the legacy `overlay.template`. */
   template: string
   /**
@@ -631,68 +585,9 @@ export interface OverlayDispatchResult {
   outputId: string
   name: string
   kind: OverlayOutputKind
-  /** The ProPresenter layer it competed for; null for Kairo's own screens and extra NDI feeds. */
-  layer: OverlayLayer | null
   ok: boolean
   /** Why it failed, when `ok` is false. */
   reason?: string
-}
-
-// ─── ProPresenter ─────────────────────────────────────────────────────────────
-
-export interface ConnectOptions {
-  host: string
-  port: number
-  password: string
-}
-
-export type ProPresenterConnectionState =
-  | 'disconnected'
-  | 'connecting'
-  | 'connected'
-  | 'error'
-
-export interface ProPresenterStatus {
-  state: ProPresenterConnectionState
-  host: string
-  port: number
-  version: string | null
-  activeSlideId: string | null
-  activePresentationId: string | null
-  activePresentationName: string | null
-  activePlaylistId: string | null
-  activePlaylistName: string | null
-}
-
-export interface ProPresenterSlide {
-  id: string
-  label: string
-  notes: string
-  textContent: string
-  thumbnailUrl?: string
-}
-
-export interface ProPresenterPresentation {
-  id: string
-  name: string
-  slides: ProPresenterSlide[]
-}
-
-export interface ProPresenterPlaylistItem {
-  id: string
-  type: 'presentation' | 'media' | 'header'
-  name: string
-  presentationId?: string
-}
-
-export interface ProPresenterPlaylist {
-  id: string
-  name: string
-  items: ProPresenterPlaylistItem[]
-}
-
-export interface ProPresenterLibrary {
-  presentations: ProPresenterPresentation[]
 }
 
 // ─── Audio ────────────────────────────────────────────────────────────────────
@@ -722,7 +617,6 @@ export interface AudioError {
 export type BootstrapResource =
   | 'settings'
   | 'orchestrator'
-  | 'propresenter'
   | 'transcription'
   | 'translations'
   | 'sermonPlans'
@@ -752,7 +646,6 @@ export interface AppBootstrapSnapshot {
   /** Null only when settings could not be read; the renderer falls back to defaults. */
   settings: SettingsWithSecretsStatus | null
   orchestrator: OrchestratorStatus | null
-  propresenter: ProPresenterStatus | null
   transcription: TranscriptResult[]
   translations: ScriptureTranslationOption[]
   sermonPlans: SermonPlan[]
@@ -811,6 +704,12 @@ export interface ScriptureSuggestion {
   planItemId?: string
   /** How the live playlist matched: spoken citation vs. the preacher reading the text. */
   planMatch?: 'reference' | 'quote'
+  /**
+   * The translation the preacher named when it could not be shown (not
+   * installed, no API.Bible access), so `translation` is the default instead.
+   * The card says so; the operator can switch it.
+   */
+  requestedTranslation?: ScriptureTranslation
 }
 
 export interface ScriptureResult {
@@ -1180,6 +1079,7 @@ export type LyricsSectionType =
   | 'outro'
   | 'ending'
 
+/** Legacy 'propresenter' provenance remains readable for already imported songs. */
 export type LyricsSource = 'usr' | 'text' | 'propresenter' | 'ccli' | 'genius' | 'lrclib' | 'web'
 
 export interface LyricsSongSection {
@@ -1193,7 +1093,7 @@ export interface LyricsSongSection {
   lineColors?: (string | null)[]
   /**
    * One key (A–Z or 0–9, stored upper-case) that jumps to this section's first
-   * slide and puts it live — ProPresenter-style group hotkeys. Unique per song.
+   * slide and puts it live — section hotkeys. Unique per song.
    */
   hotkey?: string
 }
@@ -1236,35 +1136,9 @@ export interface SongPresentOptions {
    * 'none'     — omitted entirely (default)
    */
   copyrightPosition?: 'each' | 'last' | 'separate' | 'none'
-  /** Trigger the first slide in ProPresenter immediately after import. Default: false */
-  triggerFirst?: boolean
 }
 
 // ─── Per-namespace API shapes (shared source of truth) ────────────────────────
-
-export interface ProPresenterAPI {
-  connect: (options: ConnectOptions) => Promise<void>
-  disconnect: () => Promise<void>
-  getStatus: () => Promise<ProPresenterStatus>
-  triggerSlide: (slideId: string) => Promise<void>
-  clearAll: () => Promise<void>
-  getLibrary: () => Promise<ProPresenterLibrary>
-  getPlaylists: () => Promise<ProPresenterPlaylist[]>
-  /** PP Looks — a Look defines which layers are visible on which screens. */
-  getLooks: () => Promise<PPLook[]>
-  getResourceCatalogue: (options?: { refresh?: boolean }) => Promise<PPResourceCatalogue>
-  getResourceDetails: (kind: PPResourceKind, id: string) => Promise<Record<string, unknown> | null>
-  getResourcePreview: (kind: PPResourceKind, id: string, childId?: string) => Promise<PPResourcePreview>
-  setResourceBindings: (bindings: PPResourceBindings) => Promise<PPResourceBindings>
-  /** Returns cleanup fn — call when component unmounts. */
-  onStatusChange: (callback: (status: ProPresenterStatus) => void) => Unsubscribe
-}
-
-/** One entry from PP's `GET /v1/looks`. */
-export interface PPLook {
-  id: string
-  name: string
-}
 
 export interface AudioAPI {
   stopCapture: () => Promise<void>
@@ -1299,6 +1173,8 @@ export interface ScriptureAPI {
   register: (suggestion: ScriptureSuggestion) => Promise<void>
   /** Present browsed scripture without publishing it as detected Operator content. */
   presentDirectly: (suggestion: ScriptureSuggestion) => Promise<void>
+  /** The same card in another translation; rejects with a message the operator can read. */
+  retranslate: (suggestion: ScriptureSuggestion, translation: ScriptureTranslation) => Promise<ScriptureSuggestion>
   search: (query: string, translation?: ScriptureTranslation) => Promise<ScriptureResult[]>
   getTranslations: (apiKey?: string) => Promise<ScriptureTranslationOption[]>
   importSermonNotes: () => Promise<SermonPlanDraft | null>
@@ -1382,14 +1258,12 @@ export interface LyricsAPI {
   update: (id: string, song: LyricsSong) => Promise<LyricsSong | null>
   delete: (id: string) => Promise<boolean>
   toggleFavorite: (id: string) => Promise<boolean>
-  sendToProPresenter: (songId: string, options?: SongPresentOptions) => Promise<void>
   /**
    * Pushes a single slide of a song to the configured overlay outputs.
    * `slideIndex` is zero-based into the song's flat slide list, built with the
    * same `buildSlides` the library grid renders from.
    */
   pushSlide: (songId: string, slideIndex: number) => Promise<void>
-  addToPlaylist: (songId: string, playlistId: string) => Promise<void>
   /**
    * Translates singable lines to English and inserts `(gloss)` under each line.
    * Prefers Anthropic/DeepSeek when configured; otherwise Google Translate.
@@ -1413,8 +1287,6 @@ export interface NdiStatus {
   available: boolean
   /** Frame loop currently pushing frames to the NDI sender. */
   sending: boolean
-  /** A PP video input (bound uuid, or discovered by name) is currently present in PP's /v1/video_inputs list. */
-  ppInputConfigured: boolean
   /** Readiness of each enabled output, keyed by output id. */
   outputs: NdiOutputStatus[]
 }
@@ -1426,16 +1298,8 @@ export interface NdiOutputStatus {
   reason?: string
 }
 
-/** One entry from PP's `GET /v1/video_inputs` — PP names these "Input N", it does NOT expose the NDI source name. */
-export interface PPVideoInputInfo {
-  uuid: string
-  name: string
-}
-
 export interface NdiAPI {
   getStatus: () => Promise<NdiStatus>
-  /** Lists PP's configured video inputs so the user can bind the NDI one manually. */
-  getVideoInputs: () => Promise<PPVideoInputInfo[]>
   /** Native open-file dialog for an overlay background image/video. Resolves to the absolute path, or null if cancelled. */
   pickOverlayMedia: (kind: 'image' | 'video') => Promise<string | null>
 }
@@ -1500,8 +1364,6 @@ export interface SessionStats {
 export interface ResilienceStatus {
   overallHealth: 'ALL_GOOD' | 'DEGRADED' | 'CRITICAL'
   internetConnected: boolean
-  ppReconnectCountdown: number | null
-  ppQueueSize: number
   claudeFallbackActive: boolean
   /**
    * Why detection fell back, for the operator.
@@ -1522,7 +1384,7 @@ export interface ResilienceAPI {
   onStatusChange: (callback: (status: ResilienceStatus) => void) => Unsubscribe
 }
 
-/** `output` is dispatch health (did the slide reach the screens); `propresenter` is the PP link. */
+/** Dispatch health records whether a slide reached the configured outputs. */
 // ─── Displays (Kairo screen outputs) ───────────────────────────────────────────
 
 /** One physical display as the main process sees it. */
@@ -1559,7 +1421,7 @@ export interface DisplaysAPI {
   onChanged: (callback: (displays: DisplayInfo[]) => void) => Unsubscribe
 }
 
-export type ServiceName = 'audio' | 'stt' | 'detector' | 'propresenter' | 'output'
+export type ServiceName = 'audio' | 'stt' | 'detector' | 'output'
 
 export interface ServiceHealth {
   service: ServiceName
@@ -1571,7 +1433,6 @@ export interface ServiceHealth {
 export interface OrchestratorStatus {
   running: boolean
   autoMode: boolean
-  ppConnected: boolean
   health: ServiceHealth[]
   totalPresentations: number
 }
@@ -1675,7 +1536,6 @@ export interface UpdatesAPI {
 export interface KairoAPI {
   services: import('./service-records').ServicesAPI
   app: AppAPI
-  propresenter: ProPresenterAPI
   audio: AudioAPI
   scripture: ScriptureAPI
   transcription: TranscriptionAPI
@@ -1717,7 +1577,7 @@ export interface KairoAPI {
 
 /**
  * Program-wide actions. They reach Kairo's screens and NDI feeds, and
- * ProPresenter too when that integration is on and a PP output is enabled.
+ * Every configured Kairo output receives the program independently.
  */
 export interface OutputAPI {
   /** Pushes a sample verse (John 3:16 KJV) to every enabled output. */
@@ -1737,7 +1597,7 @@ export interface MediaAPI {
   /** Creates an empty subfolder in the media folder. Never moves existing files. */
   createFolder: (name: string) => Promise<MediaLibrary>
   /**
-   * Puts a background on screen and cuts ProPresenter to the NDI video input.
+   * Puts a background on the configured screens and NDI feeds.
    * `applied` is false when the overlay could not be sent.
    */
   /**
@@ -1789,21 +1649,7 @@ export interface TracksAPI {
 // push   = webContents.send / ipcRenderer.on     (main → renderer, one-way)
 
 export const IPC = {
-  PROPRESENTER: {
-    CONNECT:        'propresenter:connect',         // invoke
-    DISCONNECT:     'propresenter:disconnect',      // invoke
-    GET_STATUS:     'propresenter:getStatus',       // invoke
-    TRIGGER_SLIDE:  'propresenter:triggerSlide',    // invoke
-    CLEAR_ALL:      'propresenter:clearAll',        // invoke
-    GET_LIBRARY:    'propresenter:getLibrary',      // invoke
-    GET_PLAYLISTS:  'propresenter:getPlaylists',    // invoke
-    GET_LOOKS:      'propresenter:getLooks',        // invoke — PPLook[]
-    GET_RESOURCE_CATALOGUE: 'propresenter:getResourceCatalogue',
-    GET_RESOURCE_DETAILS:   'propresenter:getResourceDetails',
-    GET_RESOURCE_PREVIEW:   'propresenter:getResourcePreview',
-    SET_RESOURCE_BINDINGS:  'propresenter:setResourceBindings',
-    STATUS_CHANGE:  'propresenter:statusChange',    // push
-  },
+
   AUDIO: {
     STOP_CAPTURE:   'audio:stopCapture',            // invoke
     PCM_CHUNK:      'audio:pcmChunk',               // renderer→main send
@@ -1824,6 +1670,7 @@ export const IPC = {
     DISMISS:                'scripture:dismiss',                 // invoke
     REGISTER:               'scripture:register',                // invoke
     PRESENT_DIRECTLY:       'scripture:presentDirectly',         // invoke
+    RETRANSLATE:            'scripture:retranslate',             // invoke
     SEARCH:                 'scripture:search',                  // invoke
     GET_TRANSLATIONS:       'scripture:getTranslations',         // invoke
     IMPORT_SERMON_NOTES:    'scripture:importSermonNotes',       // invoke
@@ -1914,9 +1761,7 @@ export const IPC = {
     UPDATE:          'lyrics:update',               // invoke
     DELETE:          'lyrics:delete',               // invoke
     TOGGLE_FAVORITE: 'lyrics:toggleFavorite',       // invoke
-    SEND_TO_PP:      'lyrics:sendToProPresenter',   // invoke
     PUSH_SLIDE:      'lyrics:pushSlide',             // invoke
-    ADD_TO_PLAYLIST: 'lyrics:addToPlaylist',        // invoke
     TRANSLATE:       'lyrics:translate',            // invoke
   },
   UPDATES: {
@@ -1952,7 +1797,6 @@ export const IPC = {
   },
   NDI: {
     GET_STATUS:         'ndi:getStatus',         // invoke — { available, sending, ppInputConfigured, outputs }
-    GET_VIDEO_INPUTS:   'ndi:getVideoInputs',    // invoke — PPVideoInputInfo[]
     PICK_OVERLAY_MEDIA: 'ndi:pickOverlayMedia',  // invoke — native file dialog → absolute path | null
   },
   OUTPUT: {

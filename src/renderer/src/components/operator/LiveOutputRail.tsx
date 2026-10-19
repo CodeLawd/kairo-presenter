@@ -115,9 +115,8 @@ export function LiveOutputRail({
   const previewHeight = Math.round((previewWidth * 9) / 16);
 
   return (
-    // No gutter: the rail's lighter panel tone already sets it apart from the
-    // dark middle column, so the two meet edge to edge.
-    <div className="relative flex min-h-0 shrink-0">
+    // The darker rail tone separates the controls from the central workspace.
+    <div className="hairline-l relative flex min-h-0 shrink-0">
       {onResizeStart && (
         <button
           type="button"
@@ -130,12 +129,12 @@ export function LiveOutputRail({
       )}
 
       <aside
-        // The rail's own background shows only in the gutter between the live
-        // output and the toolbox — two separate panels, not one long column.
-        className={`flex min-h-0 w-full flex-col overflow-hidden bg-surface ${className}`}
+        // One tone top to bottom, no gap: the toolbox's tab bar is what
+        // divides the live output from the tools below it.
+        className={`flex min-h-0 w-full flex-col overflow-hidden bg-surface-secondary ${className}`}
         style={{ width }}
       >
-        <div className="min-h-0 shrink-0 bg-surface-secondary" data-tour="live-preview">
+        <div className="min-h-0 shrink-0" data-tour="live-preview">
           <div className="flex items-baseline justify-between gap-2 px-3 py-1.5">
             <p className="text-[11px] font-medium text-zinc-400">Live</p>
           </div>
@@ -158,7 +157,7 @@ export function LiveOutputRail({
           </div>
         </div>
 
-        <div className="mt-1.5 flex min-h-0 flex-1 flex-col">
+        <div className="flex min-h-0 flex-1 flex-col">
           <BoothToolbox search={search} />
         </div>
       </aside>

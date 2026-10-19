@@ -11,6 +11,7 @@ import {
   EMPTY_PROGRAM_STATE,
   normalizePresentationSettings,
   programLayersFor,
+  screenTimerStyle,
   transitionMs,
   type OutputShowFilter,
   type PresentationSettings,
@@ -20,6 +21,7 @@ import {
 import { store } from '../../db'
 import { getMainWindow } from '../../main-window'
 import { ndiService, type NdiService } from '../ndi'
+import { SyphonChannel } from '../syphon'
 import { videoDeviceService } from '../video-devices'
 import type { VideoOutputSink } from '../video-devices/provider'
 import type { DisplaySink } from './display-window'
@@ -54,7 +56,7 @@ type ChangeListener = (displays: DisplayInfo[]) => void
 interface NdiEntry {
   surface: ProgramSurface
   channel: NdiService
-  /** The legacy-named sender ProPresenter's video input is bound to. */
+  /** The primary sender keeps the established NDI source identity. */
   primary: boolean
 }
 
@@ -76,6 +78,8 @@ class SurfaceManager {
   }
 
   private ndiEntries = new Map<string, NdiEntry>()
+  /** One Syphon server and its surface per enabled `syphon` output. */
+  private syphonEntries = new Map<string, { surface: ProgramSurface; channel: SyphonChannel }>()
   private deviceEntries = new Map<string, { surface: ProgramSurface; sink: VideoOutputSink; player?: LobbyPlayer }>()
   private unsubscribeDevices: (() => void) | null = null
   /** Screens that follow the service. Pushes, backgrounds and Clear reach these. */
@@ -268,6 +272,7 @@ class SurfaceManager {
     const repersist = new Map<string, number>()
 
     this.reconcileNdi(outputs)
+    this.reconcileSyphon(outputs)
     // Independent: a slow video card driver must not hold up ordinary screens.
     await Promise.all([
       this.reconcileDevices(outputs),
@@ -289,8 +294,8 @@ class SurfaceManager {
 
   /**
    * One surface per enabled `ndi` output. The first keeps the legacy sender
-   * (`ndiService`, "Kairo Scripture") so ProPresenter's bound video input still
-   * finds it; the others get their own senders named after the output.
+   * (`ndiService`, "Kairo Scripture") so existing receivers still find it;
+   * the others get their own senders named after the output.
    */
   private reconcileNdi(outputs: readonly OverlayOutput[]): void {
     const wanted = outputs.filter((o) => o.kind === 'ndi' && o.enabled)
@@ -326,6 +331,44 @@ class SurfaceManager {
       entry.channel.clearFrame()
     }
     this.ndiEntries.delete(id)
+  }
+
+  /**
+   * One surface per enabled `syphon` output, each published as its own Syphon
+   * server named after the output ("Kairo Lower Third"), so OBS and the like
+   * list them by name. Renaming an output restarts its server under the new name.
+   */
+  private reconcileSyphon(outputs: readonly OverlayOutput[]): void {
+    const keep = new Set<string>()
+    outputs.filter((o) => o.kind === 'syphon' && o.enabled).forEach((output, index) => {
+      const name = `${PRODUCT_NAME} ${output.name || `Syphon ${index + 1}`}`
+      const existing = this.syphonEntries.get(output.id)
+      if (existing && existing.channel.serverName === name) {
+        keep.add(output.id)
+        return
+      }
+      if (existing) this.dropSyphon(output.id)
+      const channel = new SyphonChannel(name)
+      const surface = new ProgramSurface(`Syphon (${output.name})`, { kind: 'syphon', channel })
+      this.syphonEntries.set(output.id, { surface, channel })
+      keep.add(output.id)
+      log.info('[Output] Syphon output added', { output: output.id, name })
+    })
+    for (const id of [...this.syphonEntries.keys()]) {
+      if (!keep.has(id)) this.dropSyphon(id)
+    }
+  }
+
+  private dropSyphon(id: string): void {
+    const entry = this.syphonEntries.get(id)
+    if (!entry) return
+    entry.surface.destroy()
+    entry.channel.stop()
+    this.syphonEntries.delete(id)
+  }
+
+  private get syphonSurfaces(): ProgramSurface[] {
+    return [...this.syphonEntries.values()].map((e) => e.surface)
   }
 
   private async reconcileDevices(outputs: readonly OverlayOutput[]): Promise<void> {
@@ -574,7 +617,7 @@ class SurfaceManager {
         : [],
     )
     await Promise.all(
-      [...this.ndiSurfaces, ...this.screens.values(), ...this.lobbySurfaces(), ...this.deviceSurfaces()].map((surface) =>
+      [...this.ndiSurfaces, ...this.syphonSurfaces, ...this.screens.values(), ...this.lobbySurfaces(), ...this.deviceSurfaces()].map((surface) =>
         surface.configure({
           transitionMs: ms,
           audio: { enabled: enabled && surface === audioSurface, volume, outputLabel },
@@ -656,7 +699,7 @@ class SurfaceManager {
         showNext: config.showNext,
         showClock: config.showClock,
         showTimer: config.showTimer,
-        timerStyle: presentation.timer,
+        timerStyle: screenTimerStyle(presentation, state),
       }).catch(() => undefined)
     })
     await Promise.all([...surfaceWork, ...stageWork])
@@ -675,6 +718,7 @@ class SurfaceManager {
   /** Any window an output renders into, lobby screens included. */
   private surfaceOf(output: OverlayOutput): ProgramSurface | null {
     if (output.kind === 'ndi') return this.ndiEntries.get(output.id)?.surface ?? null
+    if (output.kind === 'syphon') return this.syphonEntries.get(output.id)?.surface ?? null
     if (output.kind === 'screen') return this.screenSurface(output.id) ?? null
     if (output.kind === 'device') return this.deviceEntries.get(output.id)?.surface ?? null
     return null
@@ -687,15 +731,15 @@ class SurfaceManager {
       const surface = this.deviceEntries.get(output.id)?.surface
       return videoDeviceService.outputStatus(output.id).ready && surface?.available() ? surface : null
     }
-    const surface = output.kind === 'ndi'
-      ? this.ndiEntries.get(output.id)?.surface
-      : output.kind === 'screen' && this.states.get(output.id)?.ready
-        ? this.screens.get(output.id)
-        : undefined
+    const surface =
+      output.kind === 'ndi' ? this.ndiEntries.get(output.id)?.surface
+      : output.kind === 'syphon' ? this.syphonEntries.get(output.id)?.surface
+      : output.kind === 'screen' && this.states.get(output.id)?.ready ? this.screens.get(output.id)
+      : undefined
     return surface && surface.available() ? surface : null
   }
 
-  /** Whether `outputId` is the NDI output ProPresenter's video input is bound to. */
+  /** Whether `outputId` owns the primary NDI sender. */
   isPrimaryNdi(outputId: string): boolean {
     return this.ndiEntries.get(outputId)?.primary ?? false
   }
@@ -721,6 +765,10 @@ class SurfaceManager {
   outputState(output: OverlayOutput): ScreenOutputState {
     if (output.kind === 'screen') return this.screenState(output.id)
     if (output.kind === 'device') return videoDeviceService.outputStatus(output.id)
+    if (output.kind === 'syphon') {
+      if (this.surfaceFor(output)) return { ready: true, reason: '' }
+      return { ready: false, reason: this.syphonEntries.get(output.id)?.channel.getStatus().reason ?? 'Syphon unavailable' }
+    }
     return this.surfaceFor(output) ? { ready: true, reason: '' } : { ready: false, reason: 'NDI sender unavailable' }
   }
 
@@ -744,7 +792,7 @@ class SurfaceManager {
 
   /** Every surface that follows the service (NDI and program screens) — what Clear clears. */
   allSurfaces(): ProgramSurface[] {
-    return [...this.ndiSurfaces, ...this.screenSurfaces]
+    return [...this.ndiSurfaces, ...this.syphonSurfaces, ...this.screenSurfaces]
   }
 
   // ─── Broadcasts ─────────────────────────────────────────────────────────────
@@ -800,6 +848,7 @@ class SurfaceManager {
     this.stages.clear()
     this.stageStates.clear()
     for (const [id, entry] of this.ndiEntries) this.dropNdi(id, entry)
+    for (const id of [...this.syphonEntries.keys()]) this.dropSyphon(id)
     this.updatePowerBlocker(false)
     return deviceShutdown
   }

@@ -12,6 +12,7 @@ import { mediaFilterCss } from '@shared/media-playback'
 import type { NdiService } from '../ndi'
 import { gpuFrames, type GpuFramesLoad } from '../gpu-frames'
 import { GpuCapture, type CaptureTarget } from './gpu-capture'
+import type { SyphonChannel } from '../syphon'
 import type { VideoOutputSink } from '../video-devices/provider'
 import { createDisplayWindow, needsRebuild, sameBounds, showDisplayWindow, type DisplaySink } from './display-window'
 import { ManagedWindow } from './managed-window'
@@ -51,10 +52,15 @@ function captureScale(): number {
  * Where a surface's pixels go.
  *
  * `ndi` — offscreen, transparent, hidden; each captured `paint` is handed to
- * its NDI sender. `display` — a visible window on one physical display; the
+ * its NDI sender. `syphon` — the same, published as a Syphon server for other
+ * apps on this Mac. `display` — a visible window on one physical display; the
  * compositor is the delivery, so nothing is captured.
  */
-export type SurfaceSink = { kind: 'ndi'; channel: NdiService } | { kind: 'device'; sink: VideoOutputSink } | DisplaySink
+export type SurfaceSink =
+  | { kind: 'ndi'; channel: NdiService }
+  | { kind: 'syphon'; channel: SyphonChannel }
+  | { kind: 'device'; sink: VideoOutputSink }
+  | DisplaySink
 
 /** Per-surface shell settings — see `window.__configure` in overlay.html. */
 export interface SurfaceConfig {
@@ -163,7 +169,7 @@ export class ProgramSurface extends ManagedWindow {
   /** Whether a push to this surface can reach its sink right now. */
   available(): boolean {
     if (this.destroyed || this.parked) return false
-    return this.sink.kind === 'ndi' ? this.sink.channel.getStatus().available : true
+    return this.sink.kind === 'ndi' || this.sink.kind === 'syphon' ? this.sink.channel.getStatus().available : true
   }
 
   /**
@@ -196,7 +202,7 @@ export class ProgramSurface extends ManagedWindow {
 
   /** A display surface whose display is gone stays parked; NDI reopens on its next paint. */
   protected override parksOnClose(): boolean {
-    return this.sink.kind !== 'ndi'
+    return this.sink.kind !== 'ndi' && this.sink.kind !== 'syphon'
   }
 
   protected override onClosed(): void {
@@ -234,6 +240,7 @@ export class ProgramSurface extends ManagedWindow {
     if (sink.kind === 'ndi') {
       return { kind: 'ndi', deliver: (uyva, width, height) => sink.channel.updateConvertedFrame(uyva, width, height) }
     }
+    if (sink.kind === 'syphon') return { kind: 'syphon', channel: sink.channel }
     return sink.sink.frameRing ? { kind: 'ring', ring: sink.sink.frameRing } : null
   }
 
@@ -300,6 +307,7 @@ export class ProgramSurface extends ManagedWindow {
           : image.resize({ width: WIDTH, height: HEIGHT })
         try {
           if (sink.kind === 'ndi') sink.channel.updateFrame(frame.getBitmap(), WIDTH, HEIGHT)
+          else if (sink.kind === 'syphon') sink.channel.publishPixels(frame.getBitmap(), WIDTH, HEIGHT)
           else sink.sink.setFrame(frame.getBitmap(), WIDTH, HEIGHT)
         } catch (error) {
           log.warn(`[Output] ${this.label} frame delivery failed`, (error as Error).message)
@@ -376,6 +384,7 @@ export class ProgramSurface extends ManagedWindow {
       // program shows it without waiting for the first slide.
       if (this.available() && hasAnyLayer(next) && !hasAnyLayer(previous)) {
         if (this.sink.kind === 'ndi') await this.sink.channel.start()
+        else if (this.sink.kind === 'syphon') this.sink.channel.start()
         await this.ensureWindow().catch(() => undefined)
       }
       return
@@ -528,6 +537,7 @@ export class ProgramSurface extends ManagedWindow {
     { reference, text, theme, coloredLines }: RenderState,
     instant: boolean,
   ): Promise<void> {
+    if (this.sink.kind === 'syphon') this.sink.channel.start()
     if (this.sink.kind === 'ndi') {
       // Retry sender creation if an earlier attempt lost the name to another
       // copy of the app. Cooldown-guarded inside the service, and a no-op once
@@ -691,6 +701,7 @@ export class ProgramSurface extends ManagedWindow {
     // With a fade the captured frames carry the dissolve down to transparent;
     // resetting the sender first would cut to black and then fade from it.
     if (this.sink.kind === 'ndi' && !fades && !hasAnyLayer(this.layers)) this.sink.channel.clearFrame()
+    if (this.sink.kind === 'syphon' && !fades && !hasAnyLayer(this.layers)) this.sink.channel.clearFrame(WIDTH, HEIGHT)
     if (win && !win.isDestroyed()) {
       try {
         this.bumpForFade()

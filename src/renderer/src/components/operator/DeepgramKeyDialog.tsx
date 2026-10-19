@@ -53,8 +53,8 @@ export function DeepgramKeyDialog({ open, onOpenChange, onSaved }: {
   return (
     <Dialog.Root open={open} onOpenChange={(next) => { if (!busy) onOpenChange(next) }}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/70 animate-fade-in" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl bg-surface-secondary p-6 text-white animate-spring-in">
+        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/35 animate-fade-in" />
+        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl modal-glass p-6 text-white animate-spring-in">
           <div className="grid size-10 place-items-center rounded-full bg-surface-tertiary text-zinc-300">
             <Mic size={18} aria-hidden="true" />
           </div>

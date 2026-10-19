@@ -4,8 +4,8 @@ import {
   FileText,
   CircleGauge,
   Eraser,
-  MediaLibrary,
   MonitorPlay,
+  MediaLibrary,
   Music2,
   Palette,
   Pause,
@@ -20,10 +20,12 @@ import { useMediaDockStore } from '@/stores/useMediaDockStore'
 import { useTracksPlaybackStore } from '@/stores/useTracksPlaybackStore'
 import { clearLiveAll } from '@/lib/clear-live-output'
 import { useBootstrapStore } from '@/bootstrap/useBootstrapStore'
-import { propresenterEnabled } from '@shared/pp-connect-gate'
 import { isRenderedKind } from '@shared/overlay-outputs'
 import UpdatePill from './UpdatePill'
 import { cn } from '@/lib/utils'
+import { Popover } from 'radix-ui'
+import { Switch } from '@/components/ui/switch'
+import { saveOutputSettings } from '@/lib/output-settings'
 import { hueStyle, railHueClass, type Hue } from '@/lib/hue'
 import { HEADER_TOOLBAR_SLOT_ID } from './header-toolbar'
 
@@ -31,7 +33,7 @@ import { HEADER_TOOLBAR_SLOT_ID } from './header-toolbar'
 const IS_MAC = navigator.platform.startsWith('Mac')
 const workspaces: Array<{ id: NavRoute; label: string; icon: typeof CircleGauge; hue: Hue }> = [
   { id: 'operator', label: 'Operator', icon: CircleGauge, hue: 'green' },
-  { id: 'scripture', label: 'Scripture', icon: BookOpen, hue: 'orange' },
+  { id: 'scripture', label: 'Scripture', icon: BookOpen, hue: 'blue' },
   { id: 'lyrics', label: 'Lyrics', icon: Music2, hue: 'violet' },
   { id: 'documents', label: 'Documents', icon: FileText, hue: 'cyan' },
   { id: 'theme', label: 'Theme', icon: Palette, hue: 'pink' },
@@ -110,7 +112,7 @@ function MediaRailButton(): React.ReactElement {
       aria-pressed={open}
       data-tooltip={liveName ? `Media — ${liveName} on screen` : 'Media'}
       data-tooltip-side="right"
-      style={hueStyle('coral')}
+      style={hueStyle('orange')}
       className={railHueClass(open)}
     >
       <MediaLibrary size={19} weight={open ? 'fill' : 'regular'} aria-hidden="true" />
@@ -121,68 +123,145 @@ function MediaRailButton(): React.ReactElement {
 
 interface AppShellProps {
   currentRoute: NavRoute
-  /** The ProPresenter status was clicked. */
-  onProPresenterStatus?: () => void
   /** Route-specific controls rendered inline in the top bar (see OperatorToolbar). */
   toolbar?: React.ReactNode
 }
 
-function StatusItem({
+/**
+ * A header button the way ProPresenter's toolbar draws them: the icon in a
+ * rounded pill, a short label underneath. A tooltip carries the detail.
+ */
+function ToolbarButton({
   label,
-  detail,
-  state,
-  icon: Icon,
-  hue,
+  title,
+  children,
   onClick,
-  action,
+  disabled,
+  tone = 'default',
+  labelClassName,
 }: {
   label: string
-  detail: string
-  state: 'ready' | 'active' | 'offline' | 'warning'
-  icon: typeof Radio
-  /** Icon colour. */
-  hue: Hue
-  /** Makes the status a button (e.g. ProPresenter: connect). */
+  /** Tooltip and screen-reader text: what it is and what clicking does. */
+  title: string
+  /** What sits in the pill: an icon or a status dot. */
+  children: React.ReactNode
   onClick?: () => void
-  /** What clicking does, shown in the tooltip. */
-  action?: string
+  disabled?: boolean
+  /** `live`: something is on screen (red); `muted`: nothing to act on yet. */
+  tone?: 'default' | 'live' | 'muted'
+  labelClassName?: string
 }): React.ReactElement {
-  const dotClass = {
-    ready: 'bg-emerald-500',
-    active: 'bg-teal-500',
-    offline: 'bg-zinc-600',
-    warning: 'bg-amber-500',
-  }[state]
-
-  const content = (
+  const pill = cn(
+    'grid h-7 w-11 place-items-center rounded-full transition-colors duration-150',
+    tone === 'live' ? 'bg-tint-live text-live' : 'bg-surface-tertiary text-zinc-200',
+    onClick && !disabled && 'group-hover:bg-surface-elevated',
+  )
+  const body = (
     <>
-      <Icon size={13} style={hueStyle(hue)} className="text-[rgb(var(--hue))]" aria-hidden="true" />
-      <span className={`h-1.5 w-1.5 rounded-full ${dotClass}`} aria-hidden="true" />
-      <span className="header-status-label whitespace-nowrap text-[11px] font-medium text-zinc-500">
+      <span className={pill}>{children}</span>
+      <span
+        className={cn(
+          'max-w-[10rem] truncate text-[10px] font-medium leading-none',
+          tone === 'live' ? 'text-live' : tone === 'muted' ? 'text-zinc-600' : 'text-zinc-400',
+          labelClassName,
+        )}
+      >
         {label}
-      </span>
-      <span className="pointer-events-none absolute right-0 top-full z-50 mt-2 hidden w-max max-w-72 rounded-md bg-surface-elevated px-3 py-2 text-xs text-zinc-200 shadow-xl group-hover:block group-focus-within:block">
-        {label}: {detail}
-        {action ? <span className="block text-zinc-500">{action}</span> : null}
       </span>
     </>
   )
   const className =
-    'header-status no-drag group relative flex h-7 shrink-0 items-center gap-1.5 rounded px-1.5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/30'
-
+    'header-tool no-drag group flex shrink-0 flex-col items-center gap-1 rounded-md px-1 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/30 disabled:cursor-not-allowed disabled:opacity-40'
   return onClick ? (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`${className} hover:bg-surface-tertiary`}
-      aria-label={`${label}: ${detail}${action ? `. ${action}` : ''}`}
-    >
-      {content}
+    <button type="button" onClick={onClick} disabled={disabled} className={className} title={title} aria-label={title}>
+      {body}
     </button>
   ) : (
-    <div className={className} tabIndex={0} aria-label={`${label}: ${detail}`}>
-      {content}
+    <div className={className} title={title} aria-label={title} role="status">
+      {body}
     </div>
+  )
+}
+
+/**
+ * The Live button's menu, as ProPresenter's Live button opens one: what is on
+ * screen now, and the Syphon outputs that send Kairo to OBS and the like —
+ * each switchable here without opening Screens.
+ */
+function LiveMenu({ label, live, detail }: { label: string; live: boolean; detail: string }): React.ReactElement {
+  const [open, setOpen] = useState(false)
+  const outputs = useBootstrapStore((s) => s.settings.overlay.outputs)
+  const status = useBootstrapStore((s) => s.ndiStatus)
+  const syphons = outputs.filter((o) => o.kind === 'syphon')
+  const setEnabled = (id: string, enabled: boolean): void => {
+    void saveOutputSettings((current) => current.map((o) => (o.id === id ? { ...o, enabled } : o)))
+  }
+  // Straight to the work: a new Syphon output, or the existing one.
+  const openScreens = (): void => {
+    setOpen(false)
+    useAppStore.getState().openScreens(syphons.length === 0 ? 'add:syphon' : 'kind:syphon')
+  }
+  return (
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Anchor asChild>
+        <div aria-live="polite" className="header-live-label">
+          <ToolbarButton
+            label={label}
+            tone={live ? 'live' : 'muted'}
+            title={`${detail}. Click for live outputs`}
+            onClick={() => setOpen(!open)}
+            labelClassName="header-live-text"
+          >
+            <Radio size={15} aria-hidden="true" />
+          </ToolbarButton>
+        </div>
+      </Popover.Anchor>
+      <Popover.Portal>
+        <Popover.Content
+          side="bottom"
+          align="end"
+          sideOffset={8}
+          collisionPadding={12}
+          className="z-50 w-72 rounded-xl bg-surface-elevated p-1.5 text-zinc-200 ring-1 ring-surface-border animate-spring-in"
+        >
+          <div className="flex items-center gap-2 px-2.5 py-2">
+            <span className={cn('size-2 shrink-0 rounded-full', live ? 'bg-live' : 'bg-zinc-600')} aria-hidden="true" />
+            <p className="min-w-0 flex-1 text-[12px] text-zinc-200">{detail}</p>
+          </div>
+          {IS_MAC && (
+            <div className="mt-1 border-t border-surface-border pt-1.5">
+              <p className="px-2.5 pb-1 text-[11px] font-medium text-zinc-500">Syphon — to OBS and other apps on this Mac</p>
+              {syphons.map((output) => {
+                const state = status?.outputs.find((o) => o.id === output.id)
+                return (
+                  <label key={output.id} className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 hover:bg-surface-tertiary">
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[12px] text-white">{output.name}</span>
+                      <span className="block truncate text-[11px] text-zinc-500">
+                        {!output.enabled ? 'Off' : state?.ready ? 'Sending' : state?.reason || 'Starting'}
+                      </span>
+                    </span>
+                    <Switch
+                      size="sm"
+                      checked={output.enabled}
+                      onCheckedChange={(on) => setEnabled(output.id, on)}
+                      aria-label={`Send ${output.name} over Syphon`}
+                    />
+                  </label>
+                )
+              })}
+              <button
+                type="button"
+                className="w-full rounded-lg px-2.5 py-1.5 text-left text-[12px] text-zinc-300 hover:bg-surface-tertiary hover:text-white"
+                onClick={openScreens}
+              >
+                {syphons.length === 0 ? 'Set up Syphon for OBS…' : 'Syphon settings…'}
+              </button>
+            </div>
+          )}
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
   )
 }
 
@@ -230,10 +309,9 @@ function useScreensStatus(): { detail: string; state: 'ready' | 'warning' | 'off
 
 export default function AppShell({
   currentRoute,
-  onProPresenterStatus,
   toolbar,
 }: AppShellProps): React.ReactElement {
-  const { ppState, liveOutputLabel, isTranscribing } =
+  const { liveOutputLabel, isTranscribing } =
     useAppStore()
   const houseTrack = useTracksPlaybackStore((state) => {
     const live = state.library.items.find((item) => item.id === state.library.liveId)
@@ -241,9 +319,6 @@ export default function AppShell({
     return { name: live.name, paused: state.library.livePaused || state.ended }
   })
   const [clearing, setClearing] = useState(false)
-  // ProPresenter is an opt-in integration: its status only appears in the
-  // header once it is switched on in Settings.
-  const showPp = useBootstrapStore((s) => propresenterEnabled(s.settings))
   const screens = useScreensStatus()
   /** Session is live while the transcript pipeline runs; show output ref when one is up. */
   const isLive = isTranscribing || Boolean(liveOutputLabel?.trim())
@@ -264,98 +339,76 @@ export default function AppShell({
     // Windows and Linux have a native title bar, and a drag region there
     // swallows clicks on anything drawn over the header — Settings, menus.
     <header className={cn('app-header shrink-0', IS_MAC && 'drag-region')}>
-      <div className="header-context flex min-w-0 items-center gap-2 pl-[68px]">
-        <span className="truncate text-[13px] font-semibold text-zinc-200">
-          {workspaces.find((workspace) => workspace.id === currentRoute)?.label}
-        </span>
+      {/* The page you're on: its icon in its tool colour, then its name. */}
+      <div className="header-context flex min-w-0 items-center gap-2 pl-[80px]">
+        {(() => {
+          const page = workspaces.find((workspace) => workspace.id === currentRoute)
+          if (!page) return null
+          const Icon = page.icon
+          return (
+            <>
+              <Icon size={17} weight="fill" style={hueStyle(page.hue)} className="shrink-0 text-[rgb(var(--hue))]" aria-hidden="true" />
+              <span className="truncate text-[15px] font-semibold tracking-tight text-white">{page.label}</span>
+            </>
+          )
+        })()}
       </div>
 
       <div id={HEADER_TOOLBAR_SLOT_ID} className="header-toolbar min-w-0">{toolbar}</div>
 
-      <div className="header-statuses flex items-center gap-0.5" aria-label="Service statuses">
-        <StatusItem
+      <div className="header-statuses flex items-center gap-1" aria-label="Service statuses">
+        <ToolbarButton
           label="Screens"
-          detail={screens.detail}
-          state={screens.state}
-          icon={MonitorPlay}
-          hue="cyan"
+          title={`Screens: ${screens.detail}. Open Screens (⌥⌘1)`}
           onClick={() => useAppStore.getState().openScreens()}
-          action="Open Screens (⌥⌘1)"
-        />
-        {showPp && <StatusItem
-          label="ProPresenter"
-          detail={
-            ppState === 'connected'
-              ? 'Connected'
-              : ppState === 'connecting'
-                ? 'Connecting'
-                : 'Offline'
-          }
-          state={ppState === 'connected' ? 'ready' : ppState === 'connecting' ? 'warning' : 'offline'}
-          icon={Radio}
-          hue="violet"
-          onClick={onProPresenterStatus}
-          action={ppState === 'connected' ? 'Open ProPresenter settings' : 'Click to connect'}
-        />}
+        >
+          {/* The screen icon, its state as a dot on the corner. */}
+          <span className="relative" aria-hidden="true">
+            <MonitorPlay size={15} weight="fill" style={hueStyle('cyan')} className="text-[rgb(var(--hue))]" />
+            <span
+              className={cn(
+                'absolute -right-1 -top-0.5 size-2 rounded-full ring-2 ring-surface-tertiary',
+                screens.state === 'ready' ? 'bg-emerald-500' : screens.state === 'warning' ? 'bg-amber-500' : 'bg-zinc-500',
+              )}
+            />
+          </span>
+        </ToolbarButton>
       </div>
 
-      <div className="header-live flex shrink-0 items-center gap-1 pl-2">
+      <div className="header-live flex shrink-0 items-center gap-1 pl-1">
         {houseTrack && (
-          <button
-            type="button"
-            onClick={() => void window.api.tracks.setPaused(!houseTrack.paused)}
+          <ToolbarButton
+            label={houseTrack.name}
             title={houseTrack.paused ? `Play ${houseTrack.name}` : `Pause ${houseTrack.name}`}
-            className="flex h-7 max-w-[9rem] items-center gap-1.5 rounded px-2 text-[11px] font-medium text-zinc-400 hover:bg-surface-tertiary hover:text-zinc-200"
+            onClick={() => void window.api.tracks.setPaused(!houseTrack.paused)}
+            labelClassName="max-w-[6rem]"
           >
             {houseTrack.paused ? (
-              <Play size={11} fill="currentColor" aria-hidden="true" />
+              <Play size={13} fill="currentColor" aria-hidden="true" />
             ) : (
-              <Pause size={11} fill="currentColor" aria-hidden="true" />
+              <Pause size={13} fill="currentColor" aria-hidden="true" />
             )}
-            <span className="min-w-0 truncate">{houseTrack.name}</span>
-          </button>
+          </ToolbarButton>
         )}
-        <div
-          className={[
-            'header-live-label flex h-7 min-w-0 max-w-[16rem] items-center gap-1.5 px-2 text-[11px] font-medium',
-            isLive ? 'text-rose-400' : 'text-[rgb(var(--hue-coral)/0.85)]',
-          ].join(' ')}
-          title={
+        <LiveMenu
+          label={liveDetail ?? 'Live'}
+          live={isLive}
+          detail={
             liveOutputLabel?.trim()
-              ? `Live on output: ${liveOutputLabel}`
+              ? liveOutputLabel.trim()
               : isTranscribing
-                ? 'Live transcript running — listening for scripture'
-                : 'Start the Operator pipeline to go live'
+                ? 'Listening for scripture'
+                : 'Nothing on screen'
           }
-          aria-live="polite"
-        >
-          <span
-            className={[
-              'h-1.5 w-1.5 shrink-0 rounded-full',
-              isLive ? 'bg-rose-500' : 'bg-[rgb(var(--hue-coral)/0.45)]',
-            ].join(' ')}
-            aria-hidden="true"
-          />
-          <span className="header-live-text min-w-0 truncate">{liveDetail ?? 'Live'}</span>
-        </div>
-        <button
-          type="button"
+        />
+        <ToolbarButton
+          label={clearing ? 'Clearing' : 'Clear'}
+          title="Clear text and the dock background"
           onClick={() => void clearOutput()}
           disabled={clearing}
-          className={[
-            'flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded px-2 text-[11px] font-medium transition-colors duration-150',
-            'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-rose-400',
-            isLive || ppState === 'connected'
-              ? 'text-zinc-400 hover:bg-tint-rose hover:text-rose-300'
-              : 'text-zinc-600 hover:bg-surface-tertiary hover:text-zinc-400',
-            'disabled:cursor-not-allowed disabled:opacity-40',
-          ].join(' ')}
-          aria-label="Clear text and background"
-          title="Clear text and the dock background"
         >
-          <Eraser size={13} style={hueStyle('pink')} className="text-[rgb(var(--hue))]" aria-hidden="true" />
-          {clearing ? 'Clearing' : 'Clear'}
-        </button>
+          <Eraser size={14} style={hueStyle('pink')} className="text-[rgb(var(--hue))]" aria-hidden="true" />
+        </ToolbarButton>
         <UpdatePill />
       </div>
     </header>

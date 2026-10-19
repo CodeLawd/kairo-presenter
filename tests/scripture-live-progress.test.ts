@@ -279,3 +279,25 @@ test('a later standalone detection does not duplicate a verse in a loaded passag
   assert.equal(mergeScriptureSuggestion(suggestions, incoming), suggestions);
   assert.equal(mergeScriptureSuggestion(suggestions, { ...incoming, translation: 'NKJV' }).length, suggestions.length + 1);
 });
+
+test("the same passage in another translation sits beside the first, in its own group", () => {
+  const nlt = suggestions.map((item) => ({
+    ...item,
+    id: `${item.id}-nlt`,
+    translation: "NLT",
+    passageId: "genesis-8-15-22-nlt",
+  }));
+
+  const merged = nlt.reduce(
+    (current, incoming) => mergeScriptureSuggestion(current, incoming),
+    suggestions,
+  );
+
+  assert.equal(merged.length, 16);
+  const groups = groupScriptureSuggestions(merged);
+  assert.equal(groups.length, 2);
+  assert.deepEqual(
+    groups.map((group) => group.suggestions[0]?.translation),
+    ["KJV", "NLT"],
+  );
+});

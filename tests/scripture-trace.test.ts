@@ -70,7 +70,7 @@ describe('deriveMetrics', () => {
     // The countdown is the biggest number nearly every time and is a setting,
     // not a problem — reporting it as "slowest" would bury the real answer.
     const m = deriveMetrics(presented())
-    assert.equal(m.slowestStage?.name, 'ProPresenter request')
+    assert.equal(m.slowestStage?.name, 'Output request')
     assert.equal(m.slowestStage?.durationMs, 182)
   })
 
@@ -149,7 +149,7 @@ describe('ScriptureTraceStore', () => {
   })
 
   test('a cancelled trace stops advancing', () => {
-    // An in-flight ProPresenter call that returns after the operator cancelled
+    // An in-flight the output renderer call that returns after the operator cancelled
     // must not make the trace look like it presented.
     const store = new ScriptureTraceStore()
     start(store, 'a')
@@ -315,9 +315,9 @@ describe('percentile', () => {
 })
 
 describe('operator-visible latency', () => {
-  test('measures transcript → painted in Kairo, excluding delay and ProPresenter', () => {
+  test('measures transcript → painted in Kairo, excluding delay and the output renderer', () => {
     // The number the operator actually experiences: it must not include the
-    // safety delay or anything ProPresenter does.
+    // safety delay or anything the output renderer does.
     const t = trace({
       status: 'presented',
       citationRecognizedAt: T0 + 3,

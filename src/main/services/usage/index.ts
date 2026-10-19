@@ -101,7 +101,7 @@ class UsageService {
       memoryGb: Math.round(os.totalmem() / 1024 ** 3),
       screens: outputs.filter((o) => o.enabled && o.kind === 'screen').length,
       ndiOutputs: outputs.filter((o) => o.enabled && o.kind === 'ndi').length,
-      propresenter: settings.get('propresenter')?.enabled === true,
+      propresenter: false,
       transcription: Boolean(stt?.apiKey),
       automation: scripture?.autoMode === true,
       defaultTranslation: scripture?.defaultTranslation ?? '',

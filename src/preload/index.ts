@@ -9,10 +9,6 @@ import type {
   ApiBibleDownloadProgress,
   BootstrapProgress,
   KairoAPI,
-  ConnectOptions,
-  ProPresenterStatus,
-  ProPresenterLibrary,
-  ProPresenterPlaylist,
   AudioLevel,
   AudioError,
   ScriptureSuggestion,
@@ -27,7 +23,6 @@ import type {
   LyricsOnlineResult,
   LyricsOnlinePreview,
   LyricsSongSection,
-  SongPresentOptions,
   AppSettings,
   OrchestratorConfig,
   OrchestratorStatus,
@@ -37,16 +32,8 @@ import type {
   NdiStatus,
   DisplayInfo,
   TestPatternInput,
-  PPVideoInputInfo,
-  PPLook,
   Unsubscribe,
 } from '@shared/ipc'
-import type {
-  PPResourceBindings,
-  PPResourceCatalogue,
-  PPResourceKind,
-  PPResourcePreview,
-} from '@shared/propresenter-resources'
 import { IPC } from '@shared/ipc'
 import { SETLIST_CHANGED, SETLIST_CHANNEL } from '@shared/setlist'
 import { TRANSFER } from '@shared/kairo-bundle'
@@ -63,62 +50,6 @@ function subscribe<T>(channel: string, callback: (data: T) => void): Unsubscribe
   const handler = (_event: IpcRendererEvent, data: T) => callback(data)
   ipcRenderer.on(channel, handler)
   return () => ipcRenderer.removeListener(channel, handler)
-}
-
-// ─── propresenter ─────────────────────────────────────────────────────────────
-
-const propresenter: KairoAPI['propresenter'] = {
-  connect(options: ConnectOptions): Promise<void> {
-    return ipcRenderer.invoke(IPC.PROPRESENTER.CONNECT, options)
-  },
-
-  disconnect(): Promise<void> {
-    return ipcRenderer.invoke(IPC.PROPRESENTER.DISCONNECT)
-  },
-
-  getStatus(): Promise<ProPresenterStatus> {
-    return ipcRenderer.invoke(IPC.PROPRESENTER.GET_STATUS)
-  },
-
-  triggerSlide(slideId: string): Promise<void> {
-    return ipcRenderer.invoke(IPC.PROPRESENTER.TRIGGER_SLIDE, slideId)
-  },
-
-  clearAll(): Promise<void> {
-    return ipcRenderer.invoke(IPC.PROPRESENTER.CLEAR_ALL)
-  },
-
-  getLibrary(): Promise<ProPresenterLibrary> {
-    return ipcRenderer.invoke(IPC.PROPRESENTER.GET_LIBRARY)
-  },
-
-  getPlaylists(): Promise<ProPresenterPlaylist[]> {
-    return ipcRenderer.invoke(IPC.PROPRESENTER.GET_PLAYLISTS)
-  },
-
-  getLooks(): Promise<PPLook[]> {
-    return ipcRenderer.invoke(IPC.PROPRESENTER.GET_LOOKS)
-  },
-
-  getResourceCatalogue(options?: { refresh?: boolean }): Promise<PPResourceCatalogue> {
-    return ipcRenderer.invoke(IPC.PROPRESENTER.GET_RESOURCE_CATALOGUE, options)
-  },
-
-  getResourceDetails(kind: PPResourceKind, id: string): Promise<Record<string, unknown> | null> {
-    return ipcRenderer.invoke(IPC.PROPRESENTER.GET_RESOURCE_DETAILS, kind, id)
-  },
-
-  getResourcePreview(kind: PPResourceKind, id: string, childId?: string): Promise<PPResourcePreview> {
-    return ipcRenderer.invoke(IPC.PROPRESENTER.GET_RESOURCE_PREVIEW, kind, id, childId)
-  },
-
-  setResourceBindings(bindings: PPResourceBindings): Promise<PPResourceBindings> {
-    return ipcRenderer.invoke(IPC.PROPRESENTER.SET_RESOURCE_BINDINGS, bindings)
-  },
-
-  onStatusChange(callback: (status: ProPresenterStatus) => void): Unsubscribe {
-    return subscribe<ProPresenterStatus>(IPC.PROPRESENTER.STATUS_CHANGE, callback)
-  },
 }
 
 // ─── audio ────────────────────────────────────────────────────────────────────
@@ -182,6 +113,10 @@ const scripture: KairoAPI['scripture'] = {
 
   presentDirectly(suggestion): Promise<void> {
     return ipcRenderer.invoke(IPC.SCRIPTURE.PRESENT_DIRECTLY, suggestion)
+  },
+
+  retranslate(suggestion, translation): Promise<ScriptureSuggestion> {
+    return ipcRenderer.invoke(IPC.SCRIPTURE.RETRANSLATE, suggestion, translation)
   },
 
   search(query: string, translation?: ScriptureTranslation): Promise<ScriptureResult[]> {
@@ -382,17 +317,11 @@ const lyrics: KairoAPI['lyrics'] = {
     return ipcRenderer.invoke(IPC.LYRICS.TOGGLE_FAVORITE, id)
   },
 
-  sendToProPresenter(songId: string, options?: SongPresentOptions): Promise<void> {
-    return ipcRenderer.invoke(IPC.LYRICS.SEND_TO_PP, songId, options)
-  },
 
   pushSlide(songId: string, slideIndex: number): Promise<void> {
     return ipcRenderer.invoke(IPC.LYRICS.PUSH_SLIDE, songId, slideIndex)
   },
 
-  addToPlaylist(songId: string, playlistId: string): Promise<void> {
-    return ipcRenderer.invoke(IPC.LYRICS.ADD_TO_PLAYLIST, songId, playlistId)
-  },
 
   translateSections(
     sections: LyricsSongSection[],
@@ -506,9 +435,6 @@ const ndi: KairoAPI['ndi'] = {
     return ipcRenderer.invoke(IPC.NDI.GET_STATUS)
   },
 
-  getVideoInputs(): Promise<PPVideoInputInfo[]> {
-    return ipcRenderer.invoke(IPC.NDI.GET_VIDEO_INPUTS)
-  },
 
   pickOverlayMedia(kind: 'image' | 'video'): Promise<string | null> {
     return ipcRenderer.invoke(IPC.NDI.PICK_OVERLAY_MEDIA, kind)
@@ -776,10 +702,11 @@ const program: KairoAPI['program'] = {
   setLogo: (on) => ipcRenderer.invoke(PROGRAM.SET_LOGO, on),
   setCamera: (label, audioLabel) => ipcRenderer.invoke(PROGRAM.SET_CAMERA, label, audioLabel ?? null),
   timer: {
-    set: (durationSec) => ipcRenderer.invoke(PROGRAM.TIMER_SET, durationSec),
-    start: () => ipcRenderer.invoke(PROGRAM.TIMER_START),
-    pause: () => ipcRenderer.invoke(PROGRAM.TIMER_PAUSE),
-    reset: () => ipcRenderer.invoke(PROGRAM.TIMER_RESET),
+    set: (durationSec, id) => ipcRenderer.invoke(PROGRAM.TIMER_SET, durationSec, id),
+    start: (id) => ipcRenderer.invoke(PROGRAM.TIMER_START, id),
+    pause: (id) => ipcRenderer.invoke(PROGRAM.TIMER_PAUSE, id),
+    reset: (id) => ipcRenderer.invoke(PROGRAM.TIMER_RESET, id),
+    show: (id) => ipcRenderer.invoke(PROGRAM.TIMER_SHOW, id),
   },
   setOnScreens: (layer, on) => ipcRenderer.invoke(PROGRAM.SET_ON_SCREENS, layer, on),
   pickImage: () => ipcRenderer.invoke(PROGRAM.PICK_IMAGE),
@@ -801,7 +728,7 @@ const videoDevices: KairoAPI['videoDevices'] = {
   status: () => ipcRenderer.invoke(IPC.VIDEO_DEVICES.STATUS),
   onChanged: (callback) => subscribe(IPC.VIDEO_DEVICES.CHANGED, callback),
 }
-const api: KairoAPI = { transfer, passages, libraries, setlist, services, documents, app: appApi, propresenter, audio, scripture, transcription, workspace, lyrics, settings, orchestrator, resilience, ndi, displays, videoDevices, output, program, songUsage, media, tracks, onboarding, account, updates }
+const api: KairoAPI = { transfer, passages, libraries, setlist, services, documents, app: appApi, audio, scripture, transcription, workspace, lyrics, settings, orchestrator, resilience, ndi, displays, videoDevices, output, program, songUsage, media, tracks, onboarding, account, updates }
 
 if (process.contextIsolated) {
   try {

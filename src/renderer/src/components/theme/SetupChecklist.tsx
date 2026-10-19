@@ -1,46 +1,7 @@
-import { useCallback, useState } from 'react'
 import { Check, Circle, CircleDashed, Loader, X } from '@/icons'
 import { cn } from '@/lib/utils'
 import { findNdiOutput, isRenderedKind } from '@shared/overlay-outputs'
-import type { NdiStatus, OverlayOutput, PPLook } from '@shared/ipc'
-
-// ─── Manual acknowledgements ───────────────────────────────────────────────────
-// Some steps happen entirely inside ProPresenter and the API exposes nothing to
-// check them against — how many screens exist, whether a stage layout contains a
-// Message field. Those cannot be verified, only confirmed by the person who did
-// them, so they are checkboxes rather than fake green ticks.
-//
-// Stored in localStorage, not settings: "I have configured the screens on THIS
-// machine's ProPresenter" is per-machine, and it must never sync anywhere.
-
-const ACK_KEY = 'pa-setup-acks'
-
-function readAcks(): Record<string, boolean> {
-  try {
-    const raw = window.localStorage.getItem(ACK_KEY)
-    return raw ? (JSON.parse(raw) as Record<string, boolean>) : {}
-  } catch {
-    return {}
-  }
-}
-
-function useAcks(): [Record<string, boolean>, (id: string, value: boolean) => void] {
-  const [acks, setAcks] = useState<Record<string, boolean>>(readAcks)
-
-  const setAck = useCallback((id: string, value: boolean) => {
-    setAcks((current) => {
-      const next = { ...current, [id]: value }
-      try {
-        window.localStorage.setItem(ACK_KEY, JSON.stringify(next))
-      } catch {
-        // A blocked localStorage costs the memory of the tick, nothing more.
-      }
-      return next
-    })
-  }, [])
-
-  return [acks, setAck]
-}
+import type { NdiStatus, OverlayOutput } from '@shared/ipc'
 
 // ─── Steps ─────────────────────────────────────────────────────────────────────
 
@@ -57,43 +18,29 @@ interface Step {
 }
 
 interface SetupChecklistProps {
-  /** The ProPresenter integration is switched on — only then are its steps shown. */
-  ppEnabled: boolean
-  ppConnected: boolean
   ndiStatus: NdiStatus
   outputs: OverlayOutput[]
-  looks: PPLook[]
   onSendTest: () => void
   testStatus: 'idle' | 'testing' | 'ok' | 'fail'
   testMsg: string
 }
 
 export default function SetupChecklist({
-  ppEnabled,
-  ppConnected,
   ndiStatus,
   outputs,
-  looks,
   onSendTest,
   testStatus,
   testMsg,
 }: SetupChecklistProps): React.ReactElement {
-  const [acks, setAck] = useAcks()
 
   const enabled = outputs.filter((o) => o.enabled)
   const ndiOutput = findNdiOutput(outputs)
   const ndiEnabled = !!ndiOutput?.enabled
-  const stageEnabled = enabled.some((o) => o.kind === 'stage')
-  const messageEnabled = enabled.some((o) => o.kind === 'message')
-
-  const manual = (id: string): StepState => (acks[id] ? 'ok' : 'manual')
-
   const readiness = (id: string) => ndiStatus.outputs.find((o) => o.id === id)
   // A video card only counts once it can take a picture — without a driver it never will.
   const rendered = enabled.filter((o) => isRenderedKind(o.kind) && (o.kind !== 'device' || readiness(o.id)?.ready))
 
-  // Kairo's own screens first — they are the product. ProPresenter steps only
-  // appear once the integration is switched on in Settings.
+  // Check configured Kairo outputs and their runtime readiness.
   const steps: Step[] = [
     {
       id: 'outputs',
@@ -122,58 +69,13 @@ export default function SetupChecklist({
     })
   }
 
-  if (ppEnabled) {
-    steps.push({
-      id: 'pp',
-      label: 'ProPresenter connected',
-      hint: 'Check the host and port in Settings → ProPresenter.',
-      state: ppConnected ? 'ok' : 'blocked',
-    })
-    if (ndiEnabled) {
-      steps.push({
-        id: 'ndi-input',
-        label: 'ProPresenter video input bound (optional)',
-        hint: 'To have ProPresenter show the NDI feed, add a Video Input there for the “Kairo Scripture” source and pick it on the NDI feed.',
-        state: ndiStatus.ppInputConfigured ? 'ok' : 'skipped',
-      })
-    }
-    if (stageEnabled) {
-      steps.push({
-        id: 'stage-layout',
-        label: 'ProPresenter stage layout has a Message field',
-        hint: 'In ProPresenter, edit the stage screen’s layout and add a Message field. Without it the stage text has nowhere to appear.',
-        state: manual('stage-layout'),
-        manual: true,
-      })
-    }
-    if (messageEnabled) {
-      steps.push({
-        id: 'message-look',
-        label: 'Messages layer visible on the right screens',
-        hint: 'A Look in ProPresenter controls which screens show the Messages layer.',
-        state: manual('message-look'),
-        manual: true,
-      })
-    }
-    if (looks.length > 0) {
-      steps.push({
-        id: 'look',
-        label: 'Look triggered on push (optional)',
-        hint: 'Set “Trigger Look” on a ProPresenter output to switch Looks automatically.',
-        state: enabled.some((o) => o.lookId) ? 'ok' : 'skipped',
-      })
-    }
-  }
-
   const blocking = steps.filter((s) => s.state === 'blocked' || s.state === 'todo').length
-  const pendingManual = steps.filter((s) => s.state === 'manual').length
   const ready = blocking === 0
 
   return (
     <div className="space-y-4">
       <p className="text-[12px] text-slate-400">
         {ready ? 'Everything is ready.' : `${blocking} ${blocking === 1 ? 'thing' : 'things'} to fix.`}
-        {pendingManual > 0 && ` ${pendingManual} to confirm in ProPresenter.`}
       </p>
 
       <ol className="space-y-1">
@@ -181,7 +83,6 @@ export default function SetupChecklist({
           <StepRow
             key={step.id}
             step={step}
-            onToggle={step.manual ? (value) => setAck(step.id, value) : undefined}
           />
         ))}
       </ol>

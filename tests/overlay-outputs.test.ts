@@ -4,15 +4,14 @@ import test from "node:test";
 import {
   DEFAULT_OVERLAY_THEME,
   DEFAULT_OVERLAY_SETTINGS,
-  applyOutputRoute,
   makeOverlayOutput,
   normalizeOverlayOutputs,
   normalizeOverlaySettings,
-  outputRouteOf,
 } from "../src/lib/overlay-defaults";
 import {
   hasContentOverride,
   inheritLyricsTheme,
+  isRenderedKind,
   liveOverlayTheme,
   MAX_NDI_OUTPUTS,
   outputTemplateFor,
@@ -31,49 +30,12 @@ const legacy = {
   template: "{Reference}\n{Text}",
 };
 
-// ─── Legacy migration ─────────────────────────────────────────────────────────
-// Each pre-phase-3 mode must come out as the same sequence of destinations it
-// used to walk, or upgrading users lose their output.
-
-test("auto mode migrates to NDI, then library, then the message overlay as fallback", () => {
-  const outputs = normalizeOverlayOutputs(undefined, legacy);
-  const enabled = outputs.filter((o) => o.enabled);
-
-  // Precedence must match the shipped getOverlayDispatchOrder("auto"),
-  // which was ["ndi", "library", "message"] — NDI ahead of the library scan.
-  assert.deepEqual(enabled.map((o) => o.kind), ["ndi", "library", "message"]);
-  const [ndi, library] = enabled;
-  assert.ok(ndi.order < library.order, "NDI must sort ahead of the library scan");
-  assert.equal(enabled.find((o) => o.kind === "message")?.fallbackOnly, true);
-  assert.equal(enabled.find((o) => o.kind === "ndi")?.ppVideoInputUuid, "uuid-1");
-});
-
-test("ndi mode migrates without the library search", () => {
-  const outputs = normalizeOverlayOutputs(undefined, { ...legacy, mode: "ndi" });
-
-  assert.deepEqual(
-    outputs.filter((o) => o.enabled).map((o) => o.kind),
-    ["ndi", "message"],
-  );
-  assert.equal(outputs.find((o) => o.kind === "library")?.enabled, false);
-});
-
-test("message mode migrates to library then message, never NDI", () => {
-  const outputs = normalizeOverlayOutputs(undefined, { ...legacy, mode: "message" });
-
-  assert.deepEqual(
-    outputs.filter((o) => o.enabled).map((o) => o.kind),
-    ["library", "message"],
-  );
-  assert.equal(outputs.find((o) => o.kind === "ndi")?.enabled, false);
-});
-
-test("every migration offers a stage output, switched off so upgrades change nothing", () => {
+test("legacy modes migrate only independent destinations", () => {
   for (const mode of ["auto", "ndi", "message"] as const) {
-    const stage = normalizeOverlayOutputs(undefined, { ...legacy, mode })
-      .find((o) => o.kind === "stage");
-    assert.ok(stage, `${mode} should offer a stage output`);
-    assert.equal(stage.enabled, false);
+    const outputs = normalizeOverlayOutputs(undefined, { ...legacy, mode });
+    assert.deepEqual(outputs.map(o => o.kind), ["ndi", "screen"]);
+    assert.equal(outputs[0].enabled, mode !== "message");
+    assert.equal(outputs[1].enabled, false);
   }
 });
 
@@ -83,9 +45,9 @@ test("NDI outputs beyond the sender limit are disabled, not deleted — the oper
   const ndi = Array.from({ length: MAX_NDI_OUTPUTS + 1 }, (_, i) =>
     makeOverlayOutput(`ndi-${i}`, "ndi", { enabled: true }),
   );
-  const outputs = normalizeOverlayOutputs([...ndi, makeOverlayOutput("stage", "stage", { enabled: true })], legacy);
+  const outputs = normalizeOverlayOutputs([...ndi, makeOverlayOutput("card", "device", { enabled: true })], legacy);
 
-  assert.deepEqual(outputs.map((o) => o.id), [...ndi.map((o) => o.id), "stage"]);
+  assert.deepEqual(outputs.map((o) => o.id), [...ndi.map((o) => o.id), "card"]);
   assert.deepEqual(
     outputs.filter((o) => o.kind === "ndi").map((o) => o.enabled),
     [...Array(MAX_NDI_OUTPUTS).fill(true), false],
@@ -95,21 +57,21 @@ test("NDI outputs beyond the sender limit are disabled, not deleted — the oper
 test("duplicate, blank and unknown-kind entries are healed rather than trusted", () => {
   const outputs = normalizeOverlayOutputs(
     [
-      { id: "a", kind: "stage", enabled: true },
-      { id: "a", kind: "stage", enabled: true },   // duplicate id
-      { id: "", kind: "stage" },                    // blank id
+      { id: "a", kind: "screen", enabled: true },
+      { id: "a", kind: "screen", enabled: true },   // duplicate id
+      { id: "", kind: "screen" },                    // blank id
       { id: "b", kind: "teleport", enabled: true }, // unknown kind
       "not an object",
     ],
     legacy,
   );
 
-  assert.deepEqual(outputs.map((o) => o.id), ["a", "b"]);
-  assert.equal(outputs[1].kind, "message");
+  assert.deepEqual(outputs.map((o) => o.id), ["a"]);
 });
 
-test("an empty saved list stays empty; missing output lists migrate", () => {
-  assert.deepEqual(normalizeOverlayOutputs([], legacy), []);
+test("an empty saved list gets the Main Screen back; missing output lists migrate", () => {
+  // Audience always has one screen, as in ProPresenter.
+  assert.deepEqual(normalizeOverlayOutputs([], legacy).map((o) => [o.kind, o.name]), [["screen", "Main Screen"]]);
   assert.ok(normalizeOverlayOutputs("nope", legacy).length > 0);
   assert.ok(normalizeOverlayOutputs(null, legacy).length > 0);
 });
@@ -124,12 +86,14 @@ test("each output's theme is clamped through the theme normalizer", () => {
   assert.equal(output.theme.verse.color, DEFAULT_OVERLAY_THEME.verse.color);
 });
 
-test("normalizeOverlaySettings populates outputs and keeps the legacy fields readable", () => {
-  const settings = normalizeOverlaySettings({ mode: "ndi", ppVideoInputUuid: "uuid-9" });
-
-  assert.equal(settings.outputs.some((o) => o.kind === "ndi" && o.enabled), true);
-  assert.equal(settings.outputs.find((o) => o.kind === "ndi")?.ppVideoInputUuid, "uuid-9");
-  assert.equal(settings.mode, "ndi");
+test("normalization strips retired settings and output fields", () => {
+  const settings = normalizeOverlaySettings({ mode: "ndi", ppVideoInputUuid: "uuid-9", outputs: [
+    { id: "feed", kind: "ndi", enabled: true, ppVideoInputUuid: "uuid-9", lookId: "look-1" },
+    { id: "old", kind: "message", enabled: true },
+  ] });
+  assert.deepEqual(settings.outputs.map(o => o.id), ["feed"]);
+  for (const key of ["mode", "ppVideoInputUuid"]) assert.equal(Object.hasOwn(settings, key), false);
+  for (const key of ["ppVideoInputUuid", "lookId"]) assert.equal(Object.hasOwn(settings.outputs[0], key), false);
 });
 
 test("live overlay theme prefers the enabled NDI output over a disabled one", () => {
@@ -320,7 +284,7 @@ test("a stored lyrics override survives normalization; an absent one stays null"
   const [withOverride, without] = normalizeOverlayOutputs(
     [
       { id: "a", kind: "ndi", lyrics: { themeId: "t", theme: RED_THEME, template: "{Text}" } },
-      { id: "b", kind: "message" },
+      { id: "b", kind: "screen" },
     ],
     legacy,
   );
@@ -393,7 +357,7 @@ test("screen outputs are accepted and display fields are filled on every kind", 
   const outputs = normalizeOverlayOutputs(
     [
       { id: "proj", kind: "screen", enabled: true, displayId: 7, displayLabel: " DELL ", displaySize: { width: 1920, height: 1080 } },
-      { id: "stage", kind: "stage", displayId: 7, displayLabel: "junk" },
+      { id: "feed", kind: "ndi", displayId: 7, displayLabel: "junk" },
     ],
     legacy,
   );
@@ -458,25 +422,7 @@ test("liveOverlayTheme prefers an enabled screen, then an enabled NDI output", (
   assert.equal(liveOverlayTheme(screenOff).verse.color, "#ff0000");
 });
 
-test("the onboarding route switches outputs on and off, and reads back", () => {
-  const defaults = DEFAULT_OVERLAY_SETTINGS.outputs;
-  // A fresh install draws on its own screen; ProPresenter is opt-in.
-  assert.equal(outputRouteOf(defaults), "screen");
-  assert.deepEqual(defaults.filter((o) => o.enabled).map((o) => o.id), ["projector"]);
-
-  const pp = applyOutputRoute(defaults, "propresenter");
-  assert.equal(outputRouteOf(pp), "propresenter");
-  // Nothing PP-side was on, so the shipped ProPresenter preset comes on.
-  assert.deepEqual(pp.filter((o) => o.enabled).map((o) => o.id).sort(), ["library", "lower-third", "main"]);
-
-  const back = applyOutputRoute(pp, "screen");
-  assert.equal(outputRouteOf(back), "screen");
-  assert.deepEqual(back.filter((o) => o.enabled).map((o) => o.id), ["projector"]);
-
-  assert.equal(outputRouteOf(applyOutputRoute(defaults, "both")), "both");
-});
-
-test("playlist fields are clamped, and only a screen can run its own playlist", () => {
+test("playlist fields are clamped, and NDI always follows the program", () => {
   const [screen, ndi] = normalizeOverlayOutputs(
     [
       { ...makeOverlayOutput("lobby", "screen"), source: "playlist", playlistId: " p1 ", slideSec: 1 },
@@ -517,3 +463,11 @@ test('retired auto-clear values are discarded from saved overlay settings', () =
   assert.equal(Object.hasOwn(settings, 'autoClearSec'), false);
   assert.equal(Object.hasOwn(DEFAULT_OVERLAY_SETTINGS, 'autoClearSec'), false);
 });
+
+test('Syphon outputs are kept when settings load, with at most four switched on', () => {
+  const outputs = Array.from({ length: 6 }, (_, i) => ({ id: `syphon-${i}`, kind: 'syphon', name: `Syphon ${i}`, enabled: true }))
+  const normalized = normalizeOverlaySettings({ outputs }).outputs.filter((o) => o.kind === 'syphon')
+  assert.equal(normalized.length, 6, 'every Syphon output is kept')
+  assert.equal(normalized.filter((o) => o.enabled).length, 4, 'the fifth and sixth are switched off')
+  assert.ok(isRenderedKind('syphon'), 'Kairo renders Syphon outputs itself')
+})

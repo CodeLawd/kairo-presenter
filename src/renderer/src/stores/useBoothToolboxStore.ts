@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type BoothToolboxTab = 'search' | 'audio' | 'timers' | 'messages' | 'show'
+export type BoothToolboxTab = 'search' | 'audio' | 'timers' | 'messages' | 'show' | 'live'
 
 interface BoothToolboxState {
   tab: BoothToolboxTab

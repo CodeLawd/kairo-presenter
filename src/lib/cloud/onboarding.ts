@@ -8,8 +8,6 @@
 // for (see `deriveCompletedSteps`).
 
 import type { AppSettings, OnboardingState, OnboardingStepId } from '../ipc'
-import { isLocalKind } from '../overlay-outputs'
-import { setupUsesPropresenter } from '../pp-connect-gate'
 
 /**
  * First run, once per install: the tour, then the account (signed-out
@@ -19,7 +17,7 @@ import { setupUsesPropresenter } from '../pp-connect-gate'
 export const ONBOARDING_STEPS: readonly OnboardingStepId[] = ['welcome', 'account', 'output']
 
 export function onboardingSteps(
-  _settings: Pick<AppSettings, 'overlay'> & Partial<Pick<AppSettings, 'propresenterResources'>>,
+  _settings: Pick<AppSettings, 'overlay'>,
 ): OnboardingStepId[] {
   return [...ONBOARDING_STEPS]
 }
@@ -43,8 +41,6 @@ export function normalizeOnboardingState(raw: unknown): OnboardingState {
 export function onboardingStepLabel(step: OnboardingStepId): string {
   if (step === 'welcome') return 'Welcome'
   if (step === 'account') return 'Account'
-  if (step === 'propresenter') return 'ProPresenter'
-  if (step === 'propresenterResources') return 'ProPresenter resources'
   if (step === 'output') return 'Output'
   if (step === 'apiKeys') return 'API keys'
   return 'Church profile'
@@ -66,12 +62,6 @@ export const DEFAULT_ONBOARDING_STATE: OnboardingState = {
  * The wizard marks that step complete itself when a sign-in succeeds.
  */
 export function isStepComplete(step: OnboardingStepId, settings: AppSettings): boolean {
-  if (step === 'propresenter') return settings.propresenter.host.trim() !== ''
-  if (step === 'propresenterResources') {
-    return Object.values(settings.propresenterResources ?? {}).some(
-      (value) => typeof value === 'string' && value.trim() !== '',
-    )
-  }
   if (step === 'output') return settings.overlay.outputs.some((output) =>
     output.enabled && output.kind === 'screen' && typeof output.displayId === 'number')
   if (step === 'apiKeys') {
@@ -91,7 +81,7 @@ export function isStepComplete(step: OnboardingStepId, settings: AppSettings): b
  * The steps an existing install has effectively already done.
  *
  * This is the whole migration story: someone who has been running services for
- * months has a ProPresenter host, an enabled output and an API key, so the
+ * months has an enabled output and an API key, so the
  * wizard must not appear in front of them on the Sunday they update.
  */
 export function deriveCompletedSteps(settings: AppSettings): OnboardingStepId[] {
@@ -194,7 +184,7 @@ export function seedOnboardingFromSettings(
   now = Date.now(),
 ): OnboardingState {
   const completedSteps = deriveCompletedSteps(settings)
-  if (completedSteps.length === 0 && !settings.propresenter.host.trim() &&
+  if (completedSteps.length === 0 &&
       !isStepComplete('apiKeys', settings) && !isStepComplete('church', settings)) {
     return { ...DEFAULT_ONBOARDING_STATE, completedSteps: [], skippedSteps: [] }
   }
@@ -205,11 +195,6 @@ export function seedOnboardingFromSettings(
     source: 'legacy',
     completedSteps,
     skippedSteps: ['welcome', 'account'],
-  }
-  // Pre-wizard installs with a working integration should not be interrupted.
-  if (!state.completedSteps.includes('output') && settings.propresenter.host.trim() &&
-      settings.overlay.outputs.some((output) => output.enabled && !isLocalKind(output.kind))) {
-    state.completedSteps.push('output')
   }
   const resume = nextIncompleteStep(state)
   // Nothing left to answer: the install is already set up, so the wizard is
@@ -250,7 +235,7 @@ export function onboardingReadiness(settings: AppSettings): OnboardingReadiness 
   const lines = onboardingSummary(settings)
   const outstanding = lines.filter((line) => !line.done)
   // "Ready" means a verse can actually reach a screen: somewhere to send to,
-  // and a ProPresenter host when the setup goes through ProPresenter. A church name and an API key are conveniences.
+  // A church name and an API key are conveniences.
   const ready = lines.every((line) => line.done || line.step === 'apiKeys' || line.step === 'church')
   return { lines, outstanding, ready }
 }
@@ -309,16 +294,5 @@ export function onboardingSummary(settings: AppSettings): OnboardingSummaryLine[
       done: settings.church.name.trim() !== '',
     },
   ]
-  if (!setupUsesPropresenter(settings.overlay, settings.propresenterResources?.ndiVideoInputId)) return lines
-  return [
-    {
-      step: 'propresenter',
-      label: 'ProPresenter',
-      detail: settings.propresenter.host.trim()
-        ? `${settings.propresenter.host}:${settings.propresenter.port}`
-        : 'Not connected yet',
-      done: settings.propresenter.host.trim() !== '',
-    },
-    ...lines,
-  ]
+  return lines
 }

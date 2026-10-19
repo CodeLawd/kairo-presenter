@@ -241,12 +241,12 @@ export function SermonNotesReviewModal({
   const matchCount = analysis.matches.length
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-5">
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/35 p-5">
       <section
         role="dialog"
         aria-modal="true"
         aria-labelledby="sermon-review-title"
-        className="flex h-[min(860px,calc(100vh-40px))] w-[min(1180px,calc(100vw-40px))] flex-col overflow-hidden rounded-2xl bg-surface-secondary shadow-2xl shadow-black/50"
+        className="flex h-[min(860px,calc(100vh-40px))] w-[min(1180px,calc(100vw-40px))] flex-col overflow-hidden rounded-2xl modal-glass shadow-2xl shadow-black/50"
       >
         <header className="flex items-center justify-between gap-5 px-5 py-3.5">
           <div className="flex min-w-0 items-center gap-3">

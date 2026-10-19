@@ -38,7 +38,7 @@ const inter = Inter({
 
 const title = 'Kairo — Presentation software for your church'
 const description =
-  'Plan the service, run lyrics, Scripture, slides and media on your own screens, and find verses that come up during the sermon. ProPresenter is optional.'
+  'Plan the service, run lyrics, Scripture, slides and media on your own screens, and find verses that come up during the sermon. Kairo runs as a standalone presentation app.'
 
 export const metadata: Metadata = {
   title,

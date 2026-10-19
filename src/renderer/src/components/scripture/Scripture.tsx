@@ -1442,7 +1442,7 @@ export default function Scripture({ active = true }: { active?: boolean }): Reac
               {selectedPlan && (
                 <Button
                   size="sm"
-                  variant={livePlan?.planId === selectedPlan.id ? "secondary" : "default"}
+                  variant="secondary"
                   onClick={() => void useSelectedPlanForService()}
                   disabled={livePlan?.planId === selectedPlan.id}
                   title="Use this playlist to guide live scripture detection"

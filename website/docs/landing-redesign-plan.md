@@ -1,3 +1,5 @@
+> Historical design exploration. ProPresenter references below describe earlier plans and are not current product support claims. Kairo now ships as a standalone presentation app with connected-screen and NDI output.
+
 # Kairo landing page — revised implementation plan
 
 Reviewed 10 September 2026. This replaces the previous plan.

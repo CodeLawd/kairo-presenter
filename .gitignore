@@ -99,6 +99,9 @@ docs/decisions/*
 !docs/decisions/001-cross-platform-ndi.md
 !docs/decisions/007-hardware-video-outputs.md
 !docs/decisions/008-gpu-frame-capture.md
+!docs/releases/
+docs/releases/*
+!docs/releases/propresenter-retirement.md
 !docs/release-checklist.md
 !docs/signing-setup.md
 !docs/embedded-powerpoint-video.md

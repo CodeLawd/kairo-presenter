@@ -10,13 +10,5 @@ export const BRAND = {
   live: '#315EDE',
 } as const
 
-/** NDI sender shown in ProPresenter’s video-input list. */
+/** Stable NDI sender identity for existing receivers. */
 export const NDI_SENDER_NAME = `${PRODUCT_NAME} Scripture`
-
-/** Message template created in ProPresenter. Older installs used ProAutomate. */
-export const PP_MESSAGE_NAME = `${PRODUCT_NAME} Scripture`
-export const PP_MESSAGE_NAMES = [PP_MESSAGE_NAME, 'ProAutomate Scripture'] as const
-
-export function isOwnedNdiName(name: string): boolean {
-  return /kairo|proautomate/i.test(name)
-}

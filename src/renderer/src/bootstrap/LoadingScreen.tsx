@@ -35,11 +35,11 @@ export function LoadingScreen({
       <div className="flex w-[340px] flex-col items-center gap-7">
         {/* The stacked logo (mark over "Kairo") under a glass lens — a top
             specular and a slowly drifting caustic, every layer masked to the
-            logo's own shape. Off-white in dark, ink in light. */}
+            logo's own shape. The brand blue stays visible in either theme. */}
         <div className="splash-mark relative h-[100px] w-[152px]" role="img" aria-label={PRODUCT_NAME}>
           <span
             aria-hidden
-            className="absolute inset-0 bg-[rgb(var(--text-primary))]"
+            className="absolute inset-0 bg-[rgb(var(--accent-500))]"
             style={{
               WebkitMaskImage: `url(${kairoStacked})`,
               maskImage: `url(${kairoStacked})`,

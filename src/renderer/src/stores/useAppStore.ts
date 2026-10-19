@@ -1,6 +1,6 @@
 import type { ProjectionDocument, DocumentPlaybackStatus } from '@shared/documents'
 import { create } from 'zustand'
-import type { ProPresenterStatus, ProPresenterConnectionState, AudioLevel } from '@shared/ipc'
+import type { AudioLevel } from '@shared/ipc'
 import type { LiveOutputPayload } from '@shared/live-output'
 import { normalizeOperatorPanelWidth, OPERATOR_PANEL_DEFAULTS } from '@shared/operator-layout'
 
@@ -18,7 +18,6 @@ function readStoredRailWidth(): number {
 
 /** Panes of the Settings modal. */
 export type SettingsSectionId =
-  | 'propresenter'
   | 'audio'
   | 'apikeys'
   | 'scripture'
@@ -30,13 +29,6 @@ export type SettingsSectionId =
 // ─── State shape ──────────────────────────────────────────────────────────────
 
 interface AppState {
-  // ── ProPresenter ──────────────────────────────────────────────────────────
-  ppState: ProPresenterConnectionState
-  ppVersion: string | null
-  ppActivePresentationName: string | null
-  ppActiveSlideIndex: number | null
-  ppActivePlaylistName: string | null
-
   // ── Audio ─────────────────────────────────────────────────────────────────
   audioDeviceName: string | null
   audioCapturing: boolean
@@ -67,10 +59,10 @@ interface AppState {
   scriptureHighlightMode: 'none' | 'focus' | 'live'
   /** Reference currently on Kairo's output — drives the header LIVE badge. */
   liveOutputLabel: string | null
-  /** Last text sent to ProPresenter, shared by the Operator, Scripture and Lyrics tabs. */
+  /** Last text sent to Kairo outputs, shared by the Operator, Scripture and Lyrics tabs. */
   liveDocumentPreview: { doc: ProjectionDocument; page: number; playback: DocumentPlaybackStatus | null } | null
   liveOutputPreview: LiveOutputPayload | null
-  /** Bumps when PP output is cleared so Scripture can drop Live badges. */
+  /** Bumps when text output is cleared so Scripture can drop Live badges. */
   scriptureOutputClearToken: number
   /** Last opened song in the Lyrics library — restored when returning to the tab. */
   lyricsSelectedSongId: string | null
@@ -95,18 +87,18 @@ interface AppState {
   settingsRequest: SettingsSectionId | null
   /**
    * The Screens window (screen configuration) is open. Holds the item to
-   * select on open — an output id, `stage:<id>`, or null for the first one.
+   * select on open — an output id, `stage:<id>`, `kind:<kind>` (that kind's
+   * first output), `add:<kind>` (a new one), or null for the first one.
    */
   screensWindow: { select: string | null } | null
+  /** The Props editor is open, on this prop (null = the first). */
+  propsWindow: { select: string | null } | null
 
   // ── Legacy (kept for backward compat) ────────────────────────────────────
-  proPresenterConnected: boolean
   currentSlide: string | null
   transcriptionText: string
 
   // ── Setters ───────────────────────────────────────────────────────────────
-  setPPStatus: (status: ProPresenterStatus) => void
-  setPPVersion: (version: string | null) => void
   setAudioDeviceName: (name: string | null) => void
   setAudioCapturing: (capturing: boolean) => void
   setAudioError: (err: string | null) => void
@@ -146,9 +138,10 @@ interface AppState {
   clearSettingsRequest: () => void
   openScreens: (select?: string | null) => void
   closeScreens: () => void
+  openProps: (select?: string | null) => void
+  closeProps: () => void
 
   // ── Legacy setters ────────────────────────────────────────────────────────
-  setProPresenterConnected: (connected: boolean) => void
   setCurrentSlide: (slide: string | null) => void
   appendTranscription: (text: string) => void
 }
@@ -156,13 +149,6 @@ interface AppState {
 // ─── Store ────────────────────────────────────────────────────────────────────
 
 export const useAppStore = create<AppState>((set) => ({
-  // ── ProPresenter ──────────────────────────────────────────────────────────
-  ppState: 'disconnected',
-  ppVersion: null,
-  ppActivePresentationName: null,
-  ppActiveSlideIndex: null,
-  ppActivePlaylistName: null,
-
   // ── Audio ─────────────────────────────────────────────────────────────────
   audioDeviceName: null,
   audioCapturing: false,
@@ -204,27 +190,13 @@ export const useAppStore = create<AppState>((set) => ({
   sessionStartTime: Date.now(),
   settingsRequest: null,
   screensWindow: null,
+  propsWindow: null,
 
   // ── Legacy ────────────────────────────────────────────────────────────────
-  proPresenterConnected: false,
   currentSlide: null,
   transcriptionText: '',
 
   // ── Setters ───────────────────────────────────────────────────────────────
-
-  setPPStatus: (status) =>
-    set({
-      ppState: status.state,
-      proPresenterConnected: status.state === 'connected',
-      ppVersion: status.version,
-      ppActivePresentationName: status.activePresentationName,
-      ppActivePlaylistName: status.activePlaylistName,
-      ppActiveSlideIndex: status.activeSlideId
-        ? parseInt(status.activeSlideId.split(':')[1] ?? '0', 10)
-        : null,
-    }),
-
-  setPPVersion: (version) => set({ ppVersion: version }),
 
   setAudioDeviceName: (name) => set({ audioDeviceName: name }),
   setAudioCapturing: (capturing) => set({ audioCapturing: capturing }),
@@ -343,10 +315,11 @@ export const useAppStore = create<AppState>((set) => ({
   clearSettingsRequest: () => set({ settingsRequest: null }),
   openScreens: (select = null) => set({ screensWindow: { select } }),
   closeScreens: () => set({ screensWindow: null }),
+  openProps: (select = null) => set({ propsWindow: { select } }),
+  closeProps: () => set({ propsWindow: null }),
 
   // ── Legacy ────────────────────────────────────────────────────────────────
 
-  setProPresenterConnected: (connected) => set({ proPresenterConnected: connected }),
 
   setCurrentSlide: (slide) => set({ currentSlide: slide }),
 

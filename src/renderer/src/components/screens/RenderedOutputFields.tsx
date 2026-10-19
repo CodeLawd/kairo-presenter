@@ -116,13 +116,12 @@ export function FieldRow({
   hint?: string
   children: React.ReactNode
 }): React.ReactElement {
+  // As ProPresenter lays a field out: its label above, the control, a hint under.
   return (
-    <div className="space-y-1.5">
+    <div className="min-w-0 space-y-1.5">
       <label htmlFor={htmlFor} className="block text-[13px] text-slate-200">{label}</label>
-      <div className="space-y-1">
-        {children}
-        {hint && <p className="text-[11px] leading-snug text-slate-500">{hint}</p>}
-      </div>
+      {children}
+      {hint && <p className="text-[11px] leading-snug text-slate-500">{hint}</p>}
     </div>
   )
 }

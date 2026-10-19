@@ -75,7 +75,7 @@ export class ScriptureTraceStore {
    * Record that a stage happened.
    *
    * Ignored once the trace has ended: a cancelled suggestion whose in-flight
-   * ProPresenter call later returns must not look like it presented.
+   * the output renderer call later returns must not look like it presented.
    */
   mark(correlationId: string, stage: ScriptureTraceStage, at: number = Date.now()): void {
     const trace = this.traces.get(correlationId)

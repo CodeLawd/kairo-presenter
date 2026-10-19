@@ -25,12 +25,18 @@ export function subscribeExplicitScriptureDetection(
   const analyzeFinal = (result: TranscriptResult): void => {
     // Stamped here, at the edge, because this is the first moment Kairo holds
     // the transcript. Anything measured from later would flatter the parser.
-    detector.beginTranscript({ sttReceivedAt: Date.now(), source: "final" });
+    detector.beginTranscript({ sttReceivedAt: Date.now(), source: "final" }, result.text);
     // Explicit citations run first so they claim the dedup slot with the
     // authoritative range; the plan-quote path only covers reading that was
     // never announced. Interims stay citation-only — half-sentences would
     // retrigger the quote matcher on every partial update.
     if (detector.analyzeExplicit(result.text, true, false)) {
+      settle();
+      return;
+    }
+    // A translation named with no passage — "now read it in the NIV" — asks
+    // for the passage just shown in that translation.
+    if (detector.requestTranslations(result.text)) {
       settle();
       return;
     }
@@ -84,7 +90,7 @@ export function subscribeExplicitScriptureDetection(
     detector.analyze(recentFinalText);
   };
   const analyzeInterim = (result: InterimResult): void => {
-    detector.beginTranscript({ sttReceivedAt: Date.now(), source: "interim" });
+    detector.beginTranscript({ sttReceivedAt: Date.now(), source: "interim" }, result.text);
     detector.analyzeExplicit(result.text, true, true);
   };
   source.onTranscript(analyzeFinal);

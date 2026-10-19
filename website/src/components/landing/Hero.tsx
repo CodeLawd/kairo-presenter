@@ -55,7 +55,7 @@ export function Hero(): React.ReactElement {
             <i className="mx-[0.6em] not-italic text-[#33332B]">·</i>
             macOS and Windows
             <i className="mx-[0.6em] not-italic text-[#33332B]">·</i>
-            ProPresenter 7 and NDI
+            Standalone screens and NDI
           </p>
         </div>
       </section>

@@ -16,6 +16,7 @@ import {
   Pause,
   AlertTriangle,
   ArrowDown,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Check,
@@ -70,11 +71,17 @@ import type {
   ResilienceStatus,
 } from "@shared/ipc";
 import { useBootstrapStore } from "@/bootstrap/useBootstrapStore";
+import { useTransferStore } from "@/stores/useTransfer";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { OperatorQueueSearch } from "@/components/operator/OperatorQueueSearch";
 import { displayPlanTitle } from "@/components/operator/OperatorToolbar";
 import { useBoothToolboxStore } from "@/stores/useBoothToolboxStore";
 import { clearLiveText } from "@/lib/clear-live-output";
-import { propresenterEnabled } from "@shared/pp-connect-gate";
 
 // ─── Constants for Live Highlight Parsing ─────────────────────────────────────
 
@@ -389,6 +396,36 @@ export default function Operator(): React.ReactElement {
     string | null
   >(null);
   const [adjacentLoading, setAdjacentLoading] = useState<string | null>(null);
+  /** Passage being switched to another translation, for its spinner. */
+  const [retranslating, setRetranslating] = useState<string | null>(null);
+  const translationOptions = useBootstrapStore((state) => state.translations);
+
+  /** Shows a detected passage in another translation — every card in it. */
+  const retranslatePassage = useCallback(
+    async (passageId: string, cards: ScriptureSuggestion[], translation: string): Promise<void> => {
+      setRetranslating(passageId);
+      try {
+        const updated = await Promise.all(
+          cards.map((card) => window.api.scripture.retranslate(card, translation)),
+        );
+        const byId = new Map(updated.map((card) => [card.id, card]));
+        setSuggestions((prev) => {
+          const next = prev.map((card) => byId.get(card.id) ?? card);
+          suggestionsRef.current = next;
+          return next;
+        });
+      } catch (err) {
+        // Electron prefixes main-process errors; the operator only needs the message.
+        const text = err instanceof Error
+          ? err.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/, "")
+          : String(err);
+        useTransferStore.getState().notify({ tone: "error", text });
+      } finally {
+        setRetranslating(null);
+      }
+    },
+    [],
+  );
   const [, setReadingProgress] = useState<{
     matchedId: string;
     nextId: string;
@@ -626,67 +663,24 @@ export default function Operator(): React.ReactElement {
   // Resilience Status state
   const [resilienceStatus, setResilienceStatus] =
     useState<ResilienceStatus | null>(null);
-  const prevPpStateRef = useRef<boolean>(true);
-
-  // play beep function using Web Audio API
-  const playBeep = useCallback(() => {
-    try {
-      const AudioCtor =
-        window.AudioContext ??
-        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
-      const audioCtx = new AudioCtor()
-      const oscillator = audioCtx.createOscillator();
-      const gainNode = audioCtx.createGain();
-
-      oscillator.connect(gainNode);
-      gainNode.connect(audioCtx.destination);
-
-      oscillator.type = "sine";
-      oscillator.frequency.setValueAtTime(880, audioCtx.currentTime); // 880Hz
-      gainNode.gain.setValueAtTime(0.15, audioCtx.currentTime);
-      gainNode.gain.exponentialRampToValueAtTime(
-        0.001,
-        audioCtx.currentTime + 0.3,
-      );
-
-      oscillator.start();
-      oscillator.stop(audioCtx.currentTime + 0.3);
-    } catch (err) {
-      console.error("Failed to play beep sound:", err);
-    }
-  }, []);
-
   useEffect(() => {
     // 1. Get initial status
     window.api.resilience
       .getStatus()
       .then((status) => {
         setResilienceStatus(status);
-        prevPpStateRef.current = (status.ppReconnectCountdown ?? 0) === 0;
       })
       .catch(console.error);
 
     // 2. Subscribe to status changes
     const unsubResilience = window.api.resilience.onStatusChange((status) => {
       setResilienceStatus(status);
-      const wasConnected = prevPpStateRef.current;
-      const isConnected =
-        (status.ppReconnectCountdown ?? 0) === 0 &&
-        status.overallHealth !== "CRITICAL";
-      if (
-        wasConnected &&
-        !isConnected &&
-        (status.ppReconnectCountdown ?? 0) > 0
-      ) {
-        playBeep();
-      }
-      prevPpStateRef.current = isConnected;
     });
 
     return () => {
       unsubResilience();
     };
-  }, [playBeep]);
+  }, []);
 
   // Session duration timer
 
@@ -1014,7 +1008,7 @@ export default function Operator(): React.ReactElement {
     setQueue((prev) => prev.filter((item) => item.id !== id));
   }, []);
 
-  /** Queue rows push straight to ProPresenter; the themed preview follows. */
+  /** Queue rows push straight to Kairo outputs; the themed preview follows. */
   const handlePresentQueued = useCallback(
     async (entry: ScriptureSuggestion): Promise<void> => {
       entry = singleVerseSuggestion(entry);
@@ -1336,10 +1330,7 @@ export default function Operator(): React.ReactElement {
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
 
-  const ppReconnectCountdown = resilienceStatus?.ppReconnectCountdown ?? 0;
 
-  // ProPresenter status only appears once the integration is switched on.
-  const usesPropresenter = useBootstrapStore((s) => propresenterEnabled(s.settings));
 
   const sttHealth = resilienceStatus?.health.find((h) => h.service === "stt");
 
@@ -1415,23 +1406,6 @@ export default function Operator(): React.ReactElement {
               Restore Session
             </Button>
           </div>
-        </div>
-      )}
-
-      {usesPropresenter && resilienceStatus && ppReconnectCountdown > 0 && (
-        <div className="bg-tint-rose px-6 py-2.5 flex items-center justify-between text-xs font-bold text-rose-400 animate-fade-in">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
-            <span>ProPresenter disconnected — retrying in {ppReconnectCountdown}s</span>
-            {resilienceStatus.ppQueueSize > 0 && (
-              <span className="bg-tint-rose px-1.5 py-0.5 rounded text-[10px]">
-                {resilienceStatus.ppQueueSize} projection(s) queued
-              </span>
-            )}
-          </div>
-          <span className="text-[10px] uppercase font-mono tracking-widest text-rose-500/80">
-            Queue active
-          </span>
         </div>
       )}
 
@@ -1631,7 +1605,7 @@ export default function Operator(): React.ReactElement {
           {/* LEFT COLUMN: compact live transcript */}
           <section
             className={cn(
-              "relative flex shrink-0 flex-col bg-surface-secondary",
+              "hairline-r relative flex shrink-0 flex-col bg-surface-secondary",
               nuggetsOpen && "z-40",
             )}
             style={{ width: transcriptWidth }}
@@ -2017,6 +1991,44 @@ export default function Operator(): React.ReactElement {
                           <h3 className="truncate text-[13px] font-semibold text-zinc-100">
                             {group.reference}
                           </h3>
+                          {/* The passage's translation; pick another to show it in that one. */}
+                          {group.suggestions[0] && (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <button
+                                  type="button"
+                                  disabled={retranslating === group.id}
+                                  className="flex shrink-0 items-center gap-1 self-center rounded-md px-1.5 py-0.5 text-[11px] font-medium text-zinc-400 hover:bg-surface-tertiary hover:text-white disabled:opacity-60 data-[state=open]:bg-surface-tertiary data-[state=open]:text-white"
+                                  title="Show this passage in another translation"
+                                  aria-label={`${group.reference} in ${group.suggestions[0].translation}. Change translation`}
+                                >
+                                  {retranslating === group.id && <Loader size={10} className="animate-spin" aria-hidden="true" />}
+                                  {group.suggestions[0].translation}
+                                  <ChevronDown size={10} aria-hidden="true" />
+                                </button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="start" className="max-h-72 min-w-[220px] overflow-y-auto">
+                                {translationOptions.filter((option) => option.available).map((option) => (
+                                  <DropdownMenuItem
+                                    key={option.id}
+                                    disabled={option.id === group.suggestions[0]?.translation}
+                                    onSelect={() => void retranslatePassage(group.id, group.suggestions, option.id)}
+                                  >
+                                    <span className="w-12 shrink-0 font-medium">{option.id}</span>
+                                    <span className="truncate text-zinc-400">{option.name}</span>
+                                  </DropdownMenuItem>
+                                ))}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          )}
+                          {group.suggestions[0]?.requestedTranslation && (
+                            <span
+                              className="shrink-0 text-[11px] text-zinc-500"
+                              title={`The preacher asked for ${group.suggestions[0].requestedTranslation}, which isn't available here. Download it or add an API.Bible key in Settings → Scripture.`}
+                            >
+                              {group.suggestions[0].requestedTranslation} not available
+                            </span>
+                          )}
                           {following && (() => {
                             const reading = group.suggestions.find((item) => item.passageIndex === followState?.currentIndex);
                             const verse = reading?.reference.split(":").pop();

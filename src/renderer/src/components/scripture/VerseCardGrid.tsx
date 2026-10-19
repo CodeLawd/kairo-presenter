@@ -1,3 +1,4 @@
+import { BookOpen } from "@/icons";
 import { cn } from "@/lib/utils";
 import { VerseThemePreview } from "./VerseThemePreview";
 import { MarqueeSelect } from "@/components/shared/MarqueeSelect";
@@ -117,12 +118,13 @@ export function VerseCardGrid({
               else rowRefs.current.delete(rowKey);
             }}
             data-plan-item={row.planItemId ?? undefined}
-            className="min-w-0 space-y-2 scroll-mt-3"
+            className="min-w-0 space-y-4 scroll-mt-3"
           >
             {/* A lone passage needs no heading — its slide already shows the reference. */}
             {(rows.length > 1 || row.note) && (
-              <div className="flex flex-wrap items-baseline gap-2 px-0.5">
-                <p className={cn("truncate text-xs font-semibold", rowIsLive ? "text-live" : "text-slate-300")}>
+              <div className="-mx-5 flex min-h-9 flex-wrap items-center gap-2 bg-black/25 px-5 py-2 lg:-mx-6 lg:px-6">
+                <BookOpen size={14} weight="fill" className="shrink-0 text-slate-400" aria-hidden="true" />
+                <p className={cn("min-w-0 truncate text-xs font-semibold", rowIsLive ? "text-live" : "text-slate-300")}>
                   {row.reference}
                 </p>
                 {row.note && (

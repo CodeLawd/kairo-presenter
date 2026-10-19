@@ -3,6 +3,7 @@ import { Check, ListMusic, Pencil, Star, Trash2, Upload } from '@/icons'
 import { exportKairo, useTransferStore } from '@/stores/useTransfer'
 import { leavesTarget } from '@/lib/drag'
 import { cn } from '@/lib/utils'
+import { HUE_TEXT, hueStyle } from '@/lib/hue'
 import { RowContextMenu } from '@/components/shared/RowContextMenu'
 import {
   runSetlistCommand,
@@ -159,7 +160,7 @@ export function LibraryRail({
             className={rowClass(!activeSetlistId && source === id)}
             onClick={() => onSelectSource(id)}
           >
-            <Icon size={13} className="shrink-0" aria-hidden />
+            <Icon size={13} weight="fill" style={hueStyle('violet')} className={cn('shrink-0', HUE_TEXT)} aria-hidden />
             <span className="min-w-0 flex-1 truncate">{label}</span>
             <span className="shrink-0 text-[10px] tabular-nums text-zinc-600">{filterCounts[id]}</span>
           </button>
@@ -170,7 +171,7 @@ export function LibraryRail({
       <div
         // The whole section is a drop target: a row takes it into that list,
         // anywhere else goes to the active setlist (or starts one).
-        className={cn('-mx-1 rounded-lg px-1 pb-1 transition-colors', sectionDrop && 'bg-surface-tertiary')}
+        className={cn('hairline-t -mx-1 px-1 pb-1 pt-3 transition-colors', sectionDrop && 'rounded-lg bg-surface-tertiary')}
         onDragOver={(event) => {
           if (!event.dataTransfer.types.includes(SONG_DRAG_TYPE)) return
           event.preventDefault()
@@ -255,7 +256,7 @@ export function LibraryRail({
                   landedListId === list.id && dropListId !== list.id && 'bg-surface-elevated text-white',
                 )}
               >
-                <ListMusic size={13} className="shrink-0" aria-hidden />
+                <ListMusic size={13} weight="fill" style={hueStyle('violet')} className={cn('shrink-0', HUE_TEXT)} aria-hidden />
                 <button
                   type="button"
                   aria-current={selected}

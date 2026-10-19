@@ -4,9 +4,17 @@ Electron desktop app for church presentation: live transcription, scripture
 detection and lookup, lyrics, documents and backgrounds — drawn full screen on a
 projector connected to the computer, no other software required.
 
-ProPresenter and NDI are integrations: Kairo can push to ProPresenter's library,
-messages and stage layers, and send its rendered slide as an NDI source, alongside
-(or instead of) its own screens.
+Kairo runs connected screens and video devices directly and can send its rendered
+slides as independent NDI feeds for livestreaming and recording.
+
+## Upgrading from ProPresenter integration
+
+The next release retires the ProPresenter integration. Saved ProPresenter library,
+message and stage destinations are removed during startup; existing Kairo screen,
+video-device and NDI configurations remain. Previously imported songs remain in
+your library.
+If ProPresenter was your only destination, configure a Kairo screen, device or NDI
+feed before running your next service. Kairo does not automatically choose a display.
 
 ## Development
 

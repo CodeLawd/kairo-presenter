@@ -64,14 +64,14 @@ export function ExportSongsModal({ preselect }: { preselect: string[] }): React.
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4 animate-fade-in"
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/35 p-4 animate-fade-in"
       onClick={() => { if (!busy) close() }}
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="kairo-export-title"
-        className="flex max-h-[min(640px,90vh)] w-full max-w-md flex-col overflow-hidden rounded-2xl bg-surface shadow-2xl"
+        className="flex max-h-[min(640px,90vh)] w-full max-w-md flex-col overflow-hidden rounded-2xl modal-glass shadow-2xl"
         onClick={(event) => event.stopPropagation()}
       >
         <header className="flex items-start gap-3 px-5 py-4">

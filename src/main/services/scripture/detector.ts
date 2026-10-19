@@ -16,6 +16,7 @@ import {
   type SermonPlanIndex,
 } from "@shared/sermon-plan-match";
 import type { ScriptureResolver } from "@shared/scripture-trace";
+import { findSpokenTranslations } from "@shared/spoken-translations";
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -43,7 +44,16 @@ export interface ScriptureReference {
    * still shown for review but are too late to put on screen automatically.
    */
   superseded?: boolean;
+  /**
+   * Translations the preacher named with this reference ("John 3:16 in the
+   * NLT and the NIV"), in spoken order. Absent: none was named, so the live
+   * playlist's or the default translation applies.
+   */
+  translations?: string[];
 }
+
+/** How long "now read it in the NIV" may refer back to the last passage. */
+const TRANSLATION_FOLLOW_UP_MS = 120_000;
 
 /** What the caller knows about the transcript currently being analyzed. */
 export interface TranscriptOrigin {
@@ -426,6 +436,10 @@ export class ScriptureDetector extends EventEmitter {
     string,
     { ref: ScriptureReference; expiry: number; released?: boolean }
   >();
+  /** Translations named in the transcript being analyzed. */
+  private spokenTranslations: string[] = [];
+  /** The passage most recently emitted, for "read it in the NIV" follow-ups. */
+  private lastPublished: { ref: ScriptureReference; at: number } | null = null;
 
   // Stats
   private statsData = {
@@ -658,7 +672,8 @@ export class ScriptureDetector extends EventEmitter {
     // The preacher named a verse or moved to another passage, so a pending
     // chapter must not fall back to verse 1 on top of it.
     if (refs.length > 0) this.cancelChapterFallback();
-    const fresh = this.filterDedup(refs);
+    const fresh = this.filterDedup(refs.map((ref) => this.withSpokenTranslations(ref)));
+    if (fresh.length > 0) this.lastPublished = { ref: fresh[fresh.length - 1], at: Date.now() };
     this.statsData.cacheHits += refs.length - fresh.length;
     this.statsData.totalDetections += fresh.length;
     if (fresh.length > 0) this.emitDetection(fresh, origin);
@@ -726,9 +741,32 @@ export class ScriptureDetector extends EventEmitter {
    * Without this the latency trace would start at parse time and silently hide
    * everything that happened before it.
    */
-  beginTranscript(origin: TranscriptOrigin | null): void {
+  beginTranscript(origin: TranscriptOrigin | null, text?: string): void {
     this.transcriptOrigin = origin;
     this.detectionStartedAt = origin ? Date.now() : undefined;
+    // A translation named anywhere in this transcript belongs to the
+    // references found in it: "John 3:16 — let's read the NLT".
+    this.spokenTranslations = text ? findSpokenTranslations(text) : [];
+  }
+
+  /**
+   * A translation named with no passage — "now read that in the NIV" — asks
+   * for the passage just detected in that translation. Returns true when it
+   * produced new cards.
+   */
+  requestTranslations(text: string): boolean {
+    if (this.lifetime.signal.aborted || !this.lastPublished) return false;
+    if (Date.now() - this.lastPublished.at > TRANSLATION_FOLLOW_UP_MS) return false;
+    const translations = findSpokenTranslations(text);
+    if (translations.length === 0) return false;
+    const { translations: _previous, ...passage } = this.lastPublished.ref;
+    const origin = this.transcriptOrigin
+      ? { ...this.transcriptOrigin, detectionStartedAt: this.detectionStartedAt ?? Date.now() }
+      : null;
+    const fresh = this.publish([
+      { ...passage, translations, sourceText: text.slice(0, SOURCE_TEXT_MAX_CHARS), superseded: undefined },
+    ], origin);
+    return fresh.length > 0;
   }
 
   /** Every detection emit goes through here so stamping cannot be forgotten. */
@@ -1140,6 +1178,20 @@ export class ScriptureDetector extends EventEmitter {
     return stream.finalText();
   }
 
+  /**
+   * Attaches the translations named with a reference. A model result only
+   * counts names in its own source text: it can land after later speech.
+   */
+  private withSpokenTranslations(ref: ScriptureReference): ScriptureReference {
+    const named = [
+      ...(ref.translations ?? []),
+      ...findSpokenTranslations(ref.sourceText),
+      ...(ref.resolver === "ai" ? [] : this.spokenTranslations),
+    ];
+    const translations = [...new Set(named)];
+    return translations.length > 0 ? { ...ref, translations } : ref;
+  }
+
   // ─── Dedup cache ───────────────────────────────────────────────────────────
 
   private filterDedup(refs: ScriptureReference[]): ScriptureReference[] {
@@ -1150,25 +1202,45 @@ export class ScriptureDetector extends EventEmitter {
       if (now > entry.expiry) this.dedupCache.delete(key);
     }
 
-    return refs.filter((ref) => {
-      if (!isValidScriptureReference(ref)) return false;
+    const fresh: ScriptureReference[] = [];
+    for (const incoming of refs) {
+      let ref = incoming;
+      if (!isValidScriptureReference(ref)) continue;
       const key = dedupKey(ref);
+      let duplicate = false;
       for (const [cachedKey, entry] of this.dedupCache) {
         if (entry.released && ref.resolver !== "ai") {
           if (referencesOverlap(entry.ref, ref)) this.dedupCache.delete(cachedKey);
           continue;
         }
-        if (referenceContains(entry.ref, ref)) return false;
+        if (referenceContains(entry.ref, ref)) {
+          // The same verse again is a repeat — unless a translation not yet
+          // shown was named with it ("the same verse in the NLT"). Then only
+          // that new translation goes through, and is remembered.
+          const shown = entry.ref.translations ?? [];
+          const added = (ref.translations ?? []).filter((id) => !shown.includes(id));
+          if (added.length === 0) {
+            duplicate = true;
+            break;
+          }
+          entry.ref = { ...entry.ref, translations: [...shown, ...added] };
+          ref = { ...ref, translations: added };
+          continue;
+        }
         if (referenceContains(ref, entry.ref)) {
           this.dedupCache.delete(cachedKey);
         }
       }
-      this.dedupCache.set(key, {
-        ref,
-        expiry: now + this.cfg.cacheWindowMs,
-      });
-      return true;
-    });
+      if (duplicate) continue;
+      if (!this.dedupCache.has(key)) {
+        this.dedupCache.set(key, {
+          ref,
+          expiry: now + this.cfg.cacheWindowMs,
+        });
+      }
+      fresh.push(ref);
+    }
+    return fresh;
   }
 }
 

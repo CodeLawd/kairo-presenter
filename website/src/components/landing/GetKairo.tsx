@@ -6,7 +6,7 @@ import { btn, btnGhost, btnPrimary, cx, display, lede, section, thin, wrap } fro
 /**
  * The close. This used to be a three-card platform grid with three separate
  * CTAs and two more buttons under it — a lot of structure to say "macOS,
- * Windows, and it talks to ProPresenter." That is one line now.
+ * Windows, and it runs your screens." That is one line now.
  */
 export function GetKairo(): React.ReactElement {
   return (
@@ -36,8 +36,8 @@ export function GetKairo(): React.ReactElement {
           </div>
 
           <p className="mx-auto mt-[22px] max-w-[62ch] font-mono text-[11px] leading-[1.7] text-faint">
-            macOS (Apple silicon and Intel) and Windows 10 and 11. Needs an audio input, and either
-            ProPresenter 7 or an NDI switcher.
+            macOS (Apple silicon and Intel) and Windows 10 and 11. Runs your connected screens,
+            with NDI output for a compatible switcher or stream.
           </p>
         </Reveal>
       </div>

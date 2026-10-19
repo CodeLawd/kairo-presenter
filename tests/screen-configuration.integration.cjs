@@ -22,16 +22,15 @@ app.whenReady().then(async () => {
   fs.writeFileSync(path.join(dir, 'preload.cjs'), `
     const { contextBridge, ipcRenderer } = require('electron');
     const idle = () => () => {};
-    const status = { available: false, sending: false, ppInputConfigured: false, outputs: [] };
+    const status = { available: false, sending: false, outputs: [] };
     const devices = { ports: [{id:'decklink:123:3',provider:'decklink',deviceName:'Duo 2',portName:'Duo 2 (4)',supportsKeyFill:false,unavailableReason:null,modes:[{id:'decklink:25',label:'1080p25',width:1920,height:1080,frameRateN:25,frameRateD:1,interlaced:false}]}],providers:[{name:'decklink',available:true}],outputs:{} };
     contextBridge.exposeInMainWorld('api', {
       settings: { getAll: () => ipcRenderer.invoke('test:read'), get: async key => (await ipcRenderer.invoke('test:read'))?.[key], set: (key,value) => ipcRenderer.invoke('test:write',key,value) },
       displays: {list: async () => [], onChanged: idle},
-      ndi: {getStatus: async () => status, getVideoInputs: async () => []},
+      ndi: {getStatus: async () => status},
       media: {getLibrary: async () => ({playlists:[]}), onLibraryChange: idle},
       videoDevices: {status: async () => devices, onChanged: idle},
-      program: {stageStatus: async () => [], onStageStatus: idle},
-      propresenter: {getLooks: async () => []}
+      program: {stageStatus: async () => [], onStageStatus: idle}
     });
   `)
   fs.writeFileSync(path.join(dir, 'fixture.tsx'), `

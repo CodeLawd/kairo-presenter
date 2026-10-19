@@ -16,6 +16,7 @@ import {
   type Icon as PhosphorIcon,
   type IconProps,
   Pulse as PhPulse,
+  TextT as PhTextT,
   WarningCircle as PhWarningCircle,
   Warning as PhWarning,
   TextAlignCenter as PhTextAlignCenter,
@@ -250,6 +251,7 @@ export const Settings = wrap(PhGearSix)
 export const SkipBack = wrap(PhSkipBack)
 export const SkipForward = wrap(PhSkipForward)
 export const SlidersHorizontal = wrap(PhSlidersHorizontal)
+export const TextT = wrap(PhTextT)
 export const Square = wrap(PhSquare)
 export const Star = wrap(PhStar)
 export const Sun = wrap(PhSun)

@@ -25,14 +25,8 @@ import type {
   ResilienceStatus,
 } from "@shared/ipc";
 import { IPC } from "@shared/ipc";
-import { normalizeResourceBindings } from "@shared/propresenter-resources";
-import type {
-  PPResourceBindings,
-  PPResourceKind,
-} from "@shared/propresenter-resources";
 import { normalizeOverlaySettings } from "@shared/overlay-defaults";
-import { findNdiOutput, isLocalKind, outputRequiresPropresenter, surfaceOutputs } from "@shared/overlay-outputs";
-import { propresenterEnabled } from "@shared/pp-connect-gate";
+import { isLocalKind, surfaceOutputs } from "@shared/overlay-outputs";
 import { normalizeThemeLibrary } from "@shared/theme-library";
 import {
   LYRICS_SECRET_KEYS,
@@ -43,8 +37,6 @@ import {
 } from "@shared/cloud/org-secrets";
 import type { SettingsSecretClearKey, SettingsWithSecretsStatus } from "@shared/ipc";
 import { store } from "../db";
-import { proPresenterService } from "../services/propresenter";
-import { proPresenterResources } from "../services/propresenter/resources";
 import { audioService } from "../services/audio";
 import { sttService } from "../services/stt";
 import { scriptureService } from "../services/scripture";
@@ -142,89 +134,6 @@ function registerTransferHandlers(): void {
   });
 }
 
-// ─── ProPresenter handlers ────────────────────────────────────────────────────
-
-function registerProPresenterHandlers(): void {
-  ipcMain.handle(IPC.PROPRESENTER.CONNECT, async (_event, options) => {
-    const { host, port, password } = options as {
-      host: string;
-      port: number;
-      password: string;
-    };
-    await proPresenterService.connect({
-      host,
-      port,
-      password,
-    });
-    log.info("ProPresenter connect requested", { host, port });
-  });
-
-  ipcMain.handle(IPC.PROPRESENTER.DISCONNECT, async () => {
-    await proPresenterService.disconnect();
-  });
-
-  ipcMain.handle(IPC.PROPRESENTER.GET_STATUS, () => {
-    return proPresenterService.getStatus();
-  });
-
-  ipcMain.handle(
-    IPC.PROPRESENTER.TRIGGER_SLIDE,
-    async (_event, slideId: string) => {
-      await proPresenterService.triggerSlide(slideId);
-      log.info("Slide triggered", { slideId });
-    },
-  );
-
-  ipcMain.handle(IPC.PROPRESENTER.CLEAR_ALL, async () => {
-    await proPresenterService.clearAll();
-  });
-
-  ipcMain.handle(IPC.PROPRESENTER.GET_LIBRARY, async () => {
-    return proPresenterService.getLibrary();
-  });
-
-  ipcMain.handle(IPC.PROPRESENTER.GET_PLAYLISTS, async () => {
-    return proPresenterService.getPlaylists();
-  });
-
-  ipcMain.handle(IPC.PROPRESENTER.GET_LOOKS, async () => {
-    if (proPresenterService.getStatus().state !== "connected") return [];
-    return proPresenterService.rawClient.getLooks();
-  });
-
-  ipcMain.handle(IPC.PROPRESENTER.GET_RESOURCE_CATALOGUE, async (_event, options?: { refresh?: boolean }) => {
-    if (proPresenterService.getStatus().state !== "connected") {
-      return { refreshedAt: Date.now(), resources: [], warnings: [] };
-    }
-    return proPresenterResources.getCatalogue({ refresh: options?.refresh === true });
-  });
-
-  ipcMain.handle(
-    IPC.PROPRESENTER.GET_RESOURCE_DETAILS,
-    async (_event, kind: PPResourceKind, id: string) => {
-      if (proPresenterService.getStatus().state !== "connected") return null;
-      return proPresenterResources.getDetails(kind, id);
-    },
-  );
-
-  ipcMain.handle(
-    IPC.PROPRESENTER.GET_RESOURCE_PREVIEW,
-    async (_event, kind: PPResourceKind, id: string, childId?: string) => {
-      if (proPresenterService.getStatus().state !== "connected") return null;
-      return proPresenterResources.getPreview(kind, id, childId);
-    },
-  );
-
-  ipcMain.handle(
-    IPC.PROPRESENTER.SET_RESOURCE_BINDINGS,
-    (_event, bindings: PPResourceBindings) => {
-      store.set("propresenterResources", normalizeResourceBindings(bindings));
-      orchestrator.forgetVideoInputBinding();
-      return store.get("propresenterResources");
-    },
-  );
-}
-
 // ─── Audio handlers ───────────────────────────────────────────────────────────
 
 function registerAudioHandlers(): void {
@@ -250,6 +159,10 @@ function registerScriptureHandlers(): void {
   ipcMain.handle(IPC.SCRIPTURE.PRESENT_DIRECTLY, async (_event, suggestion) => {
     await orchestrator.presentScriptureDirectly(suggestion);
   });
+
+  ipcMain.handle(IPC.SCRIPTURE.RETRANSLATE, (_event, suggestion, translation) =>
+    orchestrator.retranslateSuggestion(suggestion, translation),
+  );
 
   ipcMain.handle(
     IPC.SCRIPTURE.APPROVE,
@@ -650,9 +563,6 @@ function registerLyricsHandlers(): void {
     return lyricsService.toggleFavorite(id);
   });
 
-  ipcMain.handle(IPC.LYRICS.SEND_TO_PP, async (_event, songId: string, options) => {
-    await lyricsService.sendToProPresenter(songId, options);
-  });
 
   ipcMain.handle(IPC.LYRICS.PUSH_SLIDE, async (_event, songId: string, slideIndex: number) => {
     usageService.track('lyrics_slide');
@@ -680,12 +590,6 @@ function registerLyricsHandlers(): void {
     songUsageService.record(song);
   });
 
-  ipcMain.handle(
-    IPC.LYRICS.ADD_TO_PLAYLIST,
-    async (_event, songId: string, playlistId: string) => {
-      lyricsService.addToPlaylist(songId, playlistId);
-    },
-  );
 
   ipcMain.handle(
     IPC.LYRICS.TRANSLATE,
@@ -845,7 +749,7 @@ function registerMediaHandlers(): void {
 
   /**
    * Clicking a background IS the push. The overlay is painted immediately and
-   * ProPresenter is cut to the bound NDI video input.
+   * Each enabled program surface receives the rendered frame.
    */
   ipcMain.handle(IPC.MEDIA.PUSH, async (_event, itemId: string) => {
     usageService.track('media_live');
@@ -1018,13 +922,17 @@ function registerProgramHandlers(): void {
     surfaceManager.handleNdiAudio(event.sender.id, block);
   });
   handle(PROGRAM.NDI_AUDIO_SUPPORTED, () => surfaceManager.ndiAudioSupported());
-  handle(PROGRAM.TIMER_SET, (_event, seconds: number) => programService.setTimer(Number(seconds) || 0));
-  handle(PROGRAM.TIMER_START, () => {
+  // Timer ids come from the renderer: only a string is passed on; the service
+  // ignores one that isn't in the saved list.
+  const timerId = (value: unknown): string | undefined => (typeof value === "string" ? value : undefined);
+  handle(PROGRAM.TIMER_SET, (_event, seconds: number, id: unknown) => programService.setTimer(Number(seconds) || 0, timerId(id)));
+  handle(PROGRAM.TIMER_START, (_event, id: unknown) => {
     usageService.track("timer_start");
-    return programService.startTimer();
+    return programService.startTimer(timerId(id));
   });
-  handle(PROGRAM.TIMER_PAUSE, () => programService.pauseTimer());
-  handle(PROGRAM.TIMER_RESET, () => programService.resetTimer());
+  handle(PROGRAM.TIMER_PAUSE, (_event, id: unknown) => programService.pauseTimer(timerId(id)));
+  handle(PROGRAM.TIMER_RESET, (_event, id: unknown) => programService.resetTimer(timerId(id)));
+  handle(PROGRAM.TIMER_SHOW, (_event, id: unknown) => programService.showTimer(timerId(id) ?? ""));
   handle(PROGRAM.SET_ON_SCREENS, (_event, layer: unknown, on: unknown) =>
     programService.setOnScreens(layer === 'clock' ? 'clock' : 'countdown', on === true),
   );
@@ -1110,42 +1018,20 @@ function registerNdiHandlers(): void {
   ipcMain.handle(IPC.NDI.GET_STATUS, async () => {
     const ndiStatus = ndiService.getStatus();
     const overlay = normalizeOverlaySettings(store.get("overlay"));
-    // With the integration off, ProPresenter simply is not part of the answer.
-    const ppOn = propresenterEnabled({ propresenter: store.get("propresenter") });
-    const connected = ppOn && proPresenterService.getStatus().state === "connected";
-    const ndiOutput = findNdiOutput(overlay.outputs);
-
-    // Trust a stored uuid. Hitting /v1/video_inputs on this 4s poll saturates the
-    // same Wi-Fi NDI is using and was aborting the PP control connection.
-    const ppInputConfigured = connected && !!ndiOutput?.ppVideoInputUuid;
-
     // Per-output readiness, so the Outputs UI can say WHICH destination is not
     // going to fire rather than just "NDI unavailable".
     const outputs: NdiOutputStatus[] = overlay.outputs
       .filter((o) => o.enabled)
       .map((o) => {
-        // Kairo screens never depend on ProPresenter — their state is the display's.
-        if (isLocalKind(o.kind)) return { id: o.id, ...surfaceManager.outputState(o) };
-        if (outputRequiresPropresenter(o.kind)) {
-          if (!ppOn) return { id: o.id, ready: false, reason: "ProPresenter integration is off" };
-          return connected ? { id: o.id, ready: true } : { id: o.id, ready: false, reason: "Waiting for ProPresenter" };
-        }
+        // Local readiness follows the display or device state.
+        if (isLocalKind(o.kind) || o.kind === "syphon") return { id: o.id, ...surfaceManager.outputState(o) };
         if (!ndiStatus.available) {
           return { id: o.id, ready: false, reason: "NDI sender unavailable" };
         }
-        // Extra NDI feeds go to livestream / recording receivers, never to PP.
-        if (!surfaceManager.isPrimaryNdi(o.id)) return { id: o.id, ready: true };
-        // The frame goes out either way; switching ProPresenter to it is an
-        // optional extra, so none of this makes the feed "not ready".
         return { id: o.id, ready: true };
       });
 
-    return { ...ndiStatus, ppInputConfigured, outputs };
-  });
-
-  ipcMain.handle(IPC.NDI.GET_VIDEO_INPUTS, async () => {
-    if (proPresenterService.getStatus().state !== "connected") return [];
-    return proPresenterService.rawClient.getVideoInputs();
+    return { ...ndiStatus, outputs };
   });
 
   ipcMain.handle(IPC.NDI.PICK_OVERLAY_MEDIA, async (_event, kind: "image" | "video") => {
@@ -1200,6 +1086,10 @@ function registerSettingsHandlers(): void {
   ipcMain.handle(
     IPC.SETTINGS.SET,
     (_event, key: keyof AppSettings, value: AppSettings[typeof key]) => {
+      // Older renderer sessions cannot resurrect retired integration settings.
+      if (["propresenter", "propresenterResources"].includes(String(key))) {
+        throw new Error("ProPresenter settings are no longer supported");
+      }
       if (key === "overlay") {
         // D3 belt-and-braces: electron-store's `set` wholesale-replaces the
         // `overlay` object (no deep-merge). A renderer page that only edits a
@@ -1249,11 +1139,6 @@ function registerSettingsHandlers(): void {
         void surfaceManager.reconcile();
       } else {
         store.set(key, value);
-        // Switching the integration off means Kairo stops talking to
-        // ProPresenter at once — no lingering link, no reconnect attempts.
-        if (key === "propresenter" && !propresenterEnabled({ propresenter: value as AppSettings["propresenter"] })) {
-          void proPresenterService.disconnect().catch(() => undefined);
-        }
         if (key === "church") {
           const church = value as AppSettings["church"];
           void cloudSession.syncOrgProfile({
@@ -1373,9 +1258,6 @@ function registerSettingsHandlers(): void {
 // Services emit events → broadcast pushes them to all renderer windows.
 
 function wireEventBroadcasting(): void {
-  proPresenterService.onStatusChange((status) => {
-    broadcast(IPC.PROPRESENTER.STATUS_CHANGE, status);
-  });
 
   sttService.onTranscript((result) => {
     serviceRecords.transcript(result);
@@ -1529,14 +1411,13 @@ async function cloudResult<T>(run: () => Promise<T>): Promise<{
 function registerAppHandlers(): void {
   // One round trip for everything the first render needs. Only local resources
   // are awaited — API.Bible authorization, audio devices, NDI, and the
-  // ProPresenter connection hydrate in the background afterwards.
+  // Remote resources hydrate in the background afterwards.
   ipcMain.handle(IPC.APP.BOOTSTRAP, async (event) => {
     const sender = event.sender;
     const snapshot = await runBootstrap(
       {
         settings: async () => settingsForRenderer(),
         orchestrator: async () => orchestrator.getStatus(),
-        propresenter: async () => proPresenterService.getStatus(),
         transcription: async () => sttService.getHistory(),
         // Cached/local availability only: passing no key keeps this off the network.
         translations: () => scriptureService.getTranslationOptions(),
@@ -1584,7 +1465,6 @@ export function registerIpcHandlers(quit: {
   // bootstrap can read the state.
   onboardingService.migrateExistingInstall();
   registerAppHandlers();
-  registerProPresenterHandlers();
   registerAudioHandlers();
   registerScriptureHandlers();
   registerTranscriptionHandlers();

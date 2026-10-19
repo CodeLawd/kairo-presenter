@@ -23,6 +23,8 @@ import { useLibrariesSync } from '@/stores/useLibraries'
 import { usePassagesSync } from '@/stores/usePassages'
 import { LoadingScreen } from '@/bootstrap/LoadingScreen'
 import ScreenConfiguration from '@/components/screens/ScreenConfiguration'
+import PropsEditor from '@/components/props/PropsEditor'
+import { FrameZoomContext } from '@/components/shared/MacTrafficLights'
 import OnboardingWizard from '@/components/onboarding/OnboardingWizard'
 import CoachTour, { COACH_TOURS, COACH_TOUR_EVENT, coachTourFor, type CoachStep } from '@/components/onboarding/CoachTour'
 import AccountGate from '@/components/account/AccountGate'
@@ -31,11 +33,6 @@ import {
   describeBootstrapWarning,
 } from '@/bootstrap/bootstrap-state'
 import { hydrateIntegrations, useBootstrapStore } from '@/bootstrap/useBootstrapStore'
-import {
-  ppLaunchOutcomeFromStatus,
-  propresenterEnabled,
-  type PpLaunchOutcome,
-} from '@shared/pp-connect-gate'
 import { shouldOfferOnboarding } from '@shared/cloud/onboarding'
 import { shouldOfferAccountGate } from '@shared/cloud/auth-state'
 import { useAccountStore } from '@/stores/useAccountStore'
@@ -46,48 +43,6 @@ export type NavRoute =
   | 'operator'
   | 'theme'
   | 'documents'
-
-/**
- * One silent handshake per renderer session. Shared so Strict Mode's remount
- * reuses the in-flight result instead of starting a second connect.
- */
-let ppLaunchProbe: Promise<PpLaunchOutcome> | null = null
-
-function probePpOnLaunch(): Promise<PpLaunchOutcome> {
-  if (ppLaunchProbe) return ppLaunchProbe
-  ppLaunchProbe = (async () => {
-    if (useAppStore.getState().ppState === 'connected') return 'connected'
-    const pp = useBootstrapStore.getState().settings.propresenter
-    try {
-      await window.api.propresenter.connect({
-        host: pp.host,
-        port: pp.port,
-        password: pp.password,
-      })
-      const status = await window.api.propresenter.getStatus()
-      useAppStore.getState().setPPStatus(status)
-      const outcome = ppLaunchOutcomeFromStatus(status.state)
-      // A miss schedules reconnects — stop them so the connect gate (if shown)
-      // is not permanently locked on "Connecting…".
-      if (outcome !== 'connected') {
-        try {
-          await window.api.propresenter.disconnect()
-        } catch {
-          /* ignore */
-        }
-      }
-      return outcome
-    } catch {
-      try {
-        await window.api.propresenter.disconnect()
-      } catch {
-        /* ignore */
-      }
-      return 'unavailable'
-    }
-  })()
-  return ppLaunchProbe
-}
 
 /**
  * Keeps account state current from the main process. Its own component so the
@@ -124,10 +79,7 @@ function AudioPipeline(): null {
       if (!s.running) useAppStore.getState().setAudioCapturing(false)
       useAppStore.setState({ scriptureProjectedCount: s.totalPresentations })
     })
-    const unsubPP = window.api.propresenter.onStatusChange((status) => {
-      useAppStore.getState().setPPStatus(status)
-    })
-    return () => { unsubOrch(); unsubPP() }
+    return () => { unsubOrch() }
   }, [])
 
   useEffect(() => {
@@ -172,10 +124,13 @@ const views: Record<Exclude<NavRoute, 'operator' | 'theme' | 'documents'>, React
   lyrics: <Lyrics />,
 }
 
-const SETTINGS_FRAME = { w: 780, h: 700 }
-const SCREENS_FRAME = { w: 1180, h: 760 }
+// Both sized like macOS System Settings.
+const SETTINGS_FRAME = { w: 760, h: 640 }
+const SCREENS_FRAME = { w: 800, h: 620 }
 const SETTINGS_MIN = { w: 640, h: 480 }
 const SCREENS_MIN = { w: 760, h: 480 }
+const PROPS_FRAME = { w: 1120, h: 700 }
+const PROPS_MIN = { w: 860, h: 520 }
 const SETTINGS_DRAG_EDGE = 48
 
 function isSettingsChromeDrag(target: EventTarget | null): boolean {
@@ -231,22 +186,27 @@ function writeFrameSize(key: string, size: FrameSize): void {
 }
 
 /** Resize handles: which edges move. `x` -1 = left edge, 1 = right; `y` 1 = bottom. The top is the title bar. */
-const RESIZE_HANDLES: ReadonlyArray<{ x: -1 | 0 | 1; y: 0 | 1; className: string }> = [
-  { x: 1, y: 0, className: 'right-0 top-3 bottom-3 w-1.5 cursor-ew-resize' },
-  { x: -1, y: 0, className: 'left-0 top-3 bottom-3 w-1.5 cursor-ew-resize' },
-  { x: 0, y: 1, className: 'bottom-0 left-3 right-3 h-1.5 cursor-ns-resize' },
-  { x: 1, y: 1, className: 'bottom-0 right-0 h-3 w-3 cursor-nwse-resize' },
-  { x: -1, y: 1, className: 'bottom-0 left-0 h-3 w-3 cursor-nesw-resize' },
+// Every side and corner, each grab strip straddling the frame's edge so it is
+// easy to hit without covering the controls just inside.
+const RESIZE_HANDLES: ReadonlyArray<{ x: -1 | 0 | 1; y: -1 | 0 | 1; className: string }> = [
+  { x: 1, y: 0, className: '-right-1 top-3 bottom-3 w-2 cursor-ew-resize' },
+  { x: -1, y: 0, className: '-left-1 top-3 bottom-3 w-2 cursor-ew-resize' },
+  { x: 0, y: 1, className: '-bottom-1 left-3 right-3 h-2 cursor-ns-resize' },
+  { x: 0, y: -1, className: '-top-1 left-3 right-3 h-2 cursor-ns-resize' },
+  { x: 1, y: 1, className: '-bottom-1 -right-1 h-4 w-4 cursor-nwse-resize' },
+  { x: -1, y: 1, className: '-bottom-1 -left-1 h-4 w-4 cursor-nesw-resize' },
+  { x: 1, y: -1, className: '-top-1 -right-1 h-4 w-4 cursor-nesw-resize' },
+  { x: -1, y: -1, className: '-top-1 -left-1 h-4 w-4 cursor-nwse-resize' },
 ]
 
 type FrameGesture =
   | { kind: 'move'; pointerId: number; startX: number; startY: number; origX: number; origY: number }
   | { kind: 'resize'; pointerId: number; startX: number; startY: number; origX: number; origY: number
-      origW: number; origH: number; edgeX: -1 | 0 | 1; edgeY: 0 | 1 }
+      origW: number; origH: number; edgeX: -1 | 0 | 1; edgeY: -1 | 0 | 1 }
 
 /**
  * A modal window the operator can move by its title bar (any `[data-settings-drag]`
- * area that is not a control) and resize from its sides and bottom corners —
+ * area that is not a control) and resize from any side or corner —
  * Settings and Screens alike. The size is remembered per window.
  */
 function DraggableFrame({
@@ -275,6 +235,22 @@ function DraggableFrame({
   offsetRef.current = offset
   const sizeRef = useRef(size)
   sizeRef.current = size
+  /** Size and place before the green button zoomed the frame; null when not zoomed. */
+  const [restore, setRestore] = useState<{ size: FrameSize; offset: { x: number; y: number } } | null>(null)
+
+  // Green traffic light: fill the app window, then back to where it was. The
+  // zoomed size isn't remembered — only a size the operator drags to is.
+  const toggleZoom = useCallback((): void => {
+    if (restore) {
+      setSize(clampFrameSize(restore.size, min))
+      setOffset(restore.offset)
+      setRestore(null)
+      return
+    }
+    setRestore({ size: sizeRef.current, offset: offsetRef.current })
+    setSize(clampFrameSize({ w: window.innerWidth, h: window.innerHeight }, min))
+    setOffset({ x: 0, y: 0 })
+  }, [restore, min])
 
   // The app window shrank: keep the frame inside it.
   useEffect(() => {
@@ -296,7 +272,7 @@ function DraggableFrame({
       origX: offsetRef.current.x, origY: offsetRef.current.y })
   }
 
-  const onResizeDown = (event: PointerEvent<HTMLDivElement>, edgeX: -1 | 0 | 1, edgeY: 0 | 1): void => {
+  const onResizeDown = (event: PointerEvent<HTMLDivElement>, edgeX: -1 | 0 | 1, edgeY: -1 | 0 | 1): void => {
     if (event.button !== 0) return
     event.stopPropagation()
     begin(event, { kind: 'resize', pointerId: event.pointerId, startX: event.clientX, startY: event.clientY,
@@ -327,14 +303,19 @@ function DraggableFrame({
     if (!current || event.pointerId !== current.pointerId) return
     active.current = null
     setGesture(null)
-    if (current.kind === 'resize') writeFrameSize(storageKey, sizeRef.current)
+    if (current.kind === 'resize') {
+      writeFrameSize(storageKey, sizeRef.current)
+      setRestore(null)
+    }
     if (root.current?.hasPointerCapture(event.pointerId)) root.current.releasePointerCapture(event.pointerId)
   }
 
   return (
     <div
       ref={root}
-      className={gesture ? `relative select-none ${gesture === 'move' ? 'cursor-grabbing' : ''}` : 'relative'}
+      // no-drag: the frame can sit over the header's macOS drag region, which
+      // would otherwise take every click on the title bar and top edge.
+      className={gesture ? `no-drag relative select-none ${gesture === 'move' ? 'cursor-grabbing' : ''}` : 'no-drag relative'}
       style={{ transform: `translate(${offset.x}px, ${offset.y}px)` }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
@@ -342,7 +323,9 @@ function DraggableFrame({
       onPointerCancel={endGesture}
       onClick={(event) => event.stopPropagation()}
     >
-      <div className={className} style={{ width: size.w, height: size.h }}>{children}</div>
+      <div className={className} style={{ width: size.w, height: size.h }}>
+        <FrameZoomContext.Provider value={toggleZoom}>{children}</FrameZoomContext.Provider>
+      </div>
       {RESIZE_HANDLES.map((handle) => (
         <div
           key={`${handle.x}:${handle.y}`}
@@ -370,12 +353,17 @@ export default function App(): React.ReactElement {
     useAppStore.getState().clearSettingsRequest()
   }, [settingsRequest])
   const screensWindow = useAppStore((s) => s.screensWindow)
+  const propsWindow = useAppStore((s) => s.propsWindow)
   // ⌥⌘1 opens Screens — ProPresenter's shortcut for Screen Configuration, so
   // an operator who knows one finds the other. Escape closes it.
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       const store = useAppStore.getState()
-      if (e.key === 'Escape' && store.screensWindow) {
+      // An editor that used Escape itself (to deselect) marks it handled.
+      if (e.key === 'Escape' && store.propsWindow && !e.defaultPrevented) {
+        e.preventDefault()
+        store.closeProps()
+      } else if (e.key === 'Escape' && store.screensWindow) {
         e.preventDefault()
         store.closeScreens()
       } else if (e.code === 'Digit1' && e.altKey && (e.metaKey || e.ctrlKey)) {
@@ -487,15 +475,6 @@ export default function App(): React.ReactElement {
     if (accountGateOpen) setSettingsOpen(false)
   }, [accountGateOpen])
 
-  // ProPresenter is opt-in (Settings → ProPresenter → Use ProPresenter). When
-  // it is on, reconnect silently at launch; there is no prompt either way —
-  // a failed handshake only shows in the header status.
-  useEffect(() => {
-    if (!bootstrapped) return
-    if (!propresenterEnabled(useBootstrapStore.getState().settings)) return
-    void probePpOnLaunch()
-  }, [bootstrapped])
-
   // Listen to Escape key to close settings modal
   useEffect(() => {
     if (!settingsOpen) return
@@ -592,11 +571,6 @@ export default function App(): React.ReactElement {
       <TransferHost />
       <AppShell
         currentRoute={route}
-        onProPresenterStatus={() => {
-          // ProPresenter is configured in one place only: its Settings page.
-          setSettingsSection('propresenter')
-          setSettingsOpen(true)
-        }}
         toolbar={route === 'operator' ? <OperatorToolbar /> : undefined}
       />
       <div className="flex min-h-0 w-full flex-1 overflow-hidden">
@@ -608,8 +582,11 @@ export default function App(): React.ReactElement {
             setSettingsOpen(true)
           }}
         />
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <main className="relative flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-surface">
+        {/* The page sits just below the header with a rounded top-left corner on
+            the chrome (header + rail): the gap and the corner separate work from
+            chrome without a line. It runs to the window's right and bottom edges. */}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-surface-rail pt-1.5">
+          <main className="relative flex min-h-0 w-full flex-1 flex-col overflow-hidden rounded-tl-xl bg-surface">
             {/* Keep Operator, Scripture, Theme and Documents mounted across
                 navigation so live session state, the open passage and the
                 theme draft survive tab switches. */}
@@ -672,10 +649,10 @@ export default function App(): React.ReactElement {
 
       {/* Screens — screen configuration, apart from themes */}
       {screensWindow && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 animate-fade-in">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 animate-fade-in">
           <div className="absolute inset-0" onClick={() => useAppStore.getState().closeScreens()} />
-          <DraggableFrame frame={SCREENS_FRAME} min={SCREENS_MIN} storageKey="kairo.frame.screens"
-            className="overflow-hidden rounded-xl animate-spring-in">
+          <DraggableFrame frame={SCREENS_FRAME} min={SCREENS_MIN} storageKey="kairo.frame.screens.v4"
+            className="overflow-hidden rounded-xl ring-1 ring-surface-border animate-spring-in">
             <ScreenConfiguration
               initialSelect={screensWindow.select}
               onClose={() => useAppStore.getState().closeScreens()}
@@ -684,15 +661,29 @@ export default function App(): React.ReactElement {
         </div>
       )}
 
+      {/* Props editor — build the props the Show tab puts on screen */}
+      {propsWindow && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 animate-fade-in">
+          <div className="absolute inset-0" onClick={() => useAppStore.getState().closeProps()} />
+          <DraggableFrame frame={PROPS_FRAME} min={PROPS_MIN} storageKey="kairo.frame.props"
+            className="overflow-hidden rounded-xl ring-1 ring-surface-border animate-spring-in">
+            <PropsEditor
+              initialSelect={propsWindow.select}
+              onClose={() => useAppStore.getState().closeProps()}
+            />
+          </DraggableFrame>
+        </div>
+      )}
+
       {/* Settings Modal Overlay */}
       {settingsOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 animate-fade-in">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 animate-fade-in">
           <div
             className="absolute inset-0"
             onClick={() => setSettingsOpen(false)}
           />
-          <DraggableFrame frame={SETTINGS_FRAME} min={SETTINGS_MIN} storageKey="kairo.frame.settings"
-            className="overflow-hidden rounded-xl ring-1 ring-white/10 animate-spring-in">
+          <DraggableFrame frame={SETTINGS_FRAME} min={SETTINGS_MIN} storageKey="kairo.frame.settings.v2"
+            className="overflow-hidden rounded-xl ring-1 ring-surface-border animate-spring-in">
             <Settings onClose={() => setSettingsOpen(false)} initialSection={settingsSection} />
           </DraggableFrame>
         </div>

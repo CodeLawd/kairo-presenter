@@ -40,6 +40,13 @@ const referencePattern = new RegExp(
   'gi',
 )
 
+// More of the same passage after a reference: ", 41" or ", 18-21" (verses of
+// the same chapter) and ", 4:1" or "; 4:1-2" (another chapter of the same
+// book). A bare verse needs a comma — after a semicolon a lone number is prose.
+const continuationPattern = /\s*([,;])\s*(?:(\d{1,3})\s*:\s*)?(\d{1,3})(?:\s*[-–—]\s*(\d{1,3}))?(?![\d:])/y
+// "2 Corinthians", "1 Peter", "2sam": a number that starts the next reference.
+const bookStartPattern = new RegExp(`^(?:${bookPattern})(?![a-z])`, 'i')
+
 function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
@@ -84,12 +91,41 @@ export function analyzeScriptureReferences(
       reference,
       translations,
     })
-    for (const translation of translations) {
-      const key = `${reference}|${translation}`
-      if (seen.has(key)) continue
-      seen.add(key)
-      items.push({ id: `verse-${items.length + 1}-${Date.now()}`, reference, translation })
+    const add = (ref: string): void => {
+      for (const translation of translations) {
+        const key = `${ref}|${translation}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        items.push({ id: `verse-${items.length + 1}-${Date.now()}`, reference: ref, translation })
+      }
     }
+    add(reference)
+
+    // "Acts 2:14, 41" is Acts 2:14 and Acts 2:41: follow the list on in the
+    // same book (and chapter, until one is named), each number its own match.
+    let chapter = match[3]
+    let at = match.index + match[0].length
+    let more: RegExpExecArray | null
+    continuationPattern.lastIndex = at
+    while ((more = continuationPattern.exec(text)) !== null) {
+      const [whole, separator, nextChapter, verse, end] = more
+      const numberStart = more.index + whole.search(/\d/)
+      if (bookStartPattern.test(text.slice(numberStart))) break
+      if (separator === ';' && !nextChapter) break
+      if (nextChapter) chapter = nextChapter
+      const continued = `${book} ${chapter}:${verse}${end ? `–${end}` : ''}`
+      matches.push({
+        start: numberStart,
+        end: more.index + whole.length,
+        text: text.slice(numberStart, more.index + whole.length),
+        reference: continued,
+        translations,
+      })
+      add(continued)
+      at = more.index + whole.length
+      continuationPattern.lastIndex = at
+    }
+    referencePattern.lastIndex = Math.max(referencePattern.lastIndex, at)
   }
   return { matches, items }
 }

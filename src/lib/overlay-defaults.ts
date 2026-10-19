@@ -3,7 +3,7 @@
 //
 // electron-store (v8) does NOT deep-merge stored values with `defaults`; it
 // shallow-`Object.assign`s at the top level only. That means a phase-1 user's
-// stored `overlay` object (no `mode`/`theme`/`ppVideoInputUuid`) wholesale
+// stored `overlay` object (with missing theme fields) wholesale
 // replaces the phase-2 default and `store.get('overlay').mode` comes back
 // `undefined`. `normalizeOverlaySettings` is the single place that heals any
 // shape (missing keys, wrong types, out-of-range numbers, malformed colors)
@@ -25,7 +25,7 @@ import type {
   OverlayTheme,
 } from './ipc'
 import { boxesForLayoutPreset, clampOverlayBox } from './overlay-boxes'
-import { isLocalKind, MAX_NDI_OUTPUTS, OVERLAY_OUTPUT_KINDS } from './overlay-outputs'
+import { isLocalKind, MAX_NDI_OUTPUTS, MAX_SYPHON_OUTPUTS, OVERLAY_OUTPUT_KINDS } from './overlay-outputs'
 import { normalizeOverlayElements } from './overlay-elements'
 import { DEFAULT_CONFIDENCE_LAYOUT, DEFAULT_SHOW_FILTER, normalizeConfidenceLayout, normalizeShowFilter } from './program'
 import {
@@ -137,10 +137,8 @@ export function makeOverlayOutput(
     enabled: false,
     order: 0,
     fallbackOnly: false,
-    lookId: '',
     themeId: null,
     theme: structuredClone(DEFAULT_OVERLAY_THEME),
-    ppVideoInputUuid: '',
     template: DEFAULT_TEMPLATE,
     lyrics: null,
     displayId: null,
@@ -161,44 +159,18 @@ export function makeOverlayOutput(
   }
 }
 
-/**
- * The Kairo screen output every store carries — disabled, so an upgrading
- * ProPresenter user sees the option without anything on their screens changing.
- */
+/** Disabled until the operator assigns a physical screen. */
 export const PROJECTOR_OUTPUT_ID = 'projector'
 
 export function makeProjectorOutput(order: number): OverlayOutput {
-  return makeOverlayOutput(PROJECTOR_OUTPUT_ID, 'screen', { name: 'Projector', order })
+  return makeOverlayOutput(PROJECTOR_OUTPUT_ID, 'screen', { name: 'Main Screen', order })
 }
 
 /**
- * Fresh-install outputs — literally the `auto` migration, so a new user and an
- * upgrading `auto` user cannot drift apart.
+ * Audience always has one screen to start from, as ProPresenter's "Main
+ * Screen": switched on, waiting for a display to be chosen.
  */
-const LEGACY_AUTO_OUTPUTS: OverlayOutput[] = migrateLegacyOutputs({
-  mode: 'auto',
-  ppVideoInputUuid: '',
-  theme: DEFAULT_OVERLAY_THEME,
-  template: DEFAULT_TEMPLATE,
-})
-
-/**
- * What "Through ProPresenter" switches on when nothing PP-side is on yet: the
- * shipped `auto` setup (NDI slide, library match, lower-third fallback).
- */
-const PROPRESENTER_PRESET_IDS = new Set(
-  LEGACY_AUTO_OUTPUTS.filter((o) => o.enabled && o.kind !== 'screen').map((o) => o.id),
-)
-
-/**
- * Fresh installs draw on their own screen: the Projector output is on and
- * every ProPresenter-facing output (and the NDI feed) is present but off.
- * ProPresenter is an optional integration, turned on by the operator.
- */
-const DEFAULT_OVERLAY_OUTPUTS: OverlayOutput[] = LEGACY_AUTO_OUTPUTS
-  .map((o) => ({ ...o, enabled: o.kind === 'screen' }))
-  // The screen the operator will set up first leads the list.
-  .sort((a, b) => Number(b.kind === 'screen') - Number(a.kind === 'screen'))
+const DEFAULT_OVERLAY_OUTPUTS: OverlayOutput[] = [{ ...makeProjectorOutput(0), enabled: true }]
 
 export const DEFAULT_OVERLAY_SETTINGS: AppSettings['overlay'] = {
   // — phase 1 —
@@ -208,9 +180,7 @@ export const DEFAULT_OVERLAY_SETTINGS: AppSettings['overlay'] = {
   maxVerses: 0,
   // — phase 3 —
   outputs: DEFAULT_OVERLAY_OUTPUTS,
-  // — phase 2 (legacy, migrated into `outputs`) —
-  mode: 'auto',
-  ppVideoInputUuid: '',
+  // Legacy theme fallback for stored themes.
   theme: DEFAULT_OVERLAY_THEME,
 }
 
@@ -374,66 +344,23 @@ export function normalizeOverlayTheme(raw: unknown): OverlayTheme {
 // ─── Output normalizer + legacy migration (phase 3) ────────────────────────────
 
 interface LegacyOverlayFields {
-  mode: AppSettings['overlay']['mode']
-  ppVideoInputUuid: string
+  mode?: 'auto' | 'ndi' | 'message'
   theme: OverlayTheme
   template: string
 }
 
-/**
- * Rebuilds the `outputs` list from a pre-phase-3 store so no shipped behaviour
- * regresses. The legacy modes differed only in which of the two
- * presentation-layer mechanisms they were allowed to use:
- *
- *   auto    → NDI, then library, then the message overlay
- *   ndi     → NDI only (library never searched), message overlay as fallback
- *   message → library, then the message overlay (NDI never used)
- *
- * `order` reproduces that precedence (NDI ahead of library, matching the shipped
- * `getOverlayDispatchOrder`), and the last-resort message overlay is marked
- * `fallbackOnly` — see that field's doc comment for why the flag has to exist.
- */
+/** Older stores without explicit outputs retain only their independent NDI route. */
 function migrateLegacyOutputs(legacy: LegacyOverlayFields): OverlayOutput[] {
   return [
     makeOverlayOutput('main', 'ndi', {
-      name: 'Main screen (rendered)',
-      order: 0,
+      name: 'NDI feed',
       enabled: legacy.mode !== 'message',
       theme: legacy.theme,
-      ppVideoInputUuid: legacy.ppVideoInputUuid,
-    }),
-    makeOverlayOutput('library', 'library', {
-      name: 'ProPresenter library match',
-      order: 1,
-      enabled: legacy.mode !== 'ndi',
-    }),
-    makeOverlayOutput('lower-third', 'message', {
-      name: 'Lower third (PP messages)',
-      enabled: true,
-      fallbackOnly: true,
-      template: legacy.template,
-    }),
-    // Always present, always off — discoverable in the Outputs UI without
-    // changing what an upgrading user's screens show on first launch.
-    makeOverlayOutput('stage', 'stage', {
-      name: 'Pastor / stage screen',
-      template: legacy.template,
     }),
     makeProjectorOutput(0),
   ]
 }
 
-/**
- * Heals a stored `outputs` array. Invariants: unique non-empty ids, known
- * `kind`, every theme clamped, and at most `MAX_NDI_OUTPUTS` *enabled* `ndi`
- * outputs — a second simultaneous NDI feed needs a sender pool that does not
- * exist yet, so extras are force-disabled. They are kept, not deleted: the
- * operator configured them, and `NdiOutputStatus.reason` can explain why one is
- * inert far better than losing their work at next launch can.
- *
- * Falls back to `migrateLegacyOutputs` when the array is missing or ends up
- * empty, so the store can never reach a state with nowhere to push.
- */
 /**
  * A content-kind override, or null when the output has none. Absent/invalid is
  * null rather than a filled-in default: "no override" has to survive a round
@@ -454,6 +381,7 @@ export function normalizeOverlayOutputs(raw: unknown, legacy: LegacyOverlayField
 
   const seenIds = new Set<string>()
   let ndiEnabled = 0
+  let syphonEnabled = 0
   const screenDisplays = new Set<number>()
   const normalized: OverlayOutput[] = []
 
@@ -463,12 +391,17 @@ export function normalizeOverlayOutputs(raw: unknown, legacy: LegacyOverlayField
     if (!id || seenIds.has(id)) continue
     seenIds.add(id)
 
-    const kind = safeEnum(r.kind, OVERLAY_OUTPUT_KINDS, 'message')
+    if (!OVERLAY_OUTPUT_KINDS.includes(r.kind as OverlayOutputKind)) continue
+    const kind = r.kind as OverlayOutputKind
     const device = kind === 'device'
     let enabled = safeBool(r.enabled, false)
     if (kind === 'ndi' && enabled) {
       if (ndiEnabled >= MAX_NDI_OUTPUTS) enabled = false
       else ndiEnabled++
+    }
+    if (kind === 'syphon' && enabled) {
+      if (syphonEnabled >= MAX_SYPHON_OUTPUTS) enabled = false
+      else syphonEnabled++
     }
     const displayId = kind === 'screen' ? normalizeDisplayId(r.displayId) : null
     // Two windows on one display would sit on top of each other — only the
@@ -485,10 +418,8 @@ export function normalizeOverlayOutputs(raw: unknown, legacy: LegacyOverlayField
       enabled,
       order: clampNum(r.order, 0, 999, normalized.length),
       fallbackOnly: safeBool(r.fallbackOnly, false),
-      lookId: safeString(r.lookId, '').trim(),
       themeId: typeof r.themeId === 'string' && r.themeId ? r.themeId : null,
       theme: normalizeOverlayTheme(r.theme),
-      ppVideoInputUuid: safeString(r.ppVideoInputUuid, '').trim(),
       template: safeString(r.template, legacy.template),
       lyrics: normalizeOutputVariant(r.lyrics, legacy.template),
       displayId,
@@ -511,7 +442,8 @@ export function normalizeOverlayOutputs(raw: unknown, legacy: LegacyOverlayField
   // An explicit array is the operator's saved list, including an empty one.
   // Only a missing array above needs legacy migration; otherwise deleted
   // screens would be recreated on the next write or restart.
-  return normalized
+  // Never an empty Audience: a setup with no outputs gets the Main Screen back.
+  return normalized.length > 0 ? normalized : DEFAULT_OVERLAY_OUTPUTS.map((o) => structuredClone(o))
 }
 
 function normalizeDisplayId(raw: unknown): number | null {
@@ -530,12 +462,11 @@ function normalizeDisplaySize(raw: unknown): OverlayOutput['displaySize'] {
 // ─── Overlay settings normalizer (D3) ──────────────────────────────────────────
 
 export function normalizeOverlaySettings(raw: unknown): AppSettings['overlay'] {
-  const r = asObject(raw) as Partial<AppSettings['overlay']>
+  const r = asObject(raw)
   const d = DEFAULT_OVERLAY_SETTINGS
 
   const template = safeString(r.template, d.template)
-  const mode = safeEnum(r.mode, ['auto', 'ndi', 'message'] as const, d.mode)
-  const ppVideoInputUuid = safeString(r.ppVideoInputUuid, d.ppVideoInputUuid)
+  const mode = safeEnum(r.mode, ['auto', 'ndi', 'message'] as const, 'auto')
   const theme = normalizeOverlayTheme(r.theme)
 
   return {
@@ -543,63 +474,9 @@ export function normalizeOverlaySettings(raw: unknown): AppSettings['overlay'] {
     showTranslation: safeBool(r.showTranslation, d.showTranslation),
     showVerseNumbers: safeBool(r.showVerseNumbers, d.showVerseNumbers),
     maxVerses: nonNegNumber(r.maxVerses, d.maxVerses),
-    outputs: normalizeOverlayOutputs(r.outputs, { mode, ppVideoInputUuid, theme, template }),
-    // Legacy fields are preserved verbatim rather than deleted: the store keeps
-    // healing itself on every launch, so dropping them would re-run the
-    // migration against defaults if an older build ever wrote the file again.
-    mode,
-    ppVideoInputUuid,
+    outputs: normalizeOverlayOutputs(r.outputs, { mode, theme, template }),
     theme,
   }
-}
-
-// ─── Onboarding route (standalone phase 1) ─────────────────────────────────────
-
-/** "How does Kairo reach your screens?" — the onboarding question that seeds outputs. */
-export type OutputRoute = 'screen' | 'propresenter' | 'both'
-
-/** The route an output list currently expresses, or null when nothing is on. */
-export function outputRouteOf(outputs: readonly OverlayOutput[]): OutputRoute | null {
-  const screen = outputs.some((o) => o.enabled && isLocalKind(o.kind))
-  const propresenter = outputs.some((o) => o.enabled && !isLocalKind(o.kind))
-  if (screen && propresenter) return 'both'
-  if (screen) return 'screen'
-  if (propresenter) return 'propresenter'
-  return null
-}
-
-/**
- * Turns an onboarding answer into outputs. Not a stored mode — the answer only
- * switches outputs on and off, and everything downstream (launch gate, which
- * setup steps are asked) is derived from the result.
- *
- *   screen       → one Kairo screen on, every ProPresenter-side output off
- *   propresenter → screens off; the ProPresenter outputs as they were, or the
- *                  shipped ProPresenter preset (NDI, library, lower third) when none are on
- *   both         → one screen on, plus the ProPresenter outputs as above
- */
-export function applyOutputRoute(outputs: readonly OverlayOutput[], route: OutputRoute): OverlayOutput[] {
-  const wantScreen = route !== 'propresenter'
-  const wantPp = route !== 'screen'
-
-  let next = outputs.map((o) => ({ ...o }))
-  if (wantScreen && !next.some((o) => o.kind === 'screen')) {
-    next.push(makeProjectorOutput(0))
-  }
-
-  const firstScreenId = next.find((o) => o.enabled && o.kind === 'screen')?.id
-    ?? next.find((o) => o.kind === 'screen')?.id
-  const ppOn = next.some((o) => o.enabled && !isLocalKind(o.kind))
-
-  next = next.map((o) => {
-    if (o.kind === 'screen') return { ...o, enabled: wantScreen && o.id === firstScreenId }
-    // A card with a port chosen comes back on with the local route, the way the
-    // first screen does — a round trip through 'propresenter' must not lose it.
-    if (o.kind === 'device') return { ...o, enabled: wantScreen && (o.enabled || o.devicePortId !== '') }
-    if (!wantPp) return { ...o, enabled: false }
-    return ppOn ? o : { ...o, enabled: PROPRESENTER_PRESET_IDS.has(o.id) }
-  })
-  return next
 }
 
 /** A custom output ratio: two whole numbers, 1–100 each (e.g. 32 × 9). */

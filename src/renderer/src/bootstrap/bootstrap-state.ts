@@ -19,7 +19,6 @@ export type BootstrapPhase = 'idle' | 'loading' | 'ready' | 'ready-with-warnings
 const RESOURCE_LABELS: Record<BootstrapResource, string> = {
   settings: 'settings',
   orchestrator: 'automation status',
-  propresenter: 'ProPresenter status',
   transcription: 'transcript history',
   translations: 'Bible translations',
   sermonPlans: 'scripture playlists',

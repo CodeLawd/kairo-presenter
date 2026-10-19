@@ -4,7 +4,7 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 ## Project
 
-Kairo — Electron desktop app for ProPresenter church tech automation. Built with electron-vite + React + TypeScript + Tailwind CSS.
+Kairo — Standalone Electron desktop app for church presentation and automation. Built with electron-vite + React + TypeScript + Tailwind CSS.
 
 ## Commands
 
@@ -48,7 +48,6 @@ Each service is a singleton class exported as a named instance:
 
 | Service | Purpose |
 |---------|---------|
-| `propresenter/` | WebSocket connection to ProPresenter Stage Display API |
 | `audio/` | Audio capture stream management |
 | `stt/` | Speech-to-text provider abstraction (Deepgram / Whisper) |
 | `scripture/` | Bible API lookup + reference parsing |

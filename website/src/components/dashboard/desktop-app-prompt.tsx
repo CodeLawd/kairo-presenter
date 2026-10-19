@@ -39,7 +39,7 @@ export function DesktopAppPrompt(): React.ReactElement | null {
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium">Download the Desktop App</p>
           <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
-            Detect and display verses live in ProPresenter.
+            Detect verses live and display them on your screens.
           </p>
           <Link
             href="/dashboard/download"

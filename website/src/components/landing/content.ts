@@ -79,8 +79,8 @@ export const FEATURES: {
     bullets: [
       'Stage the next verse while the current one is still live.',
       'Search by reference, or by a phrase you half-remember.',
-      'Shows ProPresenter, transcription and detection status at a glance.',
-      'Sends over the ProPresenter API, or out as a transparent NDI source.',
+      'Shows screen output, transcription and detection status at a glance.',
+      'Displays on your connected screens, or out as a transparent NDI source.',
     ],
   },
 ]
@@ -101,7 +101,7 @@ export const MORE: { title: string; body: string }[] = [
   },
   {
     title: 'Songs',
-    body: 'Import a song, keep its sections, send the set to ProPresenter.',
+    body: 'Import a song, keep its sections, present the set on your screens.',
   },
   {
     title: 'Works offline',
@@ -149,8 +149,8 @@ export const FAQ: { q: string; a: string }[] = [
     a: 'KJV, WEB, ASV and the other public-domain translations ship inside the app and need no key. NIV, NLT and the rest come through an API.Bible key your church requests.',
   },
   {
-    q: 'Do I need ProPresenter?',
-    a: 'For the ProPresenter path, yes — version 7, with the details from its Network preferences. The NDI output works on its own if you run a different playback system.',
+    q: 'Does Kairo run my screens directly?',
+    a: 'Yes. Kairo is a standalone presentation app for your connected screens, with NDI output for a compatible switcher or stream.',
   },
   {
     q: 'What will it cost?',

@@ -1,3 +1,4 @@
+import type { ResilienceStatus, ServiceHealth, ServiceName } from '@shared/ipc'
 /* eslint-disable @typescript-eslint/no-explicit-any -- Recovery snapshots are unvalidated disk JSON; each consumer validates piecemeal before use. */
 import { EventEmitter } from 'events'
 import dns from 'dns'
@@ -5,12 +6,6 @@ import fs from 'fs'
 import path from 'path'
 import { app, BrowserWindow } from 'electron'
 import log from 'electron-log/main'
-import type { ResilienceStatus, ScriptureSuggestion, ServiceHealth, ServiceName } from '@shared/ipc'
-import { proPresenterService } from './propresenter'
-import { normalizeOverlaySettings } from '@shared/overlay-defaults'
-import { propresenterEnabled, setupUsesPropresenter } from '@shared/pp-connect-gate'
-import { normalizeResourceBindings } from '@shared/propresenter-resources'
-import { store } from '../db'
 import { sttService } from './stt'
 import { transitionDetectorRecovery } from '@shared/detector-recovery'
 
@@ -19,8 +14,6 @@ const RECOVERY_FILE = 'session-recovery.json'
 
 class ResilienceManager extends EventEmitter {
   private internetConnected = true
-  private ppReconnectCountdown: number | null = null
-  private ppCountdownTimer: NodeJS.Timeout | null = null
   private claudeFallbackActive = false
   private detectorFallbackReason: ResilienceStatus['detectorFallbackReason'] = null
   private claudeErrorCount = 0
@@ -33,10 +26,8 @@ class ResilienceManager extends EventEmitter {
   private pollInterval: NodeJS.Timeout | null = null
   private saveStateInterval: NodeJS.Timeout | null = null
 
-  private ppQueuedProjections: ScriptureSuggestion[] = []
-  private wasPPConnected = false
   private getStateCallback: (() => any) | null = null
-  private orch: { presentScriptureDirectly: (s: ScriptureSuggestion) => Promise<void>; detector: { fallbackMode: boolean } | null; restoreSession: (s: any) => Promise<void> } | null = null
+  private orch: { detector: { fallbackMode: boolean } | null; restoreSession: (s: any) => Promise<void> } | null = null
 
   setOrchestrator(orch: ResilienceManager['orch']): void {
     this.orch = orch
@@ -51,7 +42,7 @@ class ResilienceManager extends EventEmitter {
   // ─── Initialize ────────────────────────────────────────────────────────────
 
   private initHealth(): void {
-    const services: ServiceName[] = ['audio', 'stt', 'detector', 'propresenter']
+    const services: ServiceName[] = ['audio', 'stt', 'detector']
     for (const service of services) {
       this.healthMap.set(service, {
         service,
@@ -71,39 +62,6 @@ class ResilienceManager extends EventEmitter {
 
   setup(getStateFn: () => any): void {
     this.getStateCallback = getStateFn
-
-    // 1. Listen to ProPresenter Client events
-    proPresenterService.onStatusChange((status) => {
-      if (status.state === 'connected') {
-        this.ppReconnectCountdown = null
-        if (this.ppCountdownTimer) {
-          clearInterval(this.ppCountdownTimer)
-          this.ppCountdownTimer = null
-        }
-        this.updateServiceHealth('propresenter', 'ok')
-
-        // Replay queued slides
-        if (this.ppQueuedProjections.length > 0) {
-          log.info(`[Resilience] ProPresenter reconnected. Replaying ${this.ppQueuedProjections.length} projections.`);
-          this.drainQueuedProjections()
-        }
-        this.wasPPConnected = true
-      } else if (status.state === 'disconnected' || status.state === 'error') {
-        if (this.wasPPConnected) {
-          log.warn('[Resilience] ProPresenter connection lost! Triggering warning beep.')
-          this.emit('play-beep')
-          this.wasPPConnected = false
-        }
-        this.updateServiceHealth('propresenter', 'error')
-      }
-    })
-
-    // Listen to PP Client reconnect attempts
-    proPresenterService.rawClient.on('reconnecting', (attempt, delayMs) => {
-      log.info('[Resilience] PP Client reconnecting', { attempt, delayMs })
-      this.ppReconnectCountdown = Math.round(delayMs / 1000)
-      this.startPPCountdown()
-    })
 
     // 2. Listen to Deepgram STT state
     sttService.deepgram.on('connected', () => {
@@ -142,10 +100,6 @@ class ResilienceManager extends EventEmitter {
     if (this.saveStateInterval) {
       clearInterval(this.saveStateInterval)
       this.saveStateInterval = null
-    }
-    if (this.ppCountdownTimer) {
-      clearInterval(this.ppCountdownTimer)
-      this.ppCountdownTimer = null
     }
     log.info('[Resilience] Stopped resilience monitoring')
   }
@@ -212,49 +166,6 @@ class ResilienceManager extends EventEmitter {
         }
       });
     });
-  }
-
-  // ─── ProPresenter Timers and Countdown ─────────────────────────────────────
-
-  private startPPCountdown(): void {
-    if (this.ppCountdownTimer) clearInterval(this.ppCountdownTimer)
-    
-    this.ppCountdownTimer = setInterval(() => {
-      if (this.ppReconnectCountdown !== null && this.ppReconnectCountdown > 0) {
-        this.ppReconnectCountdown--
-        this.emitStatus()
-      } else {
-        if (this.ppCountdownTimer) {
-          clearInterval(this.ppCountdownTimer)
-          this.ppCountdownTimer = null
-        }
-      }
-    }, 1000)
-    this.emitStatus()
-  }
-
-  queueProjection(suggestion: ScriptureSuggestion): void {
-    if (!this.ppQueuedProjections.some((s) => s.id === suggestion.id)) {
-      this.ppQueuedProjections.push(suggestion)
-      log.info(`[Resilience] Scripture queued. Queue length: ${this.ppQueuedProjections.length}`)
-    }
-  }
-
-  private async drainQueuedProjections(): Promise<void> {
-    if (!this.orch) {
-      log.warn('[Resilience] Orchestrator not set — cannot drain queued projections')
-      return
-    }
-    const queue = [...this.ppQueuedProjections]
-    this.ppQueuedProjections = []
-    for (const sug of queue) {
-      try {
-        log.info(`[Resilience] Replaying queued scripture: ${sug.reference}`)
-        await this.orch.presentScriptureDirectly(sug)
-      } catch (err) {
-        log.error(`[Resilience] Replay of ${sug.reference} failed:`, (err as Error).message)
-      }
-    }
   }
 
   // ─── Claude / API Failures ─────────────────────────────────────────────────
@@ -346,17 +257,8 @@ class ResilienceManager extends EventEmitter {
   private evaluateOverallHealth(): void {
     const healths = Array.from(this.healthMap.values())
     
-    // Critical: Audio disconnected, or ProPresenter disconnected on a setup
-    // that pushes through it. A Kairo-screens-only booth does not need PP.
-    const ppMatters = propresenterEnabled({ propresenter: store.get('propresenter') }) && setupUsesPropresenter(
-      normalizeOverlaySettings(store.get('overlay')),
-      normalizeResourceBindings(store.get('propresenterResources')).ndiVideoInputId,
-    )
-    const isCritical = healths.some(
-      (h) =>
-        ((h.service === 'propresenter' && ppMatters) || h.service === 'audio') && h.status === 'error'
-    )
-    
+    const isCritical = healths.some((health) => health.service === 'audio' && health.status === 'error')
+
     // Degraded: offline, STT reconnecting/error, or Claude in fallback/error
     const isDegraded = 
       !this.internetConnected ||
@@ -455,8 +357,6 @@ class ResilienceManager extends EventEmitter {
     return {
       overallHealth: this.prevOverallHealth,
       internetConnected: this.internetConnected,
-      ppReconnectCountdown: this.ppReconnectCountdown,
-      ppQueueSize: this.ppQueuedProjections.length,
       claudeFallbackActive: this.claudeFallbackActive,
       detectorFallbackReason: this.claudeFallbackActive ? this.detectorFallbackReason : null,
       recoverySessionAvailable: this.recoverySessionAvailable,

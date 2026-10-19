@@ -728,7 +728,7 @@ export default function MediaDock(): React.ReactElement | null {
       style={{ gridTemplateRows: open ? `${height}px` : '0px' }}
       aria-hidden={!open}
     >
-      <div className="flex min-h-0 flex-col overflow-hidden">
+      <div className="hairline-t flex min-h-0 flex-col overflow-hidden">
         <DragHandle onPointerDown={beginDrag} onKeyDown={resizeWithKeyboard} height={height} maximum={maxHeight()} />
 
         {!library.folder ? (
@@ -741,12 +741,12 @@ export default function MediaDock(): React.ReactElement | null {
 
           {/* Collections — resizable, like a Finder sidebar */}
           <div
-            className="relative flex shrink-0 flex-col overflow-y-auto bg-surface-secondary py-2"
+            className="hairline-r relative flex shrink-0 flex-col overflow-y-auto bg-surface-secondary py-2"
             style={{ width: sidebarWidth }}
           >
             <SidebarHeading>Library</SidebarHeading>
             <SidebarRow
-              icon={<Images size={13} aria-hidden="true" />}
+              icon={<Images size={13} weight="fill" aria-hidden="true" />}
               label="All backgrounds"
               count={library.items.length}
               active={selection?.kind === 'all'}
@@ -773,7 +773,7 @@ export default function MediaDock(): React.ReactElement | null {
               renamingId === playlist.id ? (
                 <div key={playlist.id} className="px-1.5">
                   <InlineNameInput
-                    icon={<Queue size={13} aria-hidden="true" />}
+                    icon={<Queue size={13} weight="fill" aria-hidden="true" />}
                     initialValue={playlist.name}
                     placeholder="Playlist name"
                     actions={false}
@@ -784,7 +784,7 @@ export default function MediaDock(): React.ReactElement | null {
               ) : (
                 <SidebarRow
                   key={playlist.id}
-                  icon={<Queue size={13} aria-hidden="true" />}
+                  icon={<Queue size={13} weight="fill" aria-hidden="true" />}
                   label={playlist.name}
                   count={playlist.itemIds.length}
                   active={selection?.kind === 'playlist' && selection.id === playlist.id}
@@ -1167,8 +1167,8 @@ function SidebarRow({
         active ? 'row-selected' : 'text-slate-400 hover:bg-surface-tertiary',
       )}
     >
-      {/* Media's colour (coral, as on its rail button) marks every collection. */}
-      <span className="shrink-0 text-[rgb(var(--hue-coral))]">{icon}</span>
+      {/* Media's colour (orange, as on its rail button) marks every collection. */}
+      <span className="shrink-0 text-[rgb(var(--hue-orange))]">{icon}</span>
       <span className="flex-1 truncate text-[12px]">{label}</span>
       <span className={cn('shrink-0 text-[10px] tabular-nums', active ? 'text-slate-400' : 'text-slate-600')}>
         {count}

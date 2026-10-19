@@ -159,6 +159,8 @@ export function mergeScriptureSuggestion(
   const end = Number(endText ?? startText);
   const retained = suggestions.filter((item) => {
     if (item.passageId === incoming.passageId) return true;
+    // The same passage in another translation sits beside it, never replaces it.
+    if (item.translation !== incoming.translation) return true;
     const verse = item.verses[0];
     if (!verse) return true;
     return !(

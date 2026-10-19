@@ -8,9 +8,9 @@ import { cleanIpcError } from '../src/lib/ipc-error'
 
 test('the remote-method wrapper is stripped back to the real message', () => {
   const error = new Error(
-    "Error invoking remote method 'lyrics:pushSlide': Error: ProPresenter is not connected. Connect in Settings first.",
+    "Error invoking remote method 'lyrics:pushSlide': Error: Display is not connected. Configure it in Screens.",
   )
-  assert.equal(cleanIpcError(error), 'ProPresenter is not connected. Connect in Settings first.')
+  assert.equal(cleanIpcError(error), 'Display is not connected. Configure it in Screens.')
 })
 
 test('a nested error prefix is unwrapped too', () => {

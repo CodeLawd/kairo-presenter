@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { MacTrafficLights } from '@/components/shared/MacTrafficLights'
+import { PRODUCT_NAME } from '@shared/brand'
 import { SegmentedControl } from '@/components/shared/SegmentedControl'
 import { RowContextMenu } from '@/components/shared/RowContextMenu'
 import { saveOutputSettings } from '@/lib/output-settings'
 import type { OutputEdit } from '@shared/output-settings'
-import { Check, Loader, Plus, Send, Trash2, X, XCircle } from '@/icons'
+import { Check, Loader, Plus, Trash2, X, XCircle } from '@/icons'
 import { cn } from '@/lib/utils'
 import { Switch } from '@/components/ui/switch'
 import {
@@ -18,22 +20,20 @@ import { TransitionPanel } from '@/components/theme/PresentationPanels'
 import { FieldRow, FitField, LookFields, NdiSoundField, ScreenSourceFields } from './RenderedOutputFields'
 import { LooksGrid } from './LooksGrid'
 import { useSettings } from '@/hooks/useSettings'
-import { useAppStore } from '@/stores/useAppStore'
 import { useBootstrapStore } from '@/bootstrap/useBootstrapStore'
 import { makeOverlayOutput } from '@shared/overlay-defaults'
 import {
   isLocalKind,
   isRenderedKind,
+  OVERLAY_OUTPUT_KINDS,
   MAX_NDI_OUTPUTS,
-  outputTemplateFor,
+  MAX_SYPHON_OUTPUTS,
   outputThemeFor,
   setContentOverride,
-  withContentPatch,
 } from '@shared/overlay-outputs'
 import { renderOverlayHTML } from '@shared/overlay-template'
 import { assignThemeToOutput, normalizeThemeLibrary, themesForKind, withDefaultThemes } from '@shared/theme-library'
 import { bindingForDisplay, describeDisplay, resolveDisplay } from '@shared/displays'
-import { propresenterEnabled } from '@shared/pp-connect-gate'
 import {
   DEFAULT_PRESENTATION_SETTINGS,
   type OutputShowFilter,
@@ -46,13 +46,13 @@ import type {
   NdiStatus,
   OverlayOutput,
   OverlayOutputKind,
-  PPLook,
-  PPVideoInputInfo,
 } from '@shared/ipc'
 import { ArrangementCanvas, type CanvasBinding } from './ArrangementCanvas'
 import { DisplayPicker, useDisplays, type DisplayBound } from './displays'
 import { VideoConnectorTile, VideoDeviceFields } from './VideoDeviceFields'
 import type { VideoDeviceSnapshot } from '@shared/video-devices'
+
+const IS_MAC = navigator.platform.startsWith('Mac')
 
 // ─── Screens ──────────────────────────────────────────────────────────────────
 // Where things go, kept apart from how they look. Modelled on ProPresenter's
@@ -66,9 +66,12 @@ const SAMPLE_TEXT =
 
 const STAGE_PREFIX = 'stage:'
 const TRANSITION_KEY = 'show:transition'
-const PROPRESENTER_KEY = 'integration:propresenter'
 const CHECK_KEY = 'show:check'
 const LOOKS_KEY = 'show:looks'
+/** One page for what applies to every screen: looks, transition, setup check. */
+const SHOW_KEY = 'show:setup'
+const isShowPage = (key: string | null): boolean =>
+  key === SHOW_KEY || key === LOOKS_KEY || key === TRANSITION_KEY || key === CHECK_KEY
 
 type Status = { tone: 'live' | 'warn' | 'off'; text: string }
 
@@ -76,16 +79,7 @@ const KIND_TITLE: Record<OverlayOutputKind, string> = {
   screen: 'Kairo screen',
   device: 'Video card',
   ndi: 'NDI feed',
-  library: 'Library match',
-  message: 'Message layer',
-  stage: 'Stage message',
-}
-
-/** What a ProPresenter output sends — shown on its Output tab. */
-const KIND_ABOUT: Record<'library' | 'message' | 'stage', string> = {
-  library: 'Triggers a presentation with the same name in your ProPresenter library.',
-  message: 'Sends text to ProPresenter’s Messages layer. ProPresenter styles it; its Looks decide which screens show it.',
-  stage: 'Plain text to ProPresenter stage screens whose layout includes a Message field.',
+  syphon: 'Syphon',
 }
 
 export default function ScreenConfiguration({
@@ -103,32 +97,29 @@ export default function ScreenConfiguration({
     () => normalizeThemeLibrary(rawLibrary, overlay.theme),
     [rawLibrary, overlay.theme],
   )
-  const ppEnabled = useBootstrapStore((s) => propresenterEnabled(s.settings))
-  const ppConnected = useAppStore((s) => s.ppState === 'connected') && ppEnabled
   const displays = useDisplays()
   const ndiStatus = useNdiStatus()
   const devices = useVideoDevices()
   const stageStatus = useStageStatus(presentation.stageDisplays.length)
-  const [looks, setLooks] = useState<PPLook[]>([])
-  const [videoInputs, setVideoInputs] = useState<PPVideoInputInfo[]>([])
-  const refreshPp = useCallback((): void => {
-    window.api.propresenter.getLooks().then(setLooks).catch(() => setLooks([]))
-    window.api.ndi.getVideoInputs().then(setVideoInputs).catch(() => setVideoInputs([]))
-  }, [])
-  useEffect(() => {
-    if (ppConnected) refreshPp()
-  }, [ppConnected, refreshPp])
-
   const outputs = overlay.outputs
   const stages = presentation.stageDisplays
   const screens = outputs.filter((o) => o.kind === 'screen')
   const cards = outputs.filter((o) => o.kind === 'device')
   const feeds = outputs.filter((o) => o.kind === 'ndi')
-  const ppOutputs = outputs.filter((o) => o.kind === 'library' || o.kind === 'message' || o.kind === 'stage')
+  const syphons = outputs.filter((o) => o.kind === 'syphon')
+  /** The only audience output left: it can't be deleted. */
+  const lastAudience = outputs.filter((o) => isRenderedKind(o.kind)).length <= 1
 
-  const [selected, setSelected] = useState<string | null>(
-    () => initialSelect ?? screens[0]?.id ?? feeds[0]?.id ?? (stages[0] ? STAGE_PREFIX + stages[0].id : TRANSITION_KEY),
-  )
+  // Opened on: an item id, `kind:<kind>` (that kind's first output), `add:<kind>`
+  // (a new one, made on open), or nothing — the first output or stage display,
+  // and with nothing set up yet, the welcome pane.
+  const [selected, setSelected] = useState<string | null>(() => {
+    if (initialSelect?.startsWith('kind:')) return outputs.find((o) => o.kind === initialSelect.slice(5))?.id ?? null
+    if (initialSelect?.startsWith('add:')) return null
+    return initialSelect
+      ?? outputs.find((o) => isRenderedKind(o.kind))?.id
+      ?? (stages[0] ? STAGE_PREFIX + stages[0].id : null)
+  })
 
   const [tab, setTab] = useState<DetailTab>('display')
 
@@ -145,6 +136,11 @@ export default function ScreenConfiguration({
   }
   const updateOutput = (id: string, patch: Partial<OverlayOutput> | ((o: OverlayOutput) => OverlayOutput)): void => {
     setOutputs((current) => current.map((o) => (o.id === id ? (typeof patch === 'function' ? patch(o) : { ...o, ...patch }) : o)))
+  }
+  /** A group switch: every listed output on or off in one save. */
+  const setGroupEnabled = (ids: string[], enabled: boolean): void => {
+    const pick = new Set(ids)
+    setOutputs((current) => current.map((o) => (pick.has(o.id) ? { ...o, enabled } : o)))
   }
   const setStages = (next: StageDisplayConfig[]): void => {
     setSaveError('')
@@ -173,6 +169,16 @@ export default function ScreenConfiguration({
     ])
     setSelected(id)
   }
+  // Opened from "Set up Syphon for OBS…" and the like: make the output now —
+  // once, even though React runs mount effects twice in development.
+  const addedOnOpen = useRef(false)
+  useEffect(() => {
+    if (addedOnOpen.current) return
+    addedOnOpen.current = true
+    const kind = initialSelect?.startsWith('add:') ? initialSelect.slice(4) : null
+    if (kind && OVERLAY_OUTPUT_KINDS.includes(kind as OverlayOutputKind)) addOutput(kind as OverlayOutputKind)
+  }, [])
+
   const addStage = (): void => {
     const id = `stage-${Date.now().toString(36)}`
     setStages([
@@ -197,7 +203,13 @@ export default function ScreenConfiguration({
     const stage = key.startsWith(STAGE_PREFIX)
       ? settings.presentation.stageDisplays.find((s) => STAGE_PREFIX + s.id === key) : undefined
     const target = output ?? stage
-    if (!target || !window.confirm(`Delete “${target.name}”?`)) return
+    if (!target) return
+    // Audience always keeps one screen, as in ProPresenter.
+    if (output && isRenderedKind(output.kind) && settings.overlay.outputs.filter((o) => isRenderedKind(o.kind)).length <= 1) {
+      setSaveError('Audience needs at least one screen. Add another before deleting this one.')
+      return
+    }
+    if (!window.confirm(`Delete “${target.name}”?`)) return
     if (output) {
       setOutputs((current) => current.filter((o) => o.id !== output.id))
     } else if (stage) {
@@ -254,7 +266,7 @@ export default function ScreenConfiguration({
   const toggleLook = (id: string, key: keyof OutputShowFilter, on: boolean): void =>
     updateOutput(id, (o) => ({ ...o, show: { ...o.show, [key]: on } }))
   const canvas = (
-    <div className="h-40 overflow-hidden rounded-md">
+    <div className="h-48 overflow-hidden rounded-md">
       <ArrangementCanvas
         displays={displays}
         bindings={bindings}
@@ -266,30 +278,27 @@ export default function ScreenConfiguration({
   )
 
   return (
-    <div className="flex h-full w-full flex-col bg-surface text-slate-200">
-      <header className="flex h-11 shrink-0 items-center gap-3 bg-surface-header px-4 shadow-[inset_0_-1px_0_rgb(var(--surface-border))]" data-settings-drag>
-        <h1 className="text-[13px] font-semibold text-slate-200">Screen Configuration</h1>
-        <div className="flex-1" />
-        <button
-          type="button"
-          onClick={onClose}
-          className="grid h-7 w-7 place-items-center rounded-md text-slate-500 hover:bg-surface-tertiary hover:text-slate-200"
-          aria-label="Close screens"
-        >
-          <X size={14} aria-hidden="true" />
-        </button>
-      </header>
-      {saveError && <p role="alert" className="px-4 py-2 text-[12px] text-red-400">{saveError}</p>}
-
-      <div className="grid min-h-0 flex-1 grid-cols-[260px_minmax(0,1fr)]">
-        <div className="flex min-h-0 flex-col bg-surface-rail shadow-[inset_-1px_0_0_rgb(var(--surface-border))]">
-        <nav className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 py-3" aria-label="Screens">
-          <SidebarSection title="Audience" add={[
-            { label: 'Add screen', onSelect: () => addOutput('screen') },
-            // Offered only once a video card driver is built in; outputs already
-            // saved stay listed so they can be removed.
-            ...(devices?.providers.length ? [{ label: 'Video card', onSelect: () => addOutput('device') }] : []),
-          ]}>
+    // Laid out like macOS System Settings: the window controls top the glass
+    // sidebar, and the open item's own header titles the solid pane beside it.
+    <div className="relative flex h-full w-full text-slate-200">
+        <div className="glass hairline-r flex w-[232px] min-h-0 shrink-0 flex-col" data-settings-drag>
+        {IS_MAC && <MacTrafficLights onClose={onClose} className="px-[18px] pb-1 pt-[18px]" />}
+        <nav className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 pb-3 pt-1" aria-label="Screens">
+          {/* Audience destinations include screens, video cards and independent NDI feeds. */}
+          <SidebarSection
+            title="Audience"
+            on={rendered.some((o) => o.enabled)}
+            onToggle={rendered.length ? (on) => setGroupEnabled(rendered.map((o) => o.id), on) : undefined}
+            add={[
+              { label: 'Screen', onSelect: () => addOutput('screen') },
+              ...(feeds.length < MAX_NDI_OUTPUTS ? [{ label: 'NDI feed', onSelect: () => addOutput('ndi') }] : []),
+              // Syphon shares frames with other apps on this Mac (OBS, Resolume…), so Macs only.
+              ...(IS_MAC && syphons.length < MAX_SYPHON_OUTPUTS ? [{ label: 'Syphon', onSelect: () => addOutput('syphon') }] : []),
+              // Offered only once a video card driver is built in; outputs already
+              // saved stay listed so they can be removed.
+              ...(devices?.providers.length ? [{ label: 'Video card', onSelect: () => addOutput('device') }] : []),
+            ]}
+          >
             {screens.map((o) => (
               <SidebarRow
                 key={o.id}
@@ -299,18 +308,54 @@ export default function ScreenConfiguration({
                 enabled={o.enabled}
                 selected={selected === o.id}
                 onSelect={() => setSelected(o.id)}
-                onRemove={() => removeScreen(o.id)}
+                onRemove={lastAudience ? undefined : () => removeScreen(o.id)}
               />
             ))}
-            {screens.length === 0 && <EmptyRow label="Add a screen" onClick={() => addOutput('screen')} />}
             {cards.map((output) => (
               <SidebarRow key={output.id} name={output.name} detail={describeCard(output, devices) ?? 'Video card'}
                 status={outputStatus(output)} enabled={output.enabled} selected={selected === output.id}
-                onSelect={() => setSelected(output.id)} onRemove={() => removeScreen(output.id)} />
+                onSelect={() => setSelected(output.id)} onRemove={lastAudience ? undefined : () => removeScreen(output.id)} />
             ))}
+            {feeds.map((o) => (
+              <SidebarRow
+                key={o.id}
+                name={o.name}
+                detail="NDI"
+                status={outputStatus(o)}
+                enabled={o.enabled}
+                selected={selected === o.id}
+                onSelect={() => setSelected(o.id)}
+                onRemove={lastAudience ? undefined : () => removeScreen(o.id)}
+              />
+            ))}
+            {syphons.map((o) => (
+              <SidebarRow
+                key={o.id}
+                name={o.name}
+                detail="Syphon"
+                status={outputStatus(o)}
+                enabled={o.enabled}
+                selected={selected === o.id}
+                onSelect={() => setSelected(o.id)}
+                onRemove={lastAudience ? undefined : () => removeScreen(o.id)}
+              />
+            ))}
+            {rendered.length === 0 && (
+              <EmptySection
+                title="No audience screens yet"
+                hint="A projector or TV, a video card, an NDI feed or Syphon."
+                action="Add a screen"
+                onAction={() => addOutput('screen')}
+              />
+            )}
           </SidebarSection>
 
-          <SidebarSection title="Stage" add={[{ label: 'Add stage display', onSelect: addStage }]}>
+          <SidebarSection
+            title="Stage"
+            on={stages.some((st) => st.enabled)}
+            onToggle={stages.length ? (on) => setStages(stages.map((st) => ({ ...st, enabled: on }))) : undefined}
+            add={[{ label: 'Add stage display', onSelect: addStage }]}
+          >
             {stages.map((s) => (
               <SidebarRow
                 key={s.id}
@@ -323,101 +368,29 @@ export default function ScreenConfiguration({
                 onRemove={() => removeScreen(STAGE_PREFIX + s.id)}
               />
             ))}
-            {stages.length === 0 && <EmptyRow label="Add a stage display" onClick={addStage} />}
           </SidebarSection>
 
-          <SidebarSection
-            title="Feeds"
-            add={feeds.length < MAX_NDI_OUTPUTS ? [{ label: 'Add NDI feed', onSelect: () => addOutput('ndi') }] : undefined}
-          >
-            {feeds.map((o) => (
-              <SidebarRow
-                key={o.id}
-                name={o.name}
-                detail="NDI"
-                status={outputStatus(o)}
-                enabled={o.enabled}
-                selected={selected === o.id}
-                onSelect={() => setSelected(o.id)}
-                onRemove={() => removeScreen(o.id)}
-              />
-            ))}
-            {feeds.length === 0 && <EmptyRow label="Add an NDI feed" onClick={() => addOutput('ndi')} />}
-          </SidebarSection>
-
-          <div className="flex-1" />
-
-          <SidebarSection title="Show">
-            <SidebarRow name="Looks" selected={selected === LOOKS_KEY} onSelect={() => setSelected(LOOKS_KEY)} />
-            <SidebarRow name="Transition" detail={presentation.transition.kind === 'fade' ? `Fade · ${(presentation.transition.durationMs / 1000).toFixed(2)} s` : 'Cut'} selected={selected === TRANSITION_KEY} onSelect={() => setSelected(TRANSITION_KEY)} />
-            <SidebarRow name="Setup check" selected={selected === CHECK_KEY} onSelect={() => setSelected(CHECK_KEY)} />
-          </SidebarSection>
-
-          <SidebarSection
-            title="ProPresenter"
-            add={ppEnabled ? [
-              { label: 'Library match', onSelect: () => addOutput('library') },
-              { label: 'Message layer', onSelect: () => addOutput('message') },
-              { label: 'Stage message', onSelect: () => addOutput('stage') },
-            ] : undefined}
-          >
-            <SidebarRow
-              name="Connection"
-              detail={!ppEnabled ? 'Off' : ppConnected ? 'Connected' : 'Not connected'}
-              status={{ tone: !ppEnabled ? 'off' : ppConnected ? 'live' : 'warn', text: !ppEnabled ? 'Off' : ppConnected ? 'Connected' : 'Not connected' }}
-              selected={selected === PROPRESENTER_KEY}
-              onSelect={() => setSelected(PROPRESENTER_KEY)}
-            />
-            {ppEnabled && ppOutputs.map((o) => (
-              <SidebarRow
-                key={o.id}
-                name={o.name}
-                detail={o.fallbackOnly ? `${KIND_TITLE[o.kind]} · last resort` : KIND_TITLE[o.kind]}
-                status={outputStatus(o)}
-                enabled={o.enabled}
-                selected={selected === o.id}
-                onSelect={() => setSelected(o.id)}
-                onRemove={() => removeScreen(o.id)}
-              />
-            ))}
-          </SidebarSection>
         </nav>
-        <SidebarFooter />
+        <SidebarFooter showOpen={isShowPage(selected)} onShow={() => setSelected(SHOW_KEY)} />
         </div>
 
-        <main className="min-h-0 min-w-0 overflow-hidden bg-surface">
-          {selected === LOOKS_KEY && (
-            <Page title="Looks" about="Which layers each screen and feed shows. Untick Backgrounds on a pastor’s screen to show the same words on black, and tick Countdown and Stage message to add them.">
-              <LooksGrid outputs={rendered} onToggle={toggleLook} onSelect={setSelected} />
-            </Page>
-          )}
-          {selected === TRANSITION_KEY && (
-            <Page title="Transition" about="How one slide changes to the next on every screen and feed.">
-              <TransitionPanel />
-            </Page>
-          )}
-          {selected === CHECK_KEY && (
-            <Page title="Setup check" about="Everything a push depends on, in one place.">
-              <SetupCheck ndiStatus={ndiStatus} outputs={outputs} looks={looks} ppEnabled={ppEnabled} ppConnected={ppConnected} />
-            </Page>
-          )}
-          {selected === PROPRESENTER_KEY && (
-            <Page
-              title="ProPresenter"
-              about={ppEnabled
-                ? 'Kairo can also push to ProPresenter: match presentations in its library, write to its Messages layer, and send stage messages. Add those with + next to ProPresenter.'
-                : 'Optional. Kairo runs its own screens and does not need ProPresenter.'}
-            >
-              <button
-                type="button"
-                className="btn-secondary text-[12px]"
-                onClick={() => {
-                  onClose()
-                  useAppStore.getState().openSettings('propresenter')
-                }}
-              >
-                {ppEnabled ? 'ProPresenter settings' : 'Turn on in Settings'}
-              </button>
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-surface">
+          {saveError && <p role="alert" className="shrink-0 px-6 pt-3 text-[12px] text-red-400">{saveError}</p>}
+          {isShowPage(selected) && (
+            <Page title="Looks & transition" about="What applies across every screen: which layers each one shows, how slides change, and a check of everything a push depends on.">
+              <div className="space-y-2">
+                <h3 className="text-[13px] font-semibold text-white">Looks</h3>
+                <p className="text-[12px] text-slate-500">Untick Backgrounds on a pastor’s screen to show the same words on black; tick Countdown and Stage message to add them.</p>
+                <LooksGrid outputs={rendered} onToggle={toggleLook} onSelect={setSelected} />
+              </div>
+              <div className="space-y-2 pt-2">
+                <h3 className="text-[13px] font-semibold text-white">Transition</h3>
+                <TransitionPanel />
+              </div>
+              <div className="space-y-2 pt-2">
+                <h3 className="text-[13px] font-semibold text-white">Setup check</h3>
+                <SetupCheck ndiStatus={ndiStatus} outputs={outputs} />
+              </div>
             </Page>
           )}
           {selectedOutput && (
@@ -432,13 +405,8 @@ export default function ScreenConfiguration({
               devices={devices}
               others={othersOnDisplays(selectedOutput.id)}
               themeLibrary={themeLibrary}
-              looks={looks}
-              videoInputs={videoInputs}
-              ppEnabled={ppEnabled}
-              ppConnected={ppConnected}
               tab={tab}
               onTab={setTab}
-              onRefreshPp={refreshPp}
               onChange={(patch) => updateOutput(selectedOutput.id, patch)}
               onRemove={removeSelected}
             />
@@ -458,13 +426,17 @@ export default function ScreenConfiguration({
               onRemove={removeSelected}
             />
           )}
-          {selected === null && (
-            <Page title="Displays" about="Select a screen on the left, then click a display to put it there.">
-              {canvas}
-            </Page>
-          )}
         </main>
-      </div>
+        {!IS_MAC && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="absolute right-3 top-3 grid h-7 w-7 place-items-center rounded-md text-slate-500 hover:bg-surface-tertiary hover:text-slate-200"
+            aria-label="Close screens"
+          >
+            <X size={14} aria-hidden="true" />
+          </button>
+        )}
     </div>
   )
 }
@@ -500,7 +472,7 @@ function useVideoDevices(): VideoDeviceSnapshot | null {
 }
 
 function useNdiStatus(): NdiStatus {
-  const [status, setStatus] = useState<NdiStatus>({ available: false, sending: false, ppInputConfigured: false, outputs: [] })
+  const [status, setStatus] = useState<NdiStatus>({ available: false, sending: false, outputs: [] })
   useEffect(() => {
     let cancelled = false
     const poll = (): void => {
@@ -544,27 +516,32 @@ function useStageStatus(count: number): StageDisplayStatus[] {
 
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
 
-function SectionLabel({ children }: { children: React.ReactNode }): React.ReactElement {
-  return (
-    <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-      {children}
-    </p>
-  )
-}
-
+/**
+ * A sidebar group the way ProPresenter's Screen Configuration draws it: a band
+ * across the sidebar with a bold title, an optional switch for the whole group
+ * (every screen in it on or off), and ＋ on the right; its rows below.
+ */
 function SidebarSection({
   title,
   add,
+  on,
+  onToggle,
   children,
 }: {
   title: string
   add?: Array<{ label: string; onSelect: () => void; disabled?: boolean }>
+  /** Whether any screen in the group is on; with `onToggle`, shows the group switch. */
+  on?: boolean
+  onToggle?: (on: boolean) => void
   children: React.ReactNode
 }): React.ReactElement {
   return (
-    <section className="pb-4">
-      <div className="flex h-9 items-center justify-between px-2">
-        <h2 className="text-[16px] font-semibold text-white">{title}</h2>
+    <section className="pb-2">
+      <div className="-mx-2.5 flex h-10 items-center gap-2.5 bg-surface-tertiary/50 px-3">
+        {onToggle && (
+          <Switch checked={!!on} onCheckedChange={onToggle} aria-label={`Turn all ${title} screens on or off`} />
+        )}
+        <h2 className="min-w-0 flex-1 truncate text-[14px] font-semibold text-white">{title}</h2>
         {add && add.length === 1 && (
           <button
             type="button"
@@ -597,21 +574,30 @@ function SidebarSection({
           </DropdownMenu>
         )}
       </div>
-      <ul className="mt-1 space-y-0.5">{children}</ul>
+      <ul className="space-y-0.5 pt-2">{children}</ul>
     </section>
   )
 }
 
 /** Placeholder row for an empty section — the obvious next step, not a blank. */
-function EmptyRow({ label, onClick }: { label: string; onClick: () => void }): React.ReactElement {
+/** An empty sidebar group: what goes here, and the obvious first one to add. */
+function EmptySection({
+  title,
+  hint,
+  action,
+  onAction,
+}: {
+  title: string
+  hint: string
+  action: string
+  onAction: () => void
+}): React.ReactElement {
   return (
-    <li>
-      <button
-        type="button"
-        onClick={onClick}
-        className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-[13px] text-slate-500 hover:bg-surface-tertiary hover:text-slate-300"
-      >
-        <Plus size={12} aria-hidden="true" /> {label}
+    <li className="flex flex-col items-center gap-1 px-3 pb-3 pt-4 text-center">
+      <p className="text-[12px] font-medium text-slate-300">{title}</p>
+      <p className="text-[11px] leading-snug text-slate-500">{hint}</p>
+      <button type="button" className="btn-secondary mt-2 flex items-center gap-1 px-2.5 py-1 text-[12px]" onClick={onAction}>
+        <Plus size={12} aria-hidden="true" /> {action}
       </button>
     </li>
   )
@@ -658,15 +644,15 @@ function SidebarRow({
         type="button"
         onClick={onSelect}
         className={cn(
-          'flex w-full items-center gap-2 rounded-md px-3 py-2 text-left focus-visible:outline-none',
-          // Picked is white (the accent); blue is kept for what is on screen.
+          'flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left focus-visible:outline-none',
+          // Picked is the blue accent pill; red is kept for what is on screen.
           selected ? 'bg-teal-500' : 'hover:bg-surface-tertiary',
         )}
       >
         <span className="min-w-0 flex-1">
-          <span className={cn('block truncate text-[14px] font-medium',
+          <span className={cn('block truncate text-[13px] font-semibold',
             selected ? 'text-on-accent' : enabled === false ? 'text-slate-500' : 'text-white')}>{name}</span>
-          {detail && <span className={cn('mt-0.5 block truncate text-[12px]', selected ? 'text-on-accent' : 'text-slate-400')}>{detail}</span>}
+          {detail && <span className={cn('block truncate text-[11px]', selected ? 'text-teal-100' : 'text-slate-500')}>{detail}</span>}
         </span>
         {status && (
           <span title={status.text}>
@@ -688,7 +674,7 @@ function Page({ title, about, children }: { title: string; about: string; childr
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-[720px] space-y-4 px-8 py-6">
-        <div>
+        <div data-settings-drag>
           <h2 className="text-[18px] font-semibold text-white">{title}</h2>
           <p className="mt-1 text-[12px] text-slate-500">{about}</p>
         </div>
@@ -698,49 +684,18 @@ function Page({ title, about, children }: { title: string; about: string; childr
   )
 }
 
-/** ProPresenter outputs: what goes across the wire. Kairo-rendered outputs preview on their Theme tab. */
-function OutputPreview({ output }: { output: OverlayOutput & { kind: 'library' | 'message' | 'stage' } }): React.ReactElement {
-  return (
-    <div className="space-y-3">
-      <SectionLabel>What gets sent</SectionLabel>
-      {output.kind === 'library' ? (
-        <p className="rounded-lg bg-surface-secondary p-4 text-[12px] text-slate-400">
-          Kairo looks for a presentation named like the verse — “John 3:16” — and triggers it. There is
-          nothing to style here; the presentation’s own theme is used.
-        </p>
-      ) : (
-        <pre className="whitespace-pre-wrap rounded-lg bg-surface-secondary p-4 font-sans text-[13px] leading-relaxed text-slate-200">
-          {outputTemplateFor(output, 'scripture')
-            .replace(/\{Reference\}/g, SAMPLE_REFERENCE)
-            .replace(/\{Text\}/g, SAMPLE_TEXT)}
-        </pre>
-      )}
-      <p className="text-[11px] leading-relaxed text-slate-500">{KIND_ABOUT[output.kind]}</p>
-    </div>
-  )
-}
-
 function SetupCheck({
   ndiStatus,
   outputs,
-  looks,
-  ppEnabled,
-  ppConnected,
 }: {
-  ppEnabled: boolean
   ndiStatus: NdiStatus
   outputs: OverlayOutput[]
-  looks: PPLook[]
-  ppConnected: boolean
 }): React.ReactElement {
   const test = useTestPush()
   return (
     <SetupChecklist
-      ppEnabled={ppEnabled}
-      ppConnected={ppConnected}
       ndiStatus={ndiStatus}
       outputs={outputs}
-      looks={looks}
       onSendTest={test.send}
       testStatus={test.status}
       testMsg={test.message}
@@ -780,15 +735,15 @@ function useTestPush(): {
 }
 
 /** Pinned under the list, like ProPresenter's Identify Screens / Test Patterns. */
-function SidebarFooter(): React.ReactElement {
+function SidebarFooter({ showOpen, onShow }: { showOpen: boolean; onShow: () => void }): React.ReactElement {
   const test = useTestPush()
   return (
-    <div className="shrink-0 space-y-2 px-3 pb-3 pt-3 shadow-[inset_0_1px_0_rgb(var(--surface-border))]">
+    <div className="hairline-t shrink-0">
       {test.status !== 'idle' && (
         <p
           role="status"
           className={cn(
-            'flex items-center gap-1.5 text-[12px]',
+            'flex items-center gap-1.5 px-3 pt-2.5 text-[12px]',
             test.status === 'testing' && 'text-slate-400',
             test.status === 'ok' && 'text-teal-400',
             test.status === 'fail' && 'text-red-400',
@@ -800,14 +755,32 @@ function SidebarFooter(): React.ReactElement {
           <span className="truncate">{test.message}</span>
         </p>
       )}
-      <button type="button" className="btn-secondary w-full py-1.5 text-[13px]" onClick={() => void window.api.displays.identify()}>
+      {/* Looks, transition and the setup check for every screen, on one page. */}
+      <button
+        type="button"
+        aria-current={showOpen ? 'page' : undefined}
+        className={cn(
+          'flex w-full items-center px-3 py-2.5 text-left text-[13px]',
+          showOpen ? 'bg-teal-500 text-on-accent' : 'text-slate-200 hover:bg-surface-tertiary/50',
+        )}
+        onClick={onShow}
+      >
+        Looks & transition
+      </button>
+      {/* As in ProPresenter: a plain row to identify displays, then the test button. */}
+      <button
+        type="button"
+        className="flex w-full items-center px-3 py-2.5 text-left text-[13px] text-slate-200 hover:bg-surface-tertiary/50"
+        title="Show each display's number on it"
+        onClick={() => void window.api.displays.identify()}
+      >
         Identify screens
       </button>
-      <div className="flex gap-2">
-        <button type="button" className="btn-secondary flex flex-1 items-center justify-center gap-1.5 py-1.5 text-[13px]" onClick={test.send} disabled={test.status === 'testing'}>
-          <Send size={12} aria-hidden="true" /> Test verse
+      <div className="hairline-t flex gap-1.5 px-3 py-2.5">
+        <button type="button" className="btn-secondary flex-1 whitespace-nowrap px-2 py-1 text-[12px]" onClick={test.send} disabled={test.status === 'testing'}>
+          Test verse
         </button>
-        <button type="button" className="btn-secondary flex-1 py-1.5 text-[13px]" onClick={test.clear} disabled={test.status === 'testing'}>
+        <button type="button" className="btn-secondary whitespace-nowrap px-3 py-1 text-[12px]" onClick={test.clear} disabled={test.status === 'testing'}>
           Clear
         </button>
       </div>
@@ -817,17 +790,6 @@ function SidebarFooter(): React.ReactElement {
 
 // ─── Detail pages ─────────────────────────────────────────────────────────────
 
-/** The display a screen is on, by name — titles its settings like ProPresenter's "Sceptre Z27". */
-function boundDisplayName(target: DisplayBound, displays: DisplayInfo[]): string | null {
-  if (target.displayId === null) return null
-  return resolveDisplay(target, displays)?.label || target.displayLabel || null
-}
-
-/** "DeckLink Duo (2)" — the connector a video card output uses. */
-function cardPortName(output: OverlayOutput, devices: VideoDeviceSnapshot | null): string | null {
-  return devices?.ports.find((candidate) => candidate.id === output.devicePortId)?.portName || output.devicePortLabel || null
-}
-
 /** "DeckLink Duo (2) · 1080i50" — the connector and its format, like a screen's size. */
 function describeCard(output: OverlayOutput, devices: VideoDeviceSnapshot | null): string | null {
   const port = devices?.ports.find((candidate) => candidate.id === output.devicePortId)
@@ -836,7 +798,7 @@ function describeCard(output: OverlayOutput, devices: VideoDeviceSnapshot | null
   return name ? [name, mode?.label].filter(Boolean).join(' · ') : null
 }
 
-type DetailTab = 'display' | 'hardware' | 'look' | 'theme' | 'sound' | 'text' | 'propresenter' | 'layout' | 'output'
+type DetailTab = 'display' | 'hardware' | 'look' | 'theme' | 'sound' | 'text' | 'layout' | 'output'
 
 const TAB_LABEL: Record<DetailTab, string> = {
   display: 'Display',
@@ -845,7 +807,6 @@ const TAB_LABEL: Record<DetailTab, string> = {
   theme: 'Theme',
   sound: 'Sound',
   text: 'Text',
-  propresenter: 'ProPresenter',
   layout: 'Layout',
   output: 'Output',
 }
@@ -864,7 +825,6 @@ function Detail({
   onToggle,
   onRemove,
   stage,
-  target,
   children,
 }: {
   name: string
@@ -880,8 +840,6 @@ function Detail({
   onRemove: () => void
   /** The darker band under the header — the display canvas, or a video card's connector. */
   stage?: React.ReactNode
-  /** What this output is bound to ("Sceptre Z27", "DeckLink Duo (2)") — titles the settings below. */
-  target?: string | null
   children: (tab: DetailTab) => React.ReactNode
 }): React.ReactElement {
   const [draft, setDraft] = useState(name)
@@ -889,18 +847,20 @@ function Detail({
   const active = tabs.includes(tab) ? tab : tabs[0]
   const tabbed = tabs.length > 1
   return (
-    <div className="flex h-full flex-col bg-surface-secondary">
-      <div className="flex shrink-0 items-center gap-3 bg-surface-header px-6 py-4">
+    // ProPresenter's layout: a header band, the display canvas as a full-width
+    // dark band, then the settings in a bordered box with the tabs on its edge.
+    <div className="flex h-full flex-col bg-surface">
+      <div className="hairline-b flex shrink-0 items-center gap-3 px-6 pb-3.5 pt-4" data-settings-drag>
         <div className="min-w-0 flex-1">
           <input
-            className="w-full bg-transparent text-[20px] font-semibold leading-tight text-white outline-none focus:underline"
+            className="-mx-1.5 block max-w-full rounded-md bg-transparent px-1.5 text-[17px] font-semibold leading-tight text-white outline-none [field-sizing:content] hover:bg-surface-secondary focus:bg-surface-secondary"
             value={draft}
             aria-label="Name"
             onChange={(e) => setDraft(e.target.value)}
             onBlur={() => draft.trim() && draft !== name && onRename(draft.trim())}
             onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
           />
-          <p className="mt-0.5 text-[13px] text-slate-400">
+          <p className="mt-0.5 text-[12px] text-slate-400">
             {[...new Set([resolution ?? kind, status.tone === 'live' ? null : status.text])].filter(Boolean).join(' · ')}
           </p>
         </div>
@@ -915,12 +875,10 @@ function Detail({
           <Trash2 size={15} aria-hidden="true" />
         </button>
       </div>
-      {stage && <div className="shrink-0 bg-surface-stage px-6 py-4">{stage}</div>}
+      {stage && <div className="hairline-b shrink-0 bg-surface-stage px-6 py-5">{stage}</div>}
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-[760px] px-6 pb-6 pt-5">
-          {target && <h3 className="mb-5 truncate text-[15px] font-semibold text-white">{target}</h3>}
-          {/* ProPresenter's tabbed box: the tabs sit on the panel's top edge. */}
-          <div className={cn('relative rounded-lg bg-surface px-5 pb-5', tabbed ? 'mt-4 pt-9' : 'pt-5')}>
+        <div className="mx-auto max-w-[760px] px-6 pb-6 pt-6">
+          <div className={cn('relative rounded-lg border border-surface-border px-5 pb-5', tabbed ? 'mt-3 pt-9' : 'pt-5')}>
             {tabbed && (
               <SegmentedControl
                 role="tablist"
@@ -931,7 +889,7 @@ function Detail({
                 fit
                 className="absolute -top-4 left-1/2 w-fit max-w-[calc(100%-2rem)] -translate-x-1/2 overflow-x-auto bg-surface-tertiary"
                 itemClassName="px-3.5 py-1.5"
-                selectedClassName="bg-teal-500 text-on-accent"
+                selectedClassName="bg-surface-elevated text-white"
               />
             )}
             <div className="space-y-4" role="tabpanel">{children(active)}</div>
@@ -992,37 +950,6 @@ function ThemeSelects({
   )
 }
 
-function LookSelect({
-  output,
-  looks,
-  ppConnected,
-  onRefresh,
-  onChange,
-}: {
-  output: OverlayOutput
-  looks: PPLook[]
-  ppConnected: boolean
-  onRefresh: () => void
-  onChange: (lookId: string) => void
-}): React.ReactElement {
-  return (
-    <FieldRow
-      label="Trigger Look"
-      htmlFor={`${output.id}-look`}
-      hint="A Look is whole-system state in ProPresenter — only the first one set across all screens is triggered."
-    >
-      <div className="flex gap-2">
-        <select id={`${output.id}-look`} className="input flex-1" value={output.lookId} onChange={(e) => onChange(e.target.value)} disabled={!ppConnected && looks.length === 0}>
-          <option value="">None</option>
-          {looks.map((look) => <option key={look.id} value={look.id}>{look.name}</option>)}
-          {output.lookId && !looks.some((l) => l.id === output.lookId) && <option value={output.lookId}>Saved Look</option>}
-        </select>
-        <button type="button" className="btn-secondary px-2 text-[11px]" onClick={onRefresh} disabled={!ppConnected}>Refresh</button>
-      </div>
-    </FieldRow>
-  )
-}
-
 function OutputDetail({
   output,
   status,
@@ -1032,13 +959,8 @@ function OutputDetail({
   devices,
   others,
   themeLibrary,
-  looks,
-  videoInputs,
-  ppEnabled,
-  ppConnected,
   tab,
   onTab,
-  onRefreshPp,
   onChange,
   onRemove,
 }: {
@@ -1050,25 +972,19 @@ function OutputDetail({
   devices: VideoDeviceSnapshot | null
   others: CanvasBinding[]
   themeLibrary: CustomOverlayTheme[]
-  looks: PPLook[]
-  videoInputs: PPVideoInputInfo[]
-  ppEnabled: boolean
-  ppConnected: boolean
   tab: DetailTab
   onTab: (tab: DetailTab) => void
-  onRefreshPp: () => void
   onChange: (patch: Partial<OverlayOutput> | ((o: OverlayOutput) => OverlayOutput)) => void
   onRemove: () => void
 }): React.ReactElement {
-  const templated = output.kind === 'message' || output.kind === 'stage'
   const tabs: DetailTab[] =
     output.kind === 'device'
       ? ['hardware', 'look', 'theme']
       : output.kind === 'screen'
       ? ['display', 'look', 'theme']
       : output.kind === 'ndi'
-        ? ['look', 'theme', 'sound', ...(ppEnabled ? (['propresenter'] as const) : [])]
-        : ['output', ...(templated ? (['text'] as const) : []), 'propresenter']
+        ? ['look', 'theme', 'sound']
+        : ['look', 'theme']
 
   return (
     <Detail
@@ -1085,21 +1001,17 @@ function OutputDetail({
       onRemove={onRemove}
       stage={output.kind === 'screen' ? canvas
         : output.kind === 'device' && devices ? <VideoConnectorTile output={output} snapshot={devices} /> : undefined}
-      target={output.kind === 'screen' ? boundDisplayName(output, displays)
-        : output.kind === 'device' ? cardPortName(output, devices) : null}
     >
       {(active) => (
         <>
           {active === 'display' && (
-            <div className="max-w-[560px] space-y-4">
-              {/* Where it goes and its shape, then what it shows. */}
-              <div className="grid grid-cols-2 gap-x-4 gap-y-5">
-                <FieldRow label="Output" htmlFor={`${output.id}-display`}>
-                  <DisplayPicker id={`${output.id}-display`} target={output} displays={displays} others={others} onChange={(patch) => onChange(patch)} />
-                </FieldRow>
-                {output.source === 'playlist' ? <div /> : <FitField output={output} onChange={onChange} />}
-                <ScreenSourceFields output={output} onChange={onChange} fit={false} />
-              </div>
+            // Where it goes and its shape, then what it shows — two columns, as in ProPresenter.
+            <div className="grid grid-cols-2 gap-x-4 gap-y-4">
+              <FieldRow label="Output" htmlFor={`${output.id}-display`}>
+                <DisplayPicker id={`${output.id}-display`} target={output} displays={displays} others={others} onChange={(patch) => onChange(patch)} />
+              </FieldRow>
+              {output.source === 'playlist' ? <div /> : <FitField output={output} onChange={onChange} />}
+              <ScreenSourceFields output={output} onChange={onChange} fit={false} />
             </div>
           )}
           {active === 'hardware' && (
@@ -1124,6 +1036,13 @@ function OutputDetail({
                   </button>
                 </p>
               )}
+              {output.kind === 'syphon' && (
+                <p className="rounded-lg bg-surface px-3 py-2 text-[12px] leading-relaxed text-slate-300">
+                  In OBS, add a <span className="font-medium text-white">Syphon Client</span> source and pick{' '}
+                  <span className="font-medium text-white">{PRODUCT_NAME} {output.name}</span>. Turn on its transparency
+                  option to put the words over your camera.
+                </p>
+              )}
               <LookFields output={output} onChange={onChange} />
               <p className="text-[11px] leading-snug text-slate-500">
                 These let a screen show the countdown, clock and stage message. You put them up from Operator → Timers.
@@ -1139,63 +1058,6 @@ function OutputDetail({
             </>
           )}
           {active === 'sound' && <NdiSoundField />}
-          {active === 'output' && (output.kind === 'library' || output.kind === 'message' || output.kind === 'stage') && (
-            <OutputPreview output={output as OverlayOutput & { kind: 'library' | 'message' | 'stage' }} />
-          )}
-          {active === 'text' && (
-            <>
-              <FieldRow label="Scripture" htmlFor={`${output.id}-template`} hint="Tokens: {Reference} and {Text}.">
-                <TemplateArea id={`${output.id}-template`} value={output.template} onCommit={(template) => onChange({ template })} />
-              </FieldRow>
-              <label className="flex items-center gap-2 text-[11px] text-slate-400">
-                <input
-                  type="checkbox"
-                  className="accent-teal-500"
-                  checked={!!output.lyrics}
-                  onChange={(e) => onChange((o) => setContentOverride(o, 'lyrics', e.target.checked))}
-                />
-                Different text for lyrics
-              </label>
-              {output.lyrics && (
-                <FieldRow label="Lyrics" htmlFor={`${output.id}-lyrics-template`}>
-                  <TemplateArea
-                    id={`${output.id}-lyrics-template`}
-                    value={output.lyrics.template}
-                    onCommit={(template) => onChange((o) => withContentPatch(o, 'lyrics', { template }))}
-                  />
-                </FieldRow>
-              )}
-            </>
-          )}
-          {active === 'propresenter' && (
-            <>
-              {output.kind === 'ndi' && (
-                <FieldRow
-                  label="Video input"
-                  htmlFor={`${output.id}-input`}
-                  hint="Optional. When set, ProPresenter is switched to this input on every push. PP names inputs “Input N”."
-                >
-                  <div className="flex gap-2">
-                    <select id={`${output.id}-input`} className="input flex-1" value={output.ppVideoInputUuid} onChange={(e) => onChange({ ppVideoInputUuid: e.target.value })}>
-                      <option value="">None</option>
-                      {videoInputs.map((vi) => <option key={vi.uuid} value={vi.uuid}>{vi.name}</option>)}
-                      {output.ppVideoInputUuid && !videoInputs.some((v) => v.uuid === output.ppVideoInputUuid) && (
-                        <option value={output.ppVideoInputUuid}>Saved input</option>
-                      )}
-                    </select>
-                    <button type="button" className="btn-secondary px-2 text-[11px]" onClick={onRefreshPp} disabled={!ppConnected}>Refresh</button>
-                  </div>
-                </FieldRow>
-              )}
-              <LookSelect output={output} looks={looks} ppConnected={ppConnected} onRefresh={onRefreshPp} onChange={(lookId) => onChange({ lookId })} />
-              {(output.kind === 'library' || output.kind === 'message') && (
-                <label className="flex items-start gap-2 text-[11px] leading-snug text-slate-400">
-                  <input type="checkbox" className="mt-0.5 accent-teal-500" checked={output.fallbackOnly} onChange={(e) => onChange({ fallbackOnly: e.target.checked })} />
-                  Last resort — only when no other screen took the slide
-                </label>
-              )}
-            </>
-          )}
         </>
       )}
     </Detail>
@@ -1209,22 +1071,6 @@ function ThemePreview({ output }: { output: OverlayOutput }): React.ReactElement
     <div className="overflow-hidden rounded-lg bg-black">
       <ScaledOverlayPreview html={html} autoFit={theme.layout.autoFitText} />
     </div>
-  )
-}
-
-function TemplateArea({ id, value, onCommit }: { id: string; value: string; onCommit: (value: string) => void }): React.ReactElement {
-  // Local draft, committed on blur: every keystroke would otherwise rewrite
-  // the whole overlay settings file.
-  const [draft, setDraft] = useState(value)
-  useEffect(() => setDraft(value), [value])
-  return (
-    <textarea
-      id={id}
-      className="input min-h-[64px] w-full resize-y font-mono text-[11px]"
-      value={draft}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={() => draft !== value && onCommit(draft)}
-    />
   )
 }
 
@@ -1265,7 +1111,6 @@ function StageDetail({
       onToggle={(enabled) => onChange({ enabled })}
       onRemove={onRemove}
       stage={canvas}
-      target={boundDisplayName(stage, displays)}
     >
       {(active) =>
         active === 'display' ? (

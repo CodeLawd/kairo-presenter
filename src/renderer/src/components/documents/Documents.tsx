@@ -600,7 +600,7 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
 
       <div ref={sidebar.containerRef} className="flex min-h-0 flex-1">
         <aside
-          className="flex min-h-0 shrink-0 flex-col bg-surface-secondary"
+          className="hairline-r flex min-h-0 shrink-0 flex-col bg-surface-secondary"
           style={{ width: sidebar.width }}
           aria-label="Imported documents"
         >

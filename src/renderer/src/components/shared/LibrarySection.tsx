@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Check, Library as LibraryIcon, Pencil, Plus, Trash2 } from '@/icons'
 import { cn } from '@/lib/utils'
+import { HUE_TEXT, hueStyle, type Hue } from '@/lib/hue'
 import { RowContextMenu } from '@/components/shared/RowContextMenu'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { leavesTarget } from '@/lib/drag'
@@ -17,6 +18,9 @@ import {
   type Library,
   type LibraryKind,
 } from '@shared/libraries'
+
+/** Each library's icon wears its page's rail colour, so a row says what it holds. */
+const KIND_HUE: Record<LibraryKind, Hue> = { songs: 'violet', scripture: 'blue', documents: 'cyan' }
 
 /**
  * The LIBRARY half of a page rail: the default library, then user-made ones.
@@ -96,6 +100,8 @@ export function LibrarySection({
           ? 'bg-surface-elevated text-white'
           : selected ? 'row-selected' : 'text-zinc-400 hover:bg-surface-tertiary hover:text-zinc-200',
     )
+
+  const kindIcon = <LibraryIcon size={13} weight="fill" style={hueStyle(KIND_HUE[kind])} className={cn('shrink-0', HUE_TEXT)} aria-hidden />
 
   const nameOf = (libraryId: string): string =>
     libraryId === DEFAULT_LIBRARY_ID
@@ -197,7 +203,7 @@ export function LibrarySection({
           onClick={() => onSelect(DEFAULT_LIBRARY_ID)}
           {...dropHandlers(DEFAULT_LIBRARY_ID)}
         >
-          <LibraryIcon size={13} className="shrink-0" aria-hidden />
+          {kindIcon}
           <span className="min-w-0 flex-1 truncate">{DEFAULT_LIBRARY_NAME[kind]}</span>
           {trailing(DEFAULT_LIBRARY_ID) ?? (
             <span className="shrink-0 text-[10px] tabular-nums text-zinc-600">{counts[DEFAULT_LIBRARY_ID] ?? 0}</span>
@@ -241,7 +247,7 @@ export function LibrarySection({
                 className={rowClass(activeLibraryId === entry.id, dropId === entry.id, landedId === entry.id)}
                 {...dropHandlers(entry.id)}
               >
-                <LibraryIcon size={13} className="shrink-0" aria-hidden />
+                {kindIcon}
                 <button
                   type="button"
                   aria-current={activeLibraryId === entry.id}

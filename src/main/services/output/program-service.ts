@@ -1,10 +1,14 @@
 import log from 'electron-log/main'
 import {
   EMPTY_PROGRAM_STATE,
+  idleTimer,
   normalizePresentationSettings,
   pauseTimer,
   resetTimer,
-  startTimer,
+  screenTimerDef,
+  startTimerFor,
+  type ProgramTimerDef,
+  type ProgramTimerState,
   type ProgramSlideInfo,
   type ProgramState,
 } from '@shared/program'
@@ -88,22 +92,54 @@ class ProgramService {
     return this.set({ camera, cameraAudio: audio })
   }
 
-  // ─── Countdown ──────────────────────────────────────────────────────────────
+  // ─── Timers ─────────────────────────────────────────────────────────────────
 
-  setTimer(durationSec: number): ProgramState {
-    return this.set({ timer: resetTimer(this.state.timer, durationSec) })
+  private timerDefs(): ProgramTimerDef[] {
+    return normalizePresentationSettings(store.get('presentation')).timers
   }
 
-  startTimer(): ProgramState {
-    return this.set({ timer: startTimer(this.state.timer, Date.now()) })
+  /** The saved timer `id`, or — with no id, or one no longer saved — the one on screens. */
+  private timerDef(id?: string): ProgramTimerDef {
+    const defs = this.timerDefs()
+    return defs.find((t) => t.id === id) ?? screenTimerDef({ timers: defs }, this.state)
   }
 
-  pauseTimer(): ProgramState {
-    return this.set({ timer: pauseTimer(this.state.timer, Date.now()) })
+  private timerRun(def: ProgramTimerDef): ProgramTimerState {
+    return this.state.timers[def.id] ?? idleTimer(def, Date.now())
   }
 
-  resetTimer(): ProgramState {
-    return this.set({ timer: resetTimer(this.state.timer) })
+  /** Stores one timer's run, and keeps `timer` a copy of the one on screens. */
+  private setTimerRun(def: ProgramTimerDef, run: ProgramTimerState): ProgramState {
+    const timers = { ...this.state.timers, [def.id]: run }
+    const onScreens = screenTimerDef({ timers: this.timerDefs() }, this.state)
+    return this.set({ timers, timer: timers[onScreens.id] ?? this.state.timer })
+  }
+
+  setTimer(durationSec: number, id?: string): ProgramState {
+    const def = this.timerDef(id)
+    return this.setTimerRun(def, def.kind === 'countdownTo' ? idleTimer(def, Date.now()) : resetTimer(this.timerRun(def), durationSec))
+  }
+
+  startTimer(id?: string): ProgramState {
+    const def = this.timerDef(id)
+    return this.setTimerRun(def, startTimerFor(def, this.timerRun(def), Date.now()))
+  }
+
+  pauseTimer(id?: string): ProgramState {
+    const def = this.timerDef(id)
+    return this.setTimerRun(def, pauseTimer(this.timerRun(def), Date.now()))
+  }
+
+  resetTimer(id?: string): ProgramState {
+    const def = this.timerDef(id)
+    return this.setTimerRun(def, idleTimer(def, Date.now()))
+  }
+
+  /** Makes `id` the timer screens and stage displays show. */
+  showTimer(id: string): ProgramState {
+    const def = this.timerDefs().find((t) => t.id === id)
+    if (!def) return this.state
+    return this.set({ screenTimerId: def.id, timer: this.timerRun(def) })
   }
 
   setOnScreens(layer: 'countdown' | 'clock', on: boolean): ProgramState {

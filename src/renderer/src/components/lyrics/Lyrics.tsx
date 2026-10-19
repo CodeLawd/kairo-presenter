@@ -69,7 +69,6 @@ import type {
   LyricsOnlineResult,
   LyricsOnlinePreview,
   LyricsProvider,
-  ProPresenterPlaylist,
 } from '@shared/ipc'
 import {
   buildSlides,
@@ -379,7 +378,7 @@ function SectionSlideGrid({
   glossColor: string
   /** When set, clicking a line applies this color (null clears override). */
   paintColor: string | null | undefined
-  /** Zero-based index of the slide currently on screen in ProPresenter. */
+  /** Zero-based index of the slide currently on Kairo outputs. */
   liveSlideIndex: number | null
   /** Zero-based index of the slide mid-push, if any. */
   pushingSlideIndex: number | null
@@ -1900,7 +1899,7 @@ function ImportModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 animate-fade-in p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 animate-fade-in p-4"
       onClick={() => {
         // Releasing a selection that started inside the panel lands here; that
         // is a finished drag, not a click on the backdrop.
@@ -1910,7 +1909,7 @@ function ImportModal({
     >
       <div
         className={cn(
-          'w-full bg-surface rounded-2xl shadow-2xl flex flex-col overflow-hidden',
+          'w-full modal-glass rounded-2xl shadow-2xl flex flex-col overflow-hidden',
           wideLayout ? 'max-w-5xl' : 'max-w-xl'
         )}
         style={{
@@ -2240,11 +2239,11 @@ function DeleteConfirmModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 animate-fade-in p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 animate-fade-in p-4"
       onClick={onCancel}
     >
       <div
-        className="w-full max-w-sm bg-surface rounded-2xl shadow-2xl p-5"
+        className="w-full max-w-sm modal-glass rounded-2xl shadow-2xl p-5"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start gap-3 mb-4">
@@ -2372,7 +2371,6 @@ export default function Lyrics(): React.ReactElement {
   const [translateSourceLang, setTranslateSourceLang] = useState('auto')
 
   const sendTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const playlistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // ── Search (ephemeral — not restored across visits) ──────────────────────────
   const [query, setQuery] = useState('')
@@ -2407,7 +2405,7 @@ export default function Lyrics(): React.ReactElement {
   useImportRequest(['lyrics'], () => setShowImport(true), !showImport)
 
   // ── Live slide push ──────────────────────────────────────────────────────────
-  /** Zero-based index of the slide last pushed to ProPresenter, if any. */
+  /** Zero-based index of the slide last pushed to Kairo outputs, if any. */
   const [liveSlideIndex, setLiveSlideIndex] = useState<number | null>(null)
   /** The song `liveSlideIndex` belongs to — in a playlist it need not be the selected one. */
   const [liveSongId, setLiveSongId] = useState<string | null>(null)
@@ -2416,13 +2414,9 @@ export default function Lyrics(): React.ReactElement {
   // ── Action bar ───────────────────────────────────────────────────────────────
   const [, setSendStatus] = useState<SendStatus>('idle')
   const [sendError, setSendError] = useState<string | null>(null)
-  const [playlists, setPlaylists] = useState<ProPresenterPlaylist[]>([])
-  const [playlistOpen, setPlaylistOpen] = useState(false)
-  const [, setPlaylistStatus] = useState<'idle' | 'adding' | 'added'>('idle')
   const [exportOpen, setExportOpen] = useState(false)
   const [usageOpen, setUsageOpen] = useState(false)
   const [copiedLyrics, setCopiedLyrics] = useState(false)
-  const playlistRef = useRef<HTMLDivElement>(null)
   const exportRef = useRef<HTMLDivElement>(null)
 
   // ── Derived ──────────────────────────────────────────────────────────────────
@@ -2528,7 +2522,6 @@ export default function Lyrics(): React.ReactElement {
   useEffect(() => {
     return () => {
       if (sendTimerRef.current) clearTimeout(sendTimerRef.current)
-      if (playlistTimerRef.current) clearTimeout(playlistTimerRef.current)
     }
   }, [])
 
@@ -2616,15 +2609,14 @@ export default function Lyrics(): React.ReactElement {
   }, [paintColor])
 
   useEffect(() => {
-    if (!sortOpen && !playlistOpen && !exportOpen) return
+    if (!sortOpen && !exportOpen) return
     const handler = (e: MouseEvent): void => {
       if (sortRef.current && !sortRef.current.contains(e.target as Node)) setSortOpen(false)
-      if (playlistRef.current && !playlistRef.current.contains(e.target as Node)) setPlaylistOpen(false)
       if (exportRef.current && !exportRef.current.contains(e.target as Node)) setExportOpen(false)
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
-  }, [sortOpen, playlistOpen, exportOpen])
+  }, [sortOpen, exportOpen])
 
   // ── Selection ────────────────────────────────────────────────────────────────
   /** The editor's starting point, to tell real edits from an untouched form. */
@@ -2963,31 +2955,10 @@ export default function Lyrics(): React.ReactElement {
     setSendError(null)
   }, [])
 
-  // ── Send to PP ───────────────────────────────────────────────────────────────
-  // TODO: wire to the action bar when the send flow lands (kept for the WIP).
-  const _handleSendToPP = useCallback(async (): Promise<void> => {
-    if (!selectedId) return
-    setSendStatus('sending')
-    setSendError(null)
-    try {
-      await window.api.lyrics.sendToProPresenter(selectedId, {})
-      if (selectedSong) {
-        useAppStore.getState().setLiveOutputPreview(
-          buildLyricsLiveOutputPayload(selectedSong, songSlides[0]),
-        )
-      }
-      setSendStatus('sent')
-      sendTimerRef.current = setTimeout(() => setSendStatus('idle'), 3000)
-    } catch (err) {
-      setSendStatus('error')
-      setSendError(cleanIpcError(err))
-    }
-  }, [selectedId, selectedSong, songSlides])
-
   /**
    * Puts slide `zeroBased` of `song` on screen. Errors surface in the same
    * action-bar slot the whole-song push uses, so there is one place to look
-   * when PP refuses.
+   * when an output push fails.
    *
    * A song other than the selected one (a playlist shows them all) becomes the
    * selected one. `fromView` keeps the view where it is — the operator is
@@ -3323,24 +3294,6 @@ export default function Lyrics(): React.ReactElement {
     return () => window.removeEventListener('keydown', jump, true)
   }, [editMode, selectedSong, showImport, deleteTarget, webPreviewResult, reorderBusy, pushingSlideIndex, sectionSlideStarts, songSlides.length, handlePushSlide])
 
-  // ── Playlists ────────────────────────────────────────────────────────────────
-  // TODO: wire to the playlist UI when it lands (kept for the WIP).
-  const _handlePlaylistOpen = useCallback(async (): Promise<void> => {
-    setPlaylistOpen((o) => !o)
-    if (playlists.length === 0) {
-      try { setPlaylists(await window.api.propresenter.getPlaylists()) } catch { /* PP not connected */ }
-    }
-  }, [playlists.length])
-
-  const _handleAddToPlaylist = useCallback(async (playlistId: string): Promise<void> => {
-    if (!selectedId) return
-    setPlaylistOpen(false)
-    setPlaylistStatus('adding')
-    await window.api.lyrics.addToPlaylist(selectedId, playlistId)
-    setPlaylistStatus('added')
-    playlistTimerRef.current = setTimeout(() => setPlaylistStatus('idle'), 2500)
-  }, [selectedId])
-
   // ⌘S / Ctrl+S saves while editing — the reflex from every other editor.
   useEffect(() => {
     if (!editMode) return
@@ -3405,7 +3358,7 @@ export default function Lyrics(): React.ReactElement {
         <div
           style={{ width: libraryWidth.width }}
           className={cn(
-            "flex shrink-0 flex-col gap-2.5 min-h-0 min-w-0 bg-surface-secondary px-4 pt-3 pb-5",
+            "hairline-r flex shrink-0 flex-col gap-2.5 min-h-0 min-w-0 bg-surface-secondary px-4 pt-3 pb-5",
           )}
         >
           <LibraryRail

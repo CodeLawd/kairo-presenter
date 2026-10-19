@@ -153,9 +153,9 @@ export function ServicePanel(): React.ReactElement {
     ) : null}
     <Dialog.Root open={confirmEnd && Boolean(active)} onOpenChange={open => { if (!open && !busy) setConfirmEnd(false) }}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/80" />
+        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/35" />
         {active && (
-          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl bg-zinc-950 p-5 text-white shadow-2xl">
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl modal-glass p-5 text-white shadow-2xl">
             <Dialog.Title className="text-base font-semibold tracking-tight text-zinc-50">Save service</Dialog.Title>
             <Dialog.Description className="mt-1.5 text-[13px] leading-relaxed text-zinc-400">
               Transcription stops and this message is saved. Name it now — leave the name blank and it is filed by date.
@@ -198,9 +198,9 @@ export function ServicePanel(): React.ReactElement {
     </Dialog.Root>
     <Dialog.Root open={confirmDiscard && Boolean(active)} onOpenChange={open => { if (!open && !busy) setConfirmDiscard(false) }}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/80" />
+        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/35" />
         {active && (
-          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-xl bg-zinc-950 p-5 text-white shadow-2xl">
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-xl modal-glass p-5 text-white shadow-2xl">
             <Dialog.Title className="text-base font-semibold tracking-tight text-zinc-50">Discard this service?</Dialog.Title>
             <Dialog.Description className="mt-1.5 text-[13px] leading-relaxed text-zinc-400">
               The transcript, nuggets and detected scriptures from this service are deleted. This cannot be undone.
@@ -227,11 +227,11 @@ export function ServicePanel(): React.ReactElement {
     </Dialog.Root>
     <Dialog.Root open={Boolean(record)} onOpenChange={open => { if (!open) setViewId(null) }}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/80" />
+        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/35" />
         {record && (
           <Dialog.Content
             aria-describedby={undefined}
-            className="fixed left-1/2 top-1/2 z-50 flex max-h-[min(85vh,720px)] w-[calc(100%-2rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl bg-zinc-950 text-white shadow-2xl"
+            className="fixed left-1/2 top-1/2 z-50 flex max-h-[min(85vh,720px)] w-[calc(100%-2rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl modal-glass text-white shadow-2xl"
           >
             <header className="shrink-0 px-5 pb-4 pt-5">
               <div className="flex items-start justify-between gap-4">

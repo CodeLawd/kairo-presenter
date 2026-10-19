@@ -313,10 +313,12 @@ function createWindow(): void {
     icon,
     autoHideMenuBar: false,
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
+    // Centred in the 60px header (.app-header), beside the page title.
+    trafficLightPosition: { x: 18, y: 24 },
     // Opaque on every platform: a booth screen should look the same whatever
     // is behind the window, and the desktop bleeding through reads as noise.
     // Matches --surface so there is no flash before the first paint.
-    backgroundColor: "#0C111D",
+    backgroundColor: "#232427",
     webPreferences: {
       preload: join(__dirname, "../preload/index.js"),
       sandbox: false,
@@ -506,9 +508,6 @@ app.whenReady().then(async () => {
   ndiService.start().catch((err) => {
     log.error("[NDI] start() failed:", (err as Error).message);
   });
-
-  // First ProPresenter handshake is the launch gate in the renderer — connecting
-  // here would retry (and log timeouts) before the operator has confirmed PP is open.
 
   // Checks GitHub Releases in the background; a download is never started
   // without the operator asking for it.

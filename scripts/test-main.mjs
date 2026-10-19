@@ -18,7 +18,6 @@ import { createRequire } from 'node:module'
 const PATTERNS = [
   'src/main/__tests__/*.test.ts',
   'src/main/services/scripture/__tests__/*.test.ts',
-  'src/main/services/propresenter/__tests__/*.test.ts',
   'src/main/services/cloud/__tests__/*.test.ts',
   'src/main/services/ndi/__tests__/*.test.ts',
   'src/main/services/video-devices/__tests__/*.test.ts',

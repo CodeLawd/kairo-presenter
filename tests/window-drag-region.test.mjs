@@ -26,7 +26,7 @@ test('the shell keeps workspaces, health, and output safety visible', async () =
     'utf8',
   ).catch(() => '')
 
-  for (const label of ['Operator', 'Scripture', 'Lyrics', 'Theme', 'ProPresenter', 'Audio', 'Automation', 'Clear output']) {
+  for (const label of ['Operator', 'Scripture', 'Lyrics', 'Theme', 'Audio', 'Screens', 'Clear text and background']) {
     assert.match(shellSource, new RegExp(label))
   }
 })

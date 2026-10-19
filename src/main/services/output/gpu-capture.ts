@@ -12,6 +12,7 @@
  */
 import type { OffscreenSharedTexture, TextureInfo } from 'electron'
 import type { FrameRing, GpuFramesAddon, GpuFramesLoad } from '../gpu-frames'
+import type { SyphonChannel } from '../syphon'
 
 const WIDTH = 1920
 const HEIGHT = 1080
@@ -25,6 +26,8 @@ export type CaptureTarget =
   | { kind: 'ndi'; deliver: (uyva: Buffer, width: number, height: number) => void }
   /** Video card: UYVY into the shared ring the DeckLink helper reads. */
   | { kind: 'ring'; ring: FrameRing }
+  /** Syphon: the texture itself, copied as it is into the Syphon server's surface. */
+  | { kind: 'syphon'; channel: SyphonChannel }
 
 export class GpuCapture {
   private converter: ReturnType<GpuFramesAddon['open']> | null
@@ -35,9 +38,12 @@ export class GpuCapture {
     private readonly target: CaptureTarget,
     private readonly onFallback: (reason: string) => void,
   ) {
-    this.converter = target.kind === 'ring'
-      ? addon.open({ width: target.ring.width, height: target.ring.height, ring: target.ring.handle })
-      : addon.open({ width: WIDTH, height: HEIGHT, alpha: true })
+    // Syphon takes the texture as painted, so it needs no converter.
+    this.converter = target.kind === 'syphon'
+      ? null
+      : target.kind === 'ring'
+        ? addon.open({ width: target.ring.width, height: target.ring.height, ring: target.ring.handle })
+        : addon.open({ width: WIDTH, height: HEIGHT, alpha: true })
   }
 
   /**
@@ -59,6 +65,10 @@ export class GpuCapture {
 
   /** Converts one painted texture. Always releases it, now or when the GPU is done. */
   handle(texture: SharedTexture): void {
+    if (this.target.kind === 'syphon') {
+      this.target.channel.publish(texture)
+      return
+    }
     const converter = this.converter
     if (!converter || this.failed) { texture.release(); return }
     let started = false

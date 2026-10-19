@@ -173,7 +173,6 @@ function hydrateRuntimeStore(snapshot: AppBootstrapSnapshot, settings: AppSettin
     store.setAudioCapturing(snapshot.orchestrator.running)
     useAppStore.setState({ scriptureProjectedCount: snapshot.orchestrator.totalPresentations })
   }
-  if (snapshot.propresenter) store.setPPStatus(snapshot.propresenter)
   // Read from the local token vault at launch, so the account is known before
   // the first paint and no screen ever waits on the network for it.
   if (snapshot.account) useAccountStore.getState().setSession(snapshot.account)

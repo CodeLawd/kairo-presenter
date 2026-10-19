@@ -4,7 +4,7 @@ import type { CSSProperties } from 'react'
  * The icon palette (index.css `--hue-*`, tuned for dark and light). A colour
  * marks the same tool wherever it appears — rail, header, toolbox, docks.
  */
-export type Hue = 'green' | 'orange' | 'violet' | 'cyan' | 'pink' | 'coral' | 'lime' | 'amber' | 'indigo'
+export type Hue = 'green' | 'orange' | 'violet' | 'cyan' | 'blue' | 'pink' | 'coral' | 'lime' | 'amber' | 'indigo'
 
 /** Sets `--hue` for one element, so a shared class list can paint any colour. */
 export function hueStyle(hue: Hue): CSSProperties {
@@ -12,15 +12,18 @@ export function hueStyle(hue: Hue): CSSProperties {
 }
 
 /**
- * A square rail button: the icon always in its hue, a soft wash of it when
- * active (`active`) or while its popover is open (`data-state=open`).
+ * A square rail button: grey at rest so the rail stays quiet, its hue on hover,
+ * and the hue on a solid step when active (`active`) or while its popover is
+ * open (`data-state=open`).
  */
 export function railHueClass(active = false): string {
   return [
-    'relative flex size-10 items-center justify-center rounded-md text-[rgb(var(--hue))] transition-colors duration-150',
+    'relative flex size-10 items-center justify-center rounded-md transition-colors duration-150',
     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--hue)/0.6)]',
-    'data-[state=open]:bg-[rgb(var(--hue)/0.2)]',
-    active ? 'bg-[rgb(var(--hue)/0.2)]' : 'hover:bg-[rgb(var(--hue)/0.1)]',
+    'data-[state=open]:bg-surface-tertiary data-[state=open]:text-[rgb(var(--hue))]',
+    active
+      ? 'bg-surface-tertiary text-[rgb(var(--hue))]'
+      : 'text-zinc-500 hover:bg-surface-secondary hover:text-[rgb(var(--hue))]',
   ].join(' ')
 }
 

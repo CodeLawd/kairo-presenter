@@ -5,19 +5,13 @@ import type { AppSettings } from '@shared/ipc'
 import { DEFAULT_TRANSLATION_ID } from '@shared/bible-translations'
 import { DEFAULT_OVERLAY_SETTINGS, normalizeOverlaySettings } from '@shared/overlay-defaults'
 import { assignThemeToOutput, isUntouchedThemeLibrary, normalizeThemeLibrary, seedBuiltInThemes } from '@shared/theme-library'
-import { EMPTY_PP_RESOURCE_BINDINGS, normalizeResourceBindings } from '@shared/propresenter-resources'
+import { retireProPresenterSettings } from '@shared/pp-retirement'
 import { DEFAULT_DOCUMENTS_SETTINGS } from '@shared/documents'
 import { DEFAULT_PRESENTATION_SETTINGS, normalizePresentationSettings } from '@shared/program'
 
 export type { AppSettings }
 
 const defaults: AppSettings = {
-  propresenter: {
-    // Empty until the operator sets ProPresenter up — it is an optional integration.
-    host: '',
-    port: 57563,
-    password: '',
-  },
   audio: {
     deviceId: '',
   },
@@ -70,7 +64,6 @@ const defaults: AppSettings = {
     serviceTimes: [],
   },
   documents: { ...DEFAULT_DOCUMENTS_SETTINGS },
-  propresenterResources: { ...EMPTY_PP_RESOURCE_BINDINGS },
   presentation: DEFAULT_PRESENTATION_SETTINGS,
   usage: { shareStats: true },
   themeDefaults: {},
@@ -163,10 +156,9 @@ if (!migrations.get('nkjvDefaultV1')) {
   }
 }
 
-// Resource bindings are the only durable part of the ProPresenter catalogue.
-// electron-store shallow-merges defaults, so heal the complete object on every
-// launch while leaving catalogue metadata and preview bytes in memory only.
-store.set('propresenterResources', normalizeResourceBindings(store.get('propresenterResources')))
+// Sanitize the raw persisted shape before any normalizer can reinterpret old destinations.
+// Runs idempotently so settings restored by an older build are cleaned too.
+store.store = retireProPresenterSettings(store.store) as unknown as AppSettings
 
 // D3 migration — electron-store shallow-Object.assign's `defaults` at startup;
 // it does NOT deep-merge. A pre-phase-2 user's stored `overlay` (no `mode` /

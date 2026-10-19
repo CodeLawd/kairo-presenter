@@ -210,7 +210,7 @@ export default function DashboardPage(): React.ReactElement {
       href: '/dashboard/download',
       icon: DownloadIcon,
       title: 'Desktop app',
-      description: 'Live transcript next to ProPresenter',
+      description: 'Live transcript alongside your presentation',
     },
   ] as const
 

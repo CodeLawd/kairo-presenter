@@ -230,3 +230,56 @@ test('reads an RTF sermon document as plain text so verse ranges survive', async
     await fs.rm(dir, { recursive: true, force: true })
   }
 })
+
+test('reads verses listed after a comma as more verses of the same chapter', () => {
+  const items = extractScriptureReferences(
+    'Peter was a fisherman (Matthew 4:18–20; Acts 2:14, 41). Also John 3:16, 18-21, 4:1.',
+    'NKJV',
+  )
+
+  assert.deepEqual(items.map((item) => item.reference), [
+    'Matthew 4:18–20',
+    'Acts 2:14',
+    'Acts 2:41',
+    'John 3:16',
+    'John 3:18–21',
+    'John 4:1',
+  ])
+})
+
+test('reads chapter:verse after a semicolon as the same book', () => {
+  const items = extractScriptureReferences('Read John 3:16; 4:1-2 tonight. Moses doubted (Exodus 3:10–12; 4:10–12).', 'NKJV')
+
+  assert.deepEqual(items.map((item) => item.reference), [
+    'John 3:16',
+    'John 4:1–2',
+    'Exodus 3:10–12',
+    'Exodus 4:10–12',
+  ])
+})
+
+test('does not swallow the next book or plain numbers as continuations', () => {
+  const items = extractScriptureReferences(
+    'Romans 8:28, 2 Corinthians 5:17; 1 Peter 1:15. Psalm 23:1; 3 people prayed.',
+    'NKJV',
+  )
+
+  assert.deepEqual(items.map((item) => item.reference), [
+    'Romans 8:28',
+    '2 Corinthians 5:17',
+    '1 Peter 1:15',
+    'Psalms 23:1',
+  ])
+})
+
+test('marks the continuation verse itself, labelled with its full reference', () => {
+  const analysis = analyzeScriptureReferences('(Acts 2:14, 41)', 'NKJV')
+
+  assert.deepEqual(
+    analysis.matches.map(({ start, end, text, reference }) => ({ start, end, text, reference })),
+    [
+      { start: 1, end: 10, text: 'Acts 2:14', reference: 'Acts 2:14' },
+      { start: 12, end: 14, text: '41', reference: 'Acts 2:41' },
+    ],
+  )
+})

@@ -18,7 +18,6 @@ import { confidenceFor, programLayersFor } from "@shared/program";
 import { themeForPush } from "@shared/media-playback";
 import {
   isRenderedKind,
-  outputRequiresPropresenter,
   outputTemplateFor,
   outputThemeFor,
 } from "@shared/overlay-outputs";
@@ -32,15 +31,10 @@ import type {
   ScriptureResult,
 } from "@shared/ipc";
 import type { LiveOutputPayload } from "@shared/live-output";
-import { propresenterEnabled } from "@shared/pp-connect-gate";
-import { useBootstrapStore } from "@/bootstrap/useBootstrapStore";
 import { makeProjectorOutput } from "@shared/overlay-defaults";
 
 // ─── Per-kind preview fidelity ─────────────────────────────────────────────────
-// Only `ndi` and `screen` are rendered by this app, so only they can be shown WYSIWYG. The
-// others are styled inside ProPresenter, and pretending otherwise would show the
-// operator a slide that does not exist. Each kind is labelled with how much of
-// what you see is real.
+// Kairo renders screen, device and NDI outputs using their configured themes.
 
 const EMPTY_TIME: OverlayVideoTime = { currentTime: 0, duration: 0, ended: false };
 
@@ -51,7 +45,7 @@ interface LiveOutputPreviewProps {
   onSelectOutput: (outputId: string) => void;
   /** Verse currently live, or null when nothing has been sent. */
   result: ScriptureResult | null;
-  /** Generic content sent to ProPresenter (used by the cross-tab review panels). */
+  /** Generic content sent to Kairo outputs (used by the cross-tab review panels). */
   content?: LiveOutputPayload | null;
   /** Content kind used when rendering a result without a generic payload. */
   contentKind?: OverlayContentKind;
@@ -77,17 +71,8 @@ export function LiveOutputPreview({
   height,
   toolbar,
 }: LiveOutputPreviewProps): React.ReactElement {
-  // ProPresenter outputs only show up here once the integration is on.
-  const ppOn = useBootstrapStore((s) => propresenterEnabled(s.settings));
-  const outputs = ppOn ? allOutputs : allOutputs.filter((output) => !outputRequiresPropresenter(output.kind));
-  // Fall back to the first output that can actually be drawn: a library output
-  // is triggered inside ProPresenter, so defaulting to it shows a placeholder
-  // and hides the render this panel exists to show.
-  const selected =
-    outputs.find((output) => output.id === selectedOutputId) ??
-    outputs.find((output) => output.kind !== "library") ??
-    outputs[0] ??
-    null;
+  const outputs = allOutputs;
+  const selected = outputs.find((output) => output.id === selectedOutputId) ?? outputs[0] ?? null;
   // No screen on (a new install, or every screen switched off): the program is
   // still live, so draw it the way the main screen would — its own theme if it
   // exists, the default Projector otherwise. The operator always sees what
@@ -194,7 +179,7 @@ export function LiveOutputPreview({
             </button>
           </div>
         ) : (
-          <div className="relative min-w-0 w-full max-w-64 rounded-md bg-surface-elevated transition-colors hover:bg-surface-border focus-within:ring-2 focus-within:ring-teal-400/60">
+          <div className="relative min-w-0 w-full rounded-md bg-surface-elevated transition-colors hover:bg-surface-border focus-within:ring-2 focus-within:ring-teal-400/60">
             <select
               className="w-full cursor-pointer appearance-none truncate bg-transparent px-2.5 py-2 pr-8 text-xs font-semibold text-zinc-100 outline-none"
               value={selected?.id ?? ''}
@@ -334,14 +319,6 @@ function PreviewBody({
         seekTo={seekTo}
         onTime={onTime}
       />
-    );
-  }
-
-  if (output.kind === "library") {
-    return (
-      <EmptyFrame width={width} height={height} icon={MonitorOff} title="ProPresenter slide">
-        Triggered from your library — this app never sees its design
-      </EmptyFrame>
     );
   }
 

@@ -36,9 +36,12 @@ test('a later theme save keeps a newly added video output and its binding across
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })
 
-test('deleting the final screen stays deleted after repeated normalization and reload', () => {
+test('an emptied output list comes back as the Main Screen; any other list is kept as saved', () => {
   const saved = { ...DEFAULT_OVERLAY_SETTINGS, outputs: [] }
-  assert.deepEqual(normalizeOverlaySettings(saved).outputs, [])
+  const restored = normalizeOverlaySettings(saved).outputs
+  assert.deepEqual(restored.map((o) => o.name), ['Main Screen'])
+  // Stable across reloads: the restored screen is kept, not added again.
+  assert.deepEqual(normalizeOverlaySettings(JSON.parse(JSON.stringify({ ...saved, outputs: restored }))).outputs.map((o) => o.id), restored.map((o) => o.id))
   const feedOnly = { ...saved, outputs: [makeOverlayOutput('feed', 'ndi')] }
   assert.deepEqual(normalizeOverlaySettings(JSON.parse(JSON.stringify(feedOnly))).outputs.map((o) => o.id), ['feed'])
 })

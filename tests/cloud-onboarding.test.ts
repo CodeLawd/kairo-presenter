@@ -2,7 +2,6 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import type { AppSettings } from '../src/lib/ipc'
-import { EMPTY_PP_RESOURCE_BINDINGS } from '../src/lib/propresenter-resources'
 import {
   DEFAULT_ONBOARDING_STATE, completeStep, finishOnboarding, isOnboardingFinished,
   isStepComplete, nextIncompleteStep, nextStep, onboardingSteps, previousStep,
@@ -13,7 +12,6 @@ import {
 
 function settings(overrides: Partial<AppSettings> = {}): AppSettings {
   return {
-    propresenter: { host: '', port: 57563, password: '' },
     audio: { deviceId: '' },
     stt: {
       provider: 'none',
@@ -39,7 +37,6 @@ function settings(overrides: Partial<AppSettings> = {}): AppSettings {
     themeLibrary: [],
     media: { folder: '', playlists: [] },
     church: { name: '', timezone: '', role: '', serviceTimes: [] },
-    propresenterResources: { ...EMPTY_PP_RESOURCE_BINDINGS },
     ...overrides,
   } as AppSettings
 }
@@ -47,9 +44,8 @@ function settings(overrides: Partial<AppSettings> = {}): AppSettings {
 /** A machine that has been running services since before the wizard existed. */
 function configuredSettings(): AppSettings {
   return settings({
-    propresenter: { host: '192.168.1.164', port: 57563, password: 'pw' },
     stt: { ...settings().stt, bibleApiKey: 'key-123' },
-    overlay: { outputs: [{ enabled: true, kind: 'library' }, { enabled: false, kind: 'screen' }] } as never,
+    overlay: { outputs: [{ enabled: true, kind: 'ndi' }, { enabled: false, kind: 'screen' }] } as never,
   })
 }
 
@@ -116,10 +112,11 @@ test('invalid stored progress is normalized and valid progress survives', () => 
   assert.equal(state.source, 'legacy')
 })
 
-test('migration also leaves a working legacy ProPresenter install closed', () => {
+test('a retired integration install resumes at screen setup', () => {
   const full = configuredSettings()
   full.church.name = 'Grace Chapel'
-  assert.equal(isOnboardingFinished(seedOnboardingFromSettings(full, 1000)), true)
+  assert.equal(seedOnboardingFromSettings(full, 1000).currentStep, 'output')
+  assert.equal(isOnboardingFinished(seedOnboardingFromSettings(full, 1000)), false)
 })
 
 test('a fresh install begins at welcome when the first-launch migration runs', () => {

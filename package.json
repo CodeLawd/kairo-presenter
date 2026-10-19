@@ -47,8 +47,10 @@
     "build:dir": "electron-vite build && electron-builder --dir -c.mac.identity=null -c.mac.notarize=false",
     "build:decklink": "node native/decklink/build.mjs",
     "build:gpu-frames": "node native/gpu-frames/build.mjs",
+    "build:syphon": "node native/syphon/build.mjs",
     "prepare:mac-natives": "node scripts/prepare-mac-natives.mjs",
     "test:gpu-frames": "node --test native/gpu-frames/tests/*.test.mjs",
+    "test:syphon": "node --test native/syphon/tests/*.test.mjs",
     "test:decklink": "node --test native/decklink/tests/*.test.mjs && node --import tsx --test native/decklink/tests/client.test.ts"
   },
   "dependencies": {
@@ -196,6 +198,10 @@
           "to": "gpu-frames/gpu_frames.node"
         },
         {
+          "from": "native/syphon/build/syphon.node",
+          "to": "syphon/syphon.node"
+        },
+        {
           "from": "native/decklink/build/decklink-helper",
           "to": "decklink/decklink-helper"
         }
@@ -251,10 +257,9 @@
       "extendInfo": {
         "NSMicrophoneUsageDescription": "Kairo listens to the service audio so it can transcribe the sermon in real time.",
         "NSCameraUsageDescription": "Kairo shows a camera or capture card on the screens it drives when you put one live.",
-        "NSLocalNetworkUsageDescription": "Kairo connects to ProPresenter and NDI receivers on your local network.",
+        "NSLocalNetworkUsageDescription": "Kairo sends presentation feeds to NDI receivers on your local network.",
         "NSBonjourServices": [
-          "_ndi._tcp",
-          "_propresenter._tcp"
+          "_ndi._tcp"
         ],
         "LSMinimumSystemVersion": "11.0"
       }

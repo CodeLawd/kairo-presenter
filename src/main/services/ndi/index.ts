@@ -67,7 +67,7 @@ class NdiService {
 
   /**
    * @param senderName The NDI source name. The primary sender keeps the legacy
-   *   name so existing ProPresenter video-input bindings still find it; extra
+   *   name so existing NDI receivers still find it; extra
    *   feeds come from `createChannel`.
    */
   constructor(

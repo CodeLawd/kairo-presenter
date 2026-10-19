@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Kairo — Electron desktop app for ProPresenter church tech automation. Built with electron-vite + React + TypeScript + Tailwind CSS.
+Kairo — Standalone Electron desktop app for church presentation and automation. Built with electron-vite + React + TypeScript + Tailwind CSS.
 
 ## Commands
 
@@ -66,7 +66,6 @@ Each service is a singleton class exported as a named instance:
 
 | Service | Purpose |
 |---------|---------|
-| `propresenter/` | WebSocket connection to ProPresenter Stage Display API |
 | `audio/` | Audio capture stream management |
 | `stt/` | Speech-to-text provider abstraction (Deepgram / Whisper) |
 | `scripture/` | Bible API lookup + reference parsing |
@@ -76,15 +75,18 @@ Services are not imported by the renderer directly — expose their output throu
 
 ## Tailwind palette
 
-Brand palette: onyx `#0C111D` (primary, `ink`), off-white `#F9FAFB` (`paper`), slate `#374151` (muted, `stone`), cobalt `#315EDE` (live).
-Every UI color is a token in `src/renderer/src/index.css` (dark + light), blended from these four — don't add raw hex for chrome.
-- `surface` / `surface-secondary` / `surface-tertiary` / `surface-rail` / `surface-header` / `surface-elevated` / `surface-border` — background layers
-- `surface-stage` / `surface-display` — the only untinted (neutral black/grey) tones: the band behind a screen canvas and the displays drawn on it, so not every layer reads navy. Use sparingly
-- `teal-{50-950}` — legacy name for the accent: white (paper) in dark, ink in light, via `--accent-*` vars. CTAs are `bg-teal-500 text-on-accent hover:bg-teal-600`
-- `live` / `bg-tint-live` — `#315EDE`, used ONLY for what is on screen (live slide/media/page outline, live row). Picked/selected stays white, so the two never look alike. One exception: the header update pill (`UpdatePill.tsx`) is solid blue so a pending update is noticed
-- `ink`, `paper`, `stone` — the raw brand colors; Tailwind `white` is paper
-- `amber-*` / `yellow-*` are remapped to the neutral accent too — the old warm gold is retired; `tint-amber` / `tint-yellow` are neutral washes. Red (errors) and green (ok) stay semantic
+Brand palette: onyx `#0C111D` (`ink`), off-white `#F9FAFB` (`paper`), slate `#374151` (`stone`) — brand marks only.
+App chrome is grey with only a faint cool bias (blue +3–4 over red — grey, never navy), so colour comes only from the accent, live, tool hues and status.
+Every UI color is a token in `src/renderer/src/index.css` (dark + light) — don't add raw hex for chrome.
+- `surface-rail` / `surface-header` (darkest frame) → `surface` (workspace) → `surface-secondary` (sidebars, docks, cards) → `surface-tertiary` (controls, hover) → `surface-elevated` (lifted). Neighbouring regions always differ by a visible step. The page area is one rounded panel (`rounded-xl bg-surface`) inset by a gap on the chrome (header + rail) — no line between chrome and page. Inside the panel, columns split with a `--surface-line` hairline (`.hairline-r/-l/-t/-b`, inset so nothing shifts)
+- `surface-stage` / `surface-display` — the band behind a screen canvas and the displays drawn on it
+- `teal-{50-950}` — legacy name for the accent, now **blue** (`--accent-*`): what is picked (`.row-selected` pill, selected tabs/rows) and primary actions. CTAs are `bg-teal-500 text-on-accent hover:bg-teal-600`
+- `live` / `bg-tint-live` — **red** (broadcast tally), used ONLY for what is on screen (live slide/media/page outline, live row). Blue picked and red live never look alike
+- Tool hues `--hue-*` via `src/renderer/src/lib/hue.ts`: Operator green, Scripture blue (light sky, lighter than the accent), Lyrics violet, Documents cyan, Theme pink, Media orange. Used on icons and small marks only — never row backgrounds or body text. Coloured icons use Phosphor `weight="fill"` so the colour carries; neutral icons stay outlined. Rail icons are grey until active
+- `amber-*` / `yellow-*` are remapped to neutral; `tint-amber` / `tint-yellow` are neutral washes. Red (errors) and green (ok) stay semantic
 - `tint-*` — solid accent/status washes
+- Modals use frosted glass, like ProPresenter's macOS windows: `.glass` on a modal's sidebar and title bar (content pane stays solid), `.modal-glass` on a whole small dialog. Scrims behind them are `bg-black/35` so colour can show through
+- Settings and Screens follow macOS System Settings: traffic lights (`components/shared/MacTrafficLights.tsx`) top the glass sidebar, the open pane titles itself, blue pill for the open item. Settings-like content uses grouped boxes — title above, one rounded box, rows split by an inset line (`.pref-group`; `.pref-group-dim` on a dark `bg-surface` box). No boxes inside boxes
 
 Reusable component classes defined in `index.css` `@layer components`: `.card`, `.btn-primary`, `.btn-secondary`, `.input`, `.label`, `.page-header`, `.page-subtitle`, `.badge-connected`, `.badge-disconnected`.
 

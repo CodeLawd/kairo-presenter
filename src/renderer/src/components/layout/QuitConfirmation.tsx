@@ -41,9 +41,9 @@ export function QuitConfirmation(): React.ReactElement {
   return (
     <AlertDialog.Root open={open}>
       <AlertDialog.Portal>
-        <AlertDialog.Overlay className="quit-confirmation-overlay fixed inset-0 bg-black/70" />
+        <AlertDialog.Overlay className="quit-confirmation-overlay fixed inset-0 bg-black/35" />
         <AlertDialog.Content
-          className="quit-confirmation-panel fixed left-1/2 top-1/2 w-[calc(100%-2rem)] max-w-[420px] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-2xl bg-surface-secondary text-white outline-none"
+          className="quit-confirmation-panel fixed left-1/2 top-1/2 w-[calc(100%-2rem)] max-w-[420px] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-2xl modal-glass text-white outline-none"
           onOpenAutoFocus={(event) => { event.preventDefault(); cancelRef.current?.focus() }}
           onCloseAutoFocus={(event) => { event.preventDefault(); previousFocus.current?.focus() }}
           onEscapeKeyDown={(event) => { event.preventDefault(); void respond(false) }}

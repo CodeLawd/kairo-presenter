@@ -25,7 +25,7 @@ export type TranscriptSource = 'interim' | 'final'
 export type TraceStatus =
   /** Still moving through the pipeline. */
   | 'active'
-  /** Reached ProPresenter. */
+  /** Reached the output renderer. */
   | 'presented'
   /** The operator stopped it — correct behaviour, not a failure. */
   | 'cancelled'
@@ -47,7 +47,7 @@ export type TraceFailureReason =
 /**
  * How sure we are that the verse actually reached the congregation.
  *
- * A 200 from ProPresenter means the request was accepted, which is not the same
+ * A 200 from the output renderer means the request was accepted, which is not the same
  * as pixels changing on a screen. Recording which of these we achieved keeps
  * diagnostics from overstating what we know.
  */
@@ -99,7 +99,7 @@ export interface ScriptureLatencyTrace {
    *
    * Stamped in the renderer after the browser has composited the frame, so it
    * includes the IPC hop and React's commit — the part of the wait an operator
-   * experiences before ProPresenter is involved at all.
+   * experiences before the output renderer is involved at all.
    */
   suggestionRenderedAt?: number
   countdownStartedAt?: number
@@ -125,7 +125,7 @@ export interface ScriptureLatencyMetrics {
    * Transcript received → the operator can see the verse on Kairo's screen.
    *
    * The headline number for the operator's own experience: it owes nothing to
-   * the safety delay or to ProPresenter.
+   * the safety delay or to the output renderer.
    */
   operatorVisibleMs?: number
   /** Everything Kairo did before the deliberate delay started. */
@@ -208,7 +208,7 @@ export function deriveMetrics(trace: ScriptureLatencyTrace): ScriptureLatencyMet
     ['Bible lookup', bibleLookupMs],
     ['Suggestion publish', suggestionPublishMs],
     ['On-screen render', suggestionRenderMs],
-    ['ProPresenter request', presenterRequestMs],
+    ['Output request', presenterRequestMs],
     ['Output confirmation', presenterConfirmationMs],
   ]
   let slowest: { name: string; durationMs: number } | undefined

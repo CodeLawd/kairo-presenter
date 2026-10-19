@@ -9,7 +9,6 @@ import type {
   OnboardingState,
   OrchestratorStatus,
   SessionSnapshot,
-  ProPresenterStatus,
   ScriptureTranslationOption,
   SermonPlan,
   TranscriptResult,
@@ -21,7 +20,6 @@ export const BOOTSTRAP_TIMEOUT_MS = 8_000
 export interface BootstrapLoaders {
   settings: () => Promise<AppSettings | import('@shared/ipc').SettingsWithSecretsStatus>
   orchestrator: () => Promise<OrchestratorStatus>
-  propresenter: () => Promise<ProPresenterStatus>
   transcription: () => Promise<TranscriptResult[]>
   translations: () => Promise<ScriptureTranslationOption[]>
   sermonPlans: () => Promise<SermonPlan[]>
@@ -39,13 +37,12 @@ export interface BootstrapStep {
 
 /**
  * Local essentials only. Remote searches, Bible downloads, microphone
- * permission, NDI probing, and ProPresenter libraries are deliberately absent —
+ * permission and NDI probing are deliberately absent —
  * they hydrate in the background once the interface is open.
  */
 export const BOOTSTRAP_STEPS: BootstrapStep[] = [
   { resource: 'settings', label: 'Getting everything ready…' },
   { resource: 'orchestrator', label: 'Starting automation…' },
-  { resource: 'propresenter', label: 'Checking ProPresenter…' },
   { resource: 'transcription', label: 'Loading transcript history…' },
   { resource: 'translations', label: 'Loading scriptures…' },
   { resource: 'sermonPlans', label: 'Importing scripture playlists…' },
@@ -64,7 +61,6 @@ export interface RunBootstrapOptions {
 const EMPTY: Record<BootstrapResource, unknown> = {
   settings: null,
   orchestrator: null,
-  propresenter: null,
   transcription: [],
   translations: [],
   sermonPlans: [],
@@ -157,7 +153,6 @@ export async function runBootstrap(
   return {
     settings: read('settings'),
     orchestrator: read('orchestrator'),
-    propresenter: read('propresenter'),
     transcription: read('transcription'),
     translations: read('translations'),
     sermonPlans: read('sermonPlans'),

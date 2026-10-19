@@ -16,21 +16,15 @@ import type {
   LyricsOnlineResult,
   LyricsOnlinePreview,
   LyricsProvider,
-  SongPresentOptions,
 } from '@shared/ipc'
 import {
   DEFAULT_IMPORT_SLIDE_LINES,
-  DEFAULT_MAX_CHARS_PER_LINE,
   applyImportSlideBreaks,
   preserveSlideBreaks,
-  splitIntoSlideChunks,
 } from '@shared/lyrics-slides'
-import { normalizeResourceBindings } from '@shared/propresenter-resources'
 import { migrations, store } from '../../db'
 import { workspaceService } from '../workspace'
 import { deleteSongFile, readSongFiles, writeSongFile } from './song-files'
-import { proPresenterService } from '../propresenter'
-import type { PPSlideGroupSpec } from '../propresenter/types'
 import { lyricsScraperService } from './scraper'
 import { lrclibService } from './lrclib'
 import { searchAllProviders } from './online'
@@ -557,61 +551,6 @@ class LyricsService {
     return best
   }
 
-  // ─── Slide formatter ─────────────────────────────────────────────────────────
-
-  /**
-   * Converts a Song into ProPresenter slide groups ready for `createGroupedPresentation`.
-   *
-   * Each section becomes one slide group. Blank lines inside a section are the
-   * slide boundaries — the operator (or the import default) decides the split.
-   * Long lyric lines soft-wrap within a slide at `maxCharsPerLine`.
-   * Copyright placement is controlled by `copyrightPosition`.
-   */
-  formatSlides(song: Song, options: SongPresentOptions = {}): PPSlideGroupSpec[] {
-    const maxCharsPerLine = options.maxCharsPerLine ?? DEFAULT_MAX_CHARS_PER_LINE
-    const copyrightPos   = options.copyrightPosition ?? 'none'
-    const copyrightText  = song.copyright.trim()
-
-    // Build all slide groups for content sections
-    const groups: PPSlideGroupSpec[] = []
-    let totalSlideCount = 0
-
-    for (const section of song.sections) {
-      const chunks = splitIntoSlideChunks(section.lines, maxCharsPerLine)
-      const slides = chunks.map((chunk, chunkIdx) => {
-        const label =
-          chunks.length === 1
-            ? section.label
-            : `${section.label} (${chunkIdx + 1})`
-        return { label, notes: section.type, lines: chunk }
-      })
-      groups.push({ name: section.label, slides })
-      totalSlideCount += slides.length
-    }
-
-    // Copyright handling
-    if (copyrightText && copyrightPos !== 'none') {
-      if (copyrightPos === 'each') {
-        for (const group of groups) {
-          for (const slide of group.slides) {
-            slide.lines = [...slide.lines, '', copyrightText]
-          }
-        }
-      } else if (copyrightPos === 'last' && totalSlideCount > 0) {
-        const lastGroup = groups[groups.length - 1]
-        const lastSlide = lastGroup.slides[lastGroup.slides.length - 1]
-        lastSlide.lines = [...lastSlide.lines, '', copyrightText]
-      } else if (copyrightPos === 'separate') {
-        groups.push({
-          name:   'Copyright',
-          slides: [{ label: 'Copyright', notes: 'copyright', lines: [copyrightText] }],
-        })
-      }
-    }
-
-    return groups
-  }
-
   // ─── Songs folder (source of truth) ─────────────────────────────────────────
 
   private songsDir(): string {
@@ -1106,147 +1045,6 @@ class LyricsService {
       this.emitError(e)
       throw e
     }
-  }
-
-  // ─── Playlist ────────────────────────────────────────────────────────────────
-
-  addToPlaylist(songId: string, playlistId: string): void {
-    const song = this.getSong(songId)
-    if (!song) {
-      log.warn('[LyricsService] addToPlaylist: song not found', { songId })
-      return
-    }
-    log.info('[LyricsService] Song added to playlist', { songId, playlistId, title: song.title })
-    // ProPresenter playlist management via PP API would go here.
-    // The PP API supports adding items to playlists via POST /v1/playlist/{id}/items.
-  }
-
-  // ─── ProPresenter integration ─────────────────────────────────────────────────
-
-  /**
-   * Formats a song from the library as ProPresenter slides and pushes it to PP.
-   * Creates a multi-group presentation (one group per section).
-   * Optionally triggers the first slide immediately.
-   */
-  async sendToProPresenter(songId: string, options: SongPresentOptions = {}): Promise<void> {
-    const ipcSong = this.getSong(songId)
-    if (!ipcSong) throw new Error(`Song not found: ${songId}`)
-
-    const ppStatus = proPresenterService.getStatus()
-    if (ppStatus.state !== 'connected') {
-      throw new Error('ProPresenter is not connected. Connect in Settings → ProPresenter first.')
-    }
-
-    // Reconstruct internal Song from IPC shape for formatting
-    const song: Song = {
-      id:          ipcSong.id,
-      title:       ipcSong.title,
-      artist:      ipcSong.artist,
-      copyright:   ipcSong.copyright ?? '',
-      ccliNumber:  ipcSong.ccliNumber,
-      isFavorite:  ipcSong.isFavorite ?? false,
-      source:      (ipcSong.source as LyricsSource) ?? 'text',
-      sections:    ipcSong.sections.map((s, i) => ({
-        type:  s.type,
-        label: s.label,
-        index: i + 1,
-        lines: s.lines,
-      })),
-      createdAt:   ipcSong.createdAt,
-      updatedAt:   ipcSong.updatedAt,
-    }
-
-    const groups = this.formatSlides(song, options)
-    if (groups.length === 0) throw new Error('Song has no sections to present.')
-
-    const presentationName = `${song.title}${song.artist ? ` — ${song.artist}` : ''}`
-    const bindings = normalizeResourceBindings(store.get('propresenterResources'))
-    let themeId: string | undefined
-    if (bindings.lyricsThemeId) {
-      try {
-        if (await proPresenterService.rawClient.resourceExists('theme', bindings.lyricsThemeId)) {
-          themeId = bindings.lyricsThemeId
-        } else {
-          log.warn('[LyricsService] Bound lyrics theme is unavailable — using the unthemed creation path', {
-            themeId: bindings.lyricsThemeId,
-            title: song.title,
-          })
-        }
-      } catch (err) {
-        log.warn('[LyricsService] Could not confirm bound lyrics theme — using the unthemed creation path', {
-          themeId: bindings.lyricsThemeId,
-          title: song.title,
-          error: (err as Error).message,
-        })
-      }
-    }
-    const presentation = await proPresenterService.rawClient.createGroupedPresentation(
-      presentationName,
-      groups,
-      themeId ? { themeId } : {},
-    )
-
-    if (!presentation) {
-      throw new Error('ProPresenter did not confirm presentation creation.')
-    }
-
-    if (options.triggerFirst) {
-      // Trigger the very first slide (index 0 in the first group)
-      await proPresenterService.rawClient.triggerSlide(presentation.id.uuid, 0)
-      log.info('[LyricsService] First slide triggered', { title: song.title })
-    }
-
-    log.info('[LyricsService] Song sent to ProPresenter', {
-      title:  song.title,
-      groups: groups.length,
-      slides: groups.reduce((n, g) => n + g.slides.length, 0),
-    })
-  }
-
-  /**
-   * Fetches the current ProPresenter library and upserts all items as
-   * stub songs with source='propresenter' (no lyrics content).
-   * Returns the count of new or updated entries.
-   *
-   * These stubs get song files like any other entry: the Songs folder is the
-   * library's source of truth, so a stub that lived only in the database
-   * would disappear on the next launch.
-   */
-  async syncFromProPresenter(): Promise<number> {
-    const ppStatus = proPresenterService.getStatus()
-    if (ppStatus.state !== 'connected') {
-      log.warn('[LyricsService] syncFromProPresenter: PP not connected')
-      return 0
-    }
-
-    const library = await proPresenterService.rawClient.getLibrary()
-    let upserted = 0
-
-    for (const item of library) {
-      const existingIPC = this.getSong(item.id.uuid)
-      if (existingIPC?.source !== 'propresenter') {
-        // Don't overwrite songs already imported from other sources
-        if (existingIPC) continue
-      }
-
-      const stub: Song = {
-        id:          item.id.uuid,
-        title:       item.id.name,
-        artist:      '',
-        copyright:   '',
-        ccliNumber:  undefined,
-        isFavorite:  false,
-        source:      'propresenter',
-        sections:    [],
-        createdAt:   Date.now(),
-        updatedAt:   Date.now(),
-      }
-      this.addSong(stub)
-      upserted++
-    }
-
-    log.info('[LyricsService] PP library synced', { total: library.length, upserted })
-    return upserted
   }
 
   // ─── Event subscriptions ─────────────────────────────────────────────────────

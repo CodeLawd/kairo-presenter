@@ -360,7 +360,7 @@ function SuggestionsPanel({
               <button
                 onClick={() => onApprove(s.id)}
                 className="flex-1 flex items-center justify-center gap-1.5 btn-primary py-1.5 text-xs font-semibold focus-visible:ring-teal-400 focus-visible:ring-offset-1 focus-visible:ring-offset-surface"
-                aria-label={`Approve and send suggested scripture ${s.reference} to ProPresenter`}
+                aria-label={`Approve and send suggested scripture ${s.reference} to Kairo outputs`}
               >
                 <CheckCircle size={11} aria-hidden="true" /> Send
               </button>

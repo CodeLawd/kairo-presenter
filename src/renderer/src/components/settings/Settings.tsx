@@ -1,4 +1,5 @@
 import KeyboardShortcutsSection from './KeyboardShortcutsSection'
+import { MacTrafficLights } from '@/components/shared/MacTrafficLights'
 import { Fragment, useState, useEffect, useRef, useCallback } from 'react'
 import {
   Mic,
@@ -8,7 +9,6 @@ import {
   Save,
   CheckCircle,
   Loader,
-  Wifi,
   ChevronLeft,
   ChevronRight,
   MonitorPlay,
@@ -32,14 +32,12 @@ import {
 } from '@/components/ui/dropdown-menu'
 import AccountSection, { AccountAvatar } from './AccountSection'
 import { requestCoachTour } from '@/components/onboarding/CoachTour'
-import PasswordInput from '@/components/ui/password-input'
 import { useSecretDraft } from '@/components/ui/secret-key-field'
 import { Switch } from '@/components/ui/switch'
 import { Slider } from '@/components/ui/slider'
-import { useAppStore, type SettingsSectionId } from '@/stores/useAppStore'
+import { type SettingsSectionId } from '@/stores/useAppStore'
 import { inputKindLabel, listAudioInputDevices, resolveCaptureDeviceId } from '@/audio/devices'
 import { applyAppTheme } from '@/lib/appTheme'
-import { parseProPresenterPort } from '@/lib/propresenter-port'
 import { normalizeOverlaySettings } from '@shared/overlay-defaults'
 import { normalizePresentationSettings } from '@shared/program'
 import type {
@@ -58,10 +56,7 @@ import { DEFAULT_SETTINGS } from '@/lib/defaultSettings'
 import { useBootstrapStore } from '@/bootstrap/useBootstrapStore'
 import { useUpdates } from '@/hooks/useUpdates'
 import { useAccountStore } from '@/stores/useAccountStore'
-import ProPresenterMark from '@/components/brand/ProPresenterMark'
 import { ProviderLogo, type ProviderId } from '@/components/brand/ProviderLogos'
-import ResourceCatalogue from '@/components/propresenter/ResourceCatalogue'
-import { propresenterEnabled } from '@shared/pp-connect-gate'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -72,8 +67,7 @@ type UpdateFn = <K extends keyof AppSettings>(section: K, partial: Partial<AppSe
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-// Kairo first; ProPresenter is an optional integration, listed last under its
-// own heading (see INTEGRATION_SECTIONS).
+// Settings panes in sidebar order.
 const SECTION_NAV: { id: Section; label: string; hint: string; icon?: Icon }[] = [
   { id: 'general', label: 'General', hint: 'Theme, fonts, lyrics color & storage', icon: SlidersHorizontal },
   { id: 'overlay', label: 'Verses on screen', hint: 'Translation & verse numbers', icon: MonitorPlay },
@@ -81,14 +75,12 @@ const SECTION_NAV: { id: Section; label: string; hint: string; icon?: Icon }[] =
   { id: 'audio', label: 'Audio', hint: 'Input device & levels', icon: Mic },
   { id: 'apikeys', label: 'API Keys', hint: 'Deepgram, Claude, DeepSeek, Bible, Brave', icon: Key },
   { id: 'shortcuts', label: 'Keyboard Shortcuts', hint: 'Commands & key bindings', icon: SlidersHorizontal },
-  { id: 'propresenter', label: 'ProPresenter', hint: 'Optional — connection & resources' },
   { id: 'account', label: 'Account', hint: 'Sign in, team sync & setup', icon: CircleUser },
 ]
 
-const INTEGRATION_SECTIONS: ReadonlySet<Section> = new Set(['propresenter'])
+const INTEGRATION_SECTIONS: ReadonlySet<Section> = new Set([])
 
 const NAV_ICON_BG: Record<Section, string> = {
-  propresenter: 'bg-[#3B6FD9]',
   audio: 'bg-[#4F6888]',
   apikeys: 'bg-[#374151]',
   scripture: 'bg-[#5BA85A]',
@@ -117,15 +109,15 @@ function PrefGroup({
     <section className="space-y-2">
       {title ? (
         <div className="px-0.5">
-          <h3 className="text-xs font-semibold tracking-tight text-white/60">{title}</h3>
+          <h3 className="text-[13px] font-semibold tracking-tight text-white">{title}</h3>
           {description ? (
-            <p className="mt-0.5 text-[11px] leading-snug text-white/35">{description}</p>
+            <p className="mt-0.5 text-[11px] leading-snug text-white/45">{description}</p>
           ) : null}
         </div>
       ) : null}
       <div className={cn(
         'overflow-hidden',
-        plain ? '' : 'rounded-xl bg-surface-tertiary',
+        plain ? '' : 'pref-group rounded-xl bg-surface-tertiary',
       )}>
         {children}
       </div>
@@ -156,7 +148,7 @@ function PrefRow({
     )
   }
   return (
-    <div className="flex min-h-[38px] items-center justify-between gap-3 px-3.5 py-2">
+    <div className="flex min-h-[44px] items-center justify-between gap-3 px-3.5 py-2">
       <div className="min-w-0 flex-1">
         <p className="text-[13px] leading-none text-white">{label}</p>
         {hint ? <p className="mt-1 text-[11px] leading-snug text-white/40">{hint}</p> : null}
@@ -166,19 +158,11 @@ function PrefRow({
   )
 }
 
-function PrefPad({ children }: { children: React.ReactNode }): React.ReactElement {
-  return <div className="px-3.5 py-2.5">{children}</div>
-}
-
 const PREF_INPUT = 'input h-7 w-[148px] py-0 text-right font-mono text-[13px]'
 const PREF_SELECT = 'input h-7 w-[168px] py-0 text-[13px]'
 
-function SettingsDivider(): React.ReactElement {
-  return <div className="h-2" />
-}
-
 function SectionGlyph({
-  section,
+  section: _section,
   icon: Icon,
   size,
   className,
@@ -188,43 +172,8 @@ function SectionGlyph({
   size: number
   className?: string
 }): React.ReactElement {
-  if (section === 'propresenter' || !Icon) {
-    return <ProPresenterMark size={size} className={className} />
-  }
+  if (!Icon) return <span />
   return <Icon size={size} className={className} aria-hidden="true" />
-}
-
-function MacTrafficLights({ onClose }: { onClose?: () => void }): React.ReactElement {
-  return (
-    <div data-settings-drag className="group/lights flex items-center gap-[8px] px-[13px] pb-2.5 pt-3.5">
-      <button
-        type="button"
-        aria-label="Close"
-        onClick={onClose}
-        className="relative h-[12px] w-[12px] rounded-full bg-[#FF5F57] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
-      >
-        <span className="pointer-events-none absolute inset-0 grid place-items-center text-[9px] font-bold leading-none text-[#4d0000] opacity-0 group-hover/lights:opacity-100">
-          ×
-        </span>
-      </button>
-      <span
-        aria-hidden="true"
-        className="relative h-[12px] w-[12px] rounded-full bg-[#FEBC2E]"
-      >
-        <span className="pointer-events-none absolute inset-0 grid place-items-center text-[9px] font-bold leading-none text-[#5a3a00] opacity-0 group-hover/lights:opacity-100">
-          −
-        </span>
-      </span>
-      <span
-        aria-hidden="true"
-        className="relative h-[12px] w-[12px] rounded-full bg-[#28C840]"
-      >
-        <span className="pointer-events-none absolute inset-0 grid place-items-center text-[8px] font-bold leading-none text-[#0b4a14] opacity-0 group-hover/lights:opacity-100">
-          +
-        </span>
-      </span>
-    </div>
-  )
 }
 
 function Toggle({
@@ -287,16 +236,6 @@ function LevelMeter({ level, active }: { level: AudioLevel | null; active: boole
 
 
 // ─── Helper: Connection dot ───────────────────────────────────────────────────
-
-function ConnectionDot({ status }: { status: TestStatus }) {
-  const map: Record<TestStatus, string> = {
-    idle: 'bg-slate-600',
-    testing: 'bg-yellow-500 animate-pulse shadow-glow-yellow/30',
-    ok: 'bg-teal-400 shadow-glow-teal/40',
-    fail: 'bg-red-500 shadow-glow-red/30',
-  }
-  return <span className={cn('inline-block w-2.5 h-2.5 rounded-full shrink-0 transition-all duration-300', map[status])} />
-}
 
 function openProviderDocs(url: string): void {
   window.open(url, '_blank', 'noopener,noreferrer')
@@ -560,192 +499,6 @@ function SaveBar({
         {saved ? <CheckCircle size={13} aria-hidden="true" /> : <Save size={13} aria-hidden="true" />}
         {saved ? 'Saved' : 'Save'}
       </button>
-    </div>
-  )
-}
-
-// ─── Section: ProPresenter Connection ────────────────────────────────────────
-
-/**
- * The one switch for the whole integration. Kairo is standalone: until this is
- * on, ProPresenter is never probed, prompted for or reported on anywhere.
- * Saved at once — it is not part of the connection form's Save.
- */
-function PropresenterSwitch({
-  settings,
-  onChange,
-}: {
-  settings: AppSettings
-  onChange: (next: AppSettings['propresenter']) => void
-}): React.ReactElement {
-  const enabled = propresenterEnabled(settings)
-  const toggle = async (on: boolean): Promise<void> => {
-    const next = { ...settings.propresenter, enabled: on }
-    onChange(next)
-    await window.api.settings.set('propresenter', next)
-    if (on) {
-      // Try straight away; a miss only shows in the header status.
-      await window.api.propresenter
-        .connect({ host: next.host, port: next.port, password: next.password })
-        .catch(() => undefined)
-    }
-  }
-  return (
-    <PrefGroup title="ProPresenter" plain>
-      <PrefRow
-        label="Use ProPresenter"
-        hint={
-          enabled
-            ? 'Kairo can also send to ProPresenter — library matches, messages, stage and its NDI video input.'
-            : 'Off — Kairo runs its own screens and never contacts ProPresenter.'
-        }
-      >
-        <Toggle checked={enabled} onChange={(on) => void toggle(on)} />
-      </PrefRow>
-    </PrefGroup>
-  )
-}
-
-function ConnectionSection({
-  settings,
-  update,
-  onSave,
-  savedSection,
-}: {
-  settings: AppSettings
-  update: UpdateFn
-  onSave: () => void
-  savedSection: string | null
-}) {
-  const [testStatus, setTestStatus] = useState<TestStatus>('idle')
-  const [testMsg, setTestMsg] = useState('')
-  const pp = settings.propresenter
-  const [portDraft, setPortDraft] = useState(() => String(pp.port))
-  const parsedPort = parseProPresenterPort(portDraft)
-
-  useEffect(() => {
-    setPortDraft(String(pp.port))
-  }, [pp.port])
-
-  const testConnection = async () => {
-    if (parsedPort === null) {
-      setTestStatus('fail')
-      setTestMsg('Enter a port between 1 and 65535')
-      return
-    }
-    setTestStatus('testing')
-    setTestMsg('Connecting…')
-    try {
-      await window.api.propresenter.connect({ host: pp.host, port: parsedPort, password: pp.password })
-      let s = await window.api.propresenter.getStatus()
-      if (s.state === 'connecting') {
-        await new Promise((r) => setTimeout(r, 2000))
-        s = await window.api.propresenter.getStatus()
-      }
-      if (s.state === 'connected') {
-        setTestStatus('ok')
-        setTestMsg(`Connected · ${s.host}:${s.port}`)
-      } else {
-        setTestStatus('fail')
-        setTestMsg('No response — check IP, port, and that both Macs are on the same network')
-      }
-    } catch (err) {
-      setTestStatus('fail')
-      setTestMsg(err instanceof Error ? err.message : 'Unknown error')
-    }
-  }
-
-  const statusLabel =
-    testStatus === 'testing'
-      ? 'Connecting…'
-      : testStatus === 'ok'
-        ? 'Connected'
-        : testStatus === 'fail'
-          ? 'Connection failed'
-          : 'Not tested'
-
-  return (
-    <div className="space-y-5">
-      <PrefGroup title="Stage Display" plain>
-        <PrefRow label="Status" hint={testMsg || undefined}>
-          <div className="flex items-center gap-2.5">
-            <ConnectionDot status={testStatus} />
-            <span className="text-[13px] text-white/55">{statusLabel}</span>
-            <button
-              className="btn-secondary flex items-center gap-1.5 py-1 px-2.5 text-[12px] shrink-0"
-              onClick={() => void testConnection()}
-              disabled={testStatus === 'testing'}
-            >
-              {testStatus === 'testing' ? (
-                <Loader size={12} className="animate-spin" aria-hidden="true" />
-              ) : (
-                <Wifi size={12} aria-hidden="true" />
-              )}
-              {testStatus === 'testing' ? 'Testing…' : 'Test'}
-            </button>
-          </div>
-        </PrefRow>
-        <PrefRow label="IP Address">
-          <input
-            className={cn(PREF_INPUT, 'w-[220px] max-w-[44vw]')}
-            value={pp.host}
-            onChange={(e) => update('propresenter', { host: e.target.value })}
-            placeholder="e.g. 192.168.1.100"
-            spellCheck={false}
-            name="pp-host"
-            aria-label="ProPresenter IP Address"
-          />
-        </PrefRow>
-        <PrefRow label="Port">
-          <input
-            className={cn(PREF_INPUT, 'w-[220px] max-w-[44vw] tabular-nums')}
-            type="text"
-            inputMode="numeric"
-            pattern="[0-9]*"
-            value={portDraft}
-            onChange={(e) => {
-              const draft = e.target.value.replace(/\D/g, '').slice(0, 5)
-              setPortDraft(draft)
-              const port = parseProPresenterPort(draft)
-              if (port !== null) update('propresenter', { port })
-            }}
-            aria-invalid={portDraft !== '' && parsedPort === null}
-            name="pp-port"
-            aria-label="ProPresenter Port"
-          />
-        </PrefRow>
-        <PrefRow label="Password" hint="Preferences → Stage Display">
-          <div className="w-[220px] max-w-[44vw]">
-            <PasswordInput
-              className="h-7 py-0 text-right font-mono text-[13px]"
-              value={pp.password}
-              onChange={(e) => update('propresenter', { password: e.target.value })}
-              placeholder="Optional"
-              autoComplete="off"
-              name="pp-password"
-              aria-label="Stage Display Password"
-            />
-          </div>
-        </PrefRow>
-      </PrefGroup>
-
-      {parsedPort === null && (
-        <p role="alert" className="px-0.5 text-right text-[11px] text-amber-400">
-          Enter a port between 1 and 65535
-        </p>
-      )}
-      <SaveBar
-        sectionId="propresenter"
-        savedSection={savedSection}
-        onSave={() => {
-          if (parsedPort === null) {
-            setTestStatus('fail')
-            setTestMsg('Enter a port between 1 and 65535')
-            return
-          }
-          onSave()
-        }}
-      />
     </div>
   )
 }
@@ -1941,7 +1694,7 @@ function GeneralSection({
 
 export default function Settings({
   onClose,
-  initialSection = 'propresenter',
+  initialSection = 'general',
 }: { onClose?: () => void; initialSection?: Section } = {}): React.ReactElement {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS)
   const [loading, setLoading] = useState(true)
@@ -1962,7 +1715,6 @@ export default function Settings({
       if (cancelled) return
       useBootstrapStore.getState().setSettings(stored)
       setSettings((prev) => ({
-        propresenter: { ...prev.propresenter, ...stored.propresenter },
         audio: { ...prev.audio, ...stored.audio },
         stt: { ...prev.stt, ...stored.stt },
         scripture: { ...prev.scripture, ...stored.scripture },
@@ -1975,7 +1727,6 @@ export default function Settings({
         tracks: { ...prev.tracks, ...stored.tracks },
         church: { ...prev.church, ...stored.church },
         documents: { ...prev.documents, ...stored.documents },
-        propresenterResources: { ...prev.propresenterResources, ...stored.propresenterResources },
         presentation: normalizePresentationSettings(stored.presentation ?? prev.presentation),
         usage: { ...prev.usage, ...stored.usage },
         themeDefaults: stored.themeDefaults ?? prev.themeDefaults,
@@ -2050,10 +1801,6 @@ export default function Settings({
   const saves: Record<Section, () => void> = {
     account: () => {},
     shortcuts: () => {},
-    propresenter: () => {
-      publish('propresenter', settings.propresenter)
-      window.api.settings.set('propresenter', settings.propresenter).then(() => showSaved('propresenter'))
-    },
     audio: () => {
       publish('audio', settings.audio)
       Promise.all([
@@ -2077,7 +1824,7 @@ export default function Settings({
     overlay: () => {
       // Send only the phase-1 fields this modal edits — main merges onto the
       // freshly-read stored overlay, so this stale copy can't clobber the Theme
-      // page's mode/theme or the ppVideoInputUuid the orchestrator persists.
+      // page's theme and routing choices.
       const o = settings.overlay
       publish('overlay', settings.overlay)
       window.api.settings
@@ -2130,19 +1877,19 @@ export default function Settings({
   const canForward = histIndex < historyRef.current.length - 1
 
   return (
-    <div className="kairo-pp-settings flex h-full w-full overflow-hidden rounded-xl bg-surface-secondary text-white">
-      <aside data-settings-drag className="flex w-[212px] shrink-0 flex-col bg-surface-rail">
-        <MacTrafficLights onClose={onClose} />
+    <div className="kairo-pp-settings flex h-full w-full overflow-hidden rounded-xl text-white">
+      <aside data-settings-drag className="glass hairline-r flex w-[220px] shrink-0 flex-col">
+        <MacTrafficLights onClose={onClose} className="px-[18px] pb-3 pt-[18px]" />
 
         <div className="px-3 pb-2.5">
-          <label className="flex h-8 items-center gap-1.5 rounded-md bg-surface px-2">
-            <Search size={11} className="shrink-0 text-white/35" aria-hidden="true" />
+          <label className="flex h-7 items-center gap-1.5 rounded-lg bg-surface-tertiary px-2">
+            <Search size={12} className="shrink-0 text-white/40" aria-hidden="true" />
             <input
               value={navQuery}
               onChange={(e) => setNavQuery(e.target.value)}
               placeholder="Search"
               aria-label="Search settings"
-              className="w-full bg-transparent text-[12px] text-white outline-none placeholder:text-white/35"
+              className="w-full bg-transparent text-[13px] text-white outline-none placeholder:text-white/40"
             />
           </label>
         </div>
@@ -2151,8 +1898,8 @@ export default function Settings({
           type="button"
           onClick={() => selectSection('account')}
           className={cn(
-            'mx-2 mb-2 flex items-center gap-2.5 rounded-md px-2 py-1.5 text-left',
-            activeSection === 'account' ? 'bg-surface-elevated' : 'hover:bg-surface-tertiary',
+            'mx-2 mb-3 flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left',
+            activeSection === 'account' ? 'row-selected' : 'hover:bg-surface-tertiary',
           )}
         >
           <AccountAvatar session={session} size={32} />
@@ -2183,19 +1930,20 @@ export default function Settings({
                   type="button"
                   onClick={() => selectSection(id)}
                   className={cn(
-                    'flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-left text-[13px] text-white',
-                    active ? 'bg-surface-elevated' : 'hover:bg-surface-tertiary',
+                    // System Settings: a blue pill for the open pane, the badge keeps its colour.
+                    'flex w-full items-center gap-2.5 rounded-lg px-2 py-[5px] text-left text-[13px] text-white',
+                    active ? 'bg-teal-500 text-on-accent' : 'hover:bg-surface-tertiary',
                   )}
                   aria-current={active ? 'page' : undefined}
                   aria-label={`${label} settings: ${hint}`}
                 >
                   <span
                     className={cn(
-                      'grid h-[18px] w-[18px] shrink-0 place-items-center rounded-md text-white',
+                      'grid h-[22px] w-[22px] shrink-0 place-items-center rounded-[6px] text-white',
                       NAV_ICON_BG[id],
                     )}
                   >
-                    <SectionGlyph section={id} icon={icon} size={11} className="text-white" />
+                    <SectionGlyph section={id} icon={icon} size={13} className="text-white" />
                   </span>
                   <span className="min-w-0 truncate">{label}</span>
                 </button>
@@ -2207,29 +1955,33 @@ export default function Settings({
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col bg-surface-secondary">
-        <header data-settings-drag className="flex shrink-0 items-center gap-0.5 px-4 py-4">
-          <button
-            type="button"
-            aria-label="Back"
-            disabled={!canBack}
-            onClick={() => goHistory(-1)}
-            className="grid h-6 w-6 place-items-center rounded text-white/50 hover:bg-surface-elevated disabled:opacity-25"
-          >
-            <ChevronLeft size={16} aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            aria-label="Forward"
-            disabled={!canForward}
-            onClick={() => goHistory(1)}
-            className="grid h-6 w-6 place-items-center rounded text-white/50 hover:bg-surface-elevated disabled:opacity-25"
-          >
-            <ChevronRight size={16} aria-hidden="true" />
-          </button>
-          <h1 className="ml-1 text-[15px] font-semibold tracking-tight text-white">{currentNav.label}</h1>
+        <header data-settings-drag className="flex shrink-0 items-center gap-3 px-5 pb-2 pt-3.5">
+          {/* Back and forward share one capsule, as in System Settings. */}
+          <div className="flex h-7 items-center rounded-full bg-surface-tertiary">
+            <button
+              type="button"
+              aria-label="Back"
+              disabled={!canBack}
+              onClick={() => goHistory(-1)}
+              className="grid h-7 w-8 place-items-center rounded-l-full text-white/70 hover:bg-surface-elevated disabled:opacity-30 disabled:hover:bg-transparent"
+            >
+              <ChevronLeft size={15} aria-hidden="true" />
+            </button>
+            <span className="h-4 w-px bg-surface-elevated" aria-hidden="true" />
+            <button
+              type="button"
+              aria-label="Forward"
+              disabled={!canForward}
+              onClick={() => goHistory(1)}
+              className="grid h-7 w-8 place-items-center rounded-r-full text-white/70 hover:bg-surface-elevated disabled:opacity-30 disabled:hover:bg-transparent"
+            >
+              <ChevronRight size={15} aria-hidden="true" />
+            </button>
+          </div>
+          <h1 className="text-[15px] font-semibold tracking-tight text-white">{currentNav.label}</h1>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6 pt-5">
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6 pt-3">
           <div className="space-y-5">
             {loading ? (
               <div className="flex items-center gap-3 pt-8 text-white/40">
@@ -2238,54 +1990,6 @@ export default function Settings({
               </div>
             ) : (
               <>
-                {activeSection === 'propresenter' && (
-                  <>
-                    <PropresenterSwitch
-                      settings={settings}
-                      onChange={(next) => {
-                        update('propresenter', { enabled: next.enabled })
-                        publish('propresenter', next)
-                      }}
-                    />
-                    {propresenterEnabled(settings) && (<>
-                    <SettingsDivider />
-                    <ConnectionSection
-                      settings={settings}
-                      update={update}
-                      onSave={saves.propresenter}
-                      savedSection={savedSection}
-                    />
-                    <SettingsDivider />
-                    <PrefGroup title="Messages layer">
-                      <PrefPad>
-                        <p className="text-[12px] leading-relaxed text-white/45">
-                          What Kairo sends to ProPresenter — library matches, the Messages layer and
-                          stage messages, and their text templates — is set up in{' '}
-                          <button
-                            type="button"
-                            className="text-teal-400 hover:underline"
-                            onClick={() => {
-                              onClose?.()
-                              useAppStore.getState().openScreens()
-                            }}
-                          >
-                            Screens
-                          </button>
-                          . To style the Messages layer:
-                        </p>
-                        <ol className="mt-2 list-decimal space-y-1.5 pl-4 text-[12px] leading-relaxed text-white/45">
-                          <li>Open Messages in ProPresenter.</li>
-                          <li>Edit “Kairo Scripture” → Theme.</li>
-                          <li>One full-width text box, lower-third or centered, dark backdrop.</li>
-                          <li>Use Test verse in Screens while you style it.</li>
-                        </ol>
-                      </PrefPad>
-                    </PrefGroup>
-                    <SettingsDivider />
-                    <ResourceCatalogue mode="settings" />
-                    </>)}
-                  </>
-                )}
                 {activeSection === 'audio' && (
                   <AudioSection
                     settings={settings}

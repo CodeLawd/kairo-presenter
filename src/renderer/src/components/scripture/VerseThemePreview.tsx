@@ -10,7 +10,6 @@ import { ScaledOverlayPreview } from "@/components/overlay/ScaledOverlayPreview"
 import type { OverlayVideoTime } from "@shared/overlay-fit";
 import type { OverlayTheme, ScriptureResult } from "@shared/ipc";
 import type { SendStatus } from "./types";
-import { sectionFill } from "@/components/lyrics/section-colors";
 
 export interface VerseThemePreviewProps {
   result: ScriptureResult;
@@ -207,10 +206,9 @@ export function VerseThemePreview({
       </div>
 
       {chrome && footer && (
-        // The lyric cards' bar, in the verse blue, carrying the reference.
+        // References are labels; selection and live state belong to the frame.
         <div
-          className="flex h-[22px] w-full shrink-0 items-center gap-2 self-stretch px-2 text-[12px]"
-          style={sectionFill("verse")}
+          className="flex h-[22px] w-full shrink-0 items-center gap-2 self-stretch bg-surface-tertiary px-2 text-[12px] text-slate-300"
         >
           <span className="min-w-0 flex-1 truncate font-medium">{formatCardReference(result.reference)}</span>
           <span className="shrink-0 tabular-nums opacity-80">{footer.number}</span>

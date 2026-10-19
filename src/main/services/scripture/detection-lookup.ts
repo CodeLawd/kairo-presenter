@@ -26,3 +26,26 @@ export async function lookupDetectedScripture(
   )
   return results.flatMap((result) => result.verses)
 }
+
+/**
+ * Looks a detection up in `translation`. When that was a translation the
+ * preacher named and it can't be shown here (not installed, no API.Bible
+ * access), falls back to the default so the operator still gets the verse —
+ * and reports the named one, so the card can say so.
+ */
+export async function lookupWithTranslationFallback(
+  lookup: (translation: ScriptureTranslation) => Promise<ScriptureVerse[]>,
+  translation: ScriptureTranslation,
+  requested: ScriptureTranslation | null,
+  defaultTranslation: ScriptureTranslation,
+): Promise<{ verses: ScriptureVerse[]; translation: ScriptureTranslation; requestedTranslation?: ScriptureTranslation }> {
+  const verses = await lookup(translation)
+  if (verses.length > 0 || !requested || requested === defaultTranslation) {
+    return { verses, translation }
+  }
+  return {
+    verses: await lookup(defaultTranslation),
+    translation: defaultTranslation,
+    requestedTranslation: requested,
+  }
+}

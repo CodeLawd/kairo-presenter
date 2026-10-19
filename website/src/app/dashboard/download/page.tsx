@@ -10,7 +10,7 @@ export default function DownloadPage(): React.ReactElement {
         <CardHeader className="border-b">
           <CardTitle>Desktop app</CardTitle>
           <CardDescription>
-            Install on the computer that runs ProPresenter, then sign in with the same account you
+            Install on your presentation computer, then sign in with the same account you
             use here.
           </CardDescription>
         </CardHeader>

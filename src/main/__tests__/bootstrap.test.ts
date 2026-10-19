@@ -12,7 +12,6 @@ const ACCOUNT = {
   lastSyncedAt: null,
 } as never
 const ORCH = { running: true, totalPresentations: 4 } as never
-const PP = { state: 'connected' } as never
 const LIVE_PLAN = { planId: 'plan-1', title: 'Sunday', itemCount: 3, unavailableCount: 0 }
 const ONBOARDING = {
   completedSteps: [],
@@ -26,7 +25,6 @@ function loaders(overrides: Partial<BootstrapLoaders> = {}): BootstrapLoaders {
   return {
     settings: async () => SETTINGS,
     orchestrator: async () => ORCH,
-    propresenter: async () => PP,
     transcription: async () => [{ id: 't1' } as never],
     translations: async () => [{ id: 'KJV' } as never],
     sermonPlans: async () => [{ id: 'plan-1' } as never],
@@ -43,7 +41,6 @@ test('returns every successful local resource in one snapshot', async () => {
 
   assert.equal(snapshot.settings, SETTINGS)
   assert.equal(snapshot.orchestrator, ORCH)
-  assert.equal(snapshot.propresenter, PP)
   assert.equal(snapshot.transcription.length, 1)
   assert.equal(snapshot.translations.length, 1)
   assert.equal(snapshot.sermonPlans.length, 1)
@@ -153,6 +150,6 @@ test('every resource has a user-facing label', () => {
   }
   assert.deepEqual(
     BOOTSTRAP_STEPS.map((s) => s.resource).sort(),
-    ['account', 'livePlan', 'lyrics', 'onboarding', 'orchestrator', 'propresenter', 'sermonPlans', 'settings', 'transcription', 'translations'],
+    ['account', 'livePlan', 'lyrics', 'onboarding', 'orchestrator', 'sermonPlans', 'settings', 'transcription', 'translations'],
   )
 })

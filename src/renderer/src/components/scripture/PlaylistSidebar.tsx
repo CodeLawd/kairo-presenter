@@ -166,7 +166,7 @@ export function PlaylistSidebar({
   return (
     <aside
       data-playlist-sidebar=""
-      className="flex h-full min-h-0 shrink-0 flex-col overflow-hidden bg-surface-secondary"
+      className="hairline-r flex h-full min-h-0 shrink-0 flex-col overflow-hidden bg-surface-secondary"
       style={{ width }}
     >
       {/* Library first, playlists under it — the same two-section rail the
@@ -257,6 +257,30 @@ export function PlaylistSidebar({
         )}
       </div>
 
+      {/* The main way a playlist starts: one card, plain to see, one line of formats. */}
+      <div className="shrink-0 px-3 pt-3">
+        <button
+          type="button"
+          className="flex w-full items-center gap-3 rounded-lg bg-surface-tertiary px-3 py-2.5 text-left transition-colors hover:bg-surface-elevated disabled:opacity-70"
+          onClick={onImportNotes}
+          disabled={importingNotes}
+          aria-busy={importingNotes}
+          title="You review the scripture references before the playlist is made"
+        >
+          <span className="grid size-8 shrink-0 place-items-center rounded-md bg-teal-500 text-on-accent">
+            {importingNotes
+              ? <Loader size={15} className="animate-spin motion-reduce:animate-none" aria-hidden="true" />
+              : <Upload size={15} aria-hidden="true" />}
+          </span>
+          <span className="min-w-0">
+            <span className="block text-[13px] font-semibold text-white">
+              {importingNotes ? "Reading sermon notes…" : "Upload sermon notes"}
+            </span>
+            <span className="block truncate text-[11px] text-slate-400">PDF, Word, TXT, Markdown or RTF</span>
+          </span>
+        </button>
+      </div>
+
       <div className="flex shrink-0 items-center gap-0.5 px-3 pb-1 pt-3">
         <h2 className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">
           Playlists
@@ -303,12 +327,9 @@ export function PlaylistSidebar({
       >
         <div className="py-1">
           {plans.length === 0 && (
-            <div className="px-3 py-8 text-center">
-              <p className="text-xs font-medium text-slate-400">No playlists yet</p>
-              <p className="mt-1 text-[11px] leading-relaxed text-slate-600">
-                Create a playlist, search for scripture, then choose Add to playlist.
-              </p>
-            </div>
+            <p className="px-3 pb-6 pt-4 text-center text-[11px] leading-relaxed text-slate-600">
+              No playlists yet. Upload sermon notes above, or create one with ＋.
+            </p>
           )}
 
           {plans.map((plan) => (

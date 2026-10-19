@@ -70,7 +70,7 @@ Object.assign(globalThis, {
         onChanged: () => () => {},
       },
       ndi: {
-        getStatus: async () => ({ available: true, sending: false, ppInputConfigured: false }),
+        getStatus: async () => ({ available: true, sending: false, outputs: [] }),
       },
       scripture: { getTranslations: () => translationsResult() },
     },
@@ -108,7 +108,6 @@ function snapshot(m: Modules, overrides: Partial<AppBootstrapSnapshot> = {}): Ap
       scripture: { ...m.defaults.scripture, autoMode: true, confidenceThreshold: 0.9 },
     },
     orchestrator: { running: true, autoMode: true, ppConnected: true, health: [], totalPresentations: 12 },
-    propresenter: { state: 'connected' } as never,
     transcription: [{ id: 't1' } as never],
     translations: [{ id: 'KJV' } as never],
     sermonPlans: [{ id: 'plan-1' } as never],
@@ -175,7 +174,7 @@ test('bootstrap hydrates the existing runtime store', async () => {
   const m = await load()
   const runtime = m.useAppStore.getState()
   assert.equal(runtime.isTranscribing, true)
-  assert.equal(runtime.ppState, 'connected')
+  assert.equal('ppState' in runtime, false)
   assert.equal(runtime.autoModeEnabled, true)
   assert.equal(runtime.confidenceThreshold, 0.9)
   assert.equal(runtime.captureDeviceId, 'mic-7')

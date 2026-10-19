@@ -237,7 +237,7 @@ export function SongQuickOpen({ songs, onClose, onOpen }: SongQuickOpenProps): R
 
   return (
     <div className={cn(
-        'fixed inset-0 z-[100] flex items-start justify-center bg-black/50 px-4 pt-[10vh] animate-fade-in motion-reduce:animate-none transition-opacity duration-150',
+        'fixed inset-0 z-[100] flex items-start justify-center bg-black/35 px-4 pt-[10vh] animate-fade-in motion-reduce:animate-none transition-opacity duration-150',
         // During a drag the dim lifts and the finder lets the pointer through
         // to the sidebar, but stays visible so you can see what you picked up.
         dragging && 'pointer-events-none bg-transparent [&_section]:opacity-60 [&_aside]:opacity-0',
@@ -245,7 +245,7 @@ export function SongQuickOpen({ songs, onClose, onOpen }: SongQuickOpenProps): R
       role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
       <div className="flex w-full max-w-5xl items-start justify-center gap-3" onKeyDown={handleKeyDown}>
       <section role="dialog" aria-modal="true" aria-label="Search song library"
-        className="flex w-[30rem] shrink-0 flex-col overflow-hidden rounded-xl bg-surface-secondary animate-spring-in motion-reduce:animate-none">
+        className="flex w-[30rem] shrink-0 flex-col overflow-hidden rounded-xl modal-glass animate-spring-in motion-reduce:animate-none">
         <div className="flex h-12 shrink-0 items-center gap-2.5 px-3.5">
           <Search size={17} className="shrink-0 text-zinc-500" aria-hidden="true" />
           <input ref={inputRef} value={query} onChange={(event) => setQuery(event.target.value)}

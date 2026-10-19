@@ -1,39 +1,63 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
+import { Children, useCallback, useEffect, useRef, useState } from 'react'
 import { SegmentedControl } from '@/components/shared/SegmentedControl'
+import { Popover } from 'radix-ui'
 import { Switch } from '@/components/ui/switch'
-import { Image, Layers, Pause, Play, Plus, RotateCcw, Send, Trash2, Video, Volume2, X } from '@/icons'
+import { ChevronRight, Clock, Copy, Edit2, Layers, MonitorPlay, Pause, Pencil, Play, Plus, Send, Settings, SkipBack, Trash2, Video, Volume2, X } from '@/icons'
 import { cn } from '@/lib/utils'
 import { useNow, usePresentation, useProgramState } from '@/hooks/useProgramState'
+import { useAppStore } from '@/stores/useAppStore'
+import { PropPreview } from '@/components/props/PropPreview'
+import { RowContextMenu } from '@/components/shared/RowContextMenu'
 import {
+  DEFAULT_TIMER,
+  MAX_PROGRAM_TIMERS,
+  MAX_SAVED_MESSAGE_LENGTH,
+  MAX_SAVED_MESSAGES,
   formatClock,
+  formatTimer,
+  idleTimer,
+  screenTimerDef,
   timerReadout,
   timerRunning,
   type PresentationSettings,
   type ProgramProp,
+  type ProgramTimerDef,
   type ProgramTimerState,
   type ProgramTimerStyle,
-  type PropPosition,
 } from '@shared/program'
 
 // ─── Booth toolbox panels for the program layers (standalone phases 2–3) ──────
 // Everything here acts on Kairo's own screens and NDI feeds, not ProPresenter.
 
+/**
+ * A titled group, as in macOS System Settings: the title (and its action, e.g.
+ * Show) sits above one rounded box. By default the content is one padded block;
+ * with `split`, every child is its own row, divided by a faint inset line.
+ */
 function Section({
   title,
   action,
+  split = false,
   children,
 }: {
   title: string
   action?: React.ReactNode
+  split?: boolean
   children: React.ReactNode
 }): React.ReactElement {
   return (
-    <section className="space-y-2.5 px-3 py-3">
-      <div className="flex items-center justify-between gap-2">
-        <h3 className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">{title}</h3>
+    <section className="space-y-1.5 px-3 pt-3 last:pb-3">
+      <div className="flex min-h-7 items-center justify-between gap-2 px-1">
+        <h3 className="text-[12px] font-semibold text-zinc-200">{title}</h3>
         {action}
       </div>
-      {children}
+      <div className="pref-group pref-group-dim overflow-hidden rounded-lg bg-surface">
+        {split
+          ? Children.toArray(children).map((child, i) => (
+              <div key={i} className="px-3.5 py-2.5">{child}</div>
+            ))
+          : <div className="space-y-2.5 px-3.5 py-3">{children}</div>}
+      </div>
     </section>
   )
 }
@@ -45,37 +69,40 @@ function report(err: unknown): void {
 
 // ─── Timers ───────────────────────────────────────────────────────────────────
 
-const PRESET_MINUTES = [1, 3, 5, 10, 15, 30]
-
 /**
  * Presentation settings with writes coalesced: the panel follows every change
  * at once, but a slider or colour drag reaches settings (a disk write and a
  * reconcile of every screen in main) once it settles, not on every step.
  */
-function useDraftPresentation(): [PresentationSettings, (next: PresentationSettings) => void] {
+export function useDraftPresentation(): [
+  PresentationSettings,
+  (next: PresentationSettings) => void,
+  /** Writes a waiting change now instead of after the pause; resolves once saved. */
+  () => Promise<void>,
+] {
   const [stored, save] = usePresentation()
   const [draft, setDraft] = useState<PresentationSettings | null>(null)
   const pending = useRef<PresentationSettings | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const flush = useCallback(() => {
+  const flush = useCallback(async (): Promise<void> => {
     if (timer.current) clearTimeout(timer.current)
     timer.current = null
     const next = pending.current
     pending.current = null
     // Drop the draft once saved, unless a newer change is already waiting.
-    if (next) void save(next).then(() => !pending.current && setDraft(null), report)
+    if (next) await save(next).then(() => { if (!pending.current) setDraft(null) }, report)
   }, [save])
-  useEffect(() => flush, [flush])
+  useEffect(() => () => void flush(), [flush])
   const update = useCallback(
     (next: PresentationSettings) => {
       pending.current = next
       setDraft(next)
       if (timer.current) clearTimeout(timer.current)
-      timer.current = setTimeout(flush, 250)
+      timer.current = setTimeout(() => void flush(), 250)
     },
     [flush],
   )
-  return [draft ?? stored, update]
+  return [draft ?? stored, update, flush]
 }
 
 /** Screens whose Look allows the layer show it only while this is on. */
@@ -97,106 +124,6 @@ function OnScreensToggle({ on, label, onChange }: { on: boolean; label: string; 
   )
 }
 
-type TimePart = 'h' | 'm' | 's'
-const TIME_PARTS: Array<{ part: TimePart; label: string; max: number }> = [
-  { part: 'h', label: 'Hours', max: 99 },
-  { part: 'm', label: 'Minutes', max: 59 },
-  { part: 's', label: 'Seconds', max: 59 },
-]
-
-function splitTime(totalSec: number): Record<TimePart, string> {
-  const t = Math.abs(Math.trunc(totalSec))
-  return {
-    h: String(Math.floor(t / 3600)),
-    m: String(Math.floor((t % 3600) / 60)).padStart(2, '0'),
-    s: String(t % 60).padStart(2, '0'),
-  }
-}
-
-/** The countdown readout, H:MM:SS. Click any part to type over it; the colons stay put. */
-function CountdownReadout({ timer, style }: { timer: ProgramTimerState; style: ProgramTimerStyle }): React.ReactElement {
-  const running = timerRunning(timer)
-  const now = useNow(250, running)
-  const { seconds: remaining, timeUp } = timerReadout(timer, now, style.rollover)
-  const [draft, setDraft] = useState<(Record<TimePart, string> & { focus: TimePart }) | null>(null)
-  const boxRef = useRef<HTMLDivElement>(null)
-
-  const commit = (): void => {
-    if (!draft) return
-    const seconds = (Number(draft.h) || 0) * 3600 + (Number(draft.m) || 0) * 60 + (Number(draft.s) || 0)
-    setDraft(null)
-    if (seconds > 0) void window.api.program.timer.set(seconds).catch(report)
-  }
-
-  // Same time-up colour as the screens, so the booth reads what the room sees.
-  const color = timeUp ? '' : running ? 'text-white' : 'text-zinc-200'
-  const colorStyle = timeUp ? { color: style.overrunColor } : undefined
-  const digits = 'bg-transparent font-mono text-4xl font-semibold tabular-nums outline-none'
-  const colon = <span className={cn(digits, color, 'select-none')} style={colorStyle}>:</span>
-
-  if (draft) {
-    return (
-      <div
-        ref={boxRef}
-        className="flex items-center justify-center py-0.5"
-        onBlur={(e) => {
-          if (!boxRef.current?.contains(e.relatedTarget as Node | null)) commit()
-        }}
-      >
-        {TIME_PARTS.map(({ part, label, max }, index) => (
-          <Fragment key={part}>
-            {index > 0 && colon}
-            <input
-              autoFocus={draft.focus === part}
-              inputMode="numeric"
-              aria-label={label}
-              value={draft[part]}
-              maxLength={2}
-              className={cn(digits, color, 'rounded-md px-0.5 text-center focus:bg-surface-tertiary')}
-              // Exactly as wide as its digits (plus the same padding as the readout), so editing never shifts the layout.
-              style={{ ...colorStyle, width: `calc(${Math.max(1, draft[part].length)}ch + 0.25rem)` }}
-              onFocus={(e) => e.currentTarget.select()}
-              onChange={(e) => {
-                const value = e.target.value.replace(/\D/g, '')
-                setDraft({ ...draft, [part]: Number(value) > max ? String(max) : value })
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') commit()
-                if (e.key === 'Escape') setDraft(null)
-                // The colon jumps to the next part, like a time field.
-                if (e.key === ':') {
-                  e.preventDefault()
-                  boxRef.current?.querySelectorAll('input')[index + 1]?.focus()
-                }
-              }}
-            />
-          </Fragment>
-        ))}
-      </div>
-    )
-  }
-
-  const parts = splitTime(remaining)
-  return (
-    <div className={cn('flex items-center justify-center py-0.5', digits, color)} style={colorStyle} aria-live="off">
-      {remaining < 0 && <span className="select-none">-</span>}
-      {TIME_PARTS.map(({ part, label }, index) => (
-        <Fragment key={part}>
-          {index > 0 && <span className="select-none">:</span>}
-          <button
-            type="button"
-            title={`Change ${label.toLowerCase()}`}
-            className="cursor-text rounded-md px-0.5 hover:bg-surface-tertiary"
-            onClick={() => setDraft({ ...splitTime(Math.max(0, remaining)), focus: part })}
-          >
-            {parts[part]}
-          </button>
-        </Fragment>
-      ))}
-    </div>
-  )
-}
-
 /** The shared switch in the panel's neutral look: light grey when on. */
 function MiniSwitch({ on, label, onChange }: { on: boolean; label: string; onChange: (on: boolean) => void }): React.ReactElement {
   return (
@@ -210,51 +137,239 @@ function MiniSwitch({ on, label, onChange }: { on: boolean; label: string; onCha
   )
 }
 
-/** Roll over, and how the countdown looks on screens and stage displays. */
-function TimerStyleFields({
+/** One timer: its name and time, reset and play; expanded, its settings. */
+function TimerRow({
+  def,
+  run,
+  onScreens,
+  expanded,
+  canRemove,
+  style,
+  onToggle,
+  onChange,
+  onRemove,
+}: {
+  def: ProgramTimerDef
+  run: ProgramTimerState | null
+  onScreens: boolean
+  expanded: boolean
+  canRemove: boolean
+  style: ProgramTimerStyle
+  onToggle: () => void
+  onChange: (patch: Partial<ProgramTimerDef>) => void
+  onRemove: () => void
+}): React.ReactElement {
+  const running = run ? timerRunning(run) : false
+  const now = useNow(250, running || def.kind === 'countdownTo')
+  const current = run ?? idleTimer(def, now)
+  const { seconds, timeUp } = timerReadout(current, now, def.overrun)
+  const [durationDraft, setDurationDraft] = useState<string | null>(null)
+  const started = running || (run !== null && run.remainingSec !== run.durationSec)
+
+  // A countdown to a time is worked out when it's reset; let the save land first.
+  const resetSoon = (): void => {
+    setTimeout(() => void window.api.program.timer.reset(def.id).catch(report), 400)
+  }
+  const commitDuration = (): void => {
+    if (durationDraft === null) return
+    const next = parseDuration(durationDraft)
+    setDurationDraft(null)
+    if (next === null || next <= 0) return
+    onChange({ durationSec: next })
+    if (!running) void window.api.program.timer.set(next, def.id).catch(report)
+  }
+
+  return (
+    <div className="-mx-1">
+      <div className="flex items-center gap-1.5">
+        <button
+          type="button"
+          className="grid size-6 shrink-0 place-items-center rounded text-zinc-500 hover:text-white"
+          aria-expanded={expanded}
+          aria-label={expanded ? `Close ${def.name}` : `Edit ${def.name}`}
+          onClick={onToggle}
+        >
+          <ChevronRight size={13} aria-hidden="true" className={cn('transition-transform', expanded && 'rotate-90')} />
+        </button>
+        <button type="button" className="min-w-0 flex-1 text-left" onClick={onToggle}>
+          <span className="block truncate text-[12px] font-medium text-zinc-200">{def.name}</span>
+          <span
+            className={cn('flex items-center gap-1 font-mono text-[15px] tabular-nums', running ? 'text-white' : 'text-zinc-400')}
+            style={timeUp ? { color: style.overrunColor } : undefined}
+          >
+            <Clock size={12} aria-hidden="true" className="shrink-0" />
+            {def.kind === 'countdownTo' && !started
+              ? <span className="font-sans text-[12px]">Countdown to {formatTimeOfDay(def.targetTime)}</span>
+              : formatTimer(seconds)}
+          </span>
+        </button>
+        <button
+          type="button"
+          className={cn(
+            'grid size-7 shrink-0 place-items-center rounded-md',
+            onScreens ? 'bg-teal-500 text-on-accent' : 'text-zinc-500 hover:bg-surface-tertiary hover:text-white',
+          )}
+          aria-pressed={onScreens}
+          aria-label={onScreens ? `${def.name} is the timer on screens` : `Use ${def.name} on screens`}
+          title={onScreens ? 'This is the timer screens show' : 'Show this timer on screens'}
+          onClick={() => void window.api.program.timer.show(def.id).catch(report)}
+        >
+          <MonitorPlay size={13} aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          className="grid size-7 shrink-0 place-items-center rounded-md text-zinc-400 hover:bg-surface-tertiary hover:text-white"
+          aria-label={`Reset ${def.name}`}
+          title="Reset"
+          onClick={() => void window.api.program.timer.reset(def.id).catch(report)}
+        >
+          <SkipBack size={13} aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          className={cn(
+            'grid size-7 shrink-0 place-items-center rounded-md',
+            running ? 'bg-surface-tertiary text-white hover:bg-surface-elevated' : 'text-zinc-300 hover:bg-surface-tertiary hover:text-white',
+          )}
+          aria-label={running ? `Pause ${def.name}` : `Start ${def.name}`}
+          title={running ? 'Pause' : 'Start'}
+          onClick={() =>
+            void (running ? window.api.program.timer.pause(def.id) : window.api.program.timer.start(def.id)).catch(report)
+          }
+        >
+          {running ? <Pause size={13} fill="currentColor" aria-hidden="true" /> : <Play size={13} fill="currentColor" aria-hidden="true" />}
+        </button>
+      </div>
+
+      {expanded && (
+        <div className="mt-2.5 space-y-2.5 rounded-md bg-surface-secondary px-3 py-3 text-[12px] text-zinc-300">
+          <label className="flex items-center justify-between gap-3">
+            Name
+            <input
+              className="input w-[150px] px-2 py-1 text-[12px]"
+              value={def.name}
+              maxLength={80}
+              aria-label="Timer name"
+              onChange={(e) => onChange({ name: e.target.value })}
+            />
+          </label>
+          <label className="flex items-center justify-between gap-3">
+            Type
+            <select
+              className="input w-[150px] px-2 py-1 text-[12px]"
+              value={def.kind}
+              aria-label="Timer type"
+              disabled={running}
+              onChange={(e) => {
+                onChange({ kind: e.target.value as ProgramTimerDef['kind'] })
+                resetSoon()
+              }}
+            >
+              <option value="countdown">Countdown</option>
+              <option value="countdownTo">Countdown to a time</option>
+            </select>
+          </label>
+          {def.kind === 'countdown' ? (
+            <label className="flex items-center justify-between gap-3">
+              Duration
+              <input
+                className="input w-[150px] px-2 py-1 font-mono text-[12px] tabular-nums"
+                value={durationDraft ?? formatTimer(def.durationSec)}
+                aria-label="Duration, hours:minutes:seconds"
+                placeholder="5:00"
+                onFocus={(e) => {
+                  setDurationDraft(formatTimer(def.durationSec))
+                  e.currentTarget.select()
+                }}
+                onChange={(e) => setDurationDraft(e.target.value)}
+                onBlur={commitDuration}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') e.currentTarget.blur()
+                  if (e.key === 'Escape') setDurationDraft(null)
+                }}
+              />
+            </label>
+          ) : (
+            <label className="flex items-center justify-between gap-3">
+              Counts down to
+              <input
+                type="time"
+                className="input w-[150px] px-2 py-1 text-[12px]"
+                value={def.targetTime}
+                aria-label="Time it counts down to"
+                onChange={(e) => {
+                  if (!/^\d{2}:\d{2}$/.test(e.target.value)) return
+                  onChange({ targetTime: e.target.value })
+                  if (!running) resetSoon()
+                }}
+              />
+            </label>
+          )}
+          <label className="flex items-center justify-between gap-3">
+            <span title="Keep counting into overtime (-0:12) after 0:00. Off: stop at 0:00.">Allows overrun</span>
+            <MiniSwitch on={def.overrun} label="Allows overrun" onChange={(overrun) => onChange({ overrun })} />
+          </label>
+          {canRemove && (
+            <div className="flex justify-end pt-0.5">
+              <button
+                type="button"
+                className="flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-zinc-400 hover:bg-surface-tertiary hover:text-red-400"
+                onClick={onRemove}
+              >
+                <Trash2 size={12} aria-hidden="true" /> Delete timer
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** How every timer looks on screens and stage displays, behind a gear. */
+function TimerStyleButton({
   style,
   onChange,
 }: {
   style: ProgramTimerStyle
   onChange: (patch: Partial<ProgramTimerStyle>) => void
 }): React.ReactElement {
-  const [open, setOpen] = useState(false)
-  const row = 'flex items-center justify-between gap-3 text-[12px] text-zinc-300'
+  const row = 'flex items-center justify-between gap-3 py-2.5 text-[12px] text-zinc-300'
   return (
-    <div className="space-y-2 rounded-md bg-surface-tertiary/60 px-2.5 py-2">
-      <label className={row}>
-        <span title="Keep counting into overtime (-0:12) after 0:00. Off: stop at 0:00.">Roll over past 0:00</span>
-        <MiniSwitch on={style.rollover} label="Roll over past 0:00" onChange={(rollover) => onChange({ rollover })} />
-      </label>
-      <button
-        type="button"
-        className="flex w-full items-center justify-between text-[12px] text-zinc-300 hover:text-white"
-        aria-expanded={open}
-        onClick={() => setOpen(!open)}
+    <Popover.Root>
+      <Popover.Trigger
+        className="grid size-7 place-items-center rounded-md text-zinc-400 hover:bg-surface-tertiary hover:text-white data-[state=open]:bg-surface-tertiary data-[state=open]:text-white"
+        aria-label="Timer style"
+        title="Timer style"
       >
-        Style
-        <span className="flex items-center gap-1">
-          <span className="h-3 w-3 rounded-full" style={{ background: style.color }} />
-          <span className="h-3 w-3 rounded-full" style={{ background: style.overrunColor }} />
-        </span>
-      </button>
-      {open && (
-        <div className="space-y-2 pt-1">
-          <label className={row}>
-            Color
-            <input type="color" className="h-5 w-8 cursor-pointer rounded bg-transparent" value={hexOr(style.color, '#5eead4')} onChange={(e) => onChange({ color: e.target.value })} />
-          </label>
-          <label className={row}>
-            Time-up color
-            <input type="color" className="h-5 w-8 cursor-pointer rounded bg-transparent" value={hexOr(style.overrunColor, '#f87171')} onChange={(e) => onChange({ overrunColor: e.target.value })} />
-          </label>
-          <label className={row}>
-            <span title="A dark bar behind the clock and countdown on screens">Backdrop</span>
-            <MiniSwitch on={style.backdrop} label="Backdrop" onChange={(backdrop) => onChange({ backdrop })} />
-          </label>
-        </div>
-      )}
-    </div>
+        <Settings size={14} aria-hidden="true" />
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content
+          side="bottom"
+          align="end"
+          sideOffset={6}
+          collisionPadding={12}
+          className="z-50 w-60 rounded-xl bg-surface-elevated px-3.5 pb-1.5 pt-3 text-zinc-200 ring-1 ring-surface-border animate-spring-in"
+        >
+          <p className="text-[12px] font-semibold text-white">Timer style</p>
+          <div className="divide-y divide-surface-border">
+            <label className={row}>
+              Colour
+              <input type="color" className="h-5 w-8 cursor-pointer rounded bg-transparent" value={hexOr(style.color, '#5eead4')} onChange={(e) => onChange({ color: e.target.value })} />
+            </label>
+            <label className={row}>
+              Time-up colour
+              <input type="color" className="h-5 w-8 cursor-pointer rounded bg-transparent" value={hexOr(style.overrunColor, '#f87171')} onChange={(e) => onChange({ overrunColor: e.target.value })} />
+            </label>
+            <label className={row}>
+              <span title="A dark bar behind the clock and countdown on screens">Backdrop</span>
+              <MiniSwitch on={style.backdrop} label="Backdrop" onChange={(backdrop) => onChange({ backdrop })} />
+            </label>
+          </div>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
   )
 }
 
@@ -263,55 +378,89 @@ function ClockReadout(): React.ReactElement {
   return <span className="font-mono text-[13px] tabular-nums text-zinc-300">{formatClock(new Date(now))}</span>
 }
 
+/** `5:00`, `1:02:03` → seconds; null when it isn't a time. */
+function parseDuration(text: string): number | null {
+  const parts = text.trim().split(':').map((part) => part.trim())
+  if (parts.length === 0 || parts.length > 3 || parts.some((part) => !/^\d{1,3}$/.test(part))) return null
+  return parts.reduce((total, part) => total * 60 + Number(part), 0)
+}
+
+/** `17:00` → `5:00 PM`. */
+function formatTimeOfDay(targetTime: string): string {
+  const [hours, minutes] = targetTime.split(':').map(Number)
+  return formatClock(new Date(2000, 0, 1, hours, minutes))
+}
+
 export function TimersPanel(): React.ReactElement {
   const state = useProgramState()
   const [presentation, setPresentation] = useDraftPresentation()
-  const running = timerRunning(state.timer)
   const [stageDraft, setStageDraft] = useState('')
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const timers = presentation.timers
+  const onScreens = screenTimerDef(presentation, state)
+
+  const patchTimer = (id: string, patch: Partial<ProgramTimerDef>): void => {
+    setPresentation({ ...presentation, timers: timers.map((t) => (t.id === id ? { ...t, ...patch } : t)) })
+  }
+  const addTimer = (): void => {
+    if (timers.length >= MAX_PROGRAM_TIMERS) return
+    const id = `timer-${Date.now().toString(36)}`
+    setPresentation({
+      ...presentation,
+      timers: [...timers, { ...DEFAULT_TIMER, id, name: `Timer ${timers.length + 1}`, overrun: presentation.timer.rollover }],
+    })
+    setExpandedId(id)
+  }
+  const removeTimer = (id: string): void => {
+    if (timers.length <= 1) return
+    setPresentation({ ...presentation, timers: timers.filter((t) => t.id !== id) })
+    if (expandedId === id) setExpandedId(null)
+  }
 
   return (
     <div className="h-full overflow-y-auto">
+      {/* Timers as ProPresenter lists them: one row each, expand to edit. */}
       <Section
-        title="Countdown"
+        title="Timers"
+        split
         action={
-          <OnScreensToggle
-            on={state.countdownOnScreens}
-            label="Countdown"
-            onChange={(on) => void window.api.program.setOnScreens('countdown', on).catch(report)}
-          />
+          <div className="flex items-center gap-1">
+            <TimerStyleButton
+              style={presentation.timer}
+              onChange={(patch) => setPresentation({ ...presentation, timer: { ...presentation.timer, ...patch } })}
+            />
+            <OnScreensToggle
+              on={state.countdownOnScreens}
+              label={onScreens.name}
+              onChange={(on) => void window.api.program.setOnScreens('countdown', on).catch(report)}
+            />
+            <button
+              type="button"
+              className="grid size-7 place-items-center rounded-md text-zinc-400 hover:bg-surface-tertiary hover:text-white disabled:opacity-40"
+              aria-label="New timer"
+              title="New timer"
+              disabled={timers.length >= MAX_PROGRAM_TIMERS}
+              onClick={addTimer}
+            >
+              <Plus size={15} aria-hidden="true" />
+            </button>
+          </div>
         }
       >
-        <CountdownReadout timer={state.timer} style={presentation.timer} />
-        <div className="flex justify-center gap-2">
-          {running ? (
-            <button type="button" className="btn-secondary flex items-center gap-1 px-3 py-1.5 text-xs" onClick={() => void window.api.program.timer.pause().catch(report)}>
-              <Pause size={12} aria-hidden="true" /> Pause
-            </button>
-          ) : (
-            <button type="button" className="btn-primary flex items-center gap-1 px-3 py-1.5 text-xs" onClick={() => void window.api.program.timer.start().catch(report)}>
-              <Play size={12} aria-hidden="true" /> Start
-            </button>
-          )}
-          <button type="button" className="btn-secondary flex items-center gap-1 px-3 py-1.5 text-xs" onClick={() => void window.api.program.timer.reset().catch(report)}>
-            <RotateCcw size={12} aria-hidden="true" /> Reset
-          </button>
-        </div>
-        <div className="flex justify-center gap-1">
-          {PRESET_MINUTES.map((m) => (
-            <button
-              key={m}
-              type="button"
-              className="rounded-md px-2 py-0.5 text-[11px] text-zinc-400 hover:bg-surface-tertiary hover:text-white"
-              onClick={() => void window.api.program.timer.set(m * 60).catch(report)}
-            >
-              {m}m
-            </button>
-          ))}
-        </div>
-        <TimerStyleFields
-          style={presentation.timer}
-          onChange={(patch) => setPresentation({ ...presentation, timer: { ...presentation.timer, ...patch } })}
-        />
+        {timers.map((def) => (
+          <TimerRow
+            key={def.id}
+            def={def}
+            run={state.timers[def.id] ?? null}
+            onScreens={def.id === onScreens.id}
+            expanded={expandedId === def.id}
+            canRemove={timers.length > 1}
+            style={presentation.timer}
+            onToggle={() => setExpandedId(expandedId === def.id ? null : def.id)}
+            onChange={(patch) => patchTimer(def.id, patch)}
+            onRemove={() => removeTimer(def.id)}
+          />
+        ))}
       </Section>
 
       <Section
@@ -324,7 +473,10 @@ export function TimersPanel(): React.ReactElement {
           />
         }
       >
-        <ClockReadout />
+        <div className="flex items-center justify-between gap-3 text-[12px] text-zinc-300">
+          Time now
+          <ClockReadout />
+        </div>
       </Section>
 
       <Section title="Stage message">
@@ -372,117 +524,212 @@ export function MessagesPanel(): React.ReactElement {
   const state = useProgramState()
   const [presentation, setPresentation] = useDraftPresentation()
   const [draft, setDraft] = useState('')
-  const [styleOpen, setStyleOpen] = useState(false)
   const style = presentation.message
 
   const patchStyle = (patch: Partial<PresentationSettings['message']>): void => {
     setPresentation({ ...presentation, message: { ...style, ...patch } })
   }
-  const send = (): void => {
+  const saved = presentation.messages
+  /** Keeps `text` in the saved list (once), newest first. */
+  const remember = (text: string): void => {
+    const trimmed = text.trim()
+    if (!trimmed || saved.some((m) => m.text === trimmed)) return
+    const message = { id: `msg-${Date.now().toString(36)}`, text: trimmed.slice(0, MAX_SAVED_MESSAGE_LENGTH) }
+    setPresentation({ ...presentation, messages: [message, ...saved].slice(0, MAX_SAVED_MESSAGES) })
+  }
+  const forget = (id: string): void => {
+    setPresentation({ ...presentation, messages: saved.filter((m) => m.id !== id) })
+  }
+  const show = (text: string): void => {
+    void window.api.program.showMessage(text).catch(report)
+  }
+  const takeDown = (): void => {
+    void window.api.program.clearMessage().catch(report)
+  }
+  // Showing a new message keeps it for next time, so the list builds itself.
+  const sendDraft = (): void => {
     if (!draft.trim()) return
+    remember(draft)
     void window.api.program.showMessage(draft).then(() => setDraft(''), report)
   }
-  const row = 'flex items-center justify-between gap-3 text-[12px] text-zinc-300'
+  const saveDraft = (): void => {
+    if (!draft.trim()) return
+    remember(draft)
+    setDraft('')
+  }
+  const liveUnsaved = state.message && !saved.some((m) => m.text === state.message)
 
   return (
     <div className="h-full overflow-y-auto">
-      <Section title="Message">
-        {state.message && (
-          <div className="flex items-start justify-between gap-2 rounded-md bg-surface-tertiary px-2.5 py-2 text-xs text-white">
-            <span className="min-w-0 whitespace-pre-wrap break-words">{state.message}</span>
-            <button
-              type="button"
-              className="shrink-0 text-[11px] text-zinc-400 hover:text-white"
-              onClick={() => void window.api.program.clearMessage().catch(report)}
-            >
-              Take down
-            </button>
-          </div>
+      {/* Saved messages, one row each, like ProPresenter's Messages list. */}
+      <Section title="Messages" split action={<MessageStyleButton style={style} onChange={patchStyle} />}>
+        {liveUnsaved && (
+          <MessageRow text={state.message ?? ''} live onTakeDown={takeDown} />
         )}
+        {saved.map((m) => (
+          <MessageRow
+            key={m.id}
+            text={m.text}
+            live={state.message === m.text}
+            onShow={() => show(m.text)}
+            onTakeDown={takeDown}
+            onRemove={() => forget(m.id)}
+          />
+        ))}
+        {saved.length === 0 && !liveUnsaved && (
+          <p className="py-1 text-center text-[11px] text-zinc-500">No saved messages yet. Write one below.</p>
+        )}
+      </Section>
+
+      <Section title="New message">
         <textarea
           className="input min-h-[56px] w-full resize-none py-1.5 text-xs"
           rows={2}
           placeholder="Parents of child 42, please come to the nursery"
-          aria-label="Message for the screens"
+          aria-label="New message"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
             // Enter shows it; Shift+Enter starts a new line.
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault()
-              send()
+              sendDraft()
             }
           }}
         />
-        <div className="flex justify-end">
-          <button type="button" className="btn-primary flex items-center gap-1 px-3 py-1 text-xs" disabled={!draft.trim()} onClick={send}>
-            <Send size={12} aria-hidden="true" /> {state.message ? 'Replace' : 'Show'}
+        <div className="flex justify-end gap-2">
+          <button type="button" className="btn-secondary px-3 py-1 text-xs" disabled={!draft.trim()} onClick={saveDraft}>
+            Save
+          </button>
+          <button type="button" className="btn-primary flex items-center gap-1 px-3 py-1 text-xs" disabled={!draft.trim()} onClick={sendDraft}>
+            <Send size={12} aria-hidden="true" /> Show
           </button>
         </div>
       </Section>
 
-      <Section title="Style">
-        <div className="space-y-2.5 rounded-md bg-surface-tertiary/60 px-2.5 py-2">
-          <button
-            type="button"
-            className="flex w-full items-center justify-between text-[12px] text-zinc-300 hover:text-white"
-            aria-expanded={styleOpen}
-            onClick={() => setStyleOpen(!styleOpen)}
-          >
-            {style.position === 'top' ? 'Top' : 'Bottom'} · {style.fontSizePx}px{style.scroll ? ' · ticker' : ''}
-            <span className="flex items-center gap-1">
-              <span className="h-3 w-3 rounded-full ring-1 ring-white/20" style={{ background: style.color }} />
-              <span className="h-3 w-3 rounded-full ring-1 ring-white/20" style={{ background: style.background }} />
-            </span>
-          </button>
-          {styleOpen && (
-            <div className="space-y-2.5 pt-1">
-              <div className={row}>
-                Position
-                <SegmentedControl
-                  label="Position"
-                  value={style.position}
-                  options={[
-                    { value: 'top', label: 'Top' },
-                    { value: 'bottom', label: 'Bottom' },
-                  ]}
-                  onChange={(position) => patchStyle({ position })}
-                  className="w-28"
-                  itemClassName="py-0.5 text-[11px]"
-                />
+    </div>
+  )
+}
 
-              </div>
-              <label className={row}>
-                Size
-                <span className="flex items-center gap-2">
-                  <input
-                    type="range"
-                    min={16}
-                    max={160}
-                    value={style.fontSizePx}
-                    aria-label="Size"
-                    className="h-1 w-24 cursor-pointer appearance-none rounded-full bg-surface-elevated [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
-                    onChange={(e) => patchStyle({ fontSizePx: Number(e.target.value) })}
-                  />
-                  <span className="w-8 text-right text-[11px] tabular-nums text-zinc-400">{style.fontSizePx}</span>
-                </span>
-              </label>
-              <label className={row}>
-                Text
-                <input type="color" className="h-5 w-8 cursor-pointer rounded bg-transparent" value={hexOr(style.color, '#ffffff')} onChange={(e) => patchStyle({ color: e.target.value })} />
-              </label>
-              <label className={row}>
-                Bar
-                <input type="color" className="h-5 w-8 cursor-pointer rounded bg-transparent" value={hexOr(style.background, '#000000')} onChange={(e) => patchStyle({ background: e.target.value })} />
-              </label>
-              <label className={row}>
-                Scroll as a ticker
-                <MiniSwitch on={style.scroll} label="Scroll as a ticker" onChange={(scroll) => patchStyle({ scroll })} />
-              </label>
+/**
+ * How messages look on screen — position, size, colours, ticker — tucked
+ * behind a gear by the Messages title: set once, rarely touched mid-service.
+ */
+function MessageStyleButton({
+  style,
+  onChange,
+}: {
+  style: PresentationSettings['message']
+  onChange: (patch: Partial<PresentationSettings['message']>) => void
+}): React.ReactElement {
+  const row = 'flex items-center justify-between gap-3 py-2.5 text-[12px] text-zinc-300'
+  return (
+    <Popover.Root>
+      <Popover.Trigger
+        className="grid size-7 place-items-center rounded-md text-zinc-400 hover:bg-surface-tertiary hover:text-white data-[state=open]:bg-surface-tertiary data-[state=open]:text-white"
+        aria-label="Message style"
+        title="Message style"
+      >
+        <Settings size={14} aria-hidden="true" />
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content
+          side="bottom"
+          align="end"
+          sideOffset={6}
+          collisionPadding={12}
+          className="z-50 w-64 rounded-xl bg-surface-elevated px-3.5 pb-1.5 pt-3 text-zinc-200 ring-1 ring-surface-border animate-spring-in"
+        >
+          <p className="text-[12px] font-semibold text-white">Message style</p>
+          <div className="divide-y divide-surface-border">
+            <div className={row}>
+              Position
+              <SegmentedControl
+                label="Position"
+                value={style.position}
+                options={[
+                  { value: 'top', label: 'Top' },
+                  { value: 'bottom', label: 'Bottom' },
+                ]}
+                onChange={(position) => onChange({ position })}
+                fit
+                itemClassName="px-2.5 py-0.5 text-[11px] whitespace-nowrap"
+              />
             </div>
-          )}
-        </div>
-      </Section>
+            <label className={row}>
+              Size
+              <span className="flex items-center gap-2">
+                <input
+                  type="range"
+                  min={16}
+                  max={160}
+                  value={style.fontSizePx}
+                  aria-label="Size"
+                  className="h-1 w-24 cursor-pointer appearance-none rounded-full bg-surface-border [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
+                  onChange={(e) => onChange({ fontSizePx: Number(e.target.value) })}
+                />
+                <span className="w-8 text-right text-[11px] tabular-nums text-zinc-400">{style.fontSizePx}</span>
+              </span>
+            </label>
+            <label className={row}>
+              Text
+              <input type="color" className="h-5 w-8 cursor-pointer rounded bg-transparent" value={hexOr(style.color, '#ffffff')} onChange={(e) => onChange({ color: e.target.value })} />
+            </label>
+            <label className={row}>
+              Bar
+              <input type="color" className="h-5 w-8 cursor-pointer rounded bg-transparent" value={hexOr(style.background, '#000000')} onChange={(e) => onChange({ background: e.target.value })} />
+            </label>
+            <label className={row}>
+              Scroll as a ticker
+              <MiniSwitch on={style.scroll} label="Scroll as a ticker" onChange={(scroll) => onChange({ scroll })} />
+            </label>
+          </div>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  )
+}
+
+/** One saved message: its text, and Show — or, while it's up, Take down. */
+function MessageRow({
+  text,
+  live,
+  onShow,
+  onTakeDown,
+  onRemove,
+}: {
+  text: string
+  live: boolean
+  onShow?: () => void
+  onTakeDown: () => void
+  onRemove?: () => void
+}): React.ReactElement {
+  return (
+    <div className="group/message flex items-center gap-2">
+      {live && <span className="size-1.5 shrink-0 rounded-full bg-live" title="On screen" aria-label="On screen" />}
+      <p className={cn('line-clamp-2 min-w-0 flex-1 whitespace-pre-wrap break-words text-[12px]', live ? 'text-white' : 'text-zinc-300')}>
+        {text}
+      </p>
+      {onRemove && !live && (
+        <button
+          type="button"
+          className="grid size-6 shrink-0 place-items-center rounded-md text-zinc-500 opacity-0 hover:bg-surface-tertiary hover:text-red-400 focus-visible:opacity-100 group-hover/message:opacity-100"
+          aria-label="Delete message"
+          title="Delete"
+          onClick={onRemove}
+        >
+          <Trash2 size={12} aria-hidden="true" />
+        </button>
+      )}
+      {live ? (
+        <button type="button" className="btn-secondary shrink-0 px-2.5 py-1 text-[11px]" onClick={onTakeDown}>
+          Take down
+        </button>
+      ) : (
+        <button type="button" className="btn-secondary shrink-0 px-2.5 py-1 text-[11px]" onClick={onShow}>
+          Show
+        </button>
+      )}
     </div>
   )
 }
@@ -491,19 +738,7 @@ function hexOr(value: string, fallback: string): string {
   return /^#[0-9a-fA-F]{6}$/.test(value) ? value : fallback
 }
 
-// ─── Show: logo, props, camera, program audio ─────────────────────────────────
-
-const POSITIONS: Array<{ value: PropPosition; label: string }> = [
-  { value: 'top-left', label: 'Top left' },
-  { value: 'top-right', label: 'Top right' },
-  { value: 'bottom-left', label: 'Bottom left' },
-  { value: 'bottom-right', label: 'Bottom right' },
-  { value: 'center', label: 'Centre' },
-]
-
-function fileName(path: string): string {
-  return path.split(/[\\/]/).pop() || path
-}
+// ─── Shared by the Props, Camera and Audio tabs ───────────────────────────────
 
 type DeviceLabels = Record<'videoinput' | 'audioinput' | 'audiooutput', string[]>
 
@@ -534,40 +769,168 @@ function useDeviceLabels(): [DeviceLabels, () => void] {
   return [labels, () => setGeneration((g) => g + 1)]
 }
 
-export function ShowPanel(): React.ReactElement {
+// ─── Props ────────────────────────────────────────────────────────────────────
+
+/**
+ * The props, as ProPresenter shows them: a grid of thumbnails, click one to
+ * put it up or take it down. They're built in the Props editor.
+ */
+export function PropsPanel(): React.ReactElement {
   const state = useProgramState()
   const [presentation, setPresentation] = useDraftPresentation()
+  const props = presentation.props
+  const openEditor = (select: string | null = null): void => useAppStore.getState().openProps(select)
+  const [renamingId, setRenamingId] = useState<string | null>(null)
+  const deleteProp = (id: string): void => {
+    if (state.activePropIds.includes(id)) void window.api.program.setProp(id, false).catch(report)
+    setPresentation({ ...presentation, props: props.filter((p) => p.id !== id) })
+  }
+  const renameProp = (id: string, name: string): void => {
+    setRenamingId(null)
+    const trimmed = name.trim()
+    if (!trimmed) return
+    setPresentation({ ...presentation, props: props.map((p) => (p.id === id ? { ...p, name: trimmed.slice(0, 80) } : p)) })
+  }
+  /** A copy just after the original, with fresh ids so the two never share state. */
+  const duplicateProp = (prop: ProgramProp): void => {
+    const stamp = Date.now().toString(36)
+    const copy: ProgramProp = {
+      ...prop,
+      id: `prop-${stamp}`,
+      name: `${prop.name} copy`.slice(0, 80),
+      objects: prop.objects.map((o, i) => ({ ...o, id: `${o.kind}-${stamp}-${i}` })),
+    }
+    const index = props.findIndex((p) => p.id === prop.id)
+    setPresentation({ ...presentation, props: [...props.slice(0, index + 1), copy, ...props.slice(index + 1)] })
+  }
+
+  if (props.length === 0) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-2.5 px-6 text-center">
+        <span className="grid size-10 place-items-center rounded-full bg-surface-tertiary text-zinc-400">
+          <Layers size={18} aria-hidden="true" />
+        </span>
+        <p className="text-[13px] font-semibold text-white">No props yet</p>
+        <p className="max-w-[17rem] text-[11px] leading-relaxed text-zinc-500">
+          A prop sits over the slides — a logo in the corner, a welcome banner, a giving card.
+        </p>
+        <button type="button" className="btn-primary mt-1 flex items-center gap-1 px-3 py-1.5 text-[12px]" onClick={() => openEditor()}>
+          <Plus size={12} aria-hidden="true" /> Create a prop
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="h-full overflow-y-auto px-3 pb-3 pt-3">
+      <div className="flex min-h-7 items-center gap-1 px-1 pb-2">
+        <h3 className="min-w-0 flex-1 text-[12px] font-semibold text-zinc-200">Props</h3>
+        {state.activePropIds.length > 1 && (
+          <button type="button" className="mr-1 text-[11px] text-zinc-400 hover:text-white" onClick={() => void window.api.program.clearProps().catch(report)}>
+            Take all down
+          </button>
+        )}
+        <button
+          type="button"
+          className="grid size-7 place-items-center rounded-md text-zinc-400 hover:bg-surface-tertiary hover:text-white"
+          aria-label="Edit props"
+          title="Edit props"
+          onClick={() => openEditor()}
+        >
+          <Pencil size={13} aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          className="grid size-7 place-items-center rounded-md text-zinc-400 hover:bg-surface-tertiary hover:text-white"
+          aria-label="New prop"
+          title="New prop"
+          onClick={() => openEditor()}
+        >
+          <Plus size={15} aria-hidden="true" />
+        </button>
+      </div>
+      <ul className="grid grid-cols-[repeat(auto-fill,minmax(112px,1fr))] gap-x-3 gap-y-3">
+        {props.map((prop) => {
+          const on = state.activePropIds.includes(prop.id)
+          const empty = prop.objects.length === 0 && !prop.background
+          return (
+            <li key={prop.id} className="min-w-0">
+              {/* Right-click for what you can do to it, as in ProPresenter. */}
+              <RowContextMenu
+                items={[
+                  {
+                    label: on ? 'Take down' : 'Show',
+                    icon: <MonitorPlay size={13} aria-hidden="true" />,
+                    onSelect: () => void window.api.program.setProp(prop.id, !on).catch(report),
+                  },
+                  { label: 'Edit…', icon: <Pencil size={13} aria-hidden="true" />, onSelect: () => openEditor(prop.id) },
+                  { label: 'Rename', icon: <Edit2 size={13} aria-hidden="true" />, onSelect: () => setRenamingId(prop.id) },
+                  { label: 'Duplicate', icon: <Copy size={13} aria-hidden="true" />, onSelect: () => duplicateProp(prop) },
+                  { label: 'Delete', icon: <Trash2 size={13} aria-hidden="true" />, destructive: true, onSelect: () => deleteProp(prop.id) },
+                ]}
+              >
+                <button
+                  type="button"
+                  // Never disabled: a disabled button gets no right-click. An empty
+                  // prop has nothing to show, so clicking it opens it to edit.
+                  className={cn('group/prop block w-full text-left', empty && !on && 'opacity-60')}
+                  aria-pressed={on}
+                  title={empty && !on ? 'Empty — click to add something' : on ? 'Take down' : 'Show'}
+                  onClick={() =>
+                    empty && !on
+                      ? openEditor(prop.id)
+                      : void window.api.program.setProp(prop.id, !on).catch(report)
+                  }
+                >
+                  <span
+                    className={cn(
+                      'block overflow-hidden rounded-md ring-2 transition-shadow',
+                      // Red is what's on screen.
+                      on ? 'ring-live' : 'ring-transparent group-hover/prop:ring-surface-border',
+                    )}
+                  >
+                    <PropPreview prop={prop} width={240} className="!h-auto !w-full aspect-video" />
+                  </span>
+                  {renamingId !== prop.id && (
+                    <span className={cn('mt-1.5 block truncate text-center text-[11px]', on ? 'font-semibold text-white' : 'text-zinc-300')}>
+                      {prop.name}
+                    </span>
+                  )}
+                </button>
+              </RowContextMenu>
+              {renamingId === prop.id && (
+                <input
+                  autoFocus
+                  defaultValue={prop.name}
+                  maxLength={80}
+                  aria-label="Prop name"
+                  className="input mt-1 w-full px-1.5 py-0.5 text-center text-[11px]"
+                  onFocus={(e) => e.currentTarget.select()}
+                  onBlur={(e) => renameProp(prop.id, e.currentTarget.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') e.currentTarget.blur()
+                    if (e.key === 'Escape') setRenamingId(null)
+                  }}
+                />
+              )}
+            </li>
+          )
+        })}
+      </ul>
+    </div>
+  )
+}
+
+// ─── Camera ───────────────────────────────────────────────────────────────────
+
+/** A camera or capture input, live on the screens behind the words. */
+export function LivePanel(): React.ReactElement {
+  const state = useProgramState()
   const [devices, reloadCameras] = useDeviceLabels()
-  const { videoinput: cameras, audiooutput: speakers, audioinput: mics } = devices
+  const { videoinput: cameras, audioinput: mics } = devices
   const [camera, setCamera] = useState('')
   const [cameraAudio, setCameraAudio] = useState('')
   const liveCameraAudio = state.camera ? state.cameraAudio ?? '' : cameraAudio
-
-  const save = (next: PresentationSettings): void => {
-    setPresentation(next)
-  }
-  const patchProp = (id: string, patch: Partial<ProgramProp>): void => {
-    save({ ...presentation, props: presentation.props.map((p) => (p.id === id ? { ...p, ...patch } : p)) })
-  }
-
-  const pickLogo = async (): Promise<void> => {
-    const path = await window.api.program.pickImage()
-    if (path) save({ ...presentation, logo: { ...presentation.logo, mediaPath: path } })
-  }
-  const addProp = async (): Promise<void> => {
-    const path = await window.api.program.pickImage()
-    if (!path) return
-    const prop: ProgramProp = {
-      id: `prop-${Date.now().toString(36)}`,
-      name: fileName(path).replace(/\.[^.]+$/, ''),
-      mediaPath: path,
-      position: 'top-right',
-      widthPct: 12,
-      marginPct: 2,
-      opacity: 1,
-    }
-    save({ ...presentation, props: [...presentation.props, prop] })
-  }
 
   // Camera labels only appear once capture has been allowed once.
   const requestCameraAccess = (): void => {
@@ -582,89 +945,6 @@ export function ShowPanel(): React.ReactElement {
 
   return (
     <div className="h-full overflow-y-auto">
-      <Section title="Logo">
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            className={cn('flex-1 rounded px-3 py-1.5 text-xs font-medium', state.logo ? 'bg-teal-500 text-on-accent' : 'btn-secondary')}
-            aria-pressed={state.logo}
-            onClick={() => void window.api.program.setLogo(!state.logo).catch(report)}
-          >
-            {state.logo ? 'Logo is up — take down' : 'To logo'}
-          </button>
-          <button type="button" className="btn-secondary flex items-center gap-1 px-2 py-1.5 text-[11px]" onClick={() => void pickLogo().catch(report)}>
-            <Image size={12} aria-hidden="true" /> {presentation.logo.mediaPath ? 'Change' : 'Choose'}
-          </button>
-        </div>
-        <p className="truncate text-[10px] text-zinc-500">
-          {presentation.logo.mediaPath ? fileName(presentation.logo.mediaPath) : 'No image — the logo is a plain colour.'}
-        </p>
-      </Section>
-
-      <Section title="Props">
-        {presentation.props.length === 0 && <p className="text-[11px] text-zinc-500">No props yet.</p>}
-        <ul className="space-y-2">
-          {presentation.props.map((prop) => {
-            const on = state.activePropIds.includes(prop.id)
-            return (
-              <li key={prop.id} className="space-y-1.5 rounded p-2">
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    className={cn('flex-1 truncate rounded px-2 py-1 text-left text-xs', on ? 'bg-teal-500 text-on-accent' : 'bg-surface-tertiary text-zinc-300')}
-                    aria-pressed={on}
-                    onClick={() => void window.api.program.setProp(prop.id, !on).catch(report)}
-                  >
-                    <Layers size={11} className="mr-1 inline" aria-hidden="true" />
-                    {prop.name}
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={`Remove ${prop.name}`}
-                    className="text-zinc-500 hover:text-red-400"
-                    onClick={() => {
-                      if (window.confirm(`Remove the “${prop.name}” prop?`)) {
-                        save({ ...presentation, props: presentation.props.filter((p) => p.id !== prop.id) })
-                      }
-                    }}
-                  >
-                    <Trash2 size={12} />
-                  </button>
-                </div>
-                <div className="grid grid-cols-2 gap-1.5 text-[10px] text-zinc-500">
-                  <select className="input py-0.5 text-[11px]" aria-label="Position" value={prop.position} onChange={(e) => patchProp(prop.id, { position: e.target.value as PropPosition })}>
-                    {POSITIONS.map((p) => (
-                      <option key={p.value} value={p.value}>{p.label}</option>
-                    ))}
-                  </select>
-                  <label className="flex items-center gap-1">
-                    Width
-                    <input
-                      type="range"
-                      min={2}
-                      max={100}
-                      value={prop.widthPct}
-                      className="flex-1"
-                      onChange={(e) => patchProp(prop.id, { widthPct: Number(e.target.value) })}
-                    />
-                  </label>
-                </div>
-              </li>
-            )
-          })}
-        </ul>
-        <div className="flex gap-2">
-          <button type="button" className="btn-secondary flex flex-1 items-center justify-center gap-1 py-1 text-xs" onClick={() => void addProp().catch(report)}>
-            <Plus size={12} aria-hidden="true" /> Add prop
-          </button>
-          {state.activePropIds.length > 0 && (
-            <button type="button" className="btn-secondary px-2 py-1 text-xs" onClick={() => void window.api.program.clearProps().catch(report)}>
-              Clear props
-            </button>
-          )}
-        </div>
-      </Section>
-
       <Section title="Camera / capture">
         {cameras.length === 0 ? (
           <button type="button" className="btn-secondary w-full py-1 text-xs" onClick={requestCameraAccess}>
@@ -725,7 +1005,26 @@ export function ShowPanel(): React.ReactElement {
         )}
       </Section>
 
-      <Section title="Sound">
+    </div>
+  )
+}
+
+// ─── Sound from videos and the camera (shown on the Audio tab) ────────────────
+
+/** Whether background videos and the camera play sound, how loud, and where. */
+export function ProgramSoundSection(): React.ReactElement {
+  const state = useProgramState()
+  const [presentation, setPresentation] = useDraftPresentation()
+  const [devices] = useDeviceLabels()
+  const { audiooutput: speakers } = devices
+  const liveCameraAudio = state.camera ? state.cameraAudio ?? '' : ''
+  const save = (next: PresentationSettings): void => {
+    setPresentation(next)
+  }
+
+  return (
+    <>
+      <Section title="Video sound">
         <label className="flex items-center gap-2 text-[11px] text-zinc-400">
           <input
             type="checkbox"
@@ -764,6 +1063,6 @@ export function ShowPanel(): React.ReactElement {
           </div>
         )}
       </Section>
-    </div>
+    </>
   )
 }

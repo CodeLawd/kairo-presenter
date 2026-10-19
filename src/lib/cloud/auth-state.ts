@@ -1,5 +1,5 @@
 // ─── Account gate + session presentation ──────────────────────────────────────
-// Pure — no Node/DOM APIs. Mirrors `pp-connect-gate.ts`: the question "should
+// Pure — no Node/DOM APIs. Answers the question "should
 // this be in front of the operator right now?" is a predicate, not a component.
 
 import type { CloudSessionState, SessionSnapshot } from './contracts'

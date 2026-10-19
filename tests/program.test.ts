@@ -18,6 +18,12 @@ import {
   timerRemainingSec,
   transitionMs,
   type ProgramProp,
+  idleTimer,
+  nextTimeOfDay,
+  startTimerFor,
+  screenTimerDef,
+  screenTimerStyle,
+  type ProgramTimerDef,
 } from '../src/lib/program'
 import { frameHeightFor, testPatternLayout } from '../src/lib/displays'
 
@@ -49,7 +55,9 @@ test('props need a unique id; duplicates are dropped', () => {
     ],
   })
   assert.equal(s.props.length, 1)
-  assert.equal(s.props[0].position, 'top-right')
+  // An unknown corner falls back to top-right.
+  const [object] = s.props[0].objects
+  assert.ok(Math.abs(object.x + object.w - 0.98) < 1e-9)
 })
 
 test('two enabled stage displays on one display: the second is turned off', () => {
@@ -109,15 +117,97 @@ test('a scrolling message is one line with the ticker animation', () => {
   assert.ok(!html.includes('<br>'))
 })
 
-test('only active props with an image are drawn', () => {
+const image = (id: string, mediaPath: string) => ({
+  id, kind: 'image' as const, mediaPath, fit: 'contain' as const, x: 0.1, y: 0.1, w: 0.2, h: 0.2, opacity: 1,
+})
+
+test('only active props are drawn', () => {
   const props: ProgramProp[] = [
-    { id: 'a', name: 'A', mediaPath: '/a.png', position: 'top-left', widthPct: 10, marginPct: 2, opacity: 1 },
-    { id: 'b', name: 'B', mediaPath: '/b.png', position: 'center', widthPct: 10, marginPct: 2, opacity: 1 },
+    { id: 'a', name: 'A', background: null, objects: [image('a1', '/a.png')] },
+    { id: 'b', name: 'B', background: null, objects: [image('b1', '/b.png')] },
   ]
   assert.equal(renderPropsHTML(props, []), '')
   const html = renderPropsHTML(props, ['b'])
   assert.ok(html.includes(encodeURIComponent('/b.png')))
   assert.ok(!html.includes(encodeURIComponent('/a.png')))
+})
+
+test('an empty, clear prop draws nothing even when switched on', () => {
+  assert.equal(renderPropsHTML([{ id: 'e', name: 'Empty', background: null, objects: [] }], ['e']), '')
+  assert.match(renderPropsHTML([{ id: 'c', name: 'Colour', background: '#112233', objects: [] }], ['c']), /background:#112233/)
+})
+
+test('prop objects are drawn at their place on the frame, back to front', () => {
+  const html = renderPropsHTML([{
+    id: 'p',
+    name: 'Welcome',
+    background: null,
+    objects: [
+      { id: 's', kind: 'shape', shape: 'rectangle', fill: '#315ede', radiusPx: 24, x: 0, y: 0.8, w: 1, h: 0.2, opacity: 0.9 },
+      { id: 't', kind: 'text', text: 'Welcome <home>\nfriends', fontSizePx: 80, color: '#ffffff', bold: true, align: 'left', x: 0.05, y: 0.82, w: 0.9, h: 0.16, opacity: 1 },
+      { id: 'o', kind: 'shape', shape: 'ellipse', fill: '#ff0000', radiusPx: 0, x: 0.4, y: 0.4, w: 0.2, h: 0.2, opacity: 1 },
+    ],
+  }], ['p'])
+  assert.ok(html.indexOf('#315ede') < html.indexOf('Welcome'), 'the shape is behind the text')
+  assert.match(html, /left:0%;top:80%;width:100%;height:20%;opacity:0\.9;/)
+  assert.match(html, /border-radius:24px/)
+  assert.match(html, /border-radius:50%/)
+  assert.match(html, /font-size:80px/)
+  assert.match(html, /justify-content:flex-start/)
+  assert.ok(html.includes('Welcome &lt;home&gt;<br>friends'), 'text is escaped and keeps its line break')
+})
+
+test('a prop saved as one corner image becomes one image object in the same place', () => {
+  const [prop] = normalizePresentationSettings({
+    props: [{ id: 'old', name: 'Bug', mediaPath: '/bug.png', position: 'top-right', widthPct: 12, marginPct: 2, opacity: 0.8 }],
+  }).props
+  assert.equal(prop.name, 'Bug')
+  assert.equal(prop.background, null)
+  assert.equal(prop.objects.length, 1)
+  const [object] = prop.objects
+  assert.equal(object.kind, 'image')
+  assert.equal(object.kind === 'image' && object.mediaPath, '/bug.png')
+  assert.equal(object.opacity, 0.8)
+  assert.ok(Math.abs(object.w - 0.12) < 1e-9)
+  assert.ok(Math.abs(object.x + object.w - 0.98) < 1e-9, 'right edge 2% in from the right')
+  assert.ok(object.y > 0 && object.y < 0.05, 'near the top')
+})
+
+test('an old prop with no image converts to an empty prop, not an error', () => {
+  const [prop] = normalizePresentationSettings({ props: [{ id: 'x', name: 'X' }] }).props
+  assert.deepEqual(prop.objects, [])
+})
+
+test('prop objects are kept on the frame and bad ones dropped', () => {
+  const [prop] = normalizePresentationSettings({
+    props: [{
+      id: 'p',
+      name: 'P',
+      background: '',
+      objects: [
+        { id: 'a', kind: 'text', text: 'Hi', x: 0.95, y: -2, w: 0.5, h: 3 },
+        { id: 'a', kind: 'text', text: 'duplicate id' },
+        { id: 'b', kind: 'image', mediaPath: '' },
+        { id: 'c', kind: 'video' },
+        { id: 'd', kind: 'shape', shape: 'star', fill: 'not a colour' },
+      ],
+    }],
+  }).props
+  assert.equal(prop.background, null)
+  assert.deepEqual(prop.objects.map((o) => o.id), ['a', 'd'])
+  const [text, shape] = prop.objects
+  assert.equal(text.h, 1)
+  assert.ok(text.x + text.w <= 1, 'pulled back onto the frame')
+  assert.equal(text.y, 0)
+  assert.equal(shape.kind === 'shape' && shape.shape, 'rectangle')
+})
+
+test('images inside props are allowed through the media protocol', () => {
+  const paths = presentationMediaPaths({
+    logo: { mediaPath: '/logo.png' },
+    props: [{ id: 'p', name: 'P', objects: [image('i', '/inside.png'), { id: 't', kind: 'text', text: 'x' }] }],
+  })
+  assert.deepEqual(paths, ['/logo.png', '/inside.png'])
 })
 
 test('the logo layer is empty when off and a colour without an image', () => {
@@ -222,4 +312,100 @@ test('the test pattern frame leaves bars exactly where the output will', () => {
   const rehearsal = testPatternLayout({ x: 0, y: 0, width: 1440, height: 900 }, true, 1440)
   assert.deepEqual(rehearsal.bounds, { x: 360, y: 180, width: 720, height: 540 })
   assert.deepEqual(rehearsal.frame, { width: 1, height: 1 })
+})
+
+test('saved messages survive a round trip and bad entries are dropped', () => {
+  const settings = normalizePresentationSettings({
+    messages: [
+      { id: 'a', text: '  Parents of child 42, please come to the nursery  ' },
+      { id: 'a', text: 'duplicate id' },
+      { id: 'b', text: '   ' },
+      { id: '', text: 'no id' },
+      'not an object',
+      { id: 'c', text: 'x'.repeat(900) },
+    ],
+  })
+  assert.deepEqual(settings.messages.map((m) => m.id), ['a', 'c'])
+  assert.equal(settings.messages[0].text, 'Parents of child 42, please come to the nursery')
+  assert.equal(settings.messages[1].text.length, 500)
+})
+
+test('older settings without saved messages start with an empty list', () => {
+  assert.deepEqual(normalizePresentationSettings({}).messages, [])
+  assert.deepEqual(normalizePresentationSettings({ messages: 'nope' }).messages, [])
+})
+
+test('the saved message list is capped', () => {
+  const many = Array.from({ length: 80 }, (_, i) => ({ id: `m${i}`, text: `Message ${i}` }))
+  assert.equal(normalizePresentationSettings({ messages: many }).messages.length, 50)
+})
+
+// ─── Timers ──────────────────────────────────────────────────────────────────
+
+const at = (hours: number, minutes: number, seconds = 0): number => new Date(2026, 9, 18, hours, minutes, seconds).getTime()
+const countdownTo = (targetTime: string): ProgramTimerDef => ({ id: 't', name: 'Pre-service', kind: 'countdownTo', durationSec: 0, targetTime, overrun: false })
+
+test('settings saved before timers had a list get one countdown keeping the old roll-over choice', () => {
+  const timers = normalizePresentationSettings({ timer: { rollover: false } }).timers
+  assert.equal(timers.length, 1)
+  assert.equal(timers[0].kind, 'countdown')
+  assert.equal(timers[0].durationSec, 300)
+  assert.equal(timers[0].overrun, false)
+})
+
+test('saved timers are cleaned up, and the list is never empty', () => {
+  const timers = normalizePresentationSettings({
+    timers: [
+      { id: 'a', name: '  Segment ', kind: 'countdown', durationSec: 900, overrun: true },
+      { id: 'a', name: 'duplicate' },
+      { id: 'b', kind: 'countdownTo', targetTime: '25:99' },
+      { id: '', name: 'no id' },
+    ],
+  }).timers
+  assert.deepEqual(timers.map((t) => t.id), ['a', 'b'])
+  assert.equal(timers[0].name, 'Segment')
+  assert.equal(timers[1].name, 'Timer')
+  assert.equal(timers[1].targetTime, '10:00', 'an impossible time falls back')
+  assert.equal(normalizePresentationSettings({ timers: [] }).timers.length, 1)
+})
+
+test('a countdown to a time of day runs to today, or tomorrow once it has passed', () => {
+  assert.equal(nextTimeOfDay('17:00', at(16, 30)), at(17, 0))
+  assert.equal(nextTimeOfDay('09:00', at(16, 30)), at(9, 0) + 24 * 3600 * 1000)
+  assert.equal(nextTimeOfDay('16:30', at(16, 30)), at(16, 30) + 24 * 3600 * 1000, 'exactly now means tomorrow')
+})
+
+test('a countdown to a time shows the time left before it starts, and runs to that time', () => {
+  const def = countdownTo('17:00')
+  const idle = idleTimer(def, at(16, 55))
+  assert.equal(idle.remainingSec, 300)
+  assert.equal(idle.endsAt, null)
+  // Started late, after a pause: it still ends at 17:00.
+  const running = startTimerFor(def, idle, at(16, 58))
+  assert.equal(running.endsAt, at(17, 0))
+  assert.equal(timerRemainingSec(running, at(16, 59)), 60)
+})
+
+test('a countdown carries on from where it was paused', () => {
+  const def: ProgramTimerDef = { id: 'c', name: 'Game', kind: 'countdown', durationSec: 900, targetTime: '10:00', overrun: true }
+  const started = startTimerFor(def, idleTimer(def, 0), 0)
+  const paused = pauseTimer(started, 60_000)
+  assert.equal(paused.remainingSec, 840)
+  const resumed = startTimerFor(def, paused, 1_000_000)
+  assert.equal(timerRemainingSec(resumed, 1_000_000), 840)
+})
+
+test('the timer on screens is the chosen one, else the first; its roll-over comes from it', () => {
+  const presentation = normalizePresentationSettings({
+    timer: { rollover: true },
+    timers: [
+      { id: 'one', name: 'One', kind: 'countdown', durationSec: 60, overrun: true },
+      { id: 'two', name: 'Two', kind: 'countdown', durationSec: 60, overrun: false },
+    ],
+  })
+  assert.equal(screenTimerDef(presentation, { screenTimerId: 'two' }).id, 'two')
+  assert.equal(screenTimerDef(presentation, { screenTimerId: 'gone' }).id, 'one')
+  assert.equal(screenTimerDef(presentation, { screenTimerId: null }).id, 'one')
+  assert.equal(screenTimerStyle(presentation, { screenTimerId: 'two' }).rollover, false)
+  assert.equal(screenTimerStyle(presentation, { screenTimerId: 'one' }).rollover, true)
 })
