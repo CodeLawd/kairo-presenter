@@ -33,10 +33,10 @@ export default function SermonsLayout({
     return (
       <div className="mx-auto flex w-full max-w-xl flex-col gap-5 py-2">
         <header className="animate-in fade-in slide-in-from-bottom-2 text-center duration-300">
-          <p className="font-mono text-[10.5px] font-medium uppercase tracking-[0.18em] text-faint">
+          <p className="text-[11px] font-bold uppercase tracking-[.18em] text-faint">
             Sermon recaps
           </p>
-          <h1 className="mt-2 font-display text-[26px] font-semibold tracking-[-0.02em] text-paper">
+          <h1 className="mt-3 font-display text-[clamp(30px,3vw,40px)] leading-[1.05] font-medium tracking-[-.05em] text-paper">
             What was preached
           </h1>
           <p className="mt-1.5 text-[13.5px] text-mute">

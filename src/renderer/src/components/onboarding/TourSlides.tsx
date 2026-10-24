@@ -123,7 +123,7 @@ function TourSlideView({ slide, leaving }: { slide: TourSlide; leaving: boolean 
         <ul className="mt-9 space-y-3.5 text-[17px] text-slate-300">
           {slide.bullets.map((text, i) => (
             <li key={text} className="ob-in flex items-start gap-3" style={at(i + 3)}>
-              <span className="mt-[9px] h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400" aria-hidden="true" />
+              <span className="onboarding-bullet mt-[9px] h-1.5 w-1.5 shrink-0 rounded-full" aria-hidden="true" />
               {text}
             </li>
           ))}

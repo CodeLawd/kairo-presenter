@@ -110,13 +110,13 @@ function DashboardChrome({ children }: { children: React.ReactNode }): React.Rea
   const sermonOpen = /^\/dashboard\/sermons\/[^/]+$/.test(pathname)
 
   return (
-    <div className="flex h-dvh overflow-hidden bg-background text-foreground">
+    <div className="flex h-dvh overflow-hidden bg-sidebar text-foreground">
       <AppSidebar />
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border bg-background px-4 md:px-6">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-page md:my-2 md:mr-2 md:rounded-2xl">
+        <header className="flex h-16 shrink-0 items-center justify-between gap-3 px-4 md:px-6">
           <div className="flex min-w-0 items-center gap-2">
             <MobileNav />
-            <h1 className="truncate text-[15px] font-medium text-foreground">{title}</h1>
+            <h1 className="truncate text-[11px] font-bold tracking-[.18em] text-muted-foreground uppercase">{title}</h1>
           </div>
           <div className="flex items-center gap-1">
             <ThemeToggle />

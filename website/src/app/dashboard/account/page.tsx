@@ -70,7 +70,7 @@ export default function AccountPage(): React.ReactElement {
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
       <div>
-        <h2 className="font-display text-[28px] font-semibold tracking-tight">Account</h2>
+        <h2 className="font-display text-[clamp(30px,3vw,40px)] leading-[1.05] font-medium tracking-[-.05em]">Account</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           Your profile, church name, and this browser session.
         </p>

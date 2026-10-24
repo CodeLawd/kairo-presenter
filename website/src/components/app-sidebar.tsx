@@ -88,7 +88,7 @@ function Brand({ config, onNavigate }: { config: SidebarConfig; onNavigate?: () 
     <Link href={config.home} onClick={onNavigate} className="flex items-center gap-3 px-2.5">
       <KairoMark size={32} />
       <span className="min-w-0">
-        <span className="block font-display text-[16px] font-semibold tracking-[-0.02em] text-foreground">
+        <span className="block font-display text-[16px] font-semibold tracking-[-0.03em] text-foreground">
           Kairo
         </span>
         <span className="block truncate text-[12px] text-muted-foreground">
@@ -106,7 +106,7 @@ function NavList({ config, onNavigate }: { config: SidebarConfig; onNavigate?: (
     <nav className="flex flex-1 flex-col">
       {config.groups.map((group, index) => (
         <div key={group.label} className={cn('flex flex-col gap-0.5', index > 0 && 'mt-5')}>
-          <p className="px-2.5 pb-1.5 text-[11px] font-medium text-muted-foreground">{group.label}</p>
+          <p className="px-2.5 pb-2 text-[11px] font-bold tracking-[.18em] text-muted-foreground uppercase">{group.label}</p>
           {group.items.map((item) => {
             const active = isActive(pathname, item.href, config.home)
             return (
@@ -115,9 +115,9 @@ function NavList({ config, onNavigate }: { config: SidebarConfig; onNavigate?: (
                 href={item.href}
                 onClick={onNavigate}
                 className={cn(
-                  'flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[13.5px] transition-colors',
+                  'flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[14px] transition-colors',
                   active
-                    ? 'bg-primary/15 font-medium text-primary'
+                    ? 'bg-accent-dim/15 font-semibold text-accent'
                     : 'text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground',
                 )}
               >
@@ -136,9 +136,9 @@ function SidebarFooter({ onNavigate }: { onNavigate?: () => void }): React.React
   const { signOut } = useDashboard()
 
   return (
-    <div className="mt-auto flex flex-col gap-0.5 border-t border-sidebar-border pt-3">
+    <div className="mt-auto flex flex-col gap-0.5 pt-3">
       <a
-        href="mailto:hello@kairo.app"
+        href="mailto:hello@kairopresenter.com"
         className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[13.5px] text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground"
       >
         <CircleHelpIcon className="size-4" />
@@ -172,7 +172,7 @@ function SidebarBody({ config, onNavigate }: { config: SidebarConfig; onNavigate
 export function AppSidebar({ config: requested }: { config?: SidebarConfig }): React.ReactElement {
   const config = useSidebarConfig(requested)
   return (
-    <aside className="sticky top-0 hidden h-dvh w-72 shrink-0 flex-col overflow-y-auto border-r border-sidebar-border bg-sidebar px-4 pb-5 pt-8 md:flex">
+    <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col overflow-y-auto bg-sidebar px-4 pb-5 pt-7 md:flex">
       <SidebarBody config={config} />
     </aside>
   )

@@ -219,7 +219,7 @@ export default function DevicesPage(): React.ReactElement {
   return (
     <div className="flex w-full max-w-md flex-col gap-5">
       <header>
-        <h2 className="font-display text-[22px] font-semibold tracking-tight">Kairo computers</h2>
+        <h2 className="font-display text-[28px] leading-[1.1] font-medium tracking-[-.045em]">Kairo computers</h2>
         <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
           Macs and PCs signed into this church from the Kairo app.
         </p>

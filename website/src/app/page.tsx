@@ -1,49 +1,79 @@
-import type { Metadata } from 'next';
-import { isIndexable, siteUrl, siteName, siteTitle, siteDescription, socialImage } from '@/lib/seo';
+import type { Metadata } from "next";
+import {
+  isIndexable,
+  siteUrl,
+  siteName,
+  siteTitle,
+  siteDescription,
+  socialImage,
+} from "@/lib/seo";
 
 import { Fragment } from "react";
 import Link from "next/link";
+import {
+  BookOpen,
+  Film,
+  Languages,
+  ListMusic,
+  Presentation,
+  Timer,
+  Video,
+  WifiOff,
+} from "lucide-react";
 import { Logo } from "@/components/brand/Logo";
-import { IconApple, IconLinux, IconWindows } from "@/components/landing/icons";
+import { HeroDownload } from "@/components/landing/HeroDownload";
+import { LandingFooter } from "@/components/landing/LandingFooter";
 import { OperatorDemo } from "@/components/landing/OperatorDemo";
+import { RotatingWord } from "@/components/landing/RotatingWord";
+import { ScreenViews } from "@/components/landing/ScreenViews";
+import { StretchyFooter } from "@/components/landing/StretchyFooter";
+import { ThesisDots } from "@/components/landing/ThesisDots";
 import "./landing.css";
 import Image from "next/image";
 
 export const metadata: Metadata = {
-  alternates: { canonical: '/' },
+  alternates: { canonical: "/" },
   robots: {
-    index: isIndexable, follow: true,
-    googleBot: { index: isIndexable, follow: true, 'max-image-preview': 'large', 'max-snippet': -1, 'max-video-preview': -1 },
+    index: isIndexable,
+    follow: true,
+    googleBot: {
+      index: isIndexable,
+      follow: true,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+      "max-video-preview": -1,
+    },
   },
   openGraph: {
-    title: siteTitle, description: siteDescription, url: '/',
-    siteName, type: 'website', locale: 'en_US', images: [socialImage],
+    title: siteTitle,
+    description: siteDescription,
+    url: "/",
+    siteName,
+    type: "website",
+    locale: "en_US",
+    images: [socialImage],
   },
 };
-
 
 const container =
   "mx-auto w-[calc(100%-40px)] max-w-[1440px] md:w-[calc(100%-48px)] xl:w-[calc(100%-80px)]";
 const label = "text-[11px] font-bold tracking-[.18em] text-[#C3BFB7]";
 const heading =
   "text-[clamp(36px,4vw,64px)] leading-[1.05] font-medium tracking-[-.055em]";
-const button =
-  "inline-flex min-h-11 items-center justify-center gap-6 rounded-full px-[19px] text-sm font-semibold whitespace-nowrap transition-[background,color,transform] duration-200 hover:-translate-y-0.5 motion-reduce:transform-none motion-reduce:transition-none";
-const lightButton = `${button} bg-[#F4F0E9] text-[#11120D] hover:bg-[#E9E5DE]`;
 const hairline = "border-[#403F35]";
 
 const downloads = [
   {
     name: "Apple silicon",
     system: "macOS",
-    detail: "M series · macOS 11 or later",
+    detail: "For Macs with M1 or later · macOS 11+",
     format: ".dmg",
     platform: "mac-arm64",
   },
   {
     name: "Intel Mac",
     system: "macOS",
-    detail: "Intel · macOS 11 or later",
+    detail: "For Macs with an Intel processor · macOS 11+",
     format: ".dmg",
     platform: "mac-x64",
   },
@@ -66,88 +96,46 @@ const downloads = [
 const thesis =
   "You can prepare the songs and readings. You can't predict every verse that comes up. Kairo helps you find it, check it, and put it on screen.";
 
-const steps = [
-  {
-    number: "01",
-    title: "Prepare the service",
-    body: "Put the songs, readings, notes, slides and media for Sunday in one service. Arrange the song sections the way your team plans to sing them.",
-  },
-  {
-    number: "02",
-    title: "Run your screens",
-    body: "Choose what goes live and keep the next slide in view. Kairo can send it to a projector, TV or NDI feed, with a background, message or logo when you need one.",
-  },
-  {
-    number: "03",
-    title: "Follow the sermon",
-    body: "If an unplanned verse comes up, Kairo can suggest a passage from the live audio. Check the text and put it on screen when you're ready.",
-  },
-  {
-    number: "04",
-    title: "Pick up after the service",
-    body: "Use the transcript to make a sermon recap you can share. Kairo also keeps a record of the songs you showed for CCLI reporting.",
-  },
-];
-
-const screens = [
-  {
-    title: "In the room",
-    tag: "Projector · TV",
-    body: "Show the congregation lyrics, Scripture, slides and media.",
-  },
-  {
-    title: "On the stage",
-    tag: "Confidence monitor",
-    body: "Show the current and next slide, the clock, a countdown and messages for the stage.",
-  },
-  {
-    title: "In the lobby",
-    tag: "Its own playlist",
-    body: "Play images and videos in the foyer without changing what is live in the room.",
-  },
-  {
-    title: "On the stream",
-    tag: "Up to four NDI feeds",
-    body: "Put a lower third on the stream while the room sees a full-screen slide.",
-  },
-];
-
 const features = [
   {
     title: "Lyrics in two languages",
-    body: "Add a translated line below the lyric and give it a color of its own.",
+    body: "A translated line under every lyric.",
+    Icon: Languages,
   },
   {
     title: "Bible translations",
-    body: "KJV, WEB and ASV are included. Use your API.Bible key for licensed translations.",
+    body: "KJV, BBE and BSB built in. More with API.Bible.",
+    Icon: BookOpen,
   },
   {
     title: "PowerPoint and PDF",
-    body: "Bring in a slide deck and move through it with a clicker.",
+    body: "Bring in a deck and move through it with a clicker.",
+    Icon: Presentation,
   },
   {
-    title: "Backgrounds",
-    body: "Keep an image or video loop running as the words change.",
+    title: "Video backgrounds",
+    body: "Loops keep moving while the words change.",
+    Icon: Film,
   },
   {
-    title: "Messages and logos",
-    body: "Show an announcement or logo without changing the live slide.",
-  },
-  {
-    title: "Live video",
-    body: "Put a camera or capture card on screen, with its audio.",
+    title: "Live camera input",
+    body: "Put a camera or capture card on screen.",
+    Icon: Video,
   },
   {
     title: "Stage countdown",
-    body: "Keep a timer and stage-only messages where the speaker can see them.",
+    body: "Timers and notes only the stage can see.",
+    Icon: Timer,
   },
   {
-    title: "Song records",
-    body: "See which songs were shown during a service when it is time to report to CCLI.",
+    title: "CCLI song records",
+    body: "Every song shown, ready when it's time to report.",
+    Icon: ListMusic,
   },
   {
-    title: "Offline essentials",
-    body: "Keep presenting local slides and media and looking up built-in Bibles without internet.",
+    title: "Works offline",
+    body: "Slides, media and built-in Bibles, no internet needed.",
+    Icon: WifiOff,
   },
 ];
 
@@ -167,11 +155,6 @@ const questions = [
       "What if the pastor paraphrases instead of reading the reference?",
     answer:
       "It can suggest a passage from the words being spoken, even without a book and chapter. Check the suggestion before sending it live.",
-  },
-  {
-    question: "Which Bible translations can we use?",
-    answer:
-      "KJV, WEB and ASV are included and work offline. For licensed translations such as NIV and NLT, your church needs access through API.Bible.",
   },
   {
     question: "Does it need the internet?",
@@ -212,455 +195,92 @@ function Thesis(): React.ReactElement {
 
 export default function HomePage(): React.ReactElement {
   return (
-    <div
-      className="landing min-h-screen bg-[#11120D] font-[var(--font-manrope)] text-[#F6F3EB]"
-      id="top"
-    >
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify({
-          '@context': 'https://schema.org',
-          '@graph': [
-            { '@type': 'Organization', '@id': `${siteUrl}/#organization`, name: siteName, alternateName: 'Kairo', url: siteUrl },
-            { '@type': 'WebSite', '@id': `${siteUrl}/#website`, name: siteName, alternateName: 'Kairo', url: siteUrl, inLanguage: 'en', publisher: { '@id': `${siteUrl}/#organization` } },
-            { '@type': 'SoftwareApplication', '@id': `${siteUrl}/#software`, name: siteName, alternateName: 'Kairo', url: siteUrl,
-              description: siteDescription, applicationCategory: 'MultimediaApplication',
-              operatingSystem: 'macOS, Windows, Linux', image: `${siteUrl}${socialImage.url}`,
-              downloadUrl: `${siteUrl}/#get`, publisher: { '@id': `${siteUrl}/#organization` },
-              featureList: ['Church service planning', 'Lyrics, Scripture, slides and media presentation', 'Stage confidence monitors', 'Independent lobby playlists', 'NDI output', 'Live Scripture suggestions', 'Sermon transcription and recaps', 'PowerPoint and PDF import', 'CCLI song reporting'] },
-            { '@type': 'FAQPage', '@id': `${siteUrl}/#questions`, mainEntity: questions.map(({ question, answer }) => ({
-              '@type': 'Question', name: question, acceptedAnswer: { '@type': 'Answer', text: answer },
-            })) },
-          ],
-        }).replace(/</g, '\u003c') }}
-      />
-      <a
-        className="absolute -top-20 left-6 z-[100] bg-white px-[18px] py-3 text-[#11120D] focus:top-3"
-        href="#main"
+    <>
+      <div
+        className="landing min-h-screen bg-[#0A0B10] font-[var(--font-manrope)] text-[#F6F3EB]"
+        id="top"
+        data-stretchy-page=""
       >
-        Skip to content
-      </a>
-      <header className="absolute inset-x-0 top-0 z-5 flex h-[72px] items-center gap-5 px-6 min-[701px]:h-[88px] min-[701px]:gap-12 min-[701px]:px-10">
-        <Logo href="#top" priority />
-        <nav
-          className="m-auto hidden gap-[34px] min-[701px]:flex"
-          aria-label="Main navigation"
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@graph": [
+                {
+                  "@type": "Organization",
+                  "@id": `${siteUrl}/#organization`,
+                  name: siteName,
+                  alternateName: "Kairo",
+                  url: siteUrl,
+                },
+                {
+                  "@type": "WebSite",
+                  "@id": `${siteUrl}/#website`,
+                  name: siteName,
+                  alternateName: "Kairo",
+                  url: siteUrl,
+                  inLanguage: "en",
+                  publisher: { "@id": `${siteUrl}/#organization` },
+                },
+                {
+                  "@type": "SoftwareApplication",
+                  "@id": `${siteUrl}/#software`,
+                  name: siteName,
+                  alternateName: "Kairo",
+                  url: siteUrl,
+                  description: siteDescription,
+                  applicationCategory: "MultimediaApplication",
+                  operatingSystem: "macOS, Windows, Linux",
+                  image: `${siteUrl}${socialImage.url}`,
+                  downloadUrl: `${siteUrl}/#get`,
+                  publisher: { "@id": `${siteUrl}/#organization` },
+                  featureList: [
+                    "Church service planning",
+                    "Lyrics, Scripture, slides and media presentation",
+                    "Stage confidence monitors",
+                    "Independent lobby playlists",
+                    "NDI output",
+                    "Live Scripture suggestions",
+                    "Sermon transcription and recaps",
+                    "PowerPoint and PDF import",
+                    "CCLI song reporting",
+                  ],
+                },
+                {
+                  "@type": "FAQPage",
+                  "@id": `${siteUrl}/#questions`,
+                  mainEntity: questions.map(({ question, answer }) => ({
+                    "@type": "Question",
+                    name: question,
+                    acceptedAnswer: { "@type": "Answer", text: answer },
+                  })),
+                },
+              ],
+            }).replace(/</g, "\u003c"),
+          }}
+        />
+        <a
+          className="absolute -top-20 left-6 z-[100] bg-white px-[18px] py-3 text-[#11120D] focus:top-3"
+          href="#main"
         >
-          {[
-            ["Product", "#product"],
-            ["How it works", "#workflow"],
-            ["Screens", "#screens"],
-            ["Questions", "#questions"],
-          ].map(([text, href]) => (
-            <a
-              className="text-sm font-medium text-[#EBE8E0] hover:underline hover:underline-offset-[5px]"
-              href={href}
-              key={href}
-            >
-              {text}
-            </a>
-          ))}
-        </nav>
-        <div className="ml-auto flex items-center gap-6 min-[701px]:ml-0">
-          <Link
-            className="hidden text-sm font-medium text-[#EBE8E0] hover:underline hover:underline-offset-[5px] min-[701px]:block"
-            href="/login"
-          >
-            Sign in
-          </Link>
-          <a
-            className={`${lightButton} gap-[9px] px-3.5 text-xs min-[701px]:gap-6 min-[701px]:px-[19px] min-[701px]:text-sm`}
-            href="#get"
-          >
-            Download Kairo <span aria-hidden="true">↓</span>
-          </a>
-        </div>
-      </header>
-
-      <main id="main">
-        <section
-          className="relative flex h-auto min-h-[760px] flex-col justify-end overflow-hidden border-b border-[#272721] bg-[radial-gradient(ellipse_at_top_right,#1b1b1b_0%,#060606_60%)] min-[701px]:h-[max(680px,100svh)] min-[701px]:min-h-[min(840px,100svh)]"
-          aria-labelledby="hero-title"
+          Skip to content
+        </a>
+        <header
+          className={`${container} absolute inset-x-0 top-0 z-5 flex h-[72px] items-center gap-5 min-[701px]:h-[88px] min-[701px]:gap-12`}
         >
-          <div className="landing-hero-copy relative z-2 mb-[105px] w-auto px-5 min-[701px]:mb-[clamp(56px,9vh,100px)] min-[701px]:px-10">
-            <p className={label}>PRESENTATION SOFTWARE FOR THE CHURCH</p>
-            <h1
-              className="landing-hero-title my-6 text-[clamp(43px,11vw,70px)] leading-[.98] font-medium tracking-[-.065em] min-[701px]:text-[clamp(52px,7.4vw,128px)]"
-              id="hero-title"
-              aria-label="Run the service. Keep up with the sermon."
-            >
-              <span className="landing-hero-line">
-                <span
-                  className="landing-hero-word"
-                  style={{ "--word-index": 0 } as React.CSSProperties}
-                >
-                  Run
-                </span>{" "}
-                <span
-                  className="landing-hero-word"
-                  style={{ "--word-index": 1 } as React.CSSProperties}
-                >
-                  the
-                </span>{" "}
-                <span
-                  className="landing-hero-word"
-                  style={{ "--word-index": 2 } as React.CSSProperties}
-                >
-                  service.
-                </span>
-              </span>
-              <span className="landing-hero-line">
-                <span
-                  className="landing-hero-word"
-                  style={{ "--word-index": 3 } as React.CSSProperties}
-                >
-                  Keep
-                </span>{" "}
-                <span
-                  className="landing-hero-word"
-                  style={{ "--word-index": 4 } as React.CSSProperties}
-                >
-                  up
-                </span>{" "}
-                <span
-                  className="landing-hero-word"
-                  style={{ "--word-index": 5 } as React.CSSProperties}
-                >
-                  with
-                </span>{" "}
-                <span
-                  className="landing-hero-word"
-                  style={{ "--word-index": 6 } as React.CSSProperties}
-                >
-                  the
-                </span>{" "}
-                <span
-                  className="landing-hero-word landing-hero-cue landing-hero-rotate"
-                  style={{ "--word-index": 7 } as React.CSSProperties}
-                  aria-hidden="true"
-                >
-                  <span className="landing-hero-rotate-measure">message.</span>
-                  <span className="landing-hero-rotate-window">
-                    <span className="landing-hero-rotate-word">sermon.</span>
-                    <span className="landing-hero-rotate-word">message.</span>
-                    <span className="landing-hero-rotate-word">moment.</span>
-                  </span>
-                </span>
-              </span>
-            </h1>
-            <p className="max-w-[510px] text-[clamp(17px,1.4vw,20px)] leading-[1.55] text-[#C0BCB4]">
-              Plan the service, present lyrics, Scripture, slides and media, and run
-              your screens with Kairo Presenter. Follow the sermon with live
-              verse suggestions and share a recap afterwards.
-            </p>
-            <div className="mt-[33px] flex flex-wrap items-center gap-[30px]">
-              <a className={lightButton} href="#get">
-                Download Kairo <span aria-hidden="true">↓</span>
-              </a>
-              <a
-                className="inline-flex gap-[18px] text-sm font-semibold text-[#E9E5DE] hover:underline hover:underline-offset-[5px]"
-                href="#product"
-              >
-                Take a look <span aria-hidden="true">↓</span>
-              </a>
-              <span className="basis-full text-xs tracking-[.02em] text-[#807D73] min-[701px]:basis-auto">
-                Standalone presentation · NDI output
-              </span>
-            </div>
-          </div>
-        </section>
-
-        <section className="landing-thesis" aria-label="Why Kairo">
-          <div
-            className={`landing-thesis-pin ${container} py-[80px] min-[701px]:py-[140px]`}
-          >
-            <p className={label}>WHY KAIRO</p>
-            <Thesis />
-          </div>
-        </section>
-
-        <section
-          className="bg-[#EAE7DF] py-[80px] text-[#11120D] min-[701px]:py-[130px]"
-          id="product"
-          aria-labelledby="product-title"
-        >
-          <div className={container}>
-            <div className="mb-10 grid items-end gap-x-[70px] gap-y-6 min-[901px]:mb-16 min-[901px]:grid-cols-[1fr_1.2fr]">
-              <p className={`${label} text-[#6E6C62] min-[901px]:col-span-2`}>
-                THE OPERATOR VIEW
-              </p>
-              <h2 className={heading} id="product-title" data-reveal="">
-                See what's live.
-                <br />
-                See what's next.
-              </h2>
-              <p
-                className="max-w-[520px] text-lg leading-[1.55] text-[#504F44]"
-                data-reveal=""
-              >
-                Kairo listens, catches the verse and puts it on screen — on its
-                own, or when you say so. The transcript, what's live and what's
-                next sit side by side.
-              </p>
-            </div>
-            <OperatorDemo />
-          </div>
-        </section>
-
-        <section
-          className={`${container} grid gap-[30px] py-[75px] min-[701px]:py-[150px] min-[901px]:grid-cols-[1fr_1.2fr] min-[901px]:gap-[70px]`}
-          id="workflow"
-        >
-          <div className="self-start min-[701px]:sticky min-[701px]:top-[54px]">
-            <p className={label}>HOW KAIRO WORKS</p>
-            <h2 className={`${heading} mt-[26px] max-w-[500px]`} data-reveal="">
-              Before, during and after the service.
-            </h2>
-          </div>
-          <div className="mt-[42px] min-[701px]:mt-0">
-            {steps.map((item) => (
-              <article
-                className={`grid grid-cols-[55px_1fr] gap-x-6 border-t py-[30px] last:border-b ${hairline}`}
-                data-reveal=""
-                key={item.number}
-              >
-                <span className="row-span-2 pt-[5px] text-xs text-[#AAA79D]">
-                  {item.number}
-                </span>
-                <h3 className="text-[25px] leading-[1.2] font-medium tracking-[-.035em]">
-                  {item.title}
-                </h3>
-                <p className="mt-2.5 max-w-[500px] text-base leading-[1.6] text-[#B5B1A9]">
-                  {item.body}
-                </p>
-              </article>
-            ))}
-          </div>
-        </section>
-
-        <section
-          className="bg-[#EAE7DF] text-[#11120D]"
-          id="screens"
-          aria-labelledby="screens-title"
-        >
-          <div
-            className={`${container} grid gap-[30px] py-[75px] min-[701px]:py-[140px] min-[901px]:grid-cols-[1fr_1.2fr] min-[901px]:gap-[70px]`}
-          >
-            <div className="self-start min-[701px]:sticky min-[701px]:top-[54px]">
-              <p className={`${label} text-[#6E6C62]`}>SCREENS</p>
-              <h2
-                className={`${heading} mt-[26px] max-w-[560px]`}
-                id="screens-title"
-                data-reveal=""
-              >
-                Set up each screen for where it is.
-              </h2>
-            </div>
-            <div className="mt-[42px] border-t border-[#D1CDC5] min-[701px]:mt-0">
-              {screens.map((screen) => (
-                <article
-                  className="grid gap-2.5 border-b border-[#D1CDC5] py-7 min-[701px]:grid-cols-[minmax(130px,.65fr)_1fr] min-[701px]:gap-7"
-                  data-reveal=""
-                  key={screen.title}
-                >
-                  <div>
-                    <h3 className="text-xl font-medium tracking-[-.025em]">
-                      {screen.title}
-                    </h3>
-                    <span className="mt-2 block text-[11px] uppercase tracking-[.14em] text-[#7C796F]">
-                      {screen.tag}
-                    </span>
-                  </div>
-                  <p className="text-[15px] leading-[1.6] text-[#504F44]">
-                    {screen.body}
-                  </p>
-                </article>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        <section
-          className={`border-t ${hairline} py-[64px] min-[701px]:py-[90px]`}
-          aria-labelledby="features-title"
-        >
-          <div className={container}>
-            <p className={label}>MORE TO WORK WITH</p>
-            <h2
-              className={`${heading} mt-5 mb-9 max-w-[760px]`}
-              id="features-title"
-              data-reveal=""
-            >
-              The details your team needs.
-            </h2>
-            <div className="grid grid-cols-1 gap-x-10 min-[701px]:grid-cols-2 min-[901px]:grid-cols-3">
-              {features.map((feature) => (
-                <article
-                  className={`border-t py-4 ${hairline}`}
-                  key={feature.title}
-                >
-                  <h3 className="text-base font-medium tracking-[-.02em]">
-                    {feature.title}
-                  </h3>
-                  <p className="mt-1.5 text-sm leading-[1.5] text-[#B5B1A9]">
-                    {feature.body}
-                  </p>
-                </article>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        <section className="bg-[#EAE7DF] text-[#11120D]">
-          <div className={`${container} py-20 min-[701px]:py-[125px]`}>
-            <p className={`${label} text-[#6E6C62]`}>WORKS WITH YOUR SETUP</p>
-            <h2 className={`${heading} my-6 max-w-[780px]`} data-reveal="">
-              Run your screens. Send a feed to your stream.
-            </h2>
-            <p
-              className="max-w-[630px] text-[19px] leading-[1.5] text-[#504F44]"
-              data-reveal=""
-            >
-              Kairo runs the screens connected to your computer. NDI output is
-              available for a compatible switcher or stream.
-            </p>
-            <div className="mt-10 flex flex-wrap gap-3" data-reveal="">
-              {["Kairo screens", "NDI feeds", "Stage display"].map(
-                (item) => (
-                  <span
-                    className="rounded-full border border-[#BBB7AF] px-[18px] py-3 text-[13px] text-[#2B2B23]"
-                    key={item}
-                  >
-                    {item}
-                  </span>
-                ),
-              )}
-            </div>
-          </div>
-        </section>
-
-        <section
-          className={`${container} grid gap-[30px] py-[90px] min-[701px]:py-[140px] min-[901px]:grid-cols-[1fr_1.2fr] min-[901px]:gap-[70px]`}
-          id="questions"
-        >
-          <div>
-            <p className={label}>QUESTIONS</p>
-            <h2 className={`${heading} mt-6`}>Good to know.</h2>
-          </div>
-          <div className={`mt-[42px] border-t min-[701px]:mt-0 ${hairline}`}>
-            {questions.map(({ question, answer }) => (
-              <details className={`group border-b ${hairline}`} key={question}>
-                <summary className="flex cursor-pointer list-none justify-between gap-5 py-[25px] text-[19px] [&::-webkit-details-marker]:hidden">
-                  {question}
-                  <span
-                    className="text-2xl leading-none text-[#B1AEA5] transition-transform duration-200 group-open:rotate-45 motion-reduce:transition-none"
-                    aria-hidden="true"
-                  >
-                    +
-                  </span>
-                </summary>
-                <p className="mb-[25px] max-w-[600px] text-base leading-[1.6] text-[#C1BEB5]">
-                  {answer}
-                </p>
-              </details>
-            ))}
-          </div>
-        </section>
-
-        <section className="bg-[#F6F3EB] text-[#11120D]">
-          <div
-            className={`${container} py-[85px] min-[701px]:py-[110px] min-[701px]:pb-[130px]`}
-            id="get"
-          >
-            <p className={`${label} text-[#6E6C62]`}>THE DESKTOP APP</p>
-            <h2
-              className={`${heading} mb-[20px] mt-[22px] max-w-[700px]`}
-              data-reveal=""
-            >
-              Download Kairo.
-            </h2>
-            <p className="mb-[38px] max-w-[580px] text-lg leading-[1.5] text-[#555449]">
-              Choose the version for your computer. Sign in after installing to
-              keep your church setup in sync.
-            </p>
-            <div
-              className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
-              aria-label="Download Kairo"
-            >
-              {downloads.map(({ name, system, detail, format, platform }) => (
-                <a
-                  key={platform}
-                  className="group flex min-h-[235px] flex-col justify-between rounded-2xl bg-white p-6 text-[#11120D] shadow-[0_10px_30px_rgba(17, 18, 13,0.045)] transition-[box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:shadow-[0_16px_38px_rgba(17, 18, 13,0.09)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#11120D] motion-reduce:transform-none motion-reduce:transition-none min-[701px]:p-7"
-                  href={`/download/thanks?platform=${platform}&source=home`}
-                >
-                  <span className="block">
-                    <span className="flex items-center gap-3">
-                      <span className="grid size-12 shrink-0 place-items-center rounded-xl bg-[#F6F3EB] text-[#181913] [&_svg]:size-7">
-                        {system === "macOS" ? (
-                          <IconApple />
-                        ) : system === "Windows" ? (
-                          <IconWindows />
-                        ) : (
-                          <IconLinux />
-                        )}
-                      </span>
-                      <span className="text-[11px] font-semibold uppercase tracking-[.16em] text-[#767469]">
-                        {system}
-                      </span>
-                    </span>
-                    <span className="mt-5 block text-[clamp(23px,2.4vw,32px)] font-medium leading-none tracking-[-.04em]">
-                      {name}
-                    </span>
-                    <span className="mt-3 block text-sm text-[#666459]">
-                      {detail}
-                    </span>
-                  </span>
-                  <span className="mt-7 flex items-center justify-between gap-4 rounded-lg bg-[#F6F3EB] px-4 py-3 text-sm font-semibold text-[#11120D] transition-colors group-hover:bg-[#171712] group-hover:text-white">
-                    <span>Download {format}</span>
-                    <span className="text-lg" aria-hidden="true">
-                      ↓
-                    </span>
-                  </span>
-                </a>
-              ))}
-            </div>
-          </div>
-        </section>
-      </main>
-
-      <footer className="relative isolate overflow-hidden border-t border-[#403F35] bg-[#11120D] pt-[60px] min-[701px]:pt-[70px]">
-        <div
-          className="landing-footer-wordmark pointer-events-none absolute inset-x-0 bottom-[-.08em] z-0 select-none whitespace-nowrap text-center text-[23vw] leading-none font-bold tracking-[-.09em] text-[#181913] opacity-[0.28]"
-          aria-hidden="true"
-        >
-          <span className="inline-block scale-x-[1.4]">KAIRO</span>
-        </div>
-        <div
-          className={`${container} relative z-10 grid min-h-[240px] grid-cols-2 gap-x-5 gap-y-[42px] pb-[65px] min-[701px]:grid-cols-[minmax(0,1.5fr)_repeat(2,minmax(0,1fr))] min-[701px]:gap-[60px] min-[701px]:pb-0`}
-        >
-          <div className="col-span-2 min-[701px]:col-span-1">
-            <Image
-              src={"/brand/Stacked-Off-white.png"}
-              alt="Kairo"
-              width={100}
-              height={100}
-            />
-            <p className="mt-[22px] max-w-[28ch] text-[15px] leading-[1.55] text-[#A4A197]">
-              For the people who put Sunday on screen.
-            </p>
-          </div>
+          <Logo href="#top" priority />
           <nav
-            className="flex flex-col items-start gap-[17px]"
-            aria-label="Footer navigation"
+            className="m-auto hidden gap-[34px] min-[701px]:flex"
+            aria-label="Main navigation"
           >
             {[
               ["Product", "#product"],
-              ["How it works", "#workflow"],
               ["Screens", "#screens"],
               ["Questions", "#questions"],
             ].map(([text, href]) => (
               <a
-                className="text-sm text-[#DBD7D0] hover:underline hover:underline-offset-[5px]"
+                className="text-sm font-medium text-[#EBE8E0] hover:underline hover:underline-offset-[5px]"
                 href={href}
                 key={href}
               >
@@ -668,36 +288,230 @@ export default function HomePage(): React.ReactElement {
               </a>
             ))}
           </nav>
-          <div className="flex flex-col items-start gap-[17px]">
+          <div className="ml-auto flex items-center gap-6 min-[701px]:ml-0">
             <Link
-              className="text-sm text-[#DBD7D0] hover:underline hover:underline-offset-[5px]"
+              className="hidden text-sm font-medium text-[#EBE8E0] hover:underline hover:underline-offset-[5px] min-[701px]:block"
               href="/login"
             >
               Sign in
             </Link>
-            <a
-              className="text-sm text-[#F7F3EC] hover:underline hover:underline-offset-[5px]"
-              href="#get"
-            >
-              Download Kairo <span aria-hidden="true">↓</span>
-            </a>
           </div>
-        </div>
-        <div
-          className={`${container} relative z-10 grid grid-cols-[1fr_auto] items-center gap-3 border-t border-[#2A2A22] py-[22px] text-[11px] tracking-[.16em] text-[#98958C] min-[701px]:grid-cols-3 min-[701px]:gap-6`}
-        >
-          <span>BUILT FOR YOUR TEAM</span>
-          <small className="col-span-2 row-start-2 text-[11px] tracking-[.16em] min-[701px]:col-span-1 min-[701px]:row-start-auto min-[701px]:text-center">
-            © {new Date().getFullYear()} Kairo
-          </small>
-          <a
-            className="justify-self-end text-[#B0ACA4] hover:underline hover:underline-offset-[5px]"
-            href="#top"
+        </header>
+
+        <main id="main">
+          <section
+            className="relative isolate flex h-auto min-h-[760px] flex-col justify-end overflow-hidden bg-[#08060b] min-[701px]:h-[max(680px,100svh)] min-[701px]:min-h-[min(840px,100svh)]"
+            aria-labelledby="hero-title"
           >
-            Back to top ↑
-          </a>
-        </div>
-      </footer>
-    </div>
+            <Image
+              src="/images/kairo-worship-hero.webp"
+              alt=""
+              fill
+              priority
+              sizes="100vw"
+              className="landing-hero-photo object-cover"
+            />
+            <div
+              className="landing-hero-shade absolute inset-0"
+              aria-hidden="true"
+            />
+            <div
+              className="landing-hero-dissolve pointer-events-none absolute inset-x-0 bottom-0 h-[45%]"
+              aria-hidden="true"
+            />
+            <div
+              className={`landing-hero-copy ${container} relative z-2 mb-[150px] min-[701px]:mb-[clamp(110px,18vh,190px)]`}
+            >
+              <p className={label} style={{ textTransform: "uppercase" }}>
+                The future of presentations
+              </p>
+              <h1
+                className="landing-hero-title font-black my-6 text-[clamp(38px,10vw,56px)] leading-[1] font-medium tracking-[-.06em] min-[701px]:text-[clamp(46px,5.4vw,88px)]"
+                id="hero-title"
+                aria-label="Church Presentations, Reimagined With AI."
+              >
+                <span className="landing-hero-line">
+                  <span
+                    className="landing-hero-word"
+                    style={{ "--word-index": 0 } as React.CSSProperties}
+                  >
+                    Church
+                  </span>{" "}
+                  <span
+                    className="landing-hero-word"
+                    style={{ "--word-index": 1 } as React.CSSProperties}
+                  >
+                    Presentations,
+                  </span>
+                </span>
+                <span className="landing-hero-line">
+                  <span
+                    className="landing-hero-word landing-hero-cue"
+                    style={{ "--word-index": 2 } as React.CSSProperties}
+                    aria-hidden="true"
+                  >
+                    <RotatingWord
+                      words={["Reimagined", "Simplified", "Automated"]}
+                    />
+                  </span>{" "}
+                  <span
+                    className="landing-hero-word"
+                    style={{ "--word-index": 3 } as React.CSSProperties}
+                  >
+                    With
+                  </span>{" "}
+                  <span
+                    className="landing-hero-word text-[#8AB4FF]"
+                    style={{ "--word-index": 4 } as React.CSSProperties}
+                  >
+                    AI.
+                  </span>
+                </span>
+              </h1>
+              <p className="max-w-200 text-[clamp(17px,1.4vw,20px)] leading-[1.55] text-[#DED9D2]">
+                Kairo brings intelligence to every service, automatically
+                detecting Scripture and simplifying presentations so you can
+                focus on what matters most.
+              </p>
+              <HeroDownload builds={downloads} id="get" />
+            </div>
+          </section>
+
+          <section
+            className="landing-thesis relative overflow-clip"
+            aria-label="Why Kairo"
+          >
+            <div className="pointer-events-none sticky top-0 -mb-[100svh] h-[100svh]">
+              <ThesisDots />
+            </div>
+            <div
+              className={`landing-thesis-pin ${container} relative z-1 py-[80px] min-[701px]:py-[140px]`}
+            >
+              <p className={label}>WHY KAIRO</p>
+              <Thesis />
+            </div>
+          </section>
+
+          <section
+            className="landing-stage-glow py-[90px] min-[701px]:py-[150px]"
+            id="product"
+            aria-labelledby="product-title"
+          >
+            <div className={container}>
+              <p className={label}>LIVE SCRIPTURE</p>
+              <h2
+                className={`${heading} mt-6 mb-10 max-w-[900px] min-[701px]:mb-14`}
+                id="product-title"
+                data-reveal=""
+              >
+                The pastor says it.{" "}
+                <span className="text-[#7D8399]">Kairo puts it on screen.</span>
+              </h2>
+              <div data-reveal="">
+                <OperatorDemo />
+              </div>
+            </div>
+          </section>
+
+          <section
+            className="landing-screens relative isolate overflow-clip bg-[#0E1440]"
+            id="screens"
+            aria-labelledby="screens-title"
+          >
+            <div className="landing-screens-pin relative py-[80px] min-[701px]:py-[130px]">
+              <div
+                className="pointer-events-none absolute inset-0 -z-1 bg-[radial-gradient(ellipse_60%_70%_at_85%_20%,rgba(91,63,214,.35),transparent_70%),radial-gradient(ellipse_50%_60%_at_0%_100%,rgba(29,63,184,.35),transparent_70%)]"
+                aria-hidden="true"
+              />
+              <div className={container}>
+                <ScreenViews>
+                  <p className={label}>SCREENS</p>
+                  <h2
+                    className={`${heading} mt-6`}
+                    id="screens-title"
+                    data-reveal=""
+                  >
+                    Every screen, its own job.
+                  </h2>
+                </ScreenViews>
+              </div>
+            </div>
+          </section>
+
+          <section
+            className="bg-[#111319] py-[80px] min-[701px]:py-[130px]"
+            aria-labelledby="features-title"
+          >
+            <div className={container}>
+              <p className={label}>ALSO IN KAIRO</p>
+              <h2
+                className={`${heading} mt-6 mb-12 max-w-[760px] min-[701px]:mb-16`}
+                id="features-title"
+                data-reveal=""
+              >
+                Everything else Sunday needs.
+              </h2>
+              <ul
+                className="grid grid-cols-1 gap-3 min-[561px]:grid-cols-2 min-[1101px]:grid-cols-4"
+                data-reveal=""
+              >
+                {features.map(({ title, body, Icon }) => (
+                  <li
+                    className="flex items-start gap-4 rounded-2xl bg-[#181B23] p-5 transition-colors duration-300 hover:bg-[#1D212B] min-[561px]:flex-col min-[561px]:gap-0 min-[561px]:p-6 min-[701px]:p-7"
+                    key={title}
+                  >
+                    <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#3B6BFF]/15 text-[#8AB4FF] [&_svg]:size-5">
+                      <Icon aria-hidden="true" />
+                    </span>
+                    <div className="min-[561px]:mt-8 min-[701px]:mt-12">
+                      <h3 className="text-[17px] font-medium tracking-[-.025em] text-[#F2F3F7] min-[561px]:text-[18px]">
+                        {title}
+                      </h3>
+                      <p className="mt-1 text-[15px] leading-[1.5] text-[#8D93AD] min-[561px]:mt-1.5">
+                        {body}
+                      </p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </section>
+
+          <section
+            className={`${container} grid gap-[30px] py-[70px] min-[701px]:py-[120px] min-[901px]:grid-cols-[1fr_1.2fr] min-[901px]:gap-[70px]`}
+            id="questions"
+          >
+            <div>
+              <p className={label}>QUESTIONS</p>
+              <h2 className={`${heading} mt-6`}>Good to know.</h2>
+            </div>
+            <div className={`mt-[42px] border-t min-[701px]:mt-0 ${hairline}`}>
+              {questions.map(({ question, answer }) => (
+                <details
+                  className={`group border-b ${hairline}`}
+                  key={question}
+                >
+                  <summary className="flex cursor-pointer list-none justify-between gap-5 py-[25px] text-[19px] [&::-webkit-details-marker]:hidden">
+                    {question}
+                    <span
+                      className="text-2xl leading-none text-[#B1AEA5] transition-transform duration-200 group-open:rotate-45 motion-reduce:transition-none"
+                      aria-hidden="true"
+                    >
+                      +
+                    </span>
+                  </summary>
+                  <p className="mb-[25px] max-w-[600px] text-base leading-[1.6] text-[#C1BEB5]">
+                    {answer}
+                  </p>
+                </details>
+              ))}
+            </div>
+          </section>
+        </main>
+
+        <LandingFooter />
+      </div>
+      <StretchyFooter />
+    </>
   );
 }
