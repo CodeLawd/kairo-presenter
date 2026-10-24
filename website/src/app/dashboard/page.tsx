@@ -76,7 +76,7 @@ function MetricValue({
   children: React.ReactNode
 }): React.ReactElement {
   if (loading) return <Skeleton className="mt-1 h-8 w-16" />
-  return <p className="mt-1 font-display text-[28px] font-semibold tracking-tight">{failed ? '—' : children}</p>
+  return <p className="mt-1 font-display text-[30px] font-medium tracking-[-.045em]">{failed ? '—' : children}</p>
 }
 
 export default function DashboardPage(): React.ReactElement {
@@ -218,7 +218,7 @@ export default function DashboardPage(): React.ReactElement {
     <div className="flex w-full flex-col gap-6">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
         <div>
-          <h2 className="font-display text-[28px] font-semibold tracking-tight text-foreground">
+          <h2 className="font-display text-[clamp(30px,3vw,40px)] leading-[1.05] font-medium tracking-[-.05em] text-foreground">
             {greetingFor(now)}, {firstName(session.user.name)}
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">

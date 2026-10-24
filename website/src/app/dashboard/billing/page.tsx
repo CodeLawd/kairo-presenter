@@ -34,7 +34,7 @@ export default function BillingPage(): React.ReactElement {
               </CardAction>
             </CardHeader>
             <CardContent>
-              <p className="font-display text-[32px] font-semibold tracking-tight">{plan.price}</p>
+              <p className="font-display text-[36px] font-medium tracking-[-.05em]">{plan.price}</p>
               <ul className="mt-5 flex flex-col gap-2.5">
                 {plan.features.map((feature) => (
                   <li key={feature} className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -58,7 +58,7 @@ export default function BillingPage(): React.ReactElement {
       </div>
       <p className="text-sm text-muted-foreground">
         Questions about plans?{' '}
-        <Link href="mailto:hello@kairo.app" className="text-primary underline-offset-4 hover:underline">
+        <Link href="mailto:hello@kairopresenter.com" className="text-primary underline-offset-4 hover:underline">
           Contact us
         </Link>
         .

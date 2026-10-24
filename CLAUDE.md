@@ -90,6 +90,24 @@ Every UI color is a token in `src/renderer/src/index.css` (dark + light) — don
 
 Reusable component classes defined in `index.css` `@layer components`: `.card`, `.btn-primary`, `.btn-secondary`, `.input`, `.label`, `.page-header`, `.page-subtitle`, `.badge-connected`, `.badge-disconnected`.
 
+## Releases
+
+Cut a release with `bun run release` (a patch; or `minor`, `major` or an exact version like `1.4.0`).
+`scripts/release.mjs` checks the tree is clean, runs typecheck and tests, bumps, tags and pushes;
+the tag builds and publishes every platform.
+
+**Every release adds its changelog entry first.** The public `/changelog` page reads
+`website/src/lib/changelog.ts`. Before running the release, add an entry for the *new* version at
+the top of the list and commit it:
+- `version` (no `v`), `date` (YYYY-MM-DD, the release day), a short `title`, and 2–4 `notes`.
+- Write for church teams, not developers: what they can now do, or what got fixed, in plain words.
+  No commit hashes, file names, env vars or API details. Draft it from the commits since the last
+  tag (`git log v<last>..HEAD`).
+- Skip it only when nothing changes that a church would notice (CI, tests, build plumbing):
+  `bun run release --skip-changelog`.
+
+The release script stops, before changing anything, if the entry is missing.
+
 ## Legacy files (safe to delete)
 
 These are from the original Electron Forge scaffold and are no longer used:

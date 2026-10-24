@@ -6,6 +6,11 @@
  *   bun run release minor     # 1.0.0 → 1.1.0
  *   bun run release major     # 1.0.0 → 2.0.0
  *   bun run release 1.4.0     # exact version
+ *   bun run release --skip-changelog   # internal-only release, no changelog entry
+ *
+ * Every release needs an entry for its new version in website/src/lib/changelog.ts
+ * (the public /changelog page), committed before running this; the script stops
+ * without changing anything if it's missing.
  *
  * Pushing the `v*` tag starts .github/workflows/release.yml, which builds Mac,
  * Windows and Linux and publishes the GitHub release the website downloads from.
@@ -14,7 +19,9 @@ import { execFileSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { createInterface } from 'node:readline/promises'
 
-const bump = process.argv[2] ?? 'patch'
+const args = process.argv.slice(2)
+const skipChangelog = args.includes('--skip-changelog')
+const bump = args.find((arg) => !arg.startsWith('--')) ?? 'patch'
 if (!/^(patch|minor|major|\d+\.\d+\.\d+)$/.test(bump)) {
   fail(`Unknown version "${bump}". Use patch, minor, major or an exact version like 1.4.0.`)
 }
@@ -42,6 +49,9 @@ if (upstream && git('rev-list', '--count', `HEAD..${upstream}`) !== '0') {
 const current = JSON.parse(readFileSync('package.json', 'utf8')).version
 const next = nextVersion(current, bump)
 if (git('tag', '--list', `v${next}`)) fail(`Tag v${next} already exists.`)
+
+// The public changelog must describe this version, unless it's internal-only.
+if (!skipChangelog) checkChangelog(next)
 
 // 3. Confirm — this publishes to everyone who downloads Kairo.
 console.log(`\n  Release Kairo v${current} → v${next}`)
@@ -85,6 +95,20 @@ function nextVersion(version, kind) {
   if (kind === 'major') return `${major + 1}.0.0`
   if (kind === 'minor') return `${major}.${minor + 1}.0`
   return `${major}.${minor}.${patch + 1}`
+}
+
+function checkChangelog(version) {
+  const file = 'website/src/lib/changelog.ts'
+  const source = readFileSync(file, 'utf8')
+  const entry = new RegExp(`version:\\s*['"]${version.replace(/\./g, '\\.')}['"][\\s\\S]*?date:\\s*['"]([\\d-]+)['"]`).exec(source)
+  if (!entry) {
+    fail(`${file} has no entry for v${version}.
+  Add one at the top of the list (version, date, a short title and 2–4 plain-language notes
+  for church teams), commit it, then run this again.
+  For a release with nothing a church would notice, run with --skip-changelog.`)
+  }
+  const today = new Date().toLocaleDateString('en-CA') // YYYY-MM-DD, local time
+  if (entry[1] !== today) console.warn(`\n  ! The changelog entry for v${version} is dated ${entry[1]}, not today (${today}).`)
 }
 
 function fail(message) {

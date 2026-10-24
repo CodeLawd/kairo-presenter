@@ -11,30 +11,27 @@
    --animate-pulse-dot -> animate-pulse-dot
    ============================================================ */
 @theme {
-  /* Surfaces, darkest to lightest — the Kairo palette: ink #11120D (primary),
-     paper #FFFBF4 (white), stone #565449 (muted), blue #6C91C2 (accent). The
-     steps between are blends of those, the same as the desktop app's. */
-  --color-ink: #11120D;
-  --color-panel: #1F1F19;
-  --color-panel-2: #24241E;
-  --color-inset: #272720;
+  /* Surfaces, darkest to lightest — the landing page's palette: the cool
+     near-black page, its cards, warm off-white type and the stage blue. The
+     account pages and dashboard use the same steps so the site reads as one. */
+  --color-ink: #0A0B10;
+  --color-panel: #15171E;
+  --color-panel-2: #1D212B;
+  --color-inset: #232733;
 
-  /* Text, brightest to dimmest — ratios on --color-ink (and on --color-panel).
-     Every step clears 4.5:1 on both, and each is far enough from its
-     neighbour that the hierarchy still reads. Over the hero's blue field, use
-     one step brighter than you would on plain ink. */
-  --color-paper: #FFFBF4;  /* 18.2:1 (16.1) */
-  --color-dim: #CCC9C1;    /* 11.4:1 (10.0) */
-  --color-mute: #ABA89F;   /*  7.9:1 (7.0) */
-  --color-faint: #8C8980;  /*  5.4:1 (4.7) */
+  /* Text, brightest to dimmest — every step clears 4.5:1 on ink and panel. */
+  --color-paper: #F6F3EB;
+  --color-dim: #C9CCD6;
+  --color-mute: #A3A9BD;
+  --color-faint: #7D8399;
 
   /* Hairlines */
-  --color-line: rgba(255, 251, 244, 0.09);
-  --color-line-soft: rgba(255, 251, 244, 0.055);
+  --color-line: rgba(255, 255, 255, 0.08);
+  --color-line-soft: rgba(255, 255, 255, 0.05);
 
-  /* Accent: the palette blue. Primary buttons are paper with ink text. */
-  --color-accent: #6C91C2;
-  --color-accent-dim: #4F6888;
+  /* Accent: the landing's stage blue. Primary buttons are off-white with ink text. */
+  --color-accent: #8AB4FF;
+  --color-accent-dim: #3B6BFF;
 
   --animate-pulse-dot: pulse-dot 1.9s ease-in-out infinite;
   --animate-bounce-bar: bounce-bar 1.4s ease-in-out infinite;
@@ -258,6 +255,7 @@
   --color-sidebar-primary: var(--sidebar-primary);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar: var(--sidebar);
+  --color-page: var(--page);
   --color-chart-5: var(--chart-5);
   --color-chart-4: var(--chart-4);
   --color-chart-3: var(--chart-3);
@@ -294,41 +292,44 @@
   --radius: 0.625rem;
 }
 
-/* Site is dark by default. shadcn's tokens use the same palette as the
-   desktop app: primary actions are paper with ink text, the blue is the ring. */
+/* Site is dark by default, in the landing page's palette: primary actions are
+   off-white with ink text, the stage blue is the ring and the charts. */
 :root,
 .dark {
-  --background: #11120D;
-  --foreground: #FFFBF4;
-  --card: #1F1F19;
-  --card-foreground: #FFFBF4;
-  --popover: #24241E;
-  --popover-foreground: #FFFBF4;
-  --primary: #FFFBF4;
-  --primary-foreground: #11120D;
-  --secondary: #24241E;
-  --secondary-foreground: #FFFBF4;
-  --muted: #272720;
-  --muted-foreground: #ABA89F;
-  --accent: #24241E;
-  --accent-foreground: #FFFBF4;
+  --background: #0A0B10;
+  --foreground: #F6F3EB;
+  --card: #181B23;
+  --card-foreground: #F6F3EB;
+  --popover: #1B1E26;
+  --popover-foreground: #F6F3EB;
+  --primary: #F4F0E9;
+  --primary-foreground: #0A0B10;
+  --secondary: #1D212B;
+  --secondary-foreground: #F6F3EB;
+  --muted: #1D212B;
+  --muted-foreground: #8D93AD;
+  --accent: #1D212B;
+  --accent-foreground: #F6F3EB;
   --destructive: oklch(0.704 0.191 22.216);
-  --border: rgba(255, 251, 244, 0.09);
-  --input: rgba(255, 251, 244, 0.12);
-  --ring: #6C91C2;
-  --chart-1: #6C91C2;
-  --chart-2: #4F6888;
-  --chart-3: #A29F96;
-  --chart-4: #565449;
-  --chart-5: #272720;
-  --sidebar: #1F1F19;
-  --sidebar-foreground: #FFFBF4;
-  --sidebar-primary: #FFFBF4;
-  --sidebar-primary-foreground: #11120D;
-  --sidebar-accent: #24241E;
-  --sidebar-accent-foreground: #FFFBF4;
-  --sidebar-border: rgba(255, 251, 244, 0.09);
-  --sidebar-ring: #6C91C2;
+  --border: rgba(255, 255, 255, 0.08);
+  --input: rgba(255, 255, 255, 0.12);
+  --ring: #3B6BFF;
+  --chart-1: #3B6BFF;
+  --chart-2: #8AB4FF;
+  --chart-3: #7B5CFF;
+  --chart-4: #C24FD9;
+  --chart-5: #2A2E3A;
+  /* The dashboard frame: the sidebar and the gap round the page panel. */
+  --sidebar: #0A0B10;
+  /* The dashboard's page panel, one step up from the frame (the landing's section colour). */
+  --page: #111319;
+  --sidebar-foreground: #F6F3EB;
+  --sidebar-primary: #F4F0E9;
+  --sidebar-primary-foreground: #0A0B10;
+  --sidebar-accent: #1D212B;
+  --sidebar-accent-foreground: #F6F3EB;
+  --sidebar-border: rgba(255, 255, 255, 0.08);
+  --sidebar-ring: #3B6BFF;
 }
 
 /* Dashboard light mode. Set on <html> by the dashboard/admin theme switch
@@ -338,50 +339,61 @@
    primary actions, the blue kept for focus and charts. */
 html[data-dash-theme='light'] {
   color-scheme: light;
-  --background: #FAF6EF;
-  --foreground: #11120D;
-  --card: #FFFBF4;
-  --card-foreground: #11120D;
-  --popover: #FFFBF4;
-  --popover-foreground: #11120D;
-  --primary: #11120D;
-  --primary-foreground: #FFFBF4;
-  --secondary: #F1EEE6;
-  --secondary-foreground: #11120D;
-  --muted: #EBE7DF;
-  --muted-foreground: #5F5D53;
-  --accent: #F1EEE6;
-  --accent-foreground: #11120D;
+  --background: #F3F4F7;
+  --foreground: #0A0B10;
+  --card: #FFFFFF;
+  --card-foreground: #0A0B10;
+  --popover: #FFFFFF;
+  --popover-foreground: #0A0B10;
+  --primary: #0A0B10;
+  --primary-foreground: #F6F3EB;
+  --secondary: #E8EAF0;
+  --secondary-foreground: #0A0B10;
+  --muted: #E8EAF0;
+  --muted-foreground: #565B6E;
+  --accent: #E8EAF0;
+  --accent-foreground: #0A0B10;
   --destructive: oklch(0.577 0.245 27.325);
-  --border: rgba(17, 18, 13, 0.1);
-  --input: rgba(17, 18, 13, 0.16);
-  --ring: #6C91C2;
-  --chart-1: #6C91C2;
-  --chart-2: #4F6888;
-  --chart-3: #8C8980;
-  --chart-4: #565449;
-  --chart-5: #D5D1C9;
-  --sidebar: #F1EEE6;
-  --sidebar-foreground: #11120D;
-  --sidebar-primary: #11120D;
-  --sidebar-primary-foreground: #FFFBF4;
-  --sidebar-accent: #E5E1D9;
-  --sidebar-accent-foreground: #11120D;
-  --sidebar-border: rgba(17, 18, 13, 0.1);
-  --sidebar-ring: #6C91C2;
+  --border: rgba(10, 11, 16, 0.09);
+  --input: rgba(10, 11, 16, 0.15);
+  --ring: #3B6BFF;
+  --chart-1: #3B6BFF;
+  --chart-2: #8AB4FF;
+  --chart-3: #7B5CFF;
+  --chart-4: #C24FD9;
+  --chart-5: #D7DAE2;
+  --sidebar: #E6E8EE;
+  --page: #F3F4F7;
+  --sidebar-foreground: #0A0B10;
+  --sidebar-primary: #0A0B10;
+  --sidebar-primary-foreground: #F6F3EB;
+  --sidebar-accent: #E8EAF0;
+  --sidebar-accent-foreground: #0A0B10;
+  --sidebar-border: rgba(10, 11, 16, 0.09);
+  --sidebar-ring: #3B6BFF;
 
   /* The named palette flips too: dashboard code uses `paper` for primary
      text and `ink` for the page, `mute`/`faint` for quieter text. */
-  --color-ink: #FAF6EF;
-  --color-panel: #FFFBF4;
-  --color-panel-2: #F1EEE6;
-  --color-inset: #EBE7DF;
-  --color-paper: #11120D;
-  --color-dim: #403F36;
-  --color-mute: #5F5D53;
-  --color-faint: #77756B;
-  --color-line: rgba(17, 18, 13, 0.1);
-  --color-line-soft: rgba(17, 18, 13, 0.06);
+  --color-ink: #F3F4F7;
+  --color-panel: #FFFFFF;
+  --color-panel-2: #E8EAF0;
+  --color-inset: #E1E4EB;
+  --color-paper: #0A0B10;
+  --color-dim: #2E3240;
+  --color-mute: #565B6E;
+  --color-faint: #666B7E;
+  --color-line: rgba(10, 11, 16, 0.1);
+  --color-line-soft: rgba(10, 11, 16, 0.06);
+  /* The stage blue, deep enough to read as text on a light page. */
+  --color-accent: #2F5BE0;
+  --color-accent-dim: #3B6BFF;
+}
+
+/* The account pages and dashboard are set in the landing page's Manrope. The
+   attribute is only on those routes, so the marketing pages keep their own
+   type; on <body> so portalled menus and dialogs follow. */
+html[data-dash-theme] body {
+  font-family: var(--font-manrope), system-ui, -apple-system, sans-serif;
 }
 
 /* The logo artwork is white; in light mode draw it in ink instead. */
@@ -394,6 +406,6 @@ html[data-dash-theme='light'] .brand-logo {
    `--color-accent` map above would otherwise steal the brand token. Dashboard
    hovers use `secondary`, not `accent`, for exactly this reason. */
 @theme {
-  --color-accent: #6C91C2;
-  --color-accent-dim: #4F6888;
+  --color-accent: #8AB4FF;
+  --color-accent-dim: #3B6BFF;
 }
