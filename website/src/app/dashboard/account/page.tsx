@@ -11,7 +11,6 @@ import {
   Card,
   CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
@@ -131,10 +130,10 @@ export default function AccountPage(): React.ReactElement {
           <CardTitle>Church</CardTitle>
           <CardDescription>Shown in the sidebar and on shared recaps.</CardDescription>
         </CardHeader>
-        <form onSubmit={(event) => void save(event)}>
-          <CardContent>
-            <div className="flex max-w-md flex-col gap-1.5">
-              <Label htmlFor="church-name">Church name</Label>
+        <CardContent>
+          <form onSubmit={(event) => void save(event)} className="flex flex-col gap-1.5">
+            <Label htmlFor="church-name">Church name</Label>
+            <div className="flex max-w-lg gap-2">
               <Input
                 id="church-name"
                 value={name}
@@ -145,34 +144,29 @@ export default function AccountPage(): React.ReactElement {
                 placeholder="Grace Chapel"
                 required
               />
+              <Button type="submit" className="shrink-0" disabled={busy || !orgId || !dirty}>
+                {busy ? 'Saving…' : 'Save'}
+              </Button>
             </div>
-            {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
-          </CardContent>
-          <CardFooter className="justify-between gap-3">
-            <p className="text-sm text-muted-foreground">
-              {saved ? 'Saved.' : dirty ? 'Unsaved changes' : 'Matches your Kairo computers.'}
-            </p>
-            <Button type="submit" disabled={busy || !orgId || !dirty}>
-              {busy ? 'Saving…' : 'Save'}
-            </Button>
-          </CardFooter>
-        </form>
+            {error ? (
+              <p className="text-sm text-destructive">{error}</p>
+            ) : saved || dirty ? (
+              <p className="text-sm text-muted-foreground">{saved ? 'Saved.' : 'Unsaved changes'}</p>
+            ) : null}
+          </form>
+        </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
           <CardTitle>Your data</CardTitle>
-          <CardDescription>
-            Take a copy of everything Kairo holds about you, or delete it.
-          </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
               <p className="font-medium">Download my data</p>
               <p className="text-sm text-muted-foreground">
-                Your profile, sign-ins, church details, sermons with full transcripts, crash reports
-                and usage statistics, as a JSON file. API keys are listed by name, never their values.
+                A JSON copy of your profile, church and sermons.
               </p>
               {exportError ? <p className="mt-1 text-sm text-destructive">{exportError}</p> : null}
             </div>
@@ -192,8 +186,7 @@ export default function AccountPage(): React.ReactElement {
             <div className="min-w-0">
               <p className="font-medium">Delete account</p>
               <p className="text-sm text-muted-foreground">
-                Permanently deletes your account. A church only you use is deleted with it, sermons
-                included. You&apos;ll see exactly what goes before anything is removed.
+                Removes your account for good. You&apos;ll see what goes first.
               </p>
             </div>
             <Button
