@@ -1,8 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { LogOutIcon } from 'lucide-react'
+import { DownloadIcon, LogOutIcon, Trash2Icon } from 'lucide-react'
 import { useDashboard } from '@/components/dashboard/dashboard-provider'
+import { DeleteAccountDialog } from '@/components/dashboard/delete-account-dialog'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -16,6 +17,7 @@ import {
 } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Separator } from '@/components/ui/separator'
 import { ApiError } from '@/lib/api'
 
 function initialsOf(value: string): string {
@@ -37,6 +39,9 @@ export default function AccountPage(): React.ReactElement {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
+  const [deleteOpen, setDeleteOpen] = useState(false)
 
   useEffect(() => {
     setName(churchName)
@@ -67,32 +72,56 @@ export default function AccountPage(): React.ReactElement {
     }
   }
 
+  const downloadData = async (): Promise<void> => {
+    setExporting(true)
+    setExportError(null)
+    let url: string | null = null
+    try {
+      const data = await request<unknown>('/v1/account/export')
+      url = URL.createObjectURL(
+        new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }),
+      )
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `kairo-data-${new Date().toISOString().slice(0, 10)}.json`
+      link.click()
+    } catch (failure) {
+      setExportError(failure instanceof ApiError ? failure.message : 'Could not prepare your data.')
+    } finally {
+      if (url) URL.revokeObjectURL(url)
+      setExporting(false)
+    }
+  }
+
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
       <div>
         <h2 className="font-display text-[clamp(30px,3vw,40px)] leading-[1.05] font-medium tracking-[-.05em]">Account</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Your profile, church name, and this browser session.
+          Your profile, your church, and the data Kairo holds about you.
         </p>
       </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle>Profile</CardTitle>
-          <CardDescription>How you appear to other operators in this church.</CardDescription>
-        </CardHeader>
         <CardContent>
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
             <Avatar size="lg">
               <AvatarFallback>{initialsOf(session.user.name)}</AvatarFallback>
             </Avatar>
             <div className="min-w-0 flex-1">
-              <p className="truncate font-medium">{session.user.name}</p>
+              <div className="flex items-center gap-2">
+                <p className="truncate font-medium">{session.user.name}</p>
+                <Badge variant={session.user.emailVerified ? 'secondary' : 'outline'}>
+                  {session.user.emailVerified ? 'Verified' : 'Unverified'}
+                </Badge>
+              </div>
               <p className="truncate text-sm text-muted-foreground">{session.user.email}</p>
             </div>
-            <Badge variant={session.user.emailVerified ? 'secondary' : 'outline'}>
-              {session.user.emailVerified ? 'Verified' : 'Unverified'}
-            </Badge>
+            {/* Ends this browser session only; Kairo computers stay signed in. */}
+            <Button type="button" variant="outline" onClick={() => void signOut()}>
+              <LogOutIcon data-icon="inline-start" />
+              Log out
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -132,18 +161,55 @@ export default function AccountPage(): React.ReactElement {
 
       <Card>
         <CardHeader>
-          <CardTitle>Sign out</CardTitle>
+          <CardTitle>Your data</CardTitle>
           <CardDescription>
-            Ends this browser session. Kairo computers stay signed in until you remove them.
+            Take a copy of everything Kairo holds about you, or delete it.
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          <Button type="button" variant="outline" onClick={() => void signOut()}>
-            <LogOutIcon data-icon="inline-start" />
-            Log out
-          </Button>
+        <CardContent className="flex flex-col gap-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="font-medium">Download my data</p>
+              <p className="text-sm text-muted-foreground">
+                Your profile, sign-ins, church details, sermons with full transcripts, crash reports
+                and usage statistics, as a JSON file. API keys are listed by name, never their values.
+              </p>
+              {exportError ? <p className="mt-1 text-sm text-destructive">{exportError}</p> : null}
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              className="shrink-0"
+              disabled={exporting}
+              onClick={() => void downloadData()}
+            >
+              <DownloadIcon data-icon="inline-start" />
+              {exporting ? 'Preparing…' : 'Download'}
+            </Button>
+          </div>
+          <Separator />
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="font-medium">Delete account</p>
+              <p className="text-sm text-muted-foreground">
+                Permanently deletes your account. A church only you use is deleted with it, sermons
+                included. You&apos;ll see exactly what goes before anything is removed.
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="destructive"
+              className="shrink-0"
+              onClick={() => setDeleteOpen(true)}
+            >
+              <Trash2Icon data-icon="inline-start" />
+              Delete account
+            </Button>
+          </div>
         </CardContent>
       </Card>
+
+      <DeleteAccountDialog open={deleteOpen} onOpenChange={setDeleteOpen} />
     </div>
   )
 }

@@ -38,7 +38,7 @@ const sections: LegalSection[] = [
         <li>Live audio goes to the transcription service your church connects (Deepgram); Kairo doesn&apos;t keep recordings.</li>
         <li>Sermon transcripts are uploaded to your church&apos;s account, encrypted, and kept until an admin deletes them.</li>
         <li>Crash reports and usage statistics help us fix and improve Kairo. Both can be turned off in Settings → Privacy.</li>
-        <li>You can ask to see, correct or delete your data at any time.</li>
+        <li>You can download or delete your data from the dashboard at any time, or ask us to see, correct or delete it.</li>
       </ul>
     ),
   },
@@ -258,7 +258,14 @@ const sections: LegalSection[] = [
           <li>stop or limit using it, including withdrawing consent you&apos;ve given.</li>
         </ul>
         <p>
-          Email <a href={`mailto:${CONTACT}`}>{CONTACT}</a> and we&apos;ll respond within 30 days. You can also
+          You can do the two most common ones yourself: in the dashboard, under Account → Your data,{" "}
+          <strong>Download my data</strong> gives you a copy of everything we hold about you as a JSON file, and{" "}
+          <strong>Delete account</strong> erases your account — along with any church only you use, including its
+          sermons — straight away.
+        </p>
+        <p>
+          For anything else, or if you&apos;d rather not use the dashboard, email{" "}
+          <a href={`mailto:${CONTACT}`}>{CONTACT}</a> and we&apos;ll respond within 30 days. You can also
           switch off crash reports and usage statistics yourself in Settings → Privacy. If you&apos;re unhappy with
           how we handle your data, you can complain to the{" "}
           <a href="https://ndpc.gov.ng" rel="noreferrer" target="_blank">Nigeria Data Protection Commission</a>.
