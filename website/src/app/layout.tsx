@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { siteUrl, siteTitle, siteDescription, socialImage } from '@/lib/seo'
+import { siteUrl, siteName, siteTitle, siteDescription, socialImage } from '@/lib/seo'
 import { Barlow, Inter, JetBrains_Mono, Manrope, Geist } from 'next/font/google'
 import './globals.css'
 import { cn } from "@/lib/utils";
@@ -39,15 +39,15 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
-  title: { default: siteTitle, template: '%s · Kairo' },
+  title: { default: siteTitle, template: '%s · Kairo Presenter' },
   description: siteDescription,
-  applicationName: 'Kairo',
+  applicationName: siteName,
   icons: { icon: '/brand/kairo-icon.png', apple: '/brand/kairo-icon.png' },
   // Only explicitly public marketing pages should be indexed.
   robots: { index: false, follow: false },
   openGraph: {
     title: siteTitle, description: siteDescription, type: 'website',
-    siteName: 'Kairo', locale: 'en_US', images: [socialImage],
+    siteName, locale: 'en_US', images: [socialImage],
   },
   twitter: {
     card: 'summary_large_image', title: siteTitle,

@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { isIndexable, siteUrl, siteTitle, siteDescription, socialImage } from '@/lib/seo';
+import { isIndexable, siteUrl, siteName, siteTitle, siteDescription, socialImage } from '@/lib/seo';
 
 import { Fragment } from "react";
 import Link from "next/link";
@@ -17,7 +17,7 @@ export const metadata: Metadata = {
   },
   openGraph: {
     title: siteTitle, description: siteDescription, url: '/',
-    siteName: 'Kairo', type: 'website', locale: 'en_US', images: [socialImage],
+    siteName, type: 'website', locale: 'en_US', images: [socialImage],
   },
 };
 
@@ -221,13 +221,13 @@ export default function HomePage(): React.ReactElement {
         dangerouslySetInnerHTML={{ __html: JSON.stringify({
           '@context': 'https://schema.org',
           '@graph': [
-            { '@type': 'Organization', '@id': `${siteUrl}/#organization`, name: 'Kairo', url: siteUrl },
-            { '@type': 'WebSite', '@id': `${siteUrl}/#website`, name: 'Kairo', url: siteUrl, inLanguage: 'en', publisher: { '@id': `${siteUrl}/#organization` } },
-            { '@type': 'SoftwareApplication', '@id': `${siteUrl}/#software`, name: 'Kairo', url: siteUrl,
+            { '@type': 'Organization', '@id': `${siteUrl}/#organization`, name: siteName, alternateName: 'Kairo', url: siteUrl },
+            { '@type': 'WebSite', '@id': `${siteUrl}/#website`, name: siteName, alternateName: 'Kairo', url: siteUrl, inLanguage: 'en', publisher: { '@id': `${siteUrl}/#organization` } },
+            { '@type': 'SoftwareApplication', '@id': `${siteUrl}/#software`, name: siteName, alternateName: 'Kairo', url: siteUrl,
               description: siteDescription, applicationCategory: 'MultimediaApplication',
               operatingSystem: 'macOS, Windows, Linux', image: `${siteUrl}${socialImage.url}`,
               downloadUrl: `${siteUrl}/#get`, publisher: { '@id': `${siteUrl}/#organization` },
-              featureList: ['Church lyrics and Scripture presentation', 'Stage confidence monitors', 'NDI output', 'Live Scripture suggestions', 'PowerPoint and PDF import'] },
+              featureList: ['Church service planning', 'Lyrics, Scripture, slides and media presentation', 'Stage confidence monitors', 'Independent lobby playlists', 'NDI output', 'Live Scripture suggestions', 'Sermon transcription and recaps', 'PowerPoint and PDF import', 'CCLI song reporting'] },
             { '@type': 'FAQPage', '@id': `${siteUrl}/#questions`, mainEntity: questions.map(({ question, answer }) => ({
               '@type': 'Question', name: question, acceptedAnswer: { '@type': 'Answer', text: answer },
             })) },
@@ -349,8 +349,9 @@ export default function HomePage(): React.ReactElement {
               </span>
             </h1>
             <p className="max-w-[510px] text-[clamp(17px,1.4vw,20px)] leading-[1.55] text-[#C0BCB4]">
-              Put lyrics, Scripture, slides and media on your own screens. When
-              a verse comes up that you didn't prepare, Kairo helps you find it.
+              Plan the service, present lyrics, Scripture, slides and media, and run
+              your screens with Kairo Presenter. Follow the sermon with live
+              verse suggestions and share a recap afterwards.
             </p>
             <div className="mt-[33px] flex flex-wrap items-center gap-[30px]">
               <a className={lightButton} href="#get">

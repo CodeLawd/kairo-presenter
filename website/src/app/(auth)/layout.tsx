@@ -11,7 +11,7 @@ import { AppTheme } from '@/components/dashboard/app-theme'
  * emails link to.
  */
 export const metadata: Metadata = {
-  title: { template: '%s · Kairo', default: 'Kairo' },
+  title: { template: '%s · Kairo Presenter', default: 'Kairo Presenter' },
   robots: { index: false, follow: false },
 }
 
