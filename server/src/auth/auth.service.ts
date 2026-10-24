@@ -44,6 +44,7 @@ export interface AuthResult extends TokenPair {
 
 const VERIFY_TTL_MS = 24 * 60 * 60 * 1000
 const RESET_TTL_MS = 30 * 60 * 1000
+const DELETE_TTL_MS = 15 * 60 * 1000
 
 @Injectable()
 export class AuthService {
@@ -258,43 +259,13 @@ export class AuthService {
     await this.mail.sendWelcome(user.email, firstNameOf(user.name), { code, url })
   }
 
-  /**
-   * Confirms an address with the six-digit code.
-   *
-   * Wrong guesses are counted on the record itself and the code is burned at
-   * the cap — six digits is only safe because a million guesses are not
-   * available.
-   */
+  /** Confirms an address with the six-digit code. */
   async verifyEmailCode(email: string, code: string): Promise<void> {
     const user = await this.users.findByEmail(email)
     if (!user) throw new BadRequestException('That code is not valid. Ask for a new one.')
     if (user.emailVerifiedAt) return
 
-    const record = await this.emailTokens
-      .findOne({ userId: user._id, purpose: 'verify-email', consumedAt: null })
-      .sort({ createdAt: -1 })
-    // `codeHash` is absent on a record minted before codes existed — such a
-    // token can only be redeemed by its link, so say "ask for a new one"
-    // rather than let every correct-looking code read as wrong.
-    if (!record || !record.codeHash || record.expiresAt.getTime() <= Date.now()) {
-      throw new BadRequestException('That code has expired. Ask for a new one.')
-    }
-
-    if (!hashesEqual(record.codeHash, hashToken(normalizeOtp(code)))) {
-      record.attempts += 1
-      // At the cap the record is consumed, not merely refused — otherwise the
-      // cap would only slow an attacker down rather than stop them.
-      if (record.attempts >= OTP_MAX_ATTEMPTS) record.consumedAt = new Date()
-      await record.save()
-      throw new BadRequestException(
-        record.attempts >= OTP_MAX_ATTEMPTS
-          ? 'Too many attempts. Ask for a new code.'
-          : 'That code is not right. Check the email and try again.',
-      )
-    }
-
-    record.consumedAt = new Date()
-    await record.save()
+    await this.redeemCode(user._id, 'verify-email', code)
     await this.users.markEmailVerified(user._id)
   }
 
@@ -336,6 +307,24 @@ export class AuthService {
     const record = await this.consumeEmailToken(token, 'reset-password')
     await this.users.setPasswordHash(record.userId, await this.passwords.hash(password))
     await this.tokens.revokeAllForUser(record.userId)
+  }
+
+  // ─── Account deletion ───────────────────────────────────────────────────────
+
+  /**
+   * Emails a six-digit code that confirms deleting the account.
+   *
+   * The proof for someone who signs in only with Google and so has no password
+   * to re-enter: a stolen access token alone must not be enough to erase an
+   * account, so the request has to come back through the inbox.
+   */
+  async sendAccountDeletionCode(user: UserDocument): Promise<void> {
+    const { code } = await this.mintEmailToken(user._id, 'delete-account', DELETE_TTL_MS)
+    await this.mail.sendAccountDeletionCode(user.email, firstNameOf(user.name), code)
+  }
+
+  async redeemAccountDeletionCode(userId: Types.ObjectId, code: string): Promise<void> {
+    await this.redeemCode(userId, 'delete-account', code)
   }
 
   // ─── Internals ──────────────────────────────────────────────────────────────
@@ -380,6 +369,45 @@ export class AuthService {
       },
       org,
     }
+  }
+
+  /**
+   * Redeems the newest six-digit code of one purpose.
+   *
+   * Wrong guesses are counted on the record itself and the code is burned at
+   * the cap — six digits is only safe because a million guesses are not
+   * available.
+   */
+  private async redeemCode(
+    userId: Types.ObjectId,
+    purpose: EmailTokenPurpose,
+    code: string,
+  ): Promise<void> {
+    const record = await this.emailTokens
+      .findOne({ userId, purpose, consumedAt: null })
+      .sort({ createdAt: -1 })
+    // `codeHash` is absent on a record minted before codes existed — such a
+    // token can only be redeemed by its link, so say "ask for a new one"
+    // rather than let every correct-looking code read as wrong.
+    if (!record || !record.codeHash || record.expiresAt.getTime() <= Date.now()) {
+      throw new BadRequestException('That code has expired. Ask for a new one.')
+    }
+
+    if (!hashesEqual(record.codeHash, hashToken(normalizeOtp(code)))) {
+      record.attempts += 1
+      // At the cap the record is consumed, not merely refused — otherwise the
+      // cap would only slow an attacker down rather than stop them.
+      if (record.attempts >= OTP_MAX_ATTEMPTS) record.consumedAt = new Date()
+      await record.save()
+      throw new BadRequestException(
+        record.attempts >= OTP_MAX_ATTEMPTS
+          ? 'Too many attempts. Ask for a new code.'
+          : 'That code is not right. Check the email and try again.',
+      )
+    }
+
+    record.consumedAt = new Date()
+    await record.save()
   }
 
   private async mintEmailToken(

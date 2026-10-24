@@ -55,6 +55,6 @@ import type { AppConfig } from '../config/env'
         config.google ? new GoogleStrategy(config.google) : null,
     },
   ],
-  exports: [AuthService, TokenService],
+  exports: [AuthService, TokenService, PasswordService],
 })
 export class AuthModule {}

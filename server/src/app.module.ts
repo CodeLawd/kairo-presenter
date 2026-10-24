@@ -13,6 +13,7 @@ import { AdminModule } from './admin/admin.module'
 import { UsageModule } from './usage/usage.module'
 import { CrashesModule } from './crashes/crashes.module'
 import { MailModule } from './mail/mail.module'
+import { AccountModule } from './account/account.module'
 import { HealthController } from './health/health.controller'
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard'
 import { VerifiedEmailGuard } from './common/guards/verified-email.guard'
@@ -35,6 +36,7 @@ import { AppThrottlerGuard } from './common/guards/app-throttler.guard'
     UsageModule,
     CrashesModule,
     AdminModule,
+    AccountModule,
   ],
   controllers: [HealthController],
   providers: [

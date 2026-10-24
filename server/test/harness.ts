@@ -8,9 +8,9 @@ import { configureApp } from '../src/configure-app'
 
 export interface SentMail {
   to: string
-  kind: 'welcome' | 'password-reset'
+  kind: 'welcome' | 'password-reset' | 'delete-account'
   url: string
-  /** Only on a welcome email — the six-digit confirmation code. */
+  /** On a welcome or delete-account email — the six-digit code. */
   code?: string
 }
 
@@ -34,6 +34,10 @@ export class FakeMailer {
     this.sent.push({ to, kind: 'password-reset', url: resetUrl })
   }
 
+  async sendAccountDeletionCode(to: string, _firstName: string, code: string): Promise<void> {
+    this.sent.push({ to, kind: 'delete-account', url: '', code })
+  }
+
   get enabled(): boolean {
     return true
   }
@@ -47,11 +51,11 @@ export class FakeMailer {
     return null
   }
 
-  /** The six-digit code from the most recent welcome email. */
-  lastCode(to: string): string | null {
+  /** The six-digit code from the most recent email of that kind. */
+  lastCode(to: string, kind: SentMail['kind'] = 'welcome'): string | null {
     for (let i = this.sent.length - 1; i >= 0; i--) {
       const mail = this.sent[i]
-      if (mail.to === to && mail.kind === 'welcome') return mail.code ?? null
+      if (mail.to === to && mail.kind === kind) return mail.code ?? null
     }
     return null
   }

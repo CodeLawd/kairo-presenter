@@ -3,7 +3,7 @@ import { HydratedDocument, Schema as MongooseSchema, Types } from 'mongoose'
 
 export type EmailTokenDocument = HydratedDocument<EmailToken>
 
-export type EmailTokenPurpose = 'verify-email' | 'reset-password'
+export type EmailTokenPurpose = 'verify-email' | 'reset-password' | 'delete-account'
 
 /**
  * One confirmation, redeemable two ways: a six-digit code typed into the app,
@@ -30,7 +30,7 @@ export class EmailToken {
   @Prop({ default: 0 })
   attempts!: number
 
-  @Prop({ type: String, enum: ['verify-email', 'reset-password'], required: true })
+  @Prop({ type: String, enum: ['verify-email', 'reset-password', 'delete-account'], required: true })
   purpose!: EmailTokenPurpose
 
   @Prop({ type: Date, default: null })

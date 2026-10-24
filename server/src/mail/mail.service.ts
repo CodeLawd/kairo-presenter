@@ -5,6 +5,10 @@ import type { AppConfig } from '../config/env'
 import { BrevoTransport, OutboundEmail } from './brevo.transport'
 import { WelcomeEmail, welcomeEmailText } from './templates/welcome.email'
 import { PasswordResetEmail, passwordResetEmailText } from './templates/password-reset.email'
+import {
+  AccountDeletionEmail,
+  accountDeletionEmailText,
+} from './templates/account-deletion.email'
 
 /**
  * Renders the React Email templates and hands them to Brevo.
@@ -46,6 +50,15 @@ export class MailService {
       subject: 'Reset your Kairo password',
       html: await render(PasswordResetEmail({ resetUrl })),
       text: passwordResetEmailText({ resetUrl }),
+    })
+  }
+
+  async sendAccountDeletionCode(to: string, firstName: string, code: string): Promise<void> {
+    await this.deliver({
+      to,
+      subject: `${code} is your code to delete your Kairo account`,
+      html: await render(AccountDeletionEmail({ firstName, code })),
+      text: accountDeletionEmailText({ firstName, code }),
     })
   }
 
