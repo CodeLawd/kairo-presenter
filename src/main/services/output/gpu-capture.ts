@@ -29,6 +29,28 @@ export type CaptureTarget =
   /** Syphon: the texture itself, copied as it is into the Syphon server's surface. */
   | { kind: 'syphon'; channel: SyphonChannel }
 
+/**
+ * One painted texture for `count` consumers: each gets its own handle, and the
+ * texture goes back to Chromium once every one of them has released it.
+ */
+export function shareTexture(texture: SharedTexture, count: number): SharedTexture[] {
+  let left = count
+  const release = (): void => {
+    if (--left === 0) texture.release()
+  }
+  return Array.from({ length: count }, () => {
+    let released = false
+    return {
+      textureInfo: texture.textureInfo,
+      release: () => {
+        if (released) return
+        released = true
+        release()
+      },
+    }
+  })
+}
+
 export class GpuCapture {
   private converter: ReturnType<GpuFramesAddon['open']> | null
   private failed = false

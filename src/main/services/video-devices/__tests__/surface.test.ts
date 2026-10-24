@@ -10,13 +10,25 @@ class WindowDouble extends EventEmitter {
   destroyed = false
   commands: string[] = []
   rates: number[] = []
+  /** The frame subscription a display window's recording tap holds. */
+  frames: ((image: unknown) => void) | null = null
+  invalidated = 0
   webContents = Object.assign(new EventEmitter(), {
     id: 1,
     setFrameRate: (rate: number) => { this.rates.push(rate) },
     executeJavaScript: async (command: string) => { this.commands.push(command); return true },
+    invalidate: () => { this.invalidated++ },
+    beginFrameSubscription: (_onlyDirty: boolean, callback: (image: unknown) => void) => { this.frames = callback },
+    endFrameSubscription: () => { this.frames = null },
   })
   constructor(readonly options: Record<string, unknown>) { super(); WindowDouble.windows.push(this) }
   isDestroyed(): boolean { return this.destroyed }
+  getContentSize(): number[] { return [1920, 1200] }
+  setBounds(): void {}
+  setAlwaysOnTop(): void {}
+  setVisibleOnAllWorkspaces(): void {}
+  setFullScreen(): void {}
+  showInactive(): void {}
   destroy(): void { this.destroyed = true }
   async loadFile(): Promise<void> {
     await new Promise<void>((resolve) => setImmediate(resolve))
@@ -240,5 +252,82 @@ it('a GPU failure rebuilds the surface on the CPU path and keeps the slide', asy
     assert.ok(cpuWindow.commands.some((command) => command.includes('Still on screen')))
     cpuWindow.webContents.emit('paint', {}, {}, { getSize: () => ({ width: 1920, height: 1080 }), getBitmap: () => Buffer.alloc(1920 * 1080 * 4) })
     assert.equal(cpuFrames, 1)
+  } finally { surface.destroy() }
+})
+
+function tapDouble(fps = 30) {
+  const textures: Array<{ release: () => void }> = []
+  const pixels: string[] = []
+  return {
+    textures, pixels,
+    tap: {
+      fps,
+      texture: (texture: { release: () => void }) => { textures.push(texture) },
+      pixels: (bgra: Buffer, width: number, height: number) => { pixels.push(`${width}x${height} ${bgra.length}`) },
+    },
+  }
+}
+
+it('a recording tap shares each GPU frame with the sink; Chromium gets it back once both are done', async () => {
+  const gpu = gpuDouble()
+  const ring = { name: '/kgf.tap', width: 1920, height: 1080, handle: {}, close: () => {} }
+  const surface = new ProgramSurface('Card', { kind: 'device', sink: { frameRing: ring as never, setFrame: () => {}, close: async () => {} } }, gpu.load)
+  try {
+    await surface.restore()
+    const win = WindowDouble.windows.at(-1)!
+    const rec = tapDouble(60)
+    surface.setTap(rec.tap)
+    assert.equal(win.rates.at(-1), 60, 'paints at the recording rate while recording')
+    assert.equal(win.invalidated, 1, 'a still page is repainted so the recording has its first frame')
+    const t = sharedTexture()
+    win.webContents.emit('paint', { texture: t }, {}, { getSize: () => ({ width: 0, height: 0 }) })
+    assert.equal(rec.textures.length, 1)
+    gpu.converts[0](null, undefined)
+    assert.equal(t.released, 0, 'still held by the recording')
+    rec.textures[0].release()
+    rec.textures[0].release()
+    assert.equal(t.released, 1, 'released exactly once')
+    surface.setTap(null)
+    assert.equal(win.rates.at(-1), 10, 'back to the idle rate')
+    const after = sharedTexture()
+    win.webContents.emit('paint', { texture: after }, {}, { getSize: () => ({ width: 0, height: 0 }) })
+    gpu.converts[1](null, undefined)
+    assert.equal(after.released, 1, 'without a tap the sink alone releases it')
+    assert.equal(rec.textures.length, 1)
+  } finally { surface.destroy() }
+})
+
+it('a recording tap gets CPU frames too, and the sink still gets its own', async () => {
+  let delivered = 0
+  const surface = new ProgramSurface('Card', { kind: 'device', sink: { setFrame: () => { delivered++ }, close: async () => {} } })
+  try {
+    await surface.restore()
+    const win = WindowDouble.windows.at(-1)!
+    const rec = tapDouble()
+    surface.setTap(rec.tap)
+    win.webContents.emit('paint', {}, {}, { getSize: () => ({ width: 1920, height: 1080 }), getBitmap: () => Buffer.alloc(1920 * 1080 * 4) })
+    assert.equal(delivered, 1)
+    assert.deepEqual(rec.pixels, [`1920x1080 ${1920 * 1080 * 4}`])
+  } finally { surface.destroy() }
+})
+
+it('a display window is recorded through a frame subscription, at device pixels, throttled to the recording rate', async () => {
+  const surface = new ProgramSurface('Main Screen', {
+    kind: 'display', bounds: { x: 0, y: 0, width: 1920, height: 1200 }, rehearsal: false, frameHeight: 1200,
+  })
+  try {
+    await surface.restore()
+    const win = WindowDouble.windows.at(-1)!
+    assert.equal(surface.frameAspect(), 1920 / 1200, 'records at the window’s shape')
+    const rec = tapDouble(30)
+    surface.setTap(rec.tap)
+    assert.ok(win.frames, 'subscribed')
+    // A Retina display: 960×600 points, 1920×1200 pixels.
+    const image = { getSize: () => ({ width: 960, height: 600 }), toBitmap: () => Buffer.alloc(1920 * 1200 * 4) }
+    win.frames!(image)
+    win.frames!(image)
+    assert.deepEqual(rec.pixels, [`1920x1200 ${1920 * 1200 * 4}`], 'the second frame, too soon after, is skipped')
+    surface.setTap(null)
+    assert.equal(win.frames, null, 'unsubscribed when the recording stops')
   } finally { surface.destroy() }
 })

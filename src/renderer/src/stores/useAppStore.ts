@@ -93,6 +93,8 @@ interface AppState {
   screensWindow: { select: string | null } | null
   /** The Props editor is open, on this prop (null = the first). */
   propsWindow: { select: string | null } | null
+  /** Capture Settings (Live → Capture Settings…) is open. */
+  captureWindow: boolean
 
   // ── Legacy (kept for backward compat) ────────────────────────────────────
   currentSlide: string | null
@@ -140,6 +142,8 @@ interface AppState {
   closeScreens: () => void
   openProps: (select?: string | null) => void
   closeProps: () => void
+  openCapture: () => void
+  closeCapture: () => void
 
   // ── Legacy setters ────────────────────────────────────────────────────────
   setCurrentSlide: (slide: string | null) => void
@@ -191,6 +195,7 @@ export const useAppStore = create<AppState>((set) => ({
   settingsRequest: null,
   screensWindow: null,
   propsWindow: null,
+  captureWindow: false,
 
   // ── Legacy ────────────────────────────────────────────────────────────────
   currentSlide: null,
@@ -317,6 +322,8 @@ export const useAppStore = create<AppState>((set) => ({
   closeScreens: () => set({ screensWindow: null }),
   openProps: (select = null) => set({ propsWindow: { select } }),
   closeProps: () => set({ propsWindow: null }),
+  openCapture: () => set({ captureWindow: true }),
+  closeCapture: () => set({ captureWindow: false }),
 
   // ── Legacy ────────────────────────────────────────────────────────────────
 

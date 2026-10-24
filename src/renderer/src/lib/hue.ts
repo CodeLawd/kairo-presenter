@@ -18,12 +18,12 @@ export function hueStyle(hue: Hue): CSSProperties {
  */
 export function railHueClass(active = false): string {
   return [
-    'relative flex size-10 items-center justify-center rounded-md transition-colors duration-150',
+    'relative flex size-10 items-center justify-center rounded-lg transition-colors duration-150',
     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--hue)/0.6)]',
-    'data-[state=open]:bg-surface-tertiary data-[state=open]:text-[rgb(var(--hue))]',
+    'data-[state=open]:bg-surface-elevated data-[state=open]:text-[rgb(var(--hue))]',
     active
-      ? 'bg-surface-tertiary text-[rgb(var(--hue))]'
-      : 'text-zinc-500 hover:bg-surface-secondary hover:text-[rgb(var(--hue))]',
+      ? 'bg-surface-elevated text-[rgb(var(--hue))]'
+      : 'text-zinc-500 hover:bg-surface-tertiary hover:text-[rgb(var(--hue))]',
   ].join(' ')
 }
 

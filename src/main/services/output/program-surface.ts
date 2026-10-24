@@ -11,7 +11,7 @@ import type { DocumentSlide, DocumentPlaybackStatus, DocumentVideoCommand } from
 import { mediaFilterCss } from '@shared/media-playback'
 import type { NdiService } from '../ndi'
 import { gpuFrames, type GpuFramesLoad } from '../gpu-frames'
-import { GpuCapture, type CaptureTarget } from './gpu-capture'
+import { GpuCapture, shareTexture, type CaptureTarget, type SharedTexture } from './gpu-capture'
 import type { SyphonChannel } from '../syphon'
 import type { VideoOutputSink } from '../video-devices/provider'
 import { createDisplayWindow, needsRebuild, sameBounds, showDisplayWindow, type DisplaySink } from './display-window'
@@ -97,6 +97,19 @@ export interface SurfaceLayers {
   info: ConfidenceInfo | null
 }
 
+/**
+ * Something else that wants this surface's frames as they are painted — a
+ * recording (Live → Start Capture). It never changes what the sink gets.
+ */
+export interface FrameTap {
+  /** The rate it records at; an offscreen surface paints at least this fast while tapped. */
+  fps: number
+  /** GPU path: a painted texture. The tap must release it. */
+  texture(texture: SharedTexture): void
+  /** CPU path, and display windows: a BGRA bitmap. */
+  pixels(bgra: Buffer, width: number, height: number): void
+}
+
 const EMPTY_LAYERS: SurfaceLayers = { message: '', props: '', logo: '', camera: null, info: null }
 
 interface RenderState {
@@ -147,6 +160,9 @@ export class ProgramSurface extends ManagedWindow {
   private capture: GpuCapture | null = null
   /** Set once GPU capture fails on this surface; it stays on CPU for the session. */
   private gpuDisabled: string | null = null
+  private tap: FrameTap | null = null
+  /** When a display window last handed the tap a frame — those are throttled to its rate. */
+  private tapFrameAt = 0
 
   constructor(
     label: string,
@@ -198,6 +214,62 @@ export class ProgramSurface extends ManagedWindow {
     await this.recover('video device restored', false)
   }
 
+  // ─── Frame tap (recording) ──────────────────────────────────────────────────
+
+  /** Starts or stops handing frames to `tap`. Survives window rebuilds. */
+  setTap(tap: FrameTap | null): void {
+    if (tap === this.tap) return
+    this.tap = tap
+    const win = this.win
+    if (!win || win.isDestroyed()) return
+    if (this.offscreen) {
+      if (!this.fadeTimer) win.webContents.setFrameRate(this.idleFrameRate())
+      // A still page paints nothing; one invalidate gives the tap its first frame now.
+      if (tap) win.webContents.invalidate()
+    } else {
+      this.subscribeDisplay(win)
+    }
+  }
+
+  /** Width over height of what this surface paints — the shape a recording of it takes. */
+  frameAspect(): number {
+    if (this.sink.kind !== 'display') return WIDTH / HEIGHT
+    const win = this.win
+    if (win && !win.isDestroyed()) {
+      const [width, height] = win.getContentSize()
+      if (width > 0 && height > 0) return width / height
+    }
+    return WIDTH / this.sink.frameHeight
+  }
+
+  /**
+   * A display window is composited, not captured, so a tap on one subscribes
+   * to its frames. They arrive at the display's pixel size; the recorder scales.
+   */
+  private subscribeDisplay(win: BrowserWindow): void {
+    const contents = win.webContents
+    try { contents.endFrameSubscription() } catch { /* none running */ }
+    const tap = this.tap
+    if (!tap) return
+    this.tapFrameAt = 0
+    contents.beginFrameSubscription(false, (image) => {
+      if (this.tap !== tap) return
+      const now = Date.now()
+      if (now - this.tapFrameAt < 900 / tap.fps) return
+      this.tapFrameAt = now
+      const bitmap = image.toBitmap()
+      const size = image.getSize()
+      // The bitmap is in device pixels; its length gives the scale.
+      const scale = Math.sqrt(bitmap.length / 4 / Math.max(1, size.width * size.height)) || 1
+      try {
+        tap.pixels(bitmap, Math.round(size.width * scale), Math.round(size.height * scale))
+      } catch (error) {
+        log.warn(`[Output] ${this.label} recording frame failed`, (error as Error).message)
+      }
+    })
+    contents.invalidate()
+  }
+
   // ─── Window lifecycle (ManagedWindow) ───────────────────────────────────────
 
   /** A display surface whose display is gone stays parked; NDI reopens on its next paint. */
@@ -228,7 +300,10 @@ export class ProgramSurface extends ManagedWindow {
     await this.applyConfig(win)
     await this.applyLayers(win)
     if (this.testPattern) await this.applyTestPattern(win, this.testPattern)
-    if (this.sink.kind === 'display' && !win.isDestroyed()) showDisplayWindow(win, this.sink)
+    if (this.sink.kind === 'display' && !win.isDestroyed()) {
+      showDisplayWindow(win, this.sink)
+      if (this.tap) this.subscribeDisplay(win)
+    }
   }
 
   protected onFailure(reason: string): Promise<void> {
@@ -295,9 +370,14 @@ export class ProgramSurface extends ManagedWindow {
       const texture = (event as { texture?: Electron.OffscreenSharedTexture }).texture
       if (texture) {
         // GPU path. The converter scales any paint size to its raster, and
-        // releases the texture as soon as the GPU is done with it.
-        if (capture && this.capture === capture) capture.handle(texture)
-        else texture.release()
+        // releases the texture as soon as the GPU is done with it. A recording
+        // takes the same texture; it goes back once both are done with it.
+        const tap = this.tap
+        const converting = !!capture && this.capture === capture
+        const [forSink, forTap] = tap && converting ? shareTexture(texture, 2) : [texture, texture]
+        if (converting) capture.handle(forSink)
+        if (tap) tap.texture(forTap)
+        if (!converting && !tap) texture.release()
       } else {
         // CPU path. Normally exactly WIDTH×HEIGHT (see captureScale). A display
         // change after the window was built can still change the paint size.
@@ -311,6 +391,11 @@ export class ProgramSurface extends ManagedWindow {
           else sink.sink.setFrame(frame.getBitmap(), WIDTH, HEIGHT)
         } catch (error) {
           log.warn(`[Output] ${this.label} frame delivery failed`, (error as Error).message)
+        }
+        try {
+          this.tap?.pixels(frame.getBitmap(), WIDTH, HEIGHT)
+        } catch (error) {
+          log.warn(`[Output] ${this.label} recording frame failed`, (error as Error).message)
         }
       }
       // Anyone awaiting "this page is really on the wire" is released here —
@@ -438,12 +523,16 @@ export class ProgramSurface extends ManagedWindow {
     return this.captureFrameRate(video || this.documentSlide?.videos.length || this.layers.camera ? OSR_FRAME_RATE_VIDEO : OSR_FRAME_RATE)
   }
 
-  /** Electron accepts integer capture rates; the card retains its exact rational clock. */
+  /**
+   * Electron accepts integer capture rates; the card retains its exact rational
+   * clock. A recording raises the rate to its own, so motion records smoothly.
+   */
   private captureFrameRate(fallback: number): number {
     const rate = this.sink.kind === 'device' ? this.sink.sink.frameRate : undefined
-    return rate !== undefined && Number.isFinite(rate) && rate > 0
+    const base = rate !== undefined && Number.isFinite(rate) && rate > 0
       ? Math.min(240, Math.ceil(rate))
       : fallback
+    return this.tap ? Math.max(base, Math.ceil(this.tap.fps)) : base
   }
 
   // ─── Content ────────────────────────────────────────────────────────────────

@@ -24,6 +24,8 @@ import { usePassagesSync } from '@/stores/usePassages'
 import { LoadingScreen } from '@/bootstrap/LoadingScreen'
 import ScreenConfiguration from '@/components/screens/ScreenConfiguration'
 import PropsEditor from '@/components/props/PropsEditor'
+import { CaptureSettings } from '@/components/capture/CaptureSettings'
+import { useCaptureSubscription } from '@/stores/useCaptureStore'
 import { FrameZoomContext } from '@/components/shared/MacTrafficLights'
 import OnboardingWizard from '@/components/onboarding/OnboardingWizard'
 import CoachTour, { COACH_TOURS, COACH_TOUR_EVENT, coachTourFor, type CoachStep } from '@/components/onboarding/CoachTour'
@@ -354,6 +356,8 @@ export default function App(): React.ReactElement {
   }, [settingsRequest])
   const screensWindow = useAppStore((s) => s.screensWindow)
   const propsWindow = useAppStore((s) => s.propsWindow)
+  const captureWindow = useAppStore((s) => s.captureWindow)
+  useCaptureSubscription()
   // ⌥⌘1 opens Screens — ProPresenter's shortcut for Screen Configuration, so
   // an operator who knows one finds the other. Escape closes it.
   useEffect(() => {
@@ -534,7 +538,7 @@ export default function App(): React.ReactElement {
   }
 
   return (
-    <div className="relative flex h-screen flex-col overflow-hidden bg-surface text-white select-none animate-fade-in">
+    <div className="app-frame relative flex h-screen flex-col overflow-hidden bg-surface text-white select-none animate-fade-in">
       {onboardingWizard}
       {coachSteps && <CoachTour steps={coachSteps} onDone={closeCoach} />}
       <AudioPipeline />
@@ -582,11 +586,9 @@ export default function App(): React.ReactElement {
             setSettingsOpen(true)
           }}
         />
-        {/* The page sits just below the header with a rounded top-left corner on
-            the chrome (header + rail): the gap and the corner separate work from
-            chrome without a line. It runs to the window's right and bottom edges. */}
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-surface-rail pt-1.5">
-          <main className="relative flex min-h-0 w-full flex-1 flex-col overflow-hidden rounded-tl-xl bg-surface">
+        {/* The workspace meets the chrome directly, with just a rounded corner. */}
+        <div className="app-workspace-frame flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-surface-rail">
+          <main className="app-workspace relative flex min-h-0 w-full flex-1 flex-col overflow-hidden rounded-tl-2xl bg-surface">
             {/* Keep Operator, Scripture, Theme and Documents mounted across
                 navigation so live session state, the open passage and the
                 theme draft survive tab switches. */}
@@ -660,6 +662,9 @@ export default function App(): React.ReactElement {
           </DraggableFrame>
         </div>
       )}
+
+      {/* Capture Settings — Live → Capture Settings… */}
+      {captureWindow && <CaptureSettings onClose={() => useAppStore.getState().closeCapture()} />}
 
       {/* Props editor — build the props the Show tab puts on screen */}
       {propsWindow && (

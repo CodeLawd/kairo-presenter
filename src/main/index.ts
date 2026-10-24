@@ -43,6 +43,7 @@ import { tracksService } from "./services/tracks";
 import { updaterService } from "./services/updater";
 import { usageService } from "./services/usage";
 import { createQuitConfirmation } from "./quit-confirmation";
+import { captureService } from "./services/capture";
 
 const quitConfirmation = createQuitConfirmation(() => {
   const window = getMainWindow();
@@ -315,10 +316,11 @@ function createWindow(): void {
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
     // Centred in the 60px header (.app-header), beside the page title.
     trafficLightPosition: { x: 18, y: 24 },
-    // Opaque on every platform: a booth screen should look the same whatever
-    // is behind the window, and the desktop bleeding through reads as noise.
-    // Matches --surface so there is no flash before the first paint.
-    backgroundColor: "#232427",
+    // Native blur shows through the shell chrome; workspaces stay opaque.
+    backgroundColor: process.platform === "darwin" ? "#00000000" : "#181818",
+    ...(process.platform === "darwin"
+      ? { vibrancy: "under-window" as const, visualEffectState: "followWindow" as const }
+      : {}),
     webPreferences: {
       preload: join(__dirname, "../preload/index.js"),
       sandbox: false,
@@ -567,7 +569,7 @@ function releaseOutputs(): Promise<void> {
 // has to cancel (and re-issue) the quit `quitAndInstall` started.
 updaterService.setBeforeInstall(() => {
   quitConfirmation.allow();
-  return releaseOutputs();
+  return captureService.stop().then(() => releaseOutputs());
 });
 
 app.on("before-quit", (event) => {
@@ -575,6 +577,12 @@ app.on("before-quit", (event) => {
   // (for example a second instance) have no operator window to protect.
   if (getMainWindow() && !quitConfirmation.confirm()) {
     event.preventDefault();
+    return;
+  }
+  if (captureService.recording) {
+    // Finish the movie file first, while its source still paints.
+    event.preventDefault();
+    void captureService.stop().finally(() => app.quit());
     return;
   }
   if (!ndiStopped) {

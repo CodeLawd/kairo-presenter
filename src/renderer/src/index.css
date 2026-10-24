@@ -6,23 +6,27 @@
 
 @layer base {
   :root {
-    /* Greys with only a faint cool bias (blue +3-4 over red): still grey, not
-       navy, but easier on the eye than dead neutral. Colour comes from the
-       accent, live, tool icons and status. Each region has its own step and no two neighbours
-       match: header + rail are the darkest frame, the workspace (surface) sits
-       in the middle, sidebars and docks (secondary) are lifted above it. */
-    --surface: 35 36 39;
-    --surface-secondary: 43 44 47;
-    --surface-tertiary: 53 54 57;
-    --surface-elevated: 63 64 67;
-    --surface-rail: 28 29 32;
-    --surface-header: 28 29 32;
-    --surface-border: 73 74 77;
+    /* Neutral charcoal, matching the Codex reference: the workspace is near
+       black, panels sit one step above it, and controls remain distinct.
+       Colour belongs to actions, live state, tool icons and status. */
+    --surface: 24 24 24;
+    --surface-secondary: 32 32 32;
+    --surface-tertiary: 44 44 44;
+    --surface-elevated: 53 53 53;
+    --surface-rail: 36 36 36;
+    --surface-header: var(--surface-rail);
+    --surface-border: 64 64 64;
+    /* Dropdown menus: a step lighter than anything under them, split by a line. */
+    --surface-menu: 62 62 62;
+    --surface-menu-hover: 76 76 76;
+    --surface-menu-line: 80 80 80;
     /* Hairline between regions (sidebar | workspace, header | body), on top of the tone step. */
-    --surface-line: 53 54 58;
+    --surface-line: 47 47 47;
+    --panel-border-width: 0.5px;
+    --panel-border-color: rgb(var(--surface-border) / 0.75);
     /* The black band behind a screen canvas, and the grey of a display on it. */
-    --surface-stage: 15 16 19;
-    --surface-display: 83 84 87;
+    --surface-stage: 15 15 15;
+    --surface-display: 80 80 80;
     /* Accent is a confident blue for what is picked and the primary action; red
        (broadcast tally) marks only what is live on screen. */
     --control-accent: 32 112 232;
@@ -53,34 +57,34 @@
     --hue-indigo: 138 146 245;
     /* Solid red wash for a live row, readable on surface and secondary. */
     --tint-live: 78 44 42;
-    --tint-teal: 53 54 57;
+    --tint-teal: 44 44 44;
     --tint-red: 55 27 22;
-    --tint-amber: 53 54 57;
-    --tint-yellow: 53 54 57;
+    --tint-amber: 44 44 44;
+    --tint-yellow: 44 44 44;
     --tint-rose: 56 26 27;
-    --range-track: 65 66 69;
+    --range-track: 62 62 62;
     --text-primary: 230 230 230;
     /* Grey text, a step brighter than the neutral scale so labels read on
        charcoal. slate/zinc text-* map here (tailwind.config.js); bg/border don't. */
-    --fg-200: 249 250 251;
+    --fg-200: 249 249 249;
     --fg-300: 218 218 218;
     --fg-400: 194 194 194;
-    --fg-500: 165 166 169;
-    --fg-600: 137 138 141;
+    --fg-500: 166 166 166;
+    --fg-600: 138 138 138;
     --neutral-50: 250 250 250;
     --neutral-100: 241 241 241;
     --neutral-200: 224 224 224;
     --neutral-300: 204 204 204;
     --neutral-400: 152 152 152;
-    --neutral-500: 111 112 115;
-    --neutral-600: 83 84 87;
-    --neutral-700: 67 68 71;
-    --neutral-800: 53 54 57;
-    --neutral-900: 43 44 47;
-    --neutral-950: 35 36 39;
+    --neutral-500: 112 112 112;
+    --neutral-600: 80 80 80;
+    --neutral-700: 64 64 64;
+    --neutral-800: 44 44 44;
+    --neutral-900: 32 32 32;
+    --neutral-950: 24 24 24;
     /* Frosted glass (macOS vibrancy, as in ProPresenter's windows): the tone
        a modal's sidebar, title bar or whole small dialog is tinted with. */
-    --glass: 33 34 37;
+    --glass: 28 28 28;
     --radius: 0.375rem;
     --radius-md: 0.5rem;
     --radius-sm: 0.25rem;
@@ -93,6 +97,9 @@
     --surface-tertiary: 226 227 229;
     --surface-elevated: 255 255 255;
     --surface-border: 208 209 211;
+    --surface-menu: 255 255 255;
+    --surface-menu-hover: 238 239 241;
+    --surface-menu-line: 226 227 229;
     --surface-line: 220 221 224;
     --surface-rail: 222 223 225;
     --surface-header: 222 223 225;
@@ -264,19 +271,18 @@
     background: rgb(var(--surface-secondary));
   }
 
-  /* Pane edge — a crisp, solid 1px separator on structural panes. Drawn
-     inset so it never changes layout; the colour is the theme's border token. */
+  /* Shared structural borders stay subtle and do not change pane geometry. */
   .pane-edge-r {
-    box-shadow: inset -1px 0 0 rgb(var(--surface-border));
+    box-shadow: inset calc(-1 * var(--panel-border-width)) 0 0 var(--panel-border-color);
   }
   .pane-edge-l {
-    box-shadow: inset 1px 0 0 rgb(var(--surface-border));
+    box-shadow: inset var(--panel-border-width) 0 0 var(--panel-border-color);
   }
   .pane-edge-b {
-    box-shadow: inset 0 -1px 0 rgb(var(--surface-border));
+    box-shadow: inset 0 calc(-1 * var(--panel-border-width)) 0 var(--panel-border-color);
   }
   .pane-edge-t {
-    box-shadow: inset 0 1px 0 rgb(var(--surface-border));
+    box-shadow: inset 0 var(--panel-border-width) 0 var(--panel-border-color);
   }
 
   /* Selection is neutral, as in a macOS sidebar or list. Amber is kept for
@@ -297,10 +303,10 @@
   }
 
   /* Hairlines between regions, drawn inside the edge so nothing shifts. */
-  .hairline-r { box-shadow: inset -1px 0 0 rgb(var(--surface-line)); }
-  .hairline-l { box-shadow: inset 1px 0 0 rgb(var(--surface-line)); }
-  .hairline-b { box-shadow: inset 0 -1px 0 rgb(var(--surface-line)); }
-  .hairline-t { box-shadow: inset 0 1px 0 rgb(var(--surface-line)); }
+  .hairline-r { box-shadow: inset calc(-1 * var(--panel-border-width)) 0 0 var(--panel-border-color); }
+  .hairline-l { box-shadow: inset var(--panel-border-width) 0 0 var(--panel-border-color); }
+  .hairline-b { box-shadow: inset 0 calc(-1 * var(--panel-border-width)) 0 var(--panel-border-color); }
+  .hairline-t { box-shadow: inset 0 var(--panel-border-width) 0 var(--panel-border-color); }
 
     /* Grouped rows, as in macOS System Settings: one rounded box per group, rows
      split by a faint line inset from both sides. Used by Settings, Screens and
@@ -534,7 +540,55 @@
   padding: 0 12px;
 }
 .workspace-rail { width: 56px; background: rgb(var(--surface-rail)); }
-.app-header { background: rgb(var(--surface-header)); }
+.app-header {
+  background: rgb(var(--surface-header));
+}
+.app-workspace {
+  border-top: var(--panel-border-width) solid var(--panel-border-color);
+  border-left: var(--panel-border-width) solid var(--panel-border-color);
+}
+
+/* One grid per song: section changes do not force a new row. */
+.lyrics-slide-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--lyrics-card-min, 180px)), 1fr));
+}
+
+/* The native material supplies desktop blur. Keep every ancestor transparent
+   so it reaches the chrome, with opaque page surfaces masking the workspace. */
+html[data-window-material='vibrancy'],
+html[data-window-material='vibrancy'] body,
+html[data-window-material='vibrancy'] #root,
+html[data-window-material='vibrancy'] .app-frame {
+  background: transparent;
+}
+
+html[data-window-material='vibrancy'] .app-header,
+html[data-window-material='vibrancy'] .workspace-rail,
+html[data-window-material='vibrancy'] .app-workspace-frame {
+  background: rgb(var(--surface-rail) / 0.62);
+}
+
+html[data-window-material='vibrancy'] .app-header,
+html[data-window-material='vibrancy'] .workspace-rail {
+  -webkit-backdrop-filter: blur(24px) saturate(125%);
+  backdrop-filter: blur(24px) saturate(125%);
+}
+
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  html[data-window-material='vibrancy'] .app-header,
+  html[data-window-material='vibrancy'] .workspace-rail,
+  html[data-window-material='vibrancy'] .app-workspace-frame {
+    background: rgb(var(--surface-header));
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  html[data-window-material='vibrancy'] .workspace-rail,
+  html[data-window-material='vibrancy'] .app-workspace-frame {
+    background: rgb(var(--surface-rail));
+  }
+}
 .header-context { flex: none; }
 .header-toolbar { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; overflow: hidden; }
 .header-statuses { flex: none; }

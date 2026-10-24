@@ -13,6 +13,8 @@ export type ScriptureTranslation = string
 export type STTProvider = 'deepgram' | 'whisper' | 'none'
 
 export interface AppSettings {
+  /** Live → Start Capture: what is recorded, and how. */
+  capture: import('./capture').CaptureSettings
   audio: {
     deviceId: string
   }
@@ -1545,6 +1547,8 @@ export interface KairoAPI {
   orchestrator: OrchestratorAPI
   resilience: ResilienceAPI
   ndi: NdiAPI
+  /** Live → Start Capture: recording an output to a movie file. */
+  capture: import('./capture').CaptureAPI
   displays: DisplaysAPI
   videoDevices: {
     openDriverDownloads: () => Promise<void>
@@ -1798,6 +1802,15 @@ export const IPC = {
   NDI: {
     GET_STATUS:         'ndi:getStatus',         // invoke — { available, sending, ppInputConfigured, outputs }
     PICK_OVERLAY_MEDIA: 'ndi:pickOverlayMedia',  // invoke — native file dialog → absolute path | null
+  },
+  CAPTURE: {
+    STATUS:        'capture:status',        // invoke — CaptureStatus
+    START:         'capture:start',         // invoke — CaptureStatus
+    STOP:          'capture:stop',          // invoke — CaptureStatus
+    AUDIO_INPUTS:  'capture:audioInputs',   // invoke — CaptureAudioInput[]
+    CHOOSE_FOLDER: 'capture:chooseFolder',  // invoke — string | null
+    REVEAL:        'capture:reveal',        // invoke
+    CHANGED:       'capture:changed',       // push — CaptureStatus
   },
   OUTPUT: {
     SEND_TEST:  'output:sendTest',   // invoke

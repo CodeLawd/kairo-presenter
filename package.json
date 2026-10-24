@@ -48,9 +48,12 @@
     "build:decklink": "node native/decklink/build.mjs",
     "build:gpu-frames": "node native/gpu-frames/build.mjs",
     "build:syphon": "node native/syphon/build.mjs",
+    "build:recorder": "node native/recorder/build.mjs",
     "prepare:mac-natives": "node scripts/prepare-mac-natives.mjs",
     "test:gpu-frames": "node --test native/gpu-frames/tests/*.test.mjs",
     "test:syphon": "node --test native/syphon/tests/*.test.mjs",
+    "test:recorder": "node --test native/recorder/tests/*.test.mjs",
+    "test:capture": "npm run build:recorder && electron tests/capture.integration.cjs",
     "test:decklink": "node --test native/decklink/tests/*.test.mjs && node --import tsx --test native/decklink/tests/client.test.ts"
   },
   "dependencies": {
@@ -200,6 +203,10 @@
         {
           "from": "native/syphon/build/syphon.node",
           "to": "syphon/syphon.node"
+        },
+        {
+          "from": "native/recorder/build/recorder.node",
+          "to": "recorder/recorder.node"
         },
         {
           "from": "native/decklink/build/decklink-helper",

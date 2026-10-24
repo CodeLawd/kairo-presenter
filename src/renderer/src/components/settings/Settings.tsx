@@ -39,6 +39,7 @@ import { type SettingsSectionId } from '@/stores/useAppStore'
 import { inputKindLabel, listAudioInputDevices, resolveCaptureDeviceId } from '@/audio/devices'
 import { applyAppTheme } from '@/lib/appTheme'
 import { normalizeOverlaySettings } from '@shared/overlay-defaults'
+import { normalizeCaptureSettings } from '@shared/capture'
 import { normalizePresentationSettings } from '@shared/program'
 import type {
   AppSettings,
@@ -1723,6 +1724,7 @@ export default function Settings({
         overlay: normalizeOverlaySettings({ ...prev.overlay, ...stored.overlay }),
         themeLibrary: stored.themeLibrary ?? prev.themeLibrary,
         workspace: { ...prev.workspace, ...stored.workspace },
+        capture: normalizeCaptureSettings(stored.capture),
         media: { ...prev.media, ...stored.media },
         tracks: { ...prev.tracks, ...stored.tracks },
         church: { ...prev.church, ...stored.church },

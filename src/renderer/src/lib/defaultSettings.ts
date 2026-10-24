@@ -3,6 +3,7 @@ import type { SettingsWithSecretsStatus } from '@shared/ipc'
 import { DEFAULT_TRANSLATION_ID } from '@shared/bible-translations'
 import { DEFAULT_DOCUMENTS_SETTINGS } from '@shared/documents'
 import { DEFAULT_PRESENTATION_SETTINGS } from '@shared/program'
+import { DEFAULT_CAPTURE_SETTINGS } from '@shared/capture'
 
 /** Neutral settings used until the real ones arrive from the main process. */
 export const DEFAULT_SETTINGS: SettingsWithSecretsStatus = {
@@ -30,6 +31,7 @@ export const DEFAULT_SETTINGS: SettingsWithSecretsStatus = {
   presentation: DEFAULT_PRESENTATION_SETTINGS,
   usage: { shareStats: true },
   themeDefaults: {},
+  capture: DEFAULT_CAPTURE_SETTINGS,
   secretsConfigured: {
     deepgram: false,
     anthropic: false,

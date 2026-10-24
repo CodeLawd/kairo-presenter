@@ -28,6 +28,8 @@ import { Switch } from '@/components/ui/switch'
 import { saveOutputSettings } from '@/lib/output-settings'
 import { hueStyle, railHueClass, type Hue } from '@/lib/hue'
 import { HEADER_TOOLBAR_SLOT_ID } from './header-toolbar'
+import { useCaptureElapsed, useCaptureStore } from '@/stores/useCaptureStore'
+import { CAPTURE_CODECS, CAPTURE_RESOLUTIONS, captureSourceFor, formatCaptureElapsed, normalizeCaptureSettings } from '@shared/capture'
 
 
 const IS_MAC = navigator.platform.startsWith('Mac')
@@ -183,13 +185,44 @@ function ToolbarButton({
   )
 }
 
-/**
- * The Live button's menu, as ProPresenter's Live button opens one: what is on
- * screen now, and the Syphon outputs that send Kairo to OBS and the like —
- * each switchable here without opening Screens.
- */
+const LIVE_MENU_ITEM = 'flex min-h-8 w-full items-center gap-2 rounded-md px-3 py-2 text-left text-[13px] text-zinc-200 hover:bg-surface-menu-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-400 disabled:opacity-50'
+
+/** Plain capture actions, with settings separated by a single hairline. */
+function CaptureSection({ onSettings }: { onSettings: () => void }): React.ReactElement {
+  const { status, busy, start, stop } = useCaptureStore()
+  const elapsed = useCaptureElapsed()
+  const outputs = useBootstrapStore((s) => s.settings.overlay.outputs)
+  const settings = normalizeCaptureSettings(useBootstrapStore((s) => s.settings.capture))
+  const source = captureSourceFor(settings, outputs)
+  const codec = CAPTURE_CODECS.find((c) => c.value === settings.codec)?.label.replace(/^Apple /, '') ?? ''
+  const size = CAPTURE_RESOLUTIONS.find((r) => r.value === settings.resolution)?.value ?? ''
+  const plan = [source?.name ?? 'No screen', `${codec} ${size}${settings.frameRate}`, settings.audioDeviceId ? settings.audioDeviceName || 'Sound' : 'No sound'].join(' · ')
+  return (
+    <section aria-label="Capture">
+      <button
+        type="button"
+        disabled={busy || (!status.recording && (!status.available || !source))}
+        title={(status.recording ? status.sourceName : status.available ? plan : status.reason) ?? undefined}
+        className={LIVE_MENU_ITEM}
+        onClick={() => void (status.recording ? stop() : start())}
+      >
+        <span className="flex-1">{busy ? (status.recording ? 'Stopping…' : 'Starting…') : status.recording ? 'Stop Capture' : 'Start Capture'}</span>
+        {status.recording && <span className="text-xs tabular-nums text-zinc-400">{formatCaptureElapsed(elapsed)}</span>}
+      </button>
+      {status.recording && status.warning && <p className="px-3 py-1 text-[11px] text-amber-400">{status.warning}</p>}
+      {!status.recording && status.error && <p role="alert" className="px-3 py-1 text-[11px] text-red-400">{status.error}</p>}
+      <div className="mx-3 my-1 border-t-[0.5px] border-surface-menu-line" />
+      <button type="button" onClick={onSettings} className={LIVE_MENU_ITEM}>
+        Capture Settings…
+      </button>
+    </section>
+  )
+}
+
 function LiveMenu({ label, live, detail }: { label: string; live: boolean; detail: string }): React.ReactElement {
   const [open, setOpen] = useState(false)
+  const recording = useCaptureStore((s) => s.status.recording)
+  const elapsed = useCaptureElapsed()
   const outputs = useBootstrapStore((s) => s.settings.overlay.outputs)
   const status = useBootstrapStore((s) => s.ndiStatus)
   const syphons = outputs.filter((o) => o.kind === 'syphon')
@@ -206,41 +239,53 @@ function LiveMenu({ label, live, detail }: { label: string; live: boolean; detai
       <Popover.Anchor asChild>
         <div aria-live="polite" className="header-live-label">
           <ToolbarButton
-            label={label}
-            tone={live ? 'live' : 'muted'}
-            title={`${detail}. Click for live outputs`}
+            label={recording ? `${label} · ${formatCaptureElapsed(elapsed)}` : label}
+            tone={live || recording ? 'live' : 'muted'}
+            title={`${detail}${recording ? ` · recording ${formatCaptureElapsed(elapsed)}` : ''}. Click for live outputs and capture`}
             onClick={() => setOpen(!open)}
-            labelClassName="header-live-text"
+            labelClassName="header-live-text tabular-nums"
           >
-            <Radio size={15} aria-hidden="true" />
+            {/* Recording shows as a red dot on the icon, as on a camera. */}
+            <span className="relative" aria-hidden="true">
+              <Radio size={15} />
+              {recording && <span className="absolute -right-1 -top-0.5 size-2 animate-pulse rounded-full bg-live ring-2 ring-surface-tertiary" />}
+            </span>
           </ToolbarButton>
         </div>
       </Popover.Anchor>
       <Popover.Portal>
+        <div className="contents">
+        {/* Cover Electron's draggable header too: native drag regions do not
+            send the pointer events Radix uses for outside-click dismissal. */}
+        <div
+          aria-hidden="true"
+          className="no-drag fixed inset-0 z-40 bg-transparent"
+          onPointerDown={() => setOpen(false)}
+        />
         <Popover.Content
           side="bottom"
           align="end"
           sideOffset={8}
           collisionPadding={12}
-          className="z-50 w-72 rounded-xl bg-surface-elevated p-1.5 text-zinc-200 ring-1 ring-surface-border animate-spring-in"
+          className="z-50 w-64 max-w-[calc(100vw-24px)] overflow-hidden rounded-xl bg-surface-menu p-1 text-zinc-200 ring-1 ring-surface-menu-line animate-spring-in"
         >
-          <div className="flex items-center gap-2 px-2.5 py-2">
-            <span className={cn('size-2 shrink-0 rounded-full', live ? 'bg-live' : 'bg-zinc-600')} aria-hidden="true" />
-            <p className="min-w-0 flex-1 text-[12px] text-zinc-200">{detail}</p>
-          </div>
+          {!IS_MAC && <p className="px-3 py-2 text-[13px] text-zinc-200">{detail}</p>}
           {IS_MAC && (
-            <div className="mt-1 border-t border-surface-border pt-1.5">
-              <p className="px-2.5 pb-1 text-[11px] font-medium text-zinc-500">Syphon — to OBS and other apps on this Mac</p>
+            <CaptureSection
+              onSettings={() => {
+                setOpen(false)
+                useAppStore.getState().openCapture()
+              }}
+            />
+          )}
+          {IS_MAC && (
+            <section aria-label="Syphon">
+              <div className="mx-3 my-1 border-t-[0.5px] border-surface-menu-line" />
               {syphons.map((output) => {
                 const state = status?.outputs.find((o) => o.id === output.id)
                 return (
-                  <label key={output.id} className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 hover:bg-surface-tertiary">
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[12px] text-white">{output.name}</span>
-                      <span className="block truncate text-[11px] text-zinc-500">
-                        {!output.enabled ? 'Off' : state?.ready ? 'Sending' : state?.reason || 'Starting'}
-                      </span>
-                    </span>
+                  <label key={output.id} className="flex min-h-8 items-center gap-3 rounded-md px-3 py-2 hover:bg-surface-menu-hover" title={!output.enabled ? 'Off' : state?.ready ? 'Sending' : state?.reason || 'Starting'}>
+                    <span className="min-w-0 flex-1 truncate text-[13px] text-zinc-200">{output.name}</span>
                     <Switch
                       size="sm"
                       checked={output.enabled}
@@ -250,16 +295,13 @@ function LiveMenu({ label, live, detail }: { label: string; live: boolean; detai
                   </label>
                 )
               })}
-              <button
-                type="button"
-                className="w-full rounded-lg px-2.5 py-1.5 text-left text-[12px] text-zinc-300 hover:bg-surface-tertiary hover:text-white"
-                onClick={openScreens}
-              >
-                {syphons.length === 0 ? 'Set up Syphon for OBS…' : 'Syphon settings…'}
+              <button type="button" onClick={openScreens} className={LIVE_MENU_ITEM}>
+                {syphons.length === 0 ? 'Set up Syphon…' : 'Syphon Settings…'}
               </button>
-            </div>
+            </section>
           )}
         </Popover.Content>
+        </div>
       </Popover.Portal>
     </Popover.Root>
   )

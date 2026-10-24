@@ -26,7 +26,7 @@ import { videoDeviceService } from '../video-devices'
 import type { VideoOutputSink } from '../video-devices/provider'
 import type { DisplaySink } from './display-window'
 import { LobbyPlayer } from './lobby-player'
-import { ProgramSurface, type SurfaceLayers } from './program-surface'
+import { ProgramSurface, type FrameTap, type SurfaceLayers } from './program-surface'
 import { StageWindow } from './stage-window'
 
 /** How long "Identify displays" labels stay up. */
@@ -102,6 +102,8 @@ class SurfaceManager {
   private initialized = false
   private reconciling: Promise<void> = Promise.resolve()
   private reconcilingDevices = false
+  /** A recording's tap, by output, and the surface it is on — kept across rebuilds. */
+  private taps = new Map<string, { tap: FrameTap; surface: ProgramSurface | null }>()
   private displayChangeTimer: ReturnType<typeof setTimeout> | null = null
 
   init(): void {
@@ -290,6 +292,39 @@ class SurfaceManager {
 
     await this.applyConfig(presentation)
     await this.applyProgram(presentation)
+    this.applyTaps()
+  }
+
+  // ─── Recording taps ─────────────────────────────────────────────────────────
+
+  /**
+   * Hands `outputId`'s frames to a recording, or stops (`null`). The tap
+   * follows the output: a rebuilt or reopened window gets it again.
+   */
+  setCaptureTap(outputId: string, tap: FrameTap | null): void {
+    const current = this.taps.get(outputId)
+    current?.surface?.setTap(null)
+    if (tap) this.taps.set(outputId, { tap, surface: null })
+    else this.taps.delete(outputId)
+    this.applyTaps()
+  }
+
+  private applyTaps(): void {
+    for (const [id, entry] of this.taps) {
+      const output = this.outputs.find((o) => o.id === id)
+      const surface = output && output.enabled ? this.surfaceOf(output) : null
+      if (surface === entry.surface) continue
+      entry.surface?.setTap(null)
+      surface?.setTap(entry.tap)
+      entry.surface = surface
+    }
+  }
+
+  /** The surface a recording of `outputId` reads from, and the shape it paints. */
+  captureSource(outputId: string): { surface: ProgramSurface; aspect: number } | null {
+    const output = this.outputs.find((o) => o.id === outputId)
+    const surface = output && output.enabled ? this.surfaceOf(output) : null
+    return surface ? { surface, aspect: surface.frameAspect() } : null
   }
 
   /**

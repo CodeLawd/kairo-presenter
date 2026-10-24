@@ -17,6 +17,24 @@
         ],
         "createdAt": "2026-09-28T04:48:14.527Z",
         "reason": "User requested Cencori-like scroll effects; this gradient paints the heading progressively as it enters view, with solid-text fallback and reduced-motion support."
+      },
+      {
+        "rule": "gray-on-color",
+        "value": "*",
+        "files": [
+          "src/renderer/src/index.css"
+        ],
+        "createdAt": "2026-10-20T08:47:11.893Z",
+        "reason": "Codex reviewed both findings: gray text applies only to disabled buttons on neutral surface-tertiary backgrounds; active colored buttons use text-on-accent."
+      },
+      {
+        "rule": "gray-on-color",
+        "value": "*",
+        "files": [
+          "src/renderer/src/components/scripture/SermonNotesReviewModal.tsx"
+        ],
+        "createdAt": "2026-10-20T10:18:19.072Z",
+        "reason": "Codex reviewed: dark slate text is intentional high-contrast ink on the light paper document; reference marks use pale blue backgrounds and near-black text."
       }
     ]
   }

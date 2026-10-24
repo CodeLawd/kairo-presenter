@@ -14,7 +14,7 @@ import { useLibraryWidth } from './useLibraryWidth'
 import { SlideContextMenu, type SlideMenuTarget } from './SlideContextMenu'
 import { QuickEditCard } from './QuickEditCard'
 import { useImportRequest } from '@/hooks/useImportRequest'
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo, type CSSProperties } from 'react'
 import { BAR_FIELD } from '@/components/scripture/ScriptureSearchBar'
 import { SongReflowEditor } from './SongReflowEditor'
 import {
@@ -393,13 +393,10 @@ function SectionSlideGrid({
   const color = sectionColor(section.type)
   const firstSlide = startIndex - 1
   const lastSlide = firstSlide + chunks.length - 1
-  const isDestination = Boolean(
-    slideDrag?.over && slideDrag.over.index >= firstSlide && slideDrag.over.index <= lastSlide,
-  )
 
   return (
     <section
-      className={cn('-mx-2 space-y-1.5 rounded-xl px-2 py-1 transition-colors duration-150', isDestination && 'bg-surface-secondary')}
+      className="contents"
       // Anywhere in the section that is not a card: join it, at the end.
       onDragOver={(event) => {
         if (passive || reorderBusy || !slideDrag || chunks.length === 0 || !event.dataTransfer.types.includes(SLIDE_DRAG_TYPE)) return
@@ -425,14 +422,9 @@ function SectionSlideGrid({
         </h3>
       )}
 
-      <div
-        className="grid gap-2"
-        style={{
-          // 1fr, not a fixed maximum: tiles stretch to fill the row, so no
-          // dead gap is left at the end of it. Zoom sets the minimum width.
-          gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${Math.round(180 * scale)}px), 1fr))`,
-        }}
-      >
+      {/* Sections retain their slide metadata and event handlers, while their
+          cards participate in the song's single continuous grid. */}
+      <div className="contents">
         {chunks.map((lines, i) => {
           const slideNo = startIndex + i
           const zeroBased = slideNo - 1
@@ -3890,13 +3882,13 @@ export default function Lyrics(): React.ReactElement {
                      every song in it, in order, each under its title. */
                   <>
                     {(showsSetlist ? setlistSongs : [selectedSong]).map((song, songIndex) => song.id !== selectedSong.id ? (
-                      <div key={song.id} data-setlist-song={song.id} className={cn(songIndex > 0 && 'pt-6')}>
+                      <div key={song.id} data-setlist-song={song.id} className={cn(songIndex > 0 && 'pt-6')} style={{ '--lyrics-card-min': `${Math.round(180 * slideZoom / 100)}px` } as CSSProperties}>
                         <SongDivider
                           song={song}
                           position={songIndex + 1}
                           onSelect={() => { keepScrollRef.current = true; handleSelect(song.id) }}
                         />
-                        <div className="space-y-5 pt-3">
+                        <div className="lyrics-slide-grid pt-3">
                           {song.sections.map((section, i) => (
                             <SectionSlideGrid
                               key={i}
@@ -3923,7 +3915,7 @@ export default function Lyrics(): React.ReactElement {
                         </div>
                       </div>
                     ) : (
-                    <div key={song.id} data-setlist-song={song.id} className={cn(showsSetlist && songIndex > 0 && 'pt-6')}>
+                    <div key={song.id} data-setlist-song={song.id} className={cn(showsSetlist && songIndex > 0 && 'pt-6')} style={{ '--lyrics-card-min': `${Math.round(180 * slideZoom / 100)}px` } as CSSProperties}>
                     {showsSetlist && <SongDivider song={song} position={songIndex + 1} current />}
                     <SlideContextMenu
                       target={slideMenu}
@@ -3942,7 +3934,7 @@ export default function Lyrics(): React.ReactElement {
                       onDelete={() => void handleDeleteSlides(menuSlides)}
                     >
                     <MarqueeSelect
-                      className={cn('space-y-5', showsSetlist && 'pt-3')}
+                      className={cn('lyrics-slide-grid', showsSetlist && 'pt-3')}
                       onBegin={slideSelect.beginMarquee}
                       onChange={(ids) => slideSelect.updateMarquee(ids.map(Number))}
                     >

@@ -441,6 +441,18 @@ const ndi: KairoAPI['ndi'] = {
   },
 }
 
+// ─── capture ──────────────────────────────────────────────────────────────────
+
+const capture: KairoAPI['capture'] = {
+  status: () => ipcRenderer.invoke(IPC.CAPTURE.STATUS),
+  start: () => ipcRenderer.invoke(IPC.CAPTURE.START),
+  stop: () => ipcRenderer.invoke(IPC.CAPTURE.STOP),
+  audioInputs: () => ipcRenderer.invoke(IPC.CAPTURE.AUDIO_INPUTS),
+  chooseFolder: () => ipcRenderer.invoke(IPC.CAPTURE.CHOOSE_FOLDER),
+  reveal: () => ipcRenderer.invoke(IPC.CAPTURE.REVEAL),
+  onStatus: (callback) => subscribe(IPC.CAPTURE.CHANGED, callback),
+}
+
 // ─── Expose ───────────────────────────────────────────────────────────────────
 
 const media: KairoAPI['media'] = {
@@ -728,7 +740,7 @@ const videoDevices: KairoAPI['videoDevices'] = {
   status: () => ipcRenderer.invoke(IPC.VIDEO_DEVICES.STATUS),
   onChanged: (callback) => subscribe(IPC.VIDEO_DEVICES.CHANGED, callback),
 }
-const api: KairoAPI = { transfer, passages, libraries, setlist, services, documents, app: appApi, audio, scripture, transcription, workspace, lyrics, settings, orchestrator, resilience, ndi, displays, videoDevices, output, program, songUsage, media, tracks, onboarding, account, updates }
+const api: KairoAPI = { transfer, passages, libraries, setlist, services, documents, app: appApi, audio, scripture, transcription, workspace, lyrics, settings, orchestrator, resilience, ndi, capture, displays, videoDevices, output, program, songUsage, media, tracks, onboarding, account, updates }
 
 if (process.contextIsolated) {
   try {

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Dialog } from "radix-ui";
 import Highlight from "@tiptap/extension-highlight";
 import { EditorContent, useEditor, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import { ArrowDown, ArrowUp, FileText, Loader, ScanSearch, X } from '@/icons';
+import { ArrowDown, ArrowUp, Loader, ScanSearch, Search, X } from '@/icons';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -103,7 +104,11 @@ export function SermonNotesReviewModal({
     items: draft.items,
   })
   const [scanning, setScanning] = useState(true)
+  const [scanError, setScanError] = useState<string | null>(null)
+  const titleRef = useRef<HTMLInputElement>(null)
   const [activeMatch, setActiveMatch] = useState(0)
+  const [referenceQuery, setReferenceQuery] = useState("")
+  const referenceSearchRef = useRef<HTMLInputElement>(null)
   const scanTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const scanSequenceRef = useRef(0)
   const paintingRef = useRef(false)
@@ -118,11 +123,16 @@ export function SermonNotesReviewModal({
   const scan = useCallback(async (text: string): Promise<void> => {
     const sequence = ++scanSequenceRef.current
     setScanning(true)
+    setScanError(null)
     try {
       const next = await window.api.scripture.scanSermonNotes(text)
       if (sequence !== scanSequenceRef.current) return
       setAnalysis(next)
       setActiveMatch((current) => Math.min(current, Math.max(0, next.matches.length - 1)))
+    } catch {
+      if (sequence === scanSequenceRef.current) {
+        setScanError("Could not scan your edits. Try scanning again before creating the playlist.")
+      }
     } finally {
       if (sequence === scanSequenceRef.current) setScanning(false)
     }
@@ -134,7 +144,7 @@ export function SermonNotesReviewModal({
     editorProps: {
       attributes: {
         class:
-          "sermon-notes-tiptap min-h-full break-words px-8 py-7 font-sans text-[15px] leading-7 text-slate-800 outline-none selection:bg-teal-200",
+          "sermon-notes-tiptap min-h-full break-words px-8 py-7 font-sans text-[15px] leading-7 text-foreground outline-none selection:bg-[#B9D7FF]",
         spellcheck: "true",
         "aria-label": "Editable sermon notes",
       },
@@ -144,10 +154,16 @@ export function SermonNotesReviewModal({
     },
     onUpdate: ({ editor: currentEditor }) => {
       if (paintingRef.current) return
+      scanSequenceRef.current += 1
+      setScanning(true)
       if (scanTimerRef.current) clearTimeout(scanTimerRef.current)
       scanTimerRef.current = setTimeout(() => void scan(editorPlainText(currentEditor)), 300)
     },
   })
+
+  useEffect(() => {
+    editor?.setEditable(!confirming)
+  }, [confirming, editor])
 
   useEffect(() => {
     // Rescans can shrink the list; drop refs to cards that no longer exist.
@@ -234,30 +250,46 @@ export function SermonNotesReviewModal({
   }, [analysis.matches, editor])
 
   const confirm = (): void => {
-    if (!editor || scanning || analysis.items.length === 0) return
+    if (!editor || confirming || scanning || scanError || analysis.items.length === 0) return
     onConfirm(title.trim() || draft.title, editorPlainText(editor), analysis)
   }
 
   const matchCount = analysis.matches.length
+  const normalizedQuery = referenceQuery.trim().toLocaleLowerCase().replace(/[–—]/g, "-")
+  const visibleMatches = analysis.matches
+    .map((match, index) => ({ match, index }))
+    .filter(({ match }) => `${match.reference} ${match.translations.join(" ")}`
+      .toLocaleLowerCase().replace(/[–—]/g, "-").includes(normalizedQuery))
+
+  const navigateMatches = (direction: -1 | 1): void => {
+    if (visibleMatches.length === 0) return
+    const next = direction === 1
+      ? visibleMatches.find(({ index }) => index > activeMatch) ?? visibleMatches[0]
+      : visibleMatches.findLast(({ index }) => index < activeMatch) ?? visibleMatches[visibleMatches.length - 1]
+    goToMatch(next.index)
+  }
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/35 p-5">
-      <section
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="sermon-review-title"
-        className="flex h-[min(860px,calc(100vh-40px))] w-[min(1180px,calc(100vw-40px))] flex-col overflow-hidden rounded-2xl modal-glass shadow-2xl shadow-black/50"
+    <Dialog.Root open onOpenChange={(open) => { if (!open && !confirming) onCancel() }}>
+      <Dialog.Portal>
+      <Dialog.Overlay className="fixed inset-0 z-[80] bg-black/45" />
+      <Dialog.Content
+        onOpenAutoFocus={(event) => { event.preventDefault(); titleRef.current?.focus() }}
+        onInteractOutside={(event) => event.preventDefault()}
+        onEscapeKeyDown={(event) => { if (confirming) event.preventDefault() }}
+        data-theme="light"
+        className="fixed left-1/2 top-1/2 z-[81] flex -translate-x-1/2 -translate-y-1/2 outline-none h-[min(860px,calc(100vh-40px))] w-[min(1180px,calc(100vw-40px))] flex-col overflow-hidden rounded-2xl border-[0.5px] border-zinc-500 bg-surface text-foreground [color-scheme:light] shadow-2xl shadow-black/50"
       >
-        <header className="flex items-center justify-between gap-5 px-5 py-3.5">
+        <header className="flex shrink-0 items-start justify-between gap-5 border-b-[0.5px] border-surface-border bg-surface-elevated px-6 py-5">
           <div className="flex min-w-0 items-center gap-3">
-            <ScanSearch size={16} className="shrink-0 text-slate-500" aria-hidden="true" />
+            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-surface-secondary"><ScanSearch size={19} className="text-slate-400" aria-hidden="true" /></span>
             <div className="min-w-0">
-              <h2 id="sermon-review-title" className="text-sm font-semibold text-slate-100">
+              <Dialog.Title className="text-lg font-semibold leading-6 text-foreground">
                 Review sermon notes
-              </h2>
-              <p className="mt-0.5 truncate text-[11px] text-slate-500">
-                {draft.sourceFileName} · edit anything misread, then confirm
-              </p>
+              </Dialog.Title>
+              <Dialog.Description className="mt-1 text-sm text-slate-500">
+                Check the notes and scripture references, then create your playlist.
+              </Dialog.Description>
             </div>
           </div>
           <Button variant="ghost" size="icon" onClick={onCancel} disabled={confirming} aria-label="Close review">
@@ -265,52 +297,88 @@ export function SermonNotesReviewModal({
           </Button>
         </header>
 
-        <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_310px]">
+        <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_280px] lg:grid-cols-[minmax(0,1fr)_320px]">
           <div className="flex min-h-0 flex-col bg-surface">
-            <div className="flex items-center gap-2.5 px-4 py-2.5">
-              <FileText size={14} className="shrink-0 text-slate-500" aria-hidden="true" />
-              <Input
-                value={title}
-                onChange={(event) => setTitle(event.target.value)}
-                aria-label="Playlist title"
-                className="h-8 max-w-md border-transparent bg-transparent px-2 text-sm font-semibold text-slate-200 hover:border-transparent focus:border-teal-500/50"
-              />
-              <div className="ml-auto flex items-center gap-1.5 text-[11px] text-slate-500">
-                {scanning && <Loader size={12} className="animate-spin text-yellow-300" />}
-                {scanning ? "Scanning edits…" : "Changes scan automatically"}
+            <div className="shrink-0 space-y-3 border-b-[0.5px] border-surface-border bg-surface-elevated px-6 py-4">
+              <div className="flex items-center justify-between gap-4">
+                <label htmlFor="sermon-playlist-title" className="text-xs font-semibold text-slate-300">Playlist name</label>
+                <div role="status" className="flex items-center gap-1.5 text-xs text-slate-500">
+                  {scanning && <Loader size={12} className="animate-spin motion-reduce:animate-none" aria-hidden="true" />}
+                  {scanning ? "Scanning notes…" : scanError ? "Scan needs attention" : "References up to date"}
+                </div>
               </div>
+              <Input
+                id="sermon-playlist-title"
+                ref={titleRef}
+                value={title}
+                disabled={confirming}
+                onChange={(event) => setTitle(event.target.value)}
+                className="h-9 bg-surface text-sm font-medium"
+              />
+              <p className="truncate text-xs text-slate-500" title={draft.sourceFileName}>{draft.sourceFileName} · Click the notes below to edit</p>
+              {scanError && (
+                <div role="alert" className="flex items-start justify-between gap-3 text-xs text-red-400">
+                  <p>{scanError}</p>
+                  <Button size="sm" variant="outline" disabled={scanning || confirming} onClick={() => { if (editor) void scan(editorPlainText(editor)) }}>Retry scan</Button>
+                </div>
+              )}
             </div>
             <div
               ref={notesScrollRef}
               onScroll={handleNotesScroll}
-              className="min-h-0 flex-1 overflow-y-auto px-5 py-5"
+              className="min-h-0 flex-1 overflow-y-auto bg-surface-secondary/40 px-5 py-5"
               style={{ scrollbarGutter: "stable" }}
             >
-              <div className="mx-auto min-h-full max-w-3xl overflow-hidden rounded-sm bg-paper ring-1 ring-black/15 [&_mark]:rounded-none [&_mark]:bg-[#CAD5E2] [&_mark]:px-0.5 [&_mark]:text-slate-950 [&_mark[data-active=true]]:bg-amber-400">
+              <div className="mx-auto min-h-full max-w-3xl overflow-hidden rounded-sm bg-paper ring-1 ring-black/15 [&_mark]:rounded-none [&_mark]:bg-[#CAD5E2] [&_mark]:px-0.5 [&_mark]:text-foreground [&_mark[data-active=true]]:bg-[#B9D7FF]">
                 <EditorContent editor={editor} className="sermon-notes-editor min-h-full" />
               </div>
             </div>
           </div>
 
-          <aside className="flex min-h-0 flex-col bg-surface-secondary">
+          <aside className="flex min-h-0 flex-col border-l-[0.5px] border-surface-border bg-surface-elevated">
             <div className="flex items-center justify-between gap-3 px-4 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                Detected
-                <span className="ml-2 tracking-normal tabular-nums text-slate-300">
-                  {matchCount === 0 ? "0" : `${activeMatch + 1} / ${matchCount}`}
-                </span>
-              </p>
+              <div>
+                <h3 className="text-sm font-semibold text-foreground">Detected scripture <span className="ml-1 text-xs font-normal tabular-nums text-slate-500">{matchCount}</span></h3>
+                <p className="mt-1 text-xs text-slate-500">Select a reference to find it in the notes.</p>
+              </div>
               <div className="flex items-center gap-1">
-                <Button variant="ghost" size="icon" onClick={() => goToMatch(activeMatch - 1)} disabled={matchCount === 0} aria-label="Previous reference">
+                <Button variant="ghost" size="icon" onClick={() => navigateMatches(-1)} disabled={confirming || scanning || !!scanError || visibleMatches.length === 0} aria-label="Previous reference">
                   <ArrowUp size={14} />
                 </Button>
-                <Button variant="ghost" size="icon" onClick={() => goToMatch(activeMatch + 1)} disabled={matchCount === 0} aria-label="Next reference">
+                <Button variant="ghost" size="icon" onClick={() => navigateMatches(1)} disabled={confirming || scanning || !!scanError || visibleMatches.length === 0} aria-label="Next reference">
                   <ArrowDown size={14} />
                 </Button>
               </div>
             </div>
 
+            <div className="relative mx-3 mb-2">
+              <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" aria-hidden="true" />
+              <Input
+                ref={referenceSearchRef}
+                value={referenceQuery}
+                onChange={(event) => setReferenceQuery(event.target.value)}
+                placeholder="Search detected scripture"
+                aria-label="Search detected scripture"
+                aria-controls="sermon-detected-references"
+                className="h-9 bg-surface pl-8 pr-8 text-sm"
+              />
+              {referenceQuery && (
+                <button
+                  type="button"
+                  aria-label="Clear scripture search"
+                  onClick={() => { setReferenceQuery(""); referenceSearchRef.current?.focus() }}
+                  className="absolute right-1 top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded text-slate-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400"
+                >
+                  <X size={12} aria-hidden="true" />
+                </button>
+              )}
+            </div>
+
+            <p role="status" className="px-4 pb-2 text-xs tabular-nums text-slate-500">
+              {normalizedQuery ? `${visibleMatches.length} of ${matchCount} references match` : matchCount > 0 ? `Reference ${activeMatch + 1} of ${matchCount}` : "No references yet"}
+            </p>
             <div
+              id="sermon-detected-references"
               ref={matchListRef}
               className="relative min-h-0 flex-1 space-y-0.5 overflow-y-auto p-2"
               style={{ scrollbarGutter: "stable" }}
@@ -326,7 +394,11 @@ export function SermonNotesReviewModal({
                       : "Add one such as “John 3:16” directly in the notes."}
                   </p>
                 </div>
-              ) : analysis.matches.map((match, index) => {
+              ) : visibleMatches.length === 0 ? (
+                <p role="status" className="px-4 py-6 text-center text-xs text-slate-400">
+                  No matching references. Try a book, verse or translation.
+                </p>
+              ) : visibleMatches.map(({ match, index }) => {
                 const isActive = activeMatch === index
                 return (
                   <button
@@ -336,26 +408,19 @@ export function SermonNotesReviewModal({
                     }}
                     type="button"
                     aria-current={isActive}
+                    disabled={confirming || scanning || !!scanError}
                     onClick={() => goToMatch(index)}
                     className={cn(
-                      // Borderless rows keep a long list quiet; only the active
-                      // one earns a tint and an accent bar.
-                      "relative flex w-full items-baseline gap-2.5 rounded-lg py-2 pl-3.5 pr-2.5 text-left transition-colors",
+                      "relative flex w-full items-baseline gap-3 rounded-lg border px-3 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400",
                       isActive
-                        ? "bg-tint-yellow"
-                        : "hover:bg-surface-tertiary",
+                        ? "border-teal-400/40 bg-teal-950"
+                        : "border-transparent hover:bg-surface-secondary",
                     )}
                   >
-                    {isActive && (
-                      <span
-                        aria-hidden="true"
-                        className="absolute inset-y-1.5 left-0 w-[3px] rounded-full bg-yellow-400"
-                      />
-                    )}
                     <span
                       className={cn(
-                        "w-4 shrink-0 text-right text-[10px] font-semibold tabular-nums",
-                        isActive ? "text-yellow-300" : "text-slate-600",
+                        "w-4 shrink-0 text-right text-xs font-medium tabular-nums",
+                        isActive ? "text-teal-300" : "text-slate-500",
                       )}
                     >
                       {index + 1}
@@ -370,7 +435,7 @@ export function SermonNotesReviewModal({
                         {match.reference}
                       </span>
                       {match.translations.length > 0 && (
-                        <span className="mt-0.5 block truncate text-[10px] font-medium uppercase tracking-wider text-slate-600">
+                        <span className="mt-0.5 block truncate text-xs font-normal text-slate-500">
                           {match.translations.join(" · ")}
                         </span>
                       )}
@@ -382,21 +447,22 @@ export function SermonNotesReviewModal({
           </aside>
         </div>
 
-        <footer className="flex items-center justify-between gap-4 bg-surface px-5 py-3.5">
+        <footer className="flex shrink-0 flex-wrap items-center justify-between gap-4 border-t-[0.5px] border-surface-border bg-surface-elevated px-6 py-4">
           <p className="text-xs text-slate-500">
-            Highlighted text becomes{" "}
-            <span className="font-semibold text-slate-300 tabular-nums">{analysis.items.length}</span>{" "}
-            playlist item{analysis.items.length === 1 ? "" : "s"}
+            {scanning ? "Updating scripture references…" : scanError ? "Scan your notes again to continue." : (
+              <>Your playlist will include <span className="font-semibold text-slate-300 tabular-nums">{analysis.items.length}</span> scripture {analysis.items.length === 1 ? "passage" : "passages"}.</>
+            )}
           </p>
           <div className="flex gap-2.5">
             <Button variant="outline" onClick={onCancel} disabled={confirming}>Cancel</Button>
-            <Button onClick={confirm} disabled={confirming || scanning || analysis.items.length === 0}>
+            <Button onClick={confirm} disabled={!editor || confirming || scanning || !!scanError || analysis.items.length === 0}>
               {confirming && <Loader data-icon="inline-start" className="animate-spin" />}
-              {confirming ? "Creating playlist…" : "Confirm & import"}
+              {confirming ? "Creating playlist…" : "Create playlist"}
             </Button>
           </div>
         </footer>
-      </section>
-    </div>
+      </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   )
 }

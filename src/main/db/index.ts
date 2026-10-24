@@ -8,6 +8,7 @@ import { assignThemeToOutput, isUntouchedThemeLibrary, normalizeThemeLibrary, se
 import { retireProPresenterSettings } from '@shared/pp-retirement'
 import { DEFAULT_DOCUMENTS_SETTINGS } from '@shared/documents'
 import { DEFAULT_PRESENTATION_SETTINGS, normalizePresentationSettings } from '@shared/program'
+import { DEFAULT_CAPTURE_SETTINGS } from '@shared/capture'
 
 export type { AppSettings }
 
@@ -67,6 +68,7 @@ const defaults: AppSettings = {
   presentation: DEFAULT_PRESENTATION_SETTINGS,
   usage: { shareStats: true },
   themeDefaults: {},
+  capture: DEFAULT_CAPTURE_SETTINGS,
 }
 
 export const store = new Store<AppSettings>({

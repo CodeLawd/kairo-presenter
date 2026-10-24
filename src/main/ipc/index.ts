@@ -1,5 +1,8 @@
 import { DOCUMENTS } from "@shared/documents";
 import { writeFile } from "fs/promises";
+import { existsSync, mkdirSync } from "fs";
+import { normalizeCaptureSettings } from "@shared/capture";
+import { captureFolder, captureService } from "../services/capture";
 import { normalizePresentationSettings, PROGRAM } from "@shared/program";
 import { SONG_USAGE, songUsageCsv } from "@shared/song-usage";
 import { programService } from "../services/output/program-service";
@@ -1014,6 +1017,38 @@ function registerDisplayHandlers(): void {
   surfaceManager.onStoreWrite(() => broadcastSettingsChanged());
 }
 
+function registerCaptureHandlers(): void {
+  handle(IPC.CAPTURE.STATUS, () => captureService.status());
+  handle(IPC.CAPTURE.START, () => captureService.start());
+  handle(IPC.CAPTURE.STOP, () => captureService.stop());
+  handle(IPC.CAPTURE.AUDIO_INPUTS, () => captureService.audioInputs());
+  handle(IPC.CAPTURE.CHOOSE_FOLDER, async () => {
+    const win = dialogParentWindow();
+    const options: OpenDialogOptions = {
+      title: "Save recordings to",
+      defaultPath: captureFolder(),
+      properties: ["openDirectory", "createDirectory"],
+    };
+    const result = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
+    const folder = result.canceled ? null : result.filePaths[0] ?? null;
+    if (folder) {
+      store.set("capture", normalizeCaptureSettings({ ...store.get("capture"), folder }));
+      broadcastSettingsChanged();
+    }
+    return folder;
+  });
+  handle(IPC.CAPTURE.REVEAL, async () => {
+    const last = captureService.status().path;
+    if (last && existsSync(last)) shell.showItemInFolder(last);
+    else {
+      const folder = captureFolder();
+      mkdirSync(folder, { recursive: true });
+      await shell.openPath(folder);
+    }
+  });
+  captureService.onStatus((status) => broadcast(IPC.CAPTURE.CHANGED, status));
+}
+
 function registerNdiHandlers(): void {
   ipcMain.handle(IPC.NDI.GET_STATUS, async () => {
     const ndiStatus = ndiService.getStatus();
@@ -1129,6 +1164,8 @@ function registerSettingsHandlers(): void {
         store.set("lyrics", merged);
         broadcastSettingsChanged();
         void cloudSession.pushOrgSecrets(incoming.clearKeys ?? []);
+      } else if (key === "capture") {
+        store.set("capture", normalizeCaptureSettings({ ...store.get("capture"), ...(value as Partial<AppSettings["capture"]>) }));
       } else if (key === "documents") {
         store.set("documents", normalizeDocumentsSettings(value));
       } else if (key === "presentation") {
@@ -1475,6 +1512,7 @@ export function registerIpcHandlers(quit: {
   registerResilienceHandlers();
   registerUpdateHandlers();
   registerNdiHandlers();
+  registerCaptureHandlers();
   registerDisplayHandlers();
   registerOutputHandlers();
   registerProgramHandlers();

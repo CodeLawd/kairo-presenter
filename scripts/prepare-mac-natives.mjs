@@ -3,6 +3,7 @@
  * Native pieces every macOS build bundles (see package.json mac.extraResources):
  *
  * - gpu-frames addon (plan 008) — built every time; needs only Xcode.
+ * - Syphon and recorder addons — the same: built every time, Xcode only.
  * - DeckLink helper (plan 007) — compiling it needs the Blackmagic DeckLink
  *   SDK, which may not be committed or put on CI. So the compiled, universal
  *   helper is committed in native/decklink/prebuilt/ with a hash of the
@@ -47,6 +48,8 @@ if (process.platform !== 'darwin') {
 }
 
 run(['native/gpu-frames/build.mjs'])
+run(['native/syphon/build.mjs'])
+run(['native/recorder/build.mjs'])
 
 if (process.env.DECKLINK_SDK_PATH) {
   run(['native/decklink/build.mjs'])

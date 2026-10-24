@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { AlertDialog } from 'radix-ui'
 import { KairoMark } from '@/components/brand/KairoMark'
+import { useCaptureStore } from '@/stores/useCaptureStore'
 
 /** Always mounted, including during startup and account setup. */
 export function QuitConfirmation(): React.ReactElement {
@@ -8,6 +9,7 @@ export function QuitConfirmation(): React.ReactElement {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const cancelRef = useRef<HTMLButtonElement>(null)
+  const recording = useCaptureStore((s) => s.status.recording)
   const previousFocus = useRef<HTMLElement | null>(null)
 
   useEffect(() => {
@@ -54,7 +56,7 @@ export function QuitConfirmation(): React.ReactElement {
               Quit Kairo?
             </AlertDialog.Title>
             <AlertDialog.Description className="mt-3 text-[14px] leading-relaxed text-zinc-400">
-              Your screens will go offline and live transcription will stop. Ready to close Kairo?
+              Your screens will go offline and live transcription will stop.{recording ? ' The recording will be stopped and saved.' : ''} Ready to close Kairo?
             </AlertDialog.Description>
             {error && <p role="alert" className="mt-3 text-sm text-red-400">{error}</p>}
           </div>

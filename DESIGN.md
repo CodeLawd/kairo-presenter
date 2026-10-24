@@ -5,12 +5,45 @@ songs, and media and control the audience screen from one workspace.
 
 ## Existing system
 
+The macOS top bar and workspace navigation rail use native under-window vibrancy
+with a translucent surface-header tint and backdrop blur. Root shell backgrounds
+stay transparent so the material is visible; workspace content stays opaque.
+Other platforms, increased contrast and reduced transparency use solid chrome.
+The top bar and navigation frame share #242424 in dark mode and the same 62%
+material tint, above the #181818 workspace. The workspace meets the frame directly with a 16px
+top-left radius and subtle 0.5px top/left borders; omit extra top gaps. Active navigation icons
+use a rounded elevated neutral fill, with a quieter tertiary fill on hover.
+The Live preview keeps the rail's consistent secondary surface; the workspace
+border separates it from the frosted header without changing the panel background.
+Shared pane-edge and hairline utilities use --panel-border-width (0.5px) and
+--panel-border-color (75% surface-border) for consistent panel, sidebar and dock
+separation. Keep focus rings and selected/live outlines stronger than these dividers.
+Lyrics use one continuous responsive slide grid per song, filling each row across
+section boundaries. Preserve section colors, labels, numbering and hotkeys;
+zoom controls the minimum card width. Each playlist song starts its own grid.
+The sermon notes review modal always uses a scoped light theme with dark ink,
+pale panels and a 0.5px neutral border, independent of the app theme. Its detected-reference
+search filters by reference or translation, preserving original numbering and the
+full import analysis; previous/next navigation follows the filtered results.
+Review has a labelled playlist-name field, source filename, live scan status,
+and a distinct scripture sidebar with search, match counts and reference jumps.
+Use the shared Radix dialog behavior for focus containment and Escape dismissal.
+The footer names the outcome (Create playlist) and reports passage count. Disable
+creation while edits are awaiting a scan or scanning has failed; offer Retry scan.
+The Live popover is a compact, flat menu like ProPresenter: Start/Stop Capture,
+a thin inset divider, then Capture Settings…. Separate Syphon output switches
+and Syphon Settings… with another thin divider. Omit boxes, settings gears,
+descriptive headings and saved-file messages. Keep source/status in tooltips,
+recording time beside Stop Capture, and actionable failures inline.
+Capture Settings closes with Save and never starts or stops recording.
+
 Runtime tokens are owned by `src/renderer/src/index.css` and mapped through
 `tailwind.config.js`. Use Source Sans 3 for controls, body copy, and headings.
 Use the existing surface layers, muted text scale, inputs, and buttons. The
-palette is ink #11120D, paper #FFFBF4 and stone #565449; all tokens blend from
-these. The accent (`teal-*`) is white in dark and ink in light, so CTAs are white
-buttons with ink text. #6C91C2 (`live`) marks only what is on screen.
+dark palette uses neutral charcoal: workspace #181818, panels #202020,
+controls #2C2C2C, elevated controls #353535 and borders #404040, matching the
+Codex reference without a blue cast. The blue action accent and semantic tool,
+status and live colors remain distinct. Light-theme tokens keep their own scale.
 
 Video output refresh stays icon-only. Rotate the refresh icon while its scan is
 pending, disable repeat clicks, and respect reduced motion. Report the result or

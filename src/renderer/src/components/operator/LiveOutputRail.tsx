@@ -115,7 +115,7 @@ export function LiveOutputRail({
   const previewHeight = Math.round((previewWidth * 9) / 16);
 
   return (
-    // The darker rail tone separates the controls from the central workspace.
+    // The rail keeps a consistent panel tone around the live preview.
     <div className="hairline-l relative flex min-h-0 shrink-0">
       {onResizeStart && (
         <button
@@ -134,7 +134,7 @@ export function LiveOutputRail({
         className={`flex min-h-0 w-full flex-col overflow-hidden bg-surface-secondary ${className}`}
         style={{ width }}
       >
-        <div className="min-h-0 shrink-0" data-tour="live-preview">
+        <div className="hairline-b min-h-0 shrink-0" data-tour="live-preview">
           <div className="flex items-baseline justify-between gap-2 px-3 py-1.5">
             <p className="text-[11px] font-medium text-zinc-400">Live</p>
           </div>
