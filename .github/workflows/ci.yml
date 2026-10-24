@@ -75,7 +75,11 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22"
-          cache: npm
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.2"
 
       - name: Clean install (never reuse node_modules across OSes)
         # Native modules download prebuilt binaries/headers during install; a
@@ -83,18 +87,18 @@ jobs:
         shell: bash
         run: |
           for attempt in 1 2 3; do
-            npm ci && exit 0
-            echo "::warning::npm ci failed (attempt $attempt of 3), retrying in 30s"
+            bun install --frozen-lockfile && exit 0
+            echo "::warning::bun install --frozen-lockfile failed (attempt $attempt of 3), retrying in 30s"
             sleep 30
           done
           exit 1
 
       - name: Rebuild native modules for Electron
-        run: npm run rebuild:native
+        run: bun run rebuild:native
 
       - name: Quality gates
         timeout-minutes: 20
-        run: npm run typecheck && npm test && npm run test:main
+        run: bun run typecheck && bun run test && bun run test:main
 
       - name: Check production endpoint configuration
         # Empty vars would inline to "" and the app would fall back to
@@ -106,10 +110,10 @@ jobs:
           echo "endpoints: $MAIN_VITE_API_URL / $MAIN_VITE_WEB_URL"
 
       - name: Compile
-        run: npm run build
+        run: bun run build
 
       - name: Package (unsigned installer targets, never publish)
-        run: npm run ${{ matrix.package }}
+        run: bun run ${{ matrix.package }}
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
@@ -117,7 +121,7 @@ jobs:
         # The verifier inspects an unpacked app; installer outputs (dmg/exe/
         # AppImage) are not unpacked. Same tree, same asar content.
         shell: bash
-        run: npx --no-install electron-builder --dir -c.mac.identity=null -c.mac.notarize=false --publish never
+        run: bunx --no-install electron-builder --dir -c.mac.identity=null -c.mac.notarize=false --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
 

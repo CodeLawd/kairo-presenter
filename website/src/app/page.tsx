@@ -1,3 +1,6 @@
+import type { Metadata } from 'next';
+import { isIndexable, siteUrl, siteTitle, siteDescription, socialImage } from '@/lib/seo';
+
 import { Fragment } from "react";
 import Link from "next/link";
 import { Logo } from "@/components/brand/Logo";
@@ -5,6 +8,19 @@ import { IconApple, IconLinux, IconWindows } from "@/components/landing/icons";
 import { OperatorDemo } from "@/components/landing/OperatorDemo";
 import "./landing.css";
 import Image from "next/image";
+
+export const metadata: Metadata = {
+  alternates: { canonical: '/' },
+  robots: {
+    index: isIndexable, follow: true,
+    googleBot: { index: isIndexable, follow: true, 'max-image-preview': 'large', 'max-snippet': -1, 'max-video-preview': -1 },
+  },
+  openGraph: {
+    title: siteTitle, description: siteDescription, url: '/',
+    siteName: 'Kairo', type: 'website', locale: 'en_US', images: [socialImage],
+  },
+};
+
 
 const container =
   "mx-auto w-[calc(100%-40px)] max-w-[1440px] md:w-[calc(100%-48px)] xl:w-[calc(100%-80px)]";
@@ -200,6 +216,24 @@ export default function HomePage(): React.ReactElement {
       className="landing min-h-screen bg-[#11120D] font-[var(--font-manrope)] text-[#F6F3EB]"
       id="top"
     >
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify({
+          '@context': 'https://schema.org',
+          '@graph': [
+            { '@type': 'Organization', '@id': `${siteUrl}/#organization`, name: 'Kairo', url: siteUrl },
+            { '@type': 'WebSite', '@id': `${siteUrl}/#website`, name: 'Kairo', url: siteUrl, inLanguage: 'en', publisher: { '@id': `${siteUrl}/#organization` } },
+            { '@type': 'SoftwareApplication', '@id': `${siteUrl}/#software`, name: 'Kairo', url: siteUrl,
+              description: siteDescription, applicationCategory: 'MultimediaApplication',
+              operatingSystem: 'macOS, Windows, Linux', image: `${siteUrl}${socialImage.url}`,
+              downloadUrl: `${siteUrl}/#get`, publisher: { '@id': `${siteUrl}/#organization` },
+              featureList: ['Church lyrics and Scripture presentation', 'Stage confidence monitors', 'NDI output', 'Live Scripture suggestions', 'PowerPoint and PDF import'] },
+            { '@type': 'FAQPage', '@id': `${siteUrl}/#questions`, mainEntity: questions.map(({ question, answer }) => ({
+              '@type': 'Question', name: question, acceptedAnswer: { '@type': 'Answer', text: answer },
+            })) },
+          ],
+        }).replace(/</g, '\u003c') }}
+      />
       <a
         className="absolute -top-20 left-6 z-[100] bg-white px-[18px] py-3 text-[#11120D] focus:top-3"
         href="#main"

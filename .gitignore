@@ -115,3 +115,9 @@ release/
 bible-packs/
 *-pack.db
 *.pack.db
+
+# Cloudflare build output and local secrets
+.open-next/
+.wrangler/
+.dev.vars*
+!.dev.vars.example

@@ -7,8 +7,8 @@ NestJS + MongoDB. Serves the desktop app and the web app from one API.
 ```bash
 cp .env.example .env      # fill in what you have; unset optionals stay off
 brew services start mongodb-community   # or however you run mongod locally
-npm install
-npm run start:dev
+bun install
+bun run start:dev
 ```
 
 `.env` is read at boot for local development. Real environment variables always
@@ -25,8 +25,8 @@ developer gets a working API, and a full signup-and-verify loop, from
 ## Test
 
 ```bash
-npm test          # unit
-npm run test:e2e  # full app against mongodb-memory-server — no local mongod needed
+bun run test          # unit
+bun run test:e2e  # full app against mongodb-memory-server — no local mongod needed
 ```
 
 The e2e suite boots the real module graph: real guards, real pipes, real
@@ -48,10 +48,10 @@ mocking them out would produce a suite that passes while the API leaks data.
 
 ## Deploying to Render
 
-Build `npm ci && npm run build`, start `npm start`. Because `tsconfig.json`
+Build `bun install --frozen-lockfile && bun run build`, start `bun run start`. Because `tsconfig.json`
 includes the shared contracts from the desktop repo (`../src/lib/cloud`),
 TypeScript roots the output at the repo root — the entry point is
-`dist/server/src/main.js`, which is what `npm start` runs.
+`dist/server/src/main.js`, which is what `bun run start` runs.
 
 Set every variable from `.env.example` in the Render dashboard. `MONGO_URL`
 points at Atlas; `WEB_ORIGIN` and `PUBLIC_WEB_URL` at the deployed web app.

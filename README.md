@@ -19,16 +19,16 @@ feed before running your next service. Kairo does not automatically choose a dis
 ## Development
 
 ```bash
-npm install        # install deps (npm, not yarn)
-npm run dev        # dev mode with hot reload
-npm run build      # production build → out/
-npm run lint       # ESLint on .ts/.tsx
-npm run typecheck  # tsc check (node + web)
-npm test           # renderer/shared tests (plain Node)
-npm run test:main  # main-process tests (run under Electron's Node ABI)
+bun install        # install deps (Bun 1.4.2)
+bun run dev        # dev mode with hot reload
+bun run build      # production build → out/
+bun run lint       # ESLint on .ts/.tsx
+bun run typecheck  # tsc check (node + web)
+bun run test           # renderer/shared tests (plain Node)
+bun run test:main  # main-process tests (run under Electron's Node ABI)
 ```
 
-`npm run test:main` runs through the Electron binary because `better-sqlite3` is
+`bun run test:main` runs through the Electron binary because `better-sqlite3` is
 rebuilt for Electron's ABI; the same files fail to load under plain `node`.
 
 ## Scripture: API.Bible and the offline cache
@@ -128,7 +128,7 @@ but that is best-effort and untested.
 
 - **Hardware video outputs**: vendor-neutral routing, configuration and recovery
   are implemented. DeckLink has an opt-in macOS development preview with native
-  scheduled playback (`KAIRO_ENABLE_DECKLINK=1 npm run dev` after building the
+  scheduled playback (`KAIRO_ENABLE_DECKLINK=1 bun run dev` after building the
   helper; see `native/decklink/README.md`). Physical picture and release packaging
   qualification remain pending in [Plan 007](plans/007-hardware-video-outputs.md).
 - **NDI®**: release candidates bundle their runtime and must pass native discovery,
@@ -151,3 +151,5 @@ but that is best-effort and untested.
   directory (the settings-file path logged at startup as `electron-store
   initialized` lives in the same directory). Never paste API keys or tokens
   from logs when reporting issues.
+
+Cloudflare website and API deployment: see [CLOUDFLARE.md](CLOUDFLARE.md).

@@ -1,0 +1,23 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "kairo-api",
+  "main": "cloudflare/index.ts",
+  "compatibility_date": "2026-10-24",
+  "observability": { "enabled": true },
+  "routes": [{ "pattern": "api.kairopresenter.com", "custom_domain": true }],
+  "containers": [{
+    "name": "kairo-api",
+    "class_name": "KairoAPI",
+    "image": "./Dockerfile",
+    "image_build_context": "..",
+    "instance_type": "basic",
+    "max_instances": 1
+  }],
+  "durable_objects": { "bindings": [{ "name": "KAIRO_API", "class_name": "KairoAPI" }] },
+  "exports": { "KairoAPI": { "type": "durable-object", "storage": "sqlite", "container": "kairo-api" } },
+  "vars": {
+    "PUBLIC_WEB_URL": "https://kairopresenter.com",
+    "WEB_ORIGIN": "https://kairopresenter.com",
+    "BREVO_SENDER_NAME": "Kairo"
+  }
+}

@@ -9,11 +9,11 @@ Kairo — Standalone Electron desktop app for church presentation and automation
 ## Commands
 
 ```bash
-npm install        # install deps (use npm, not yarn)
-npm run dev        # dev mode with hot reload
-npm run build      # production build → out/
-npm run lint       # ESLint on .ts/.tsx
-npm run typecheck  # tsc check (node + web)
+bun install        # install deps (use Bun)
+bun run dev        # dev mode with hot reload
+bun run build      # production build → out/
+bun run lint       # ESLint on .ts/.tsx
+bun run typecheck  # tsc check (node + web)
 ```
 
 ## Architecture

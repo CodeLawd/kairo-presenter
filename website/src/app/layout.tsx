@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { siteUrl, siteTitle, siteDescription, socialImage } from '@/lib/seo'
 import { Barlow, Inter, JetBrains_Mono, Manrope, Geist } from 'next/font/google'
 import './globals.css'
 import { cn } from "@/lib/utils";
@@ -36,15 +37,22 @@ const inter = Inter({
   display: 'swap',
 })
 
-const title = 'Kairo — Presentation software for your church'
-const description =
-  'Plan the service, run lyrics, Scripture, slides and media on your own screens, and find verses that come up during the sermon. Kairo runs as a standalone presentation app.'
-
 export const metadata: Metadata = {
-  title,
-  description,
-  openGraph: { title, description, type: 'website' },
-  twitter: { card: 'summary_large_image', title, description },
+  metadataBase: new URL(siteUrl),
+  title: { default: siteTitle, template: '%s · Kairo' },
+  description: siteDescription,
+  applicationName: 'Kairo',
+  icons: { icon: '/brand/kairo-icon.png', apple: '/brand/kairo-icon.png' },
+  // Only explicitly public marketing pages should be indexed.
+  robots: { index: false, follow: false },
+  openGraph: {
+    title: siteTitle, description: siteDescription, type: 'website',
+    siteName: 'Kairo', locale: 'en_US', images: [socialImage],
+  },
+  twitter: {
+    card: 'summary_large_image', title: siteTitle,
+    description: siteDescription, images: [socialImage],
+  },
 }
 
 export default function RootLayout({

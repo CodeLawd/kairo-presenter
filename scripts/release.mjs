@@ -2,16 +2,16 @@
 /**
  * One-command release: bump the version, commit, tag, push.
  *
- *   npm run release              # patch: 1.0.0 → 1.0.1
- *   npm run release -- minor     # 1.0.0 → 1.1.0
- *   npm run release -- major     # 1.0.0 → 2.0.0
- *   npm run release -- 1.4.0     # exact version
+ *   bun run release              # patch: 1.0.0 → 1.0.1
+ *   bun run release minor     # 1.0.0 → 1.1.0
+ *   bun run release major     # 1.0.0 → 2.0.0
+ *   bun run release 1.4.0     # exact version
  *
  * Pushing the `v*` tag starts .github/workflows/release.yml, which builds Mac,
  * Windows and Linux and publishes the GitHub release the website downloads from.
  */
 import { execFileSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { createInterface } from 'node:readline/promises'
 
 const bump = process.argv[2] ?? 'patch'
@@ -53,13 +53,19 @@ if (answer !== 'y' && answer !== 'yes') fail('Cancelled. Nothing was changed.')
 
 // 4. Run the same checks as the release build, before anything leaves this machine.
 console.log('\n→ Typecheck and tests')
-run('npm', ['run', 'typecheck'])
-run('npm', ['test'])
-run('npm', ['run', 'test:main'])
+run('bun', ['run', 'typecheck'])
+run('bun', ['run', 'test'])
+run('bun', ['run', 'test:main'])
 
-// 5. Bump package.json + package-lock.json, commit "Release vX", tag vX.
+// 5. Bump the manifest and Bun lockfile, then commit and tag the version.
 console.log(`\n→ Bumping to v${next}`)
-run('npm', ['version', next, '-m', 'Release v%s'])
+const manifest = JSON.parse(readFileSync('package.json', 'utf8'))
+manifest.version = next
+writeFileSync('package.json', `${JSON.stringify(manifest, null, 2)}\n`)
+run('bun', ['install', '--lockfile-only', '--ignore-scripts'])
+run('git', ['add', 'package.json', 'bun.lock'])
+run('git', ['commit', '-m', `Release v${next}`])
+run('git', ['tag', '-a', `v${next}`, '-m', `Release v${next}`])
 
 // 6. Push the commit, then the tag — the tag starts the release build.
 console.log('\n→ Pushing')

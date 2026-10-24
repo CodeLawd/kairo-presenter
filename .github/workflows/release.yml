@@ -90,7 +90,11 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22"
-          cache: npm
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.2"
 
       - name: Clean install (never reuse node_modules across OSes)
         # Native modules download prebuilt binaries/headers during install; a
@@ -98,18 +102,18 @@ jobs:
         shell: bash
         run: |
           for attempt in 1 2 3; do
-            npm ci && exit 0
-            echo "::warning::npm ci failed (attempt $attempt of 3), retrying in 30s"
+            bun install --frozen-lockfile && exit 0
+            echo "::warning::bun install --frozen-lockfile failed (attempt $attempt of 3), retrying in 30s"
             sleep 30
           done
           exit 1
 
       - name: Rebuild native modules for Electron
-        run: npm run rebuild:native
+        run: bun run rebuild:native
 
       - name: Quality gates
         timeout-minutes: 20
-        run: npm run typecheck && npm test && npm run test:main
+        run: bun run typecheck && bun run test && bun run test:main
 
       - name: Check production endpoint configuration
         # A signed release pointing at localhost is worse than no release.
@@ -142,7 +146,7 @@ jobs:
               fi
               ;;
           esac
-          npm run ${{ matrix.build_script }} -- --publish never $EXTRA
+          bun run ${{ matrix.build_script }} --publish never $EXTRA
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
