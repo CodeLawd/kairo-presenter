@@ -230,6 +230,8 @@ export class CaptureService {
       folder,
       warnedPush: false,
     }
+    // The app's windows keep it running; the check alone must never hold a process open.
+    session.poll.unref?.()
     this.session = session
     this.warning = null
     this.last = { path: file, sourceName: output.name, error: null }

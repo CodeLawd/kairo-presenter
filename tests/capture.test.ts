@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import path from 'node:path'
 import test from 'node:test'
 import {
   captureFileName,
@@ -129,7 +130,7 @@ test('start records the source at its shape into the folder, and stop finishes t
   const started = await r.service.start()
   assert.equal(started.recording, true)
   assert.equal(started.sourceName, 'Main Screen')
-  assert.equal(started.path, '/Movies/Kairo/Kairo Main Screen 2026-10-20 10.30.05.mov')
+  assert.equal(started.path, path.join('/Movies/Kairo', 'Kairo Main Screen 2026-10-20 10.30.05.mov'))
   assert.deepEqual(
     { ...r.opened(), path: undefined },
     { path: undefined, width: 1280, height: 720, fps: 25, codec: 'h264', bitrate: 6_000_000, audioDeviceId: '' },
