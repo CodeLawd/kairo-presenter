@@ -9,6 +9,7 @@ import { retireProPresenterSettings } from '@shared/pp-retirement'
 import { DEFAULT_DOCUMENTS_SETTINGS } from '@shared/documents'
 import { DEFAULT_PRESENTATION_SETTINGS, normalizePresentationSettings } from '@shared/program'
 import { DEFAULT_CAPTURE_SETTINGS } from '@shared/capture'
+import { DEFAULT_WEB_SETTINGS } from '@shared/web'
 
 export type { AppSettings }
 
@@ -66,9 +67,10 @@ const defaults: AppSettings = {
   },
   documents: { ...DEFAULT_DOCUMENTS_SETTINGS },
   presentation: DEFAULT_PRESENTATION_SETTINGS,
-  usage: { shareStats: true },
+  usage: { shareStats: true, sendCrashReports: true },
   themeDefaults: {},
   capture: DEFAULT_CAPTURE_SETTINGS,
+  web: DEFAULT_WEB_SETTINGS,
 }
 
 export const store = new Store<AppSettings>({

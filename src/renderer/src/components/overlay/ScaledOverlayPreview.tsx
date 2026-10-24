@@ -55,12 +55,15 @@ export function ScaledOverlayPreview({
   seekTo = null,
   onTime,
   motion = false,
+  backdrop = true,
 }: {
   html: string
   autoFit: boolean
   width?: number
   height?: number
   className?: string
+  /** The checkerboard behind see-through parts; off when something is drawn underneath. */
+  backdrop?: boolean
   /** Fill a sized parent instead of imposing 16:9. */
   fill?: boolean
   /** Pause background video without rebuilding the slide. */
@@ -199,7 +202,8 @@ export function ScaledOverlayPreview({
     <div
       ref={frameRef}
       className={cn(
-        'relative overflow-hidden bg-[repeating-conic-gradient(#1a1a1a_0%_25%,#0d0d0d_0%_50%)] bg-[length:12px_12px]',
+        'relative overflow-hidden',
+        backdrop && 'bg-[repeating-conic-gradient(#1a1a1a_0%_25%,#0d0d0d_0%_50%)] bg-[length:12px_12px]',
         !sized && !fill && 'aspect-video w-full',
         fill && 'h-full w-full',
         className

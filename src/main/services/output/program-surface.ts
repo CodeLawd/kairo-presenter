@@ -6,7 +6,7 @@ import log from 'electron-log/main'
 import overlayHtml from './overlay.html?asset'
 import { overlayMediaUrl, renderOverlayHTML, type OverlayColoredLine } from '@shared/overlay-template'
 import type { MediaPlayback, OverlayTheme } from '@shared/ipc'
-import type { ConfidenceInfo } from '@shared/program'
+import type { ConfidenceInfo, ProgramWeb } from '@shared/program'
 import type { DocumentSlide, DocumentPlaybackStatus, DocumentVideoCommand } from '@shared/documents'
 import { mediaFilterCss } from '@shared/media-playback'
 import type { NdiService } from '../ndi'
@@ -16,6 +16,8 @@ import type { SyphonChannel } from '../syphon'
 import type { VideoOutputSink } from '../video-devices/provider'
 import { createDisplayWindow, needsRebuild, sameBounds, showDisplayWindow, type DisplaySink } from './display-window'
 import { ManagedWindow } from './managed-window'
+import { prepareScreenWebFrame, scrollWebFrame } from '../web'
+import { WEB_SCREEN_FRAME } from '@shared/web'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -93,6 +95,8 @@ export interface SurfaceLayers {
   props: string
   logo: string
   camera: CameraLayer | null
+  /** A live web page behind the words. */
+  web: ProgramWeb | null
   /** Countdown, clock and stage message, drawn as text by the shell. */
   info: ConfidenceInfo | null
 }
@@ -110,7 +114,7 @@ export interface FrameTap {
   pixels(bgra: Buffer, width: number, height: number): void
 }
 
-const EMPTY_LAYERS: SurfaceLayers = { message: '', props: '', logo: '', camera: null, info: null }
+const EMPTY_LAYERS: SurfaceLayers = { message: '', props: '', logo: '', camera: null, web: null, info: null }
 
 interface RenderState {
   reference: string
@@ -287,7 +291,10 @@ export class ProgramSurface extends ManagedWindow {
 
   protected build(): BrowserWindow {
     const sink = this.sink
-    return sink.kind === 'display' ? createDisplayWindow(this.label, sink) : this.createOffscreenWindow(sink)
+    const win = sink.kind === 'display' ? createDisplayWindow(this.label, sink) : this.createOffscreenWindow(sink)
+    // A live web page follows the operator's scrolling smoothly (see scrollWeb).
+    prepareScreenWebFrame(win.webContents)
+    return win
   }
 
   protected async load(win: BrowserWindow): Promise<void> {
@@ -453,6 +460,11 @@ export class ProgramSurface extends ManagedWindow {
 
   private async applyConfig(win: BrowserWindow): Promise<void> {
     if (win.isDestroyed()) return
+    // Only the audio surface makes a sound. Kairo's own media follow that in the
+    // page; a live web page doesn't, so every other window is muted outright,
+    // or each screen would play the page's sound and the room would hear echoes.
+    // An NDI feed carrying sound is left alone: it taps sound from its own window.
+    win.webContents.setAudioMuted?.(!this.config.audio.enabled && !this.config.cameraAudible && !this.config.ndiAudio)
     await win.webContents.executeJavaScript(`window.__configure(${JSON.stringify(this.config)})`)
   }
 
@@ -489,18 +501,28 @@ export class ProgramSurface extends ManagedWindow {
         `window.__setCamera(${JSON.stringify(next.camera?.label ?? null)}, ${JSON.stringify(next.camera?.audioLabel ?? null)})`,
       )
     }
+    if (next.web?.url !== previous.web?.url || next.web?.reload !== previous.web?.reload) {
+      calls.push(`window.__setWeb(${JSON.stringify(next.web?.url ?? null)}, ${next.web?.reload ?? 0})`)
+    }
     if (JSON.stringify(next.info) !== JSON.stringify(previous.info)) {
       calls.push(`window.__setInfo(${JSON.stringify(next.info)})`)
     }
     if (calls.length === 0) return
     this.bumpForFade()
-    // A camera going live (or away) changes the capture rate an offscreen surface needs.
+    // A camera or web page going live (or away) changes the capture rate an offscreen surface needs.
     if (this.offscreen && !this.fadeTimer) win.webContents.setFrameRate(this.idleFrameRate())
     try {
       await win.webContents.executeJavaScript(calls.join(';'))
     } catch (err) {
       log.warn(`[Output] ${this.label} layer update failed`, (err as Error).message)
     }
+  }
+
+  /** Scrolls the live web page, following the operator's preview. */
+  scrollWeb(x: number, y: number): void {
+    const win = this.win
+    if (!this.layers.web || !win || win.isDestroyed()) return
+    scrollWebFrame(win.webContents, WEB_SCREEN_FRAME, x, y)
   }
 
   /** Offscreen capture runs slowly between changes; run it at motion rate while a fade plays. */
@@ -520,7 +542,8 @@ export class ProgramSurface extends ManagedWindow {
   private idleFrameRate(): number {
     const theme = this.lastRender?.theme
     const video = theme?.background.type === 'video' && !!theme.background.mediaPath
-    return this.captureFrameRate(video || this.documentSlide?.videos.length || this.layers.camera ? OSR_FRAME_RATE_VIDEO : OSR_FRAME_RATE)
+    const moving = video || this.documentSlide?.videos.length || this.layers.camera || this.layers.web
+    return this.captureFrameRate(moving ? OSR_FRAME_RATE_VIDEO : OSR_FRAME_RATE)
   }
 
   /**
@@ -819,5 +842,5 @@ function sameCamera(a: CameraLayer | null, b: CameraLayer | null): boolean {
 }
 
 function hasAnyLayer(layers: SurfaceLayers): boolean {
-  return !!(layers.message || layers.props || layers.logo || layers.camera || layers.info)
+  return !!(layers.message || layers.props || layers.logo || layers.camera || layers.web || layers.info)
 }

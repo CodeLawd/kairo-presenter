@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import {
   BookOpen,
   FileText,
+  Globe,
   CircleGauge,
   Eraser,
   MonitorPlay,
@@ -28,16 +29,33 @@ import { Switch } from '@/components/ui/switch'
 import { saveOutputSettings } from '@/lib/output-settings'
 import { hueStyle, railHueClass, type Hue } from '@/lib/hue'
 import { HEADER_TOOLBAR_SLOT_ID } from './header-toolbar'
+import { KairoMark } from '@/components/brand/KairoMark'
 import { useCaptureElapsed, useCaptureStore } from '@/stores/useCaptureStore'
 import { CAPTURE_CODECS, CAPTURE_RESOLUTIONS, captureSourceFor, formatCaptureElapsed, normalizeCaptureSettings } from '@shared/capture'
 
 
 const IS_MAC = navigator.platform.startsWith('Mac')
+
+/** Whether the main window is full screen, following it as it changes. */
+function useFullScreen(): boolean {
+  const [fullScreen, setFullScreen] = useState(false)
+  useEffect(() => {
+    let live = true
+    void window.api.app.isFullScreen().then((value) => { if (live) setFullScreen(value) }).catch(() => undefined)
+    const unsubscribe = window.api.app.onFullScreenChange(setFullScreen)
+    return () => {
+      live = false
+      unsubscribe()
+    }
+  }, [])
+  return fullScreen
+}
 const workspaces: Array<{ id: NavRoute; label: string; icon: typeof CircleGauge; hue: Hue }> = [
   { id: 'operator', label: 'Operator', icon: CircleGauge, hue: 'green' },
   { id: 'scripture', label: 'Scripture', icon: BookOpen, hue: 'blue' },
   { id: 'lyrics', label: 'Lyrics', icon: Music2, hue: 'violet' },
   { id: 'documents', label: 'Documents', icon: FileText, hue: 'cyan' },
+  { id: 'web', label: 'Web', icon: Globe, hue: 'indigo' },
   { id: 'theme', label: 'Theme', icon: Palette, hue: 'pink' },
 ]
 
@@ -362,6 +380,9 @@ export default function AppShell({
   })
   const [clearing, setClearing] = useState(false)
   const screens = useScreensStatus()
+  const fullScreen = useFullScreen()
+  // Window buttons sit in the corner only on a Mac outside full screen.
+  const showLogo = !IS_MAC || fullScreen
   /** Session is live while the transcript pipeline runs; show output ref when one is up. */
   const isLive = isTranscribing || Boolean(liveOutputLabel?.trim())
   const liveDetail = liveOutputLabel?.trim() || (isTranscribing ? 'Listening' : null)
@@ -381,8 +402,13 @@ export default function AppShell({
     // Windows and Linux have a native title bar, and a drag region there
     // swallows clicks on anything drawn over the header — Settings, menus.
     <header className={cn('app-header shrink-0', IS_MAC && 'drag-region')}>
+      {/* The corner the Mac window buttons sit in. With them hidden (full
+          screen) or absent (Windows, Linux), the logo takes their place. */}
+      <div className="flex w-[68px] shrink-0 items-center pl-1.5" aria-hidden={showLogo ? undefined : true}>
+        {showLogo && <KairoMark size="sm" />}
+      </div>
       {/* The page you're on: its icon in its tool colour, then its name. */}
-      <div className="header-context flex min-w-0 items-center gap-2 pl-[80px]">
+      <div className="header-context flex min-w-0 items-center gap-2">
         {(() => {
           const page = workspaces.find((workspace) => workspace.id === currentRoute)
           if (!page) return null

@@ -2,6 +2,8 @@ import { DOCUMENTS } from "@shared/documents";
 import { writeFile } from "fs/promises";
 import { existsSync, mkdirSync } from "fs";
 import { normalizeCaptureSettings } from "@shared/capture";
+import { normalizeWebSettings, WEB_MIRROR_FRAME } from "@shared/web";
+import { rememberWebScroll, scrollWebFrame } from "../services/web";
 import { captureFolder, captureService } from "../services/capture";
 import { normalizePresentationSettings, PROGRAM } from "@shared/program";
 import { SONG_USAGE, songUsageCsv } from "@shared/song-usage";
@@ -76,6 +78,7 @@ import { runBootstrap } from "../bootstrap";
 import { onboardingService } from "../services/cloud/onboarding";
 import { cloudSession } from "../services/cloud/session";
 import { usageService } from "../services/usage";
+import { startCrashReports } from "../services/crash-reports";
 
 // ─── Broadcast helper ─────────────────────────────────────────────────────────
 
@@ -359,6 +362,7 @@ function registerTranscriptionHandlers(): void {
   // Anything still waiting when the app last closed goes out now.
   sermonUploader.start();
   usageService.start();
+  startCrashReports();
   let changingService = false;
   handle(SERVICE_CHANNEL, async (_event, command: ServiceCommand) => {
     if (command.action === 'list') return serviceRecords.snapshot();
@@ -917,6 +921,19 @@ function registerProgramHandlers(): void {
       typeof audioLabel === "string" ? audioLabel : null,
     ),
   );
+  handle(PROGRAM.SET_WEB, (_event, url: string | null) => programService.setWeb(typeof url === "string" ? url : null));
+  handle(PROGRAM.RELOAD_WEB, () => programService.reloadWeb());
+  // As often as the preview scrolls (once a frame at most), so `on`, not `handle`.
+  ipcMain.removeAllListeners(PROGRAM.SCROLL_WEB);
+  ipcMain.on(PROGRAM.SCROLL_WEB, (event, x: unknown, y: unknown) => {
+    if (typeof x !== "number" || typeof y !== "number" || !Number.isFinite(x) || !Number.isFinite(y)) return;
+    const web = programService.getState().web;
+    if (!web) return;
+    rememberWebScroll(web.url, x, y);
+    surfaceManager.scrollWeb(x, y);
+    // The main screen preview's copy of the page follows too.
+    scrollWebFrame(event.sender, WEB_MIRROR_FRAME, x, y);
+  });
   // Program sound from an NDI surface's page (src/preload/program.ts). A
   // fire-and-forget stream — ~47 blocks a second per feed — so `on`, not `handle`.
   ipcMain.removeAllListeners(PROGRAM.NDI_AUDIO);
@@ -1166,6 +1183,8 @@ function registerSettingsHandlers(): void {
         void cloudSession.pushOrgSecrets(incoming.clearKeys ?? []);
       } else if (key === "capture") {
         store.set("capture", normalizeCaptureSettings({ ...store.get("capture"), ...(value as Partial<AppSettings["capture"]>) }));
+      } else if (key === "web") {
+        store.set("web", normalizeWebSettings(value));
       } else if (key === "documents") {
         store.set("documents", normalizeDocumentsSettings(value));
       } else if (key === "presentation") {
@@ -1492,6 +1511,7 @@ export function registerIpcHandlers(quit: {
   ipcMain.handle(IPC.APP.QUIT_PENDING, (event) => {
     return event.sender === getMainWindow()?.webContents && quit.pending();
   });
+  ipcMain.handle(IPC.APP.IS_FULL_SCREEN, (event) => BrowserWindow.fromWebContents(event.sender)?.isFullScreen() ?? false);
   ipcMain.handle(IPC.APP.QUIT_RESPONSE, (event, confirmed: unknown) => {
     if (event.sender !== getMainWindow()?.webContents || typeof confirmed !== 'boolean') return;
     quit.respond(confirmed);

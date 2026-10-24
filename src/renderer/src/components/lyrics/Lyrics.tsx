@@ -46,6 +46,7 @@ import {
 } from '@/icons'
 import { SongUsageModal } from './SongUsageModal'
 import { cn, downloadFile } from '@/lib/utils'
+import { hueStyle } from '@/lib/hue'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -271,8 +272,9 @@ const noop = (): void => {}
 /**
  * The band that opens each song in the playlist view, where every song is laid
  * out in order. Stays pinned while its slides scroll past, so the song on
- * screen is always named. White, in the accent; the selected song's band is
- * solid — it is the one Edit and ⋯ act on — and clicking another selects it.
+ * screen is always named. A quiet band, as Scripture heads each passage; the
+ * selected song — the one Edit and ⋯ act on — is a step lighter, its note in
+ * the Lyrics colour, and clicking another selects it.
  */
 function SongDivider({
   song,
@@ -296,17 +298,24 @@ function SongDivider({
         disabled={current}
         aria-current={current || undefined}
         className={cn(
-          'flex h-7 w-full min-w-0 items-center gap-2.5 px-4 text-left text-on-accent transition-colors disabled:cursor-default',
-          current ? 'bg-teal-500' : 'bg-teal-500/80 hover:bg-teal-500',
+          'flex min-h-9 w-full min-w-0 items-center gap-2.5 px-4 text-left transition-colors disabled:cursor-default',
+          current ? 'bg-surface-tertiary text-white' : 'bg-black/25 text-zinc-300 hover:bg-surface-secondary hover:text-white',
         )}
         title={current ? undefined : `Select ${song.title}`}
       >
-        <span className="shrink-0 text-xs font-semibold tabular-nums opacity-60">{position}</span>
+        <span className="shrink-0 text-xs font-semibold tabular-nums text-zinc-500">{position}</span>
+        <Music2
+          size={14}
+          weight="fill"
+          style={hueStyle('violet')}
+          className={cn('shrink-0', current ? 'text-[rgb(var(--hue))]' : 'text-zinc-500')}
+          aria-hidden="true"
+        />
         <span className="min-w-0 truncate text-[13px] font-semibold">
           {song.title}
         </span>
-        {song.artist && <span className="min-w-0 truncate text-xs opacity-60">{song.artist}</span>}
-        <span className="ml-auto shrink-0 text-[11px] tabular-nums opacity-60">
+        {song.artist && <span className="min-w-0 truncate text-xs text-zinc-500">{song.artist}</span>}
+        <span className="ml-auto shrink-0 text-[11px] tabular-nums text-zinc-500">
           {slideCount} slide{slideCount === 1 ? '' : 's'}
         </span>
       </button>
@@ -860,16 +869,16 @@ function OnlineResultRow({
       )}
     >
       <div className="w-7 h-7 rounded-lg bg-surface-elevated flex items-center justify-center shrink-0 mt-0.5">
-        <Music2 size={12} className="text-slate-500" />
+        <Music2 size={12} className="text-zinc-400" />
       </div>
 
       <div className="flex-1 min-w-0">
         <p className="text-[13px] font-semibold text-slate-200 truncate leading-tight">
           {result.title}
         </p>
-        <p className="text-[11px] text-slate-500 truncate mt-0.5">{meta}</p>
+        <p className="text-[11px] text-zinc-400 truncate mt-0.5">{meta}</p>
         {result.snippet && (
-          <p className="text-[11px] text-slate-500 truncate mt-1 pl-2 border-l border-teal-500/40 italic">
+          <p className="text-[11px] text-zinc-400 truncate mt-1 pl-2 border-l border-teal-500/40 italic">
             {result.snippet}
           </p>
         )}
@@ -890,7 +899,7 @@ function OnlineResultRow({
         <button
           type="button"
           disabled={disabled}
-          className="shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold text-slate-400 border border-transparent hover:text-white hover:border-teal-500/40 hover:bg-tint-teal disabled:opacity-40 transition-colors focus-visible:outline-none"
+          className="shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold text-zinc-300 border border-transparent hover:text-white hover:border-teal-500/40 hover:bg-tint-teal disabled:opacity-40 transition-colors focus-visible:outline-none"
           onClick={(e) => {
             e.stopPropagation()
             onImport(result)
@@ -929,9 +938,9 @@ function OnlinePreviewPane({
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center px-6 py-10">
         <div className="w-11 h-11 rounded-xl bg-surface-secondary flex items-center justify-center">
-          <Eye size={16} className="text-slate-600" />
+          <Eye size={16} className="text-zinc-500" />
         </div>
-        <p className="text-sm font-medium text-slate-400">{emptyHint}</p>
+        <p className="text-sm font-medium text-zinc-300">{emptyHint}</p>
       </div>
     )
   }
@@ -942,14 +951,14 @@ function OnlinePreviewPane({
     <div className="flex-1 flex flex-col min-h-0 min-w-0">
       <div className="shrink-0 px-4 py-3">
         <p className="text-sm font-semibold text-white truncate">{result.title}</p>
-        <p className="text-[11px] text-slate-500 mt-0.5 truncate">
+        <p className="text-[11px] text-zinc-400 mt-0.5 truncate">
           {[result.artist || 'Unknown artist', providerLabel(result.provider)].filter(Boolean).join(' · ')}
         </p>
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-3 min-h-0">
         {loading && (
-          <div className="flex items-center justify-center gap-2 py-16 text-slate-500">
+          <div className="flex items-center justify-center gap-2 py-16 text-zinc-400">
             <Loader2 size={16} className="animate-spin text-teal-400" />
             <span className="text-sm">Loading and reviewing lyrics…</span>
           </div>
@@ -957,11 +966,11 @@ function OnlinePreviewPane({
         {!loading && error && (
           <div className="flex flex-col items-center gap-3 py-12 text-center px-6">
             <div className="w-10 h-10 rounded-xl bg-surface-secondary flex items-center justify-center">
-              <AlertCircle size={16} className="text-slate-400" />
+              <AlertCircle size={16} className="text-zinc-300" />
             </div>
             <div className="space-y-1.5 max-w-xs">
               <p className="text-sm font-medium text-slate-200">{error}</p>
-              <p className="text-xs text-slate-500 leading-relaxed">
+              <p className="text-xs text-zinc-400 leading-relaxed">
                 Try another search result, or paste lyrics under Import → Paste.
               </p>
             </div>
@@ -1135,9 +1144,9 @@ function FileDropZone({
   return (
     <div
       className={cn(
-        'rounded-xl flex flex-col items-center gap-2 cursor-pointer transition-all text-center',
+        'rounded-xl border border-dashed flex flex-col items-center gap-2 cursor-pointer transition-all text-center',
         compact ? 'px-3 py-3' : 'px-6 py-12 gap-3',
-        dragOver ? 'bg-tint-teal' : 'bg-surface-secondary hover:bg-surface-tertiary'
+        dragOver ? 'bg-tint-teal border-teal-400/60' : 'border-surface-border bg-surface-tertiary hover:bg-surface-elevated'
       )}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
@@ -1146,9 +1155,9 @@ function FileDropZone({
     >
       {progress
         ? <Loader2 size={compact ? 16 : 28} className="text-teal-400 animate-spin" />
-        : <Upload size={compact ? 16 : 28} className="text-slate-600" />}
+        : <Upload size={compact ? 16 : 28} className="text-zinc-400" />}
       <div>
-        <p className={cn('font-medium text-slate-300', compact ? 'text-[12px]' : 'text-sm')}>
+        <p className={cn('font-medium text-zinc-200', compact ? 'text-[12px]' : 'text-sm')}>
           {progress
             ? `Reading ${progress.done + 1} of ${progress.total}\u2026`
             : compact
@@ -1156,7 +1165,7 @@ function FileDropZone({
               : 'Drop .usr, .txt or .rtf files here'}
         </p>
         {!compact && (
-          <p className="text-xs text-slate-600 mt-1">
+          <p className="text-xs text-zinc-500 mt-1">
             or click to browse — pick as many as you like
           </p>
         )}
@@ -1234,10 +1243,10 @@ function QueuedFileRow({
           : <Music2 size={12} className="text-teal-400" />}
       </div>
       <div className="flex-1 min-w-0">
-        <p className={cn('text-[13px] font-medium truncate', selected ? 'text-white' : 'text-slate-300')}>
+        <p className={cn('text-[13px] font-medium truncate', selected ? 'text-white' : 'text-zinc-200')}>
           {song.title}
         </p>
-        <p className="text-[11px] text-slate-500 truncate">
+        <p className="text-[11px] text-zinc-400 truncate">
           {duplicate ? (
             <span className="text-amber-400/90">
               {duplicate.inBatch ? 'Already in this batch' : 'Already in your library'}
@@ -1245,7 +1254,7 @@ function QueuedFileRow({
           ) : (
             <>
               {song.artist || 'Unknown artist'}
-              <span className="text-slate-600">
+              <span className="text-zinc-500">
                 {' \u00b7 '}
                 {song.sections.length} section{song.sections.length === 1 ? '' : 's'}
               </span>
@@ -1257,7 +1266,7 @@ function QueuedFileRow({
         <span
           className={cn(
             'shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium',
-            action === 'skip' && 'text-slate-500',
+            action === 'skip' && 'text-zinc-400',
             action === 'new' && 'bg-tint-teal text-teal-300',
             action === 'replace' && 'bg-tint-amber text-amber-300'
           )}
@@ -1267,7 +1276,7 @@ function QueuedFileRow({
       )}
       <button
         onClick={(e) => { e.stopPropagation(); onRemove() }}
-        className="text-slate-600 hover:text-slate-300 transition-colors p-0.5 shrink-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none"
+        className="text-zinc-500 hover:text-zinc-200 transition-colors p-0.5 shrink-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none"
         aria-label={`Remove ${song.title} from this import`}
       >
         <X size={13} />
@@ -1315,9 +1324,9 @@ function QueuedLyricsEditor({
     <div className="flex-1 min-h-0 flex flex-col px-4 py-3 gap-2">
       <textarea
         className={cn(
-          'flex-1 min-h-0 w-full resize-none rounded-lg bg-surface-secondary px-3 py-2.5',
-          'text-[13px] leading-relaxed text-slate-200 select-text',
-          'focus:outline-none focus:ring-1 focus:ring-teal-500/50 transition-colors'
+          'flex-1 min-h-0 w-full resize-none rounded-lg bg-surface px-3 py-2.5 ring-1 ring-surface-border',
+          'text-[13px] leading-relaxed text-zinc-100 select-text',
+          'focus:outline-none focus:ring-teal-500/60 transition-colors'
         )}
         value={draft}
         onChange={(e) => handleChange(e.target.value)}
@@ -1329,13 +1338,14 @@ function QueuedLyricsEditor({
           see a mistyped marker land as the wrong section immediately. */}
       <div className="shrink-0 space-y-1">
         {entry.song.sections.length > 0 && (
-          <div className="flex flex-wrap gap-1">
+          <div className="flex flex-wrap items-center gap-1">
+            <span className="mr-1 text-[11px] text-zinc-400">Sections</span>
             {entry.song.sections.map((section, i) => (
               <SectionBadge key={i} type={section.type} />
             ))}
           </div>
         )}
-        <p className="text-[11px] text-slate-600">
+        <p className="text-[11px] text-zinc-500">
           [Verse 1], [Chorus] mark sections · a blank line breaks a slide
         </p>
       </div>
@@ -1357,9 +1367,9 @@ function QueuedFilePreview({
   if (!entry) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-3 px-6 text-center">
-        <Eye size={16} className="text-slate-600" />
-        <p className="text-sm font-medium text-slate-400">Pick a song to read it</p>
-        <p className="text-xs text-slate-600">Check the titles and sections before adding them.</p>
+        <Eye size={16} className="text-zinc-500" />
+        <p className="text-sm font-medium text-zinc-300">Pick a song to read it</p>
+        <p className="text-xs text-zinc-500">Check the titles and sections before adding them.</p>
       </div>
     )
   }
@@ -1392,7 +1402,7 @@ function QueuedFilePreview({
                       'rounded-md px-2 py-1 text-[11px] font-medium transition-colors focus-visible:outline-none',
                       active
                         ? 'bg-tint-amber text-amber-200 border border-amber-400/40'
-                        : 'border border-transparent text-slate-400 hover:text-slate-200 hover:bg-surface-tertiary'
+                        : 'border border-transparent text-zinc-300 hover:text-slate-200 hover:bg-surface-tertiary'
                     )}
                   >
                     {choice === 'skip' ? "Don't add" : choice === 'new' ? 'Save a new copy' : 'Replace the old one'}
@@ -1411,15 +1421,15 @@ function QueuedFilePreview({
           placeholder="Song title"
           aria-label="Song title"
         />
-        <div className="flex items-center gap-1 mt-0.5 text-[11px] text-slate-500 min-w-0">
+        <div className="flex items-center gap-1 mt-0.5 text-[11px] text-zinc-400 min-w-0">
           <input
-            className="min-w-0 flex-1 bg-transparent rounded px-1 -mx-1 border border-transparent hover:border-transparent focus:border-teal-500/50 focus:bg-surface focus:outline-none focus:text-slate-300 transition-colors"
+            className="min-w-0 flex-1 bg-transparent rounded px-1 -mx-1 border border-transparent hover:border-transparent focus:border-teal-500/50 focus:bg-surface focus:outline-none focus:text-zinc-200 transition-colors"
             value={song.artist ?? ''}
             onChange={(e) => onRename({ artist: e.target.value })}
             placeholder="Unknown artist"
             aria-label="Artist"
           />
-          <span className="shrink-0 text-slate-600 truncate">
+          <span className="shrink-0 text-zinc-500 truncate">
             {song.ccliNumber && <>CCLI #{song.ccliNumber}{' \u00b7 '}</>}
             {fileName}
           </span>
@@ -1914,33 +1924,37 @@ function ImportModal({
         <div className="flex items-center justify-between px-5 py-4 shrink-0">
           <div>
             <h2 className="text-base font-semibold text-white">Import Song</h2>
-            <p className="text-xs text-slate-500 mt-0.5">Search online, upload song files, or paste a song from your clipboard</p>
+            <p className="text-xs text-zinc-400 mt-0.5">Search online, upload song files, or paste a song from your clipboard</p>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-500 hover:text-white hover:bg-surface-elevated transition-colors focus-visible:outline-none"
+            className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-surface-elevated transition-colors focus-visible:outline-none"
           >
             <X size={16} />
           </button>
         </div>
 
         {/* Tabs */}
-        <div className="flex px-5 pt-3 gap-1 shrink-0">
+        <div className="px-5 pt-1 shrink-0">
+          <div className="inline-flex gap-0.5 rounded-lg bg-surface p-0.5" role="tablist" aria-label="How to add the song">
           {(['online', 'file', 'paste'] as const).map((t) => (
             <button
               key={t}
+              role="tab"
+              aria-selected={tab === t}
               onClick={() => handleTabChange(t)}
               className={cn(
-                'flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-[13px] font-medium transition-colors',
+                'flex items-center gap-1.5 px-3.5 py-1.5 rounded-md text-[13px] font-medium transition-colors',
                 tab === t
                   ? 'bg-surface-elevated text-white'
-                  : 'text-slate-500 hover:text-slate-300'
+                  : 'text-zinc-400 hover:text-white'
               )}
             >
               {t === 'online' && <Globe size={12} />}
               {t === 'online' ? 'Search Online' : t === 'file' ? 'Upload File' : 'Paste Lyrics'}
             </button>
           ))}
+          </div>
         </div>
 
         {/* Body */}
@@ -1961,9 +1975,9 @@ function ImportModal({
             </div>
           ) : (
             <div className="flex-1 flex flex-col min-h-0 px-5 py-4 gap-3">
-              <div className="flex-1 min-h-0 flex rounded-xl overflow-hidden bg-surface-secondary">
+              <div className="flex-1 min-h-0 flex rounded-xl overflow-hidden bg-surface-tertiary">
                 {/* Left: the queue */}
-                <div className="w-[42%] min-w-[240px] max-w-[380px] flex flex-col">
+                <div className="hairline-r w-[42%] min-w-[240px] max-w-[380px] flex flex-col">
                   <div className="p-2 shrink-0">
                     <FileDropZone
                       compact
@@ -1977,18 +1991,18 @@ function ImportModal({
                     />
                   </div>
                   <div className="flex items-center justify-between px-3 pb-1.5 shrink-0">
-                    <p className="text-[11px] uppercase tracking-wide text-slate-500">
+                    <p className="text-[11px] uppercase tracking-wide text-zinc-400">
                       {includedCount} ready
                       {duplicateCount > 0 && (
                         <span className="text-amber-400/80"> · {duplicateCount} duplicate{duplicateCount === 1 ? '' : 's'}</span>
                       )}
                       {skippedCount > 0 && (
-                        <span className="text-slate-600"> · {skippedCount} skipped</span>
+                        <span className="text-zinc-500"> · {skippedCount} skipped</span>
                       )}
                     </p>
                     <button
                       onClick={() => { setFileQueue([]); setFileErrors([]); setSelectedFileKey(null) }}
-                      className="text-[11px] text-slate-500 hover:text-slate-300 transition-colors focus-visible:outline-none"
+                      className="text-[11px] text-zinc-400 hover:text-zinc-200 transition-colors focus-visible:outline-none"
                     >
                       Clear all
                     </button>
@@ -2027,7 +2041,7 @@ function ImportModal({
           <div className="flex-1 flex flex-col min-h-0 px-5 py-4 gap-3">
             <div className="shrink-0">
               <div className="relative">
-                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
                 {onlineSearching && (
                   <Loader2 size={13} className="absolute right-3 top-1/2 -translate-y-1/2 text-teal-400 animate-spin" />
                 )}
@@ -2044,7 +2058,7 @@ function ImportModal({
                   autoFocus
                 />
               </div>
-              <p className="text-[11px] text-slate-600 mt-1.5">
+              <p className="text-[11px] text-zinc-500 mt-1.5">
                 Click a result to preview lyrics, then Import if it’s the right song.
               </p>
             </div>
@@ -2056,8 +2070,8 @@ function ImportModal({
               </div>
             )}
 
-            <div className="flex-1 min-h-0 flex gap-0 rounded-xl overflow-hidden bg-surface-secondary">
-              <div className="w-[42%] min-w-[220px] max-w-[360px] overflow-y-auto p-2 space-y-1">
+            <div className="flex-1 min-h-0 flex gap-0 rounded-xl overflow-hidden bg-surface-tertiary">
+              <div className="hairline-r w-[42%] min-w-[220px] max-w-[360px] overflow-y-auto p-2 space-y-1">
                 {onlineResults.length > 0 &&
                   onlineResults.map((result) => (
                     <OnlineResultRow
@@ -2074,15 +2088,15 @@ function ImportModal({
 
                 {!onlineSearching && onlineSearched && onlineResults.length === 0 && !error && (
                   <div className="flex flex-col items-center justify-center py-10 gap-3 text-center px-4">
-                    <Globe size={16} className="text-slate-600" />
-                    <p className="text-sm font-medium text-slate-400">No matches found</p>
+                    <Globe size={16} className="text-zinc-500" />
+                    <p className="text-sm font-medium text-zinc-300">No matches found</p>
                   </div>
                 )}
 
                 {!onlineSearched && onlineQuery.trim().length < 3 && (
                   <div className="flex flex-col items-center justify-center py-10 gap-3 text-center px-4">
-                    <Search size={16} className="text-slate-600" />
-                    <p className="text-sm font-medium text-slate-400">Search by any part of the song</p>
+                    <Search size={16} className="text-zinc-500" />
+                    <p className="text-sm font-medium text-zinc-300">Search by any part of the song</p>
                   </div>
                 )}
               </div>
@@ -2102,10 +2116,10 @@ function ImportModal({
         <div className="flex-1 overflow-y-auto px-2 py-5 space-y-5 min-h-0">
           {tab === 'paste' && (
             <div className="space-y-3">
-              <div className="flex items-center justify-between gap-3 p-3 rounded-xl bg-surface-secondary">
+              <div className="flex items-center justify-between gap-3 p-3 rounded-xl bg-surface-tertiary">
                 <div className="min-w-0">
-                  <p className="text-[13px] font-medium text-slate-300">Import from clipboard</p>
-                  <p className="text-[11px] text-slate-600 mt-0.5">
+                  <p className="text-[13px] font-medium text-zinc-200">Import from clipboard</p>
+                  <p className="text-[11px] text-zinc-500 mt-0.5">
                     Copy a song from any lyrics site, then paste it here — title, artist and site clutter are sorted out for you.
                   </p>
                 </div>
@@ -2166,7 +2180,7 @@ function ImportModal({
                   onChange={(e) => setPasteField('text', e.target.value)}
                   onPaste={handlePasteIntoTextarea}
                 />
-                <p className="text-[11px] text-slate-600 mt-1">
+                <p className="text-[11px] text-zinc-500 mt-1">
                   Sections auto-detected from labels or double blank lines.
                 </p>
               </div>

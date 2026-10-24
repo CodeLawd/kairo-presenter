@@ -20,7 +20,13 @@ class WindowDouble extends EventEmitter {
     invalidate: () => { this.invalidated++ },
     beginFrameSubscription: (_onlyDirty: boolean, callback: (image: unknown) => void) => { this.frames = callback },
     endFrameSubscription: () => { this.frames = null },
+    setAudioMuted: (muted: boolean) => { this.muted = muted },
+    isDestroyed: () => this.destroyed,
+    // The live web page's frame (overlay.html names it), and what was run in it.
+    mainFrame: { frames: [{ name: 'kairo-web-screen', executeJavaScript: async (code: string) => { this.webScripts.push(code) } }] },
   })
+  webScripts: string[] = []
+  muted: boolean | null = null
   constructor(readonly options: Record<string, unknown>) { super(); WindowDouble.windows.push(this) }
   isDestroyed(): boolean { return this.destroyed }
   getContentSize(): number[] { return [1920, 1200] }
@@ -329,5 +335,54 @@ it('a display window is recorded through a frame subscription, at device pixels,
     assert.deepEqual(rec.pixels, [`1920x1200 ${1920 * 1200 * 4}`], 'the second frame, too soon after, is skipped')
     surface.setTap(null)
     assert.equal(win.frames, null, 'unsubscribed when the recording stops')
+  } finally { surface.destroy() }
+})
+
+it('a live web page reaches the screen once, reloads on request, and leaves with the program', async () => {
+  const surface = new ProgramSurface('Card', { kind: 'device', sink: { setFrame: () => {}, close: async () => {} } })
+  try {
+    await surface.restore()
+    const win = WindowDouble.windows.at(-1)!
+    const layers = { message: '', props: '', logo: '', camera: null, info: null }
+    const sent = (): string[] => win.commands.filter((command) => command.includes('__setWeb'))
+
+    await surface.setLayers({ ...layers, web: { url: 'https://example.com/', reload: 0 } })
+    assert.deepEqual(sent(), ['window.__setWeb("https://example.com/", 0)'])
+    await surface.setLayers({ ...layers, web: { url: 'https://example.com/', reload: 0 } })
+    assert.equal(sent().length, 1, 'an unchanged page is not sent again')
+    await surface.setLayers({ ...layers, web: { url: 'https://example.com/', reload: 1 } })
+    assert.equal(sent().at(-1), 'window.__setWeb("https://example.com/", 1)')
+    await surface.setLayers({ ...layers, web: null })
+    assert.equal(sent().at(-1), 'window.__setWeb(null, 0)')
+  } finally { surface.destroy() }
+})
+
+it('only the audio surface may sound: other screens are muted so a web page never echoes', async () => {
+  const surface = new ProgramSurface('Card', { kind: 'device', sink: { setFrame: () => {}, close: async () => {} } })
+  try {
+    await surface.restore()
+    const win = WindowDouble.windows.at(-1)!
+    const audio = { volume: 1, outputLabel: '' }
+    await surface.configure({ transitionMs: 0, audio: { ...audio, enabled: false }, cameraAudible: false, ndiAudio: false })
+    assert.equal(win.muted, true)
+    await surface.configure({ transitionMs: 0, audio: { ...audio, enabled: true }, cameraAudible: false, ndiAudio: false })
+    assert.equal(win.muted, false)
+    await surface.configure({ transitionMs: 0, audio: { ...audio, enabled: false }, cameraAudible: false, ndiAudio: true })
+    assert.equal(win.muted, false, 'an NDI feed taps sound from its own window')
+  } finally { surface.destroy() }
+})
+
+it('the live web page scrolls with the preview, and only while one is live', async () => {
+  const surface = new ProgramSurface('Card', { kind: 'device', sink: { setFrame: () => {}, close: async () => {} } })
+  try {
+    await surface.restore()
+    const win = WindowDouble.windows.at(-1)!
+    const layers = { message: '', props: '', logo: '', camera: null, info: null }
+    surface.scrollWeb(0, 400)
+    assert.deepEqual(win.webScripts, [], 'nothing to scroll without a page')
+    await surface.setLayers({ ...layers, web: { url: 'https://example.com/', reload: 0 } })
+    surface.scrollWeb(0, 400.6)
+    // Eases there through the page's follower, or jumps if the page hasn't got one yet.
+    assert.deepEqual(win.webScripts, ["window.__kairoScrollTo ? __kairoScrollTo(0, 401) : scrollTo({ left: 0, top: 401, behavior: 'instant' })"])
   } finally { surface.destroy() }
 })

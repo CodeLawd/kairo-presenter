@@ -15,8 +15,8 @@ test("left resize follows the pointer and stays inside its usable bounds", () =>
 });
 
 test("right resize moves opposite the pointer and stays inside its usable bounds", () => {
-  assert.equal(resizeOperatorPanel("right", 320, -60), 380);
-  assert.equal(resizeOperatorPanel("right", 320, 100), 280);
+  assert.equal(resizeOperatorPanel("right", 440, -10), 450);
+  assert.equal(resizeOperatorPanel("right", 440, 100), 420, "never squeezed below the toolbox's width");
   assert.equal(resizeOperatorPanel("right", 440, -100), 460);
 });
 
@@ -38,4 +38,7 @@ test("persisted widths fall back when missing or malformed", () => {
 test("legacy default widths migrate to the new startup sizes", () => {
   assert.equal(normalizeOperatorPanelWidth("left", "240"), OPERATOR_PANEL_DEFAULTS.left);
   assert.equal(normalizeOperatorPanelWidth("right", "320"), OPERATOR_PANEL_DEFAULTS.right);
+  // A width saved before the minimum went up opens at the minimum.
+  assert.equal(normalizeOperatorPanelWidth("right", "300"), 420);
+  assert.equal(normalizeOperatorPanelWidth("right", "440"), 440, "a width someone chose stays");
 });

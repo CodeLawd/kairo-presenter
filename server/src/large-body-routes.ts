@@ -19,4 +19,11 @@ export const LARGE_BODY_ROUTES: LargeBodyRoute[] = [
     path: /^\/v\d+\/orgs\/[^/]+\/sermons\/?$/,
     limit: '12mb',
   },
+  {
+    // Crash summaries: up to 10 queued reports, each with a 64 KB log tail
+    // and a few error lines (src/lib/cloud/crashes.ts).
+    method: 'POST',
+    path: /^\/v\d+\/crashes\/?$/,
+    limit: '1mb',
+  },
 ]

@@ -12,6 +12,7 @@ import {
   type ProgramSlideInfo,
   type ProgramState,
 } from '@shared/program'
+import { webAddress } from '@shared/web'
 import { store } from '../../db'
 import { surfaceManager } from './surface-manager'
 
@@ -92,6 +93,20 @@ class ProgramService {
     return this.set({ camera, cameraAudio: audio })
   }
 
+  /** A web page on screens. Only http(s): a screen must never load a local file or script. */
+  setWeb(url: string | null): ProgramState {
+    if (url === null) return this.set({ web: null })
+    const address = webAddress(url, false)
+    if (!address) throw new Error('That isn’t a web address.')
+    if (this.state.web?.url === address) return this.state
+    return this.set({ web: { url: address, reload: 0 } })
+  }
+
+  reloadWeb(): ProgramState {
+    const web = this.state.web
+    return web ? this.set({ web: { ...web, reload: web.reload + 1 } }) : this.state
+  }
+
   // ─── Timers ─────────────────────────────────────────────────────────────────
 
   private timerDefs(): ProgramTimerDef[] {
@@ -158,12 +173,12 @@ class ProgramService {
   }
 
   /**
-   * "Clear all": the audience message, props, logo and camera come down with
+   * "Clear all": the audience message, props, logo, camera and web page come down with
    * the slide, as ProPresenter's Clear All does. The stage message and the
    * countdown are the booth's, not the room's, so they stay.
    */
   clearProgram(): void {
-    this.set({ message: null, activePropIds: [], logo: false, camera: null, cameraAudio: null, current: null, next: null })
+    this.set({ message: null, activePropIds: [], logo: false, camera: null, cameraAudio: null, web: null, current: null, next: null })
   }
 }
 

@@ -3,6 +3,7 @@ import { IPC } from "@shared/ipc";
 import {
   app,
   BrowserWindow,
+  crashReporter,
   Menu,
   nativeImage,
   shell,
@@ -17,7 +18,7 @@ import { Readable } from "stream";
 import { electronApp, optimizer, is } from "@electron-toolkit/utils";
 import log from "electron-log/main";
 import { configuredMediaPaths } from "@shared/overlay-outputs";
-import { presentationMediaPaths } from "@shared/program";
+import { presentationMediaPaths, PROGRAM } from "@shared/program";
 import {
   mediaMimeType,
   parseByteRange,
@@ -42,6 +43,8 @@ import { isInsideRoot, mediaService } from "./services/media";
 import { tracksService } from "./services/tracks";
 import { updaterService } from "./services/updater";
 import { usageService } from "./services/usage";
+import { crashReports } from "./services/crash-reports";
+import { allowFramedPages, watchWebPreview } from "./services/web";
 import { createQuitConfirmation } from "./quit-confirmation";
 import { captureService } from "./services/capture";
 
@@ -68,6 +71,9 @@ log.transports.file.level = "info";
 log.transports.console.level = is.dev ? "debug" : "warn";
 app.setName(PRODUCT_NAME);
 log.info(`${PRODUCT_NAME} starting`, { version: app.getVersion() });
+// Keep a minidump of any crashed process on this machine (nothing is uploaded),
+// so a crash on an operator's PC can be traced to the code that died.
+crashReporter.start({ uploadToServer: false });
 
 // pa-media:// — serves the overlay theme's background image/video to both the
 // renderer (Theme editor preview; its http/file origin can't load file:// under
@@ -373,9 +379,10 @@ function createWindow(): void {
   // after a few crashes in a row so a crash on load cannot loop forever.
   const recentCrashes: number[] = [];
   mainWindow.webContents.on("render-process-gone", (_event, details) => {
-    log.error("[MainWindow] Renderer process gone", details);
+    log.error("[MainWindow] Renderer process gone", { ...details, dumps: app.getPath("crashDumps") });
     if (details.reason === "clean-exit" || mainWindow.isDestroyed()) return;
     usageService.trackError("renderer_gone");
+    crashReports.record({ kind: "renderer", process: "main-window", reason: details.reason, exitCode: details.exitCode });
     const now = Date.now();
     recentCrashes.push(now);
     while (recentCrashes.length > 0 && now - recentCrashes[0] > 60_000) recentCrashes.shift();
@@ -383,13 +390,22 @@ function createWindow(): void {
       log.error("[MainWindow] Renderer keeps crashing — not reloading again");
       return;
     }
-    mainWindow.webContents.reload();
+    // Not from inside the event: reloading synchronously here can take down
+    // the main process on Windows (electron/electron#51900).
+    setImmediate(() => {
+      if (!mainWindow.isDestroyed()) mainWindow.webContents.reload();
+    });
   });
+  // The header fills the window buttons' corner with the logo while they're hidden.
+  mainWindow.on("enter-full-screen", () => mainWindow.webContents.send(IPC.APP.FULL_SCREEN, true));
+  mainWindow.on("leave-full-screen", () => mainWindow.webContents.send(IPC.APP.FULL_SCREEN, false));
   mainWindow.on("unresponsive", () => log.warn("[MainWindow] Window unresponsive"));
   mainWindow.on("responsive", () => log.info("[MainWindow] Window responsive again"));
   // Renderer errors otherwise only reach DevTools, which is closed in a service.
   mainWindow.webContents.on("console-message", (_event, level, message, line, sourceId) => {
-    if (level >= 3) log.error("[Renderer]", message, `${sourceId}:${line}`);
+    if (level < 3) return;
+    log.error("[Renderer]", message, `${sourceId}:${line}`);
+    crashReports.noteError(`${message} (${sourceId}:${line})`);
   });
 
   // Coming back to the app is the moment someone expects to see a key they just
@@ -400,6 +416,11 @@ function createWindow(): void {
     // retry a recap that could not be published from the booth.
     sermonUploader.wake();
     usageService.wake();
+  });
+
+  // The web preview's address bar (and, when its page is live, the screens) follow its links.
+  watchWebPreview(mainWindow.webContents, (url) => {
+    if (!mainWindow.isDestroyed()) mainWindow.webContents.send(PROGRAM.WEB_NAVIGATED, { url });
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -491,6 +512,8 @@ app.whenReady().then(async () => {
 
   initDatabase();
   registerPaMediaProtocol();
+  // Before any window: the web layer and its preview load sites that refuse framing.
+  allowFramedPages();
   // The Songs folder has to exist before the library opens — the lyrics
   // service rebuilds its database from that folder's contents.
   await workspaceService.ensure();
@@ -619,7 +642,17 @@ process.on("uncaughtException", (error) => {
 // A GPU or utility process dying is invisible to the operator until something
 // stops drawing; counting it shows a bad release in the admin console.
 app.on("child-process-gone", (_event, details) => {
-  if (details.reason !== "clean-exit") usageService.trackError("child_process_gone");
+  if (details.reason === "clean-exit") return;
+  usageService.trackError("child_process_gone");
+  // Killed is how the app itself ends helpers (quitting, closing a window).
+  if (details.reason !== "killed") {
+    crashReports.record({
+      kind: "child_process",
+      process: details.name ? `${details.type} · ${details.name}` : details.type,
+      reason: details.reason,
+      exitCode: details.exitCode,
+    });
+  }
 });
 
 process.on("unhandledRejection", (reason, promise) => {

@@ -4,10 +4,10 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { createPortal } from 'react-dom'
 import { useHeaderToolbarSlot } from '@/components/layout/header-toolbar'
 import {
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   FileText,
+  Loader,
   Pencil,
   Play,
   Send,
@@ -62,11 +62,9 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState('')
   const [error, setError] = useState('')
-  const [importMenuOpen, setImportMenuOpen] = useState(false)
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameDraft, setRenameDraft] = useState('')
-  const importMenuRef = useRef<HTMLDivElement>(null)
   const contextMenuRef = useRef<HTMLDivElement>(null)
   const renameInputRef = useRef<HTMLInputElement>(null)
   const lock = useRef(false)
@@ -136,22 +134,6 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
   }, [])
 
   useEffect(() => {
-    if (!importMenuOpen) return
-    const onPointer = (event: MouseEvent): void => {
-      if (!importMenuRef.current?.contains(event.target as Node)) setImportMenuOpen(false)
-    }
-    const onKey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') setImportMenuOpen(false)
-    }
-    document.addEventListener('mousedown', onPointer)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onPointer)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [importMenuOpen])
-
-  useEffect(() => {
     if (!contextMenu) return
     const onPointer = (event: MouseEvent): void => {
       if (!contextMenuRef.current?.contains(event.target as Node)) setContextMenu(null)
@@ -183,7 +165,6 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
       retryKind.current = kind
       setImportProgress(null)
       setBusy(true)
-      setImportMenuOpen(false)
       setError('')
       setStatus('')
       let id: string | undefined
@@ -481,7 +462,6 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
   const openContextMenu = (event: React.MouseEvent, id: string): void => {
     event.preventDefault()
     event.stopPropagation()
-    setImportMenuOpen(false)
     setSelected(id)
     setPage(0)
     const pad = 8
@@ -528,55 +508,6 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
             )}
           </div>
 
-          {current && <div ref={importMenuRef} className="relative shrink-0" data-tour="documents-import">
-            <div className="flex">
-              <button
-                type="button"
-                className="btn-primary flex h-7 items-center gap-1.5 rounded-r-none px-3 text-xs"
-                disabled={busy}
-                onClick={() => void importDocument()}
-              >
-                <Upload size={13} aria-hidden="true" />
-                Import
-              </button>
-              <button
-                type="button"
-                className="btn-primary h-7 rounded-l-none border-l border-teal-700 px-2"
-                disabled={busy}
-                aria-expanded={importMenuOpen}
-                aria-haspopup="menu"
-                aria-label="Import options"
-                onClick={() => setImportMenuOpen((open) => !open)}
-              >
-                <ChevronDown size={13} aria-hidden="true" />
-              </button>
-            </div>
-            {importMenuOpen && (
-              <div
-                role="menu"
-                className="absolute right-0 z-40 mt-1 min-w-[11rem] rounded-lg bg-surface-elevated p-1"
-              >
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="block w-full rounded-md px-2.5 py-1.5 text-left text-xs text-zinc-200 hover:bg-surface-tertiary"
-                  disabled={busy}
-                  onClick={() => void importDocument('pdf')}
-                >
-                  PDF…
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="block w-full rounded-md px-2.5 py-1.5 text-left text-xs text-zinc-200 hover:bg-surface-tertiary"
-                  disabled={busy}
-                  onClick={() => void importDocument('powerpoint')}
-                >
-                  PowerPoint…
-                </button>
-              </div>
-            )}
-          </div>}
         </div>,
         toolbarSlot,
       )}
@@ -604,6 +535,28 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
           style={{ width: sidebar.width }}
           aria-label="Imported documents"
         >
+          {/* As Sermon Notes does it: one plain card at the top of the library. */}
+          <div className="shrink-0 px-3 pt-3" data-tour="documents-import">
+            <button
+              type="button"
+              className="flex w-full items-center gap-3 rounded-lg bg-surface-tertiary px-3 py-2.5 text-left transition-colors hover:bg-surface-elevated disabled:opacity-70"
+              onClick={() => void importDocument()}
+              disabled={busy}
+              aria-busy={!!importProgress}
+            >
+              <span className="grid size-8 shrink-0 place-items-center rounded-md bg-teal-500 text-on-accent">
+                {importProgress
+                  ? <Loader size={15} className="animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                  : <Upload size={15} aria-hidden="true" />}
+              </span>
+              <span className="min-w-0">
+                <span className="block text-[13px] font-semibold text-white">
+                  {importProgress ? 'Importing…' : 'Import a document'}
+                </span>
+                <span className="block truncate text-[11px] text-slate-400">PDF or PowerPoint</span>
+              </span>
+            </button>
+          </div>
           <div className="shrink-0 p-1.5">
             <LibrarySection
               kind="documents"

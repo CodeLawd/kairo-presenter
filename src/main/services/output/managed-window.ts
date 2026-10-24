@@ -5,6 +5,14 @@ import log from 'electron-log/main'
 const MAX_FAILURES = 3
 const FAILURE_WINDOW_MS = 60_000
 
+type CrashHook = (label: string, details: { reason: string; exitCode: number }) => void
+let crashHook: CrashHook | null = null
+
+/** Told about every output window whose page dies (the crash reporter listens). */
+export function setOutputCrashHook(hook: CrashHook | null): void {
+  crashHook = hook
+}
+
 // ─── Managed window ───────────────────────────────────────────────────────────
 // The lifecycle every Kairo output window shares (program surfaces and stage
 // displays): windows are created lazily and one at a time; a window that
@@ -72,6 +80,7 @@ export abstract class ManagedWindow {
     // (or destroyed by us) reporting its own death is not news.
     win.webContents.on('render-process-gone', (_event, details) => {
       log.error(`[${this.logTag}] ${this.label} render process gone`, details)
+      if (details.reason !== 'clean-exit' && details.reason !== 'killed') crashHook?.(this.label, details)
       if (this.win === win) void this.onFailure('render process gone')
     })
     win.on('unresponsive', () => {

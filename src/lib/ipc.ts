@@ -15,6 +15,8 @@ export type STTProvider = 'deepgram' | 'whisper' | 'none'
 export interface AppSettings {
   /** Live → Start Capture: what is recorded, and how. */
   capture: import('./capture').CaptureSettings
+  /** Bookmarks for the Web tab. */
+  web: import('./web').WebSettings
   audio: {
     deviceId: string
   }
@@ -109,7 +111,7 @@ export interface AppSettings {
    * Anonymous usage statistics (counts of features used + system info, never
    * content). On by default; the operator can switch it off in Settings.
    */
-  usage: { shareStats: boolean }
+  usage: { shareStats: boolean; sendCrashReports?: boolean }
   /**
    * The theme each content kind uses by default (ids in `themeLibrary`): new
    * screens start with it. Absent / dangling ids mean "no default chosen".
@@ -1461,6 +1463,9 @@ export interface AppAPI {
   onQuitRequested: (callback: () => void) => Unsubscribe
   quitPending: () => Promise<boolean>
   respondToQuit: (confirmed: boolean) => Promise<void>
+  /** The main window is full screen (on a Mac, its window buttons are hidden). */
+  isFullScreen: () => Promise<boolean>
+  onFullScreenChange: (callback: (fullScreen: boolean) => void) => Unsubscribe
   onImportRequested: (callback: (kind: import('./import-menu').ImportKind) => void) => Unsubscribe
   /** Loads every local resource the first render needs, in one round trip. */
   bootstrap: () => Promise<AppBootstrapSnapshot>
@@ -1664,6 +1669,8 @@ export const IPC = {
     QUIT_REQUESTED: 'app:quitRequested',
     QUIT_PENDING: 'app:quitPending',
     QUIT_RESPONSE: 'app:quitResponse',
+    IS_FULL_SCREEN: 'app:isFullScreen',   // invoke
+    FULL_SCREEN:    'app:fullScreen',     // push (boolean)
     IMPORT_REQUESTED: 'app:importRequested',
     IMPORT_READY: 'app:importReady',
     BOOTSTRAP:          'app:bootstrap',          // invoke

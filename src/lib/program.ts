@@ -477,6 +477,12 @@ export interface ProgramTimerState {
   remainingSec: number
 }
 
+/** A web page live on the screens, behind the words. `reload` goes up to reload it everywhere. */
+export interface ProgramWeb {
+  url: string
+  reload: number
+}
+
 export interface ProgramState {
   /** Audience message on the program screens, or null. */
   message: string | null
@@ -488,6 +494,8 @@ export interface ProgramState {
   camera: string | null
   /** Label of the audio input played with the camera, or null for a silent camera. */
   cameraAudio: string | null
+  /** The web page on screens, or null. */
+  web: ProgramWeb | null
   /** The timer screens and stage displays show — a copy of `timers[screenTimerId]`. */
   timer: ProgramTimerState
   /** Each timer's run, by id. A timer not here hasn't been touched since launch. */
@@ -509,6 +517,7 @@ export const EMPTY_PROGRAM_STATE: ProgramState = {
   logo: false,
   camera: null,
   cameraAudio: null,
+  web: null,
   timer: { durationSec: 300, endsAt: null, remainingSec: 300 },
   timers: {},
   screenTimerId: null,
@@ -849,6 +858,12 @@ export const PROGRAM = {
   CLEAR_PROPS: 'program:clearProps',
   SET_LOGO: 'program:setLogo',
   SET_CAMERA: 'program:setCamera',
+  SET_WEB: 'program:setWeb',
+  RELOAD_WEB: 'program:reloadWeb',
+  /** send (x, y): the preview scrolled; screens showing its page follow. */
+  SCROLL_WEB: 'program:scrollWeb',
+  /** push ({ url }) — the operator's web preview went to another page. */
+  WEB_NAVIGATED: 'program:webNavigated',
   TIMER_SET: 'program:timerSet',
   TIMER_START: 'program:timerStart',
   TIMER_PAUSE: 'program:timerPause',
@@ -879,6 +894,14 @@ export interface ProgramAPI {
    * input played with it (a capture card's own, or a mic); null = silent.
    */
   setCamera: (label: string | null, audioLabel?: string | null) => Promise<ProgramState>
+  /** Puts a web page on screens (an http(s) address), or null to take it down. */
+  setWeb: (url: string | null) => Promise<ProgramState>
+  /** Reloads the live web page on every screen. */
+  reloadWeb: () => Promise<ProgramState>
+  /** Scrolls the live web page on every screen to where the preview is. */
+  scrollWeb: (x: number, y: number) => void
+  /** The web preview in the operator window went to another page (link, redirect, search). */
+  onWebNavigated: (callback: (event: { url: string }) => void) => Unsubscribe
   /** Each takes a timer id; without one, it acts on the timer on screens. */
   timer: {
     set: (durationSec: number, id?: string) => Promise<ProgramState>

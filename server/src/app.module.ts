@@ -11,6 +11,7 @@ import { SermonsModule } from './sermons/sermons.module'
 import { DownloadsModule } from './downloads/downloads.module'
 import { AdminModule } from './admin/admin.module'
 import { UsageModule } from './usage/usage.module'
+import { CrashesModule } from './crashes/crashes.module'
 import { MailModule } from './mail/mail.module'
 import { HealthController } from './health/health.controller'
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard'
@@ -32,6 +33,7 @@ import { AppThrottlerGuard } from './common/guards/app-throttler.guard'
     AuthModule,
     DownloadsModule,
     UsageModule,
+    CrashesModule,
     AdminModule,
   ],
   controllers: [HealthController],

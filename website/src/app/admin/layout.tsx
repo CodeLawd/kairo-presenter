@@ -7,6 +7,7 @@ import {
   ActivityIcon,
   ArrowLeftIcon,
   BuildingIcon,
+  BugIcon,
   CreditCardIcon,
   DownloadIcon,
   LayoutDashboardIcon,
@@ -38,6 +39,7 @@ const ADMIN_NAV: SidebarConfig = {
       label: 'Growth',
       items: [
         { title: 'Usage', href: '/admin/usage', icon: ActivityIcon },
+        { title: 'Crashes', href: '/admin/crashes', icon: BugIcon },
         { title: 'Downloads', href: '/admin/downloads', icon: DownloadIcon },
         { title: 'Subscriptions', href: '/admin/subscriptions', icon: CreditCardIcon },
       ],
@@ -51,6 +53,7 @@ const TITLES: Record<string, string> = {
   '/admin/churches': 'Churches',
   '/admin/team': 'Team',
   '/admin/usage': 'Usage',
+  '/admin/crashes': 'Crashes',
   '/admin/downloads': 'Downloads',
   '/admin/subscriptions': 'Subscriptions',
 }
@@ -79,7 +82,7 @@ function AdminChrome({ children }: { children: React.ReactNode }): React.ReactEl
         <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border bg-background px-4 md:px-6">
           <div className="flex min-w-0 items-center gap-2">
             <MobileNav config={nav} />
-            <h1 className="truncate text-[15px] font-medium text-foreground">{TITLES[pathname] ?? (pathname.startsWith('/admin/churches/') ? 'Church' : 'Admin')}</h1>
+            <h1 className="truncate text-[15px] font-medium text-foreground">{TITLES[pathname] ?? (pathname.startsWith('/admin/churches/') ? 'Church' : pathname.startsWith('/admin/crashes/') ? 'Crash' : 'Admin')}</h1>
           </div>
           <div className="flex items-center gap-1">
             <ThemeToggle />

@@ -4,6 +4,7 @@ import { DEFAULT_TRANSLATION_ID } from '@shared/bible-translations'
 import { DEFAULT_DOCUMENTS_SETTINGS } from '@shared/documents'
 import { DEFAULT_PRESENTATION_SETTINGS } from '@shared/program'
 import { DEFAULT_CAPTURE_SETTINGS } from '@shared/capture'
+import { DEFAULT_WEB_SETTINGS } from '@shared/web'
 
 /** Neutral settings used until the real ones arrive from the main process. */
 export const DEFAULT_SETTINGS: SettingsWithSecretsStatus = {
@@ -29,9 +30,10 @@ export const DEFAULT_SETTINGS: SettingsWithSecretsStatus = {
   church: { name: '', timezone: '', role: '', serviceTimes: [] },
   documents: { ...DEFAULT_DOCUMENTS_SETTINGS },
   presentation: DEFAULT_PRESENTATION_SETTINGS,
-  usage: { shareStats: true },
+  usage: { shareStats: true, sendCrashReports: true },
   themeDefaults: {},
   capture: DEFAULT_CAPTURE_SETTINGS,
+  web: DEFAULT_WEB_SETTINGS,
   secretsConfigured: {
     deepgram: false,
     anthropic: false,

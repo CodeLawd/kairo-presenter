@@ -12,6 +12,8 @@ import type { OverlayTheme, ScriptureResult } from "@shared/ipc";
 import type { SendStatus } from "./types";
 
 export interface VerseThemePreviewProps {
+  /** The checkerboard behind a see-through slide; off when a web page is drawn underneath. */
+  backdrop?: boolean;
   result: ScriptureResult;
   theme: OverlayTheme;
   showTranslation: boolean;
@@ -122,6 +124,7 @@ export function VerseThemePreview({
   isPicked = false,
   selectId,
   footer = null,
+  backdrop = true,
 }: VerseThemePreviewProps): React.ReactElement {
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const drawSlide = useNearViewport(lazy, buttonRef);
@@ -193,6 +196,7 @@ export function VerseThemePreview({
             paused={paused}
             seekTo={seekTo}
             onTime={onTime}
+            backdrop={backdrop}
           />
         ) : drawSlide ? (
           <div className="flex h-full items-center justify-center px-3">

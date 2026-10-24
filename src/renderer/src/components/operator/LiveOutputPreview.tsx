@@ -15,12 +15,15 @@ import { ScaledOverlayPreview } from "@/components/overlay/ScaledOverlayPreview"
 import { usePresentation, useProgramState } from "@/hooks/useProgramState";
 import { ProgramLayersPreview } from "./ConfidencePreview";
 import { confidenceFor, programLayersFor } from "@shared/program";
-import { themeForPush } from "@shared/media-playback";
+import { themeForPush, withoutBackground } from "@shared/media-playback";
 import {
+  followsProgram,
   isRenderedKind,
   outputTemplateFor,
   outputThemeFor,
 } from "@shared/overlay-outputs";
+import { WEB_MIRROR_FRAME } from "@shared/web";
+import { ScaledWebFrame } from "./ScaledWebFrame";
 import type {
   AppSettings,
   MediaItem,
@@ -120,10 +123,24 @@ export function LiveOutputPreview({
     [rendered, view, program, presentation],
   );
   const drawn = !!info || !!(layers && (layers.props || layers.message || layers.logo));
+  // The live web page, where this screen shows it: under the words, over the background.
+  const web = rendered && view.show.backgrounds && followsProgram(view) ? program.web : null;
+  // Every page keeps its own live panel mounted; only the one on show runs the web page.
+  const [frameBox, setFrameBox] = useState<HTMLDivElement | null>(null);
+  const shown = useShown(frameBox);
 
   return (
     <div>
-      <div className="relative" style={{ width, height }}>
+      <div ref={setFrameBox} className="relative" style={{ width, height }}>
+        {web && shown && !showDocument && (
+          <ScaledWebFrame
+            key={`${web.url} ${web.reload}`}
+            url={web.url}
+            name={WEB_MIRROR_FRAME}
+            title="Web page on screens"
+            interactive={false}
+          />
+        )}
         {showDocument ? <div className="flex h-full w-full flex-col overflow-hidden bg-black"><DocumentSlidePreview doc={documentPreview.doc} page={documentPreview.page} playback={documentPreview.playback} /></div> : <PreviewBody
           output={view}
           result={result}
@@ -136,6 +153,7 @@ export function LiveOutputPreview({
           seekTo={seekTo}
           onTime={onTime}
           blankWhenIdle={drawn}
+          overWeb={!!web}
         />}
         {drawn && layers && <ProgramLayersPreview layers={layers} info={info} width={width} />}
       </div>
@@ -206,6 +224,21 @@ export function LiveOutputPreview({
   );
 }
 
+/**
+ * Whether `node` is on show. A page hidden with display:none never intersects,
+ * so a preview on a page in the background reads false until that page is opened.
+ */
+function useShown(node: HTMLElement | null): boolean {
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    if (!node) return;
+    const observer = new IntersectionObserver(([entry]) => setShown(!!entry?.isIntersecting));
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [node]);
+  return shown;
+}
+
 function PreviewBody({
   output,
   result,
@@ -218,6 +251,7 @@ function PreviewBody({
   seekTo,
   onTime,
   blankWhenIdle = false,
+  overWeb = false,
 }: {
   output: OverlayOutput | null;
   result: ScriptureResult | null;
@@ -231,6 +265,8 @@ function PreviewBody({
   onTime: (time: OverlayVideoTime) => void;
   /** Countdown, clock or stage message are drawn on top — show the black screen, not a placeholder. */
   blankWhenIdle?: boolean;
+  /** A live web page is drawn underneath: it covers the background, the words go over it. */
+  overWeb?: boolean;
 }): React.ReactElement {
   // Same rules the push takes (orchestrator `pushRendered`): this screen's Look
   // decides what reaches it, and a verse on a theme that owns its background
@@ -238,7 +274,7 @@ function PreviewBody({
   const kind = content?.kind ?? contentKind;
   const showsBackgrounds = !output || !isRenderedKind(output.kind) || output.show.backgrounds;
   const showsText = !output || !isRenderedKind(output.kind) || output.show[kind];
-  if (!showsBackgrounds) liveMedia = null;
+  if (!showsBackgrounds || overWeb) liveMedia = null;
   if (!showsText) {
     result = null;
     content = null;
@@ -247,13 +283,11 @@ function PreviewBody({
   const force = kind === "lyrics" || (!result && !content);
   const liveItem = liveMedia?.item ?? null;
   const playback = liveMedia?.playback;
-  const theme = useMemo(
-    () =>
-      output
-        ? themeForPush(outputThemeFor(output, kind), { showsBackgrounds, live: liveItem, playback, force })
-        : null,
-    [output, kind, showsBackgrounds, liveItem, playback, force],
-  );
+  const theme = useMemo(() => {
+    if (!output) return null;
+    const pushed = themeForPush(outputThemeFor(output, kind), { showsBackgrounds, live: liveItem, playback, force });
+    return overWeb ? withoutBackground(pushed) : pushed;
+  }, [output, kind, showsBackgrounds, liveItem, playback, force, overWeb]);
 
   if (!output || !theme) {
     return (
@@ -264,6 +298,8 @@ function PreviewBody({
   }
 
   if (!result && !content && !liveMedia) {
+    // The web page is all there is: let it show.
+    if (overWeb) return <></>;
     if (blankWhenIdle) return <div className="bg-black" style={{ width, height }} />;
     return (
       <EmptyFrame width={width} height={height} icon={BookOpenCheck} title="Nothing is live">
@@ -294,6 +330,7 @@ function PreviewBody({
           onTime={onTime}
           onSelect={() => undefined}
           cardRef={() => undefined}
+          backdrop={!overWeb}
         />
       );
     }
@@ -307,6 +344,7 @@ function PreviewBody({
           paused={!!liveMedia?.paused}
           seekTo={seekTo}
           onTime={onTime}
+          backdrop={!overWeb}
         />
       );
     }
@@ -371,6 +409,7 @@ function GenericThemePreview({
   paused = false,
   seekTo = null,
   onTime,
+  backdrop = true,
 }: {
   content: LiveOutputPayload;
   theme: OverlayTheme;
@@ -379,6 +418,7 @@ function GenericThemePreview({
   paused?: boolean;
   seekTo?: { token: number; seconds: number } | null;
   onTime?: (time: OverlayVideoTime) => void;
+  backdrop?: boolean;
 }): React.ReactElement {
   const html = useMemo(
     () =>
@@ -395,7 +435,7 @@ function GenericThemePreview({
 
   return (
     <div
-      className="relative overflow-hidden bg-black"
+      className={backdrop ? "relative overflow-hidden bg-black" : "relative overflow-hidden"}
       style={{ width, height }}
     >
       <ScaledOverlayPreview
@@ -407,6 +447,7 @@ function GenericThemePreview({
         paused={paused}
         seekTo={seekTo}
         onTime={onTime}
+        backdrop={backdrop}
       />
     </div>
   );

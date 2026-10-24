@@ -15,13 +15,14 @@ export const OPERATOR_PANEL_BOUNDS: Record<
   { min: number; max: number }
 > = {
   left: { min: 180, max: 420 },
-  right: { min: 280, max: 460 },
+  // Never narrower than the toolbox needs for every tab's label (Scripture … Web).
+  right: { min: 420, max: 460 },
 };
 
 /** Previous defaults — treated as unset so the new startup sizes land once. */
-const LEGACY_DEFAULTS: Record<OperatorPanelSide, number> = {
-  left: 240,
-  right: 320,
+const LEGACY_DEFAULTS: Record<OperatorPanelSide, number[]> = {
+  left: [240],
+  right: [320],
 };
 
 export function resizeOperatorPanel(
@@ -44,7 +45,7 @@ export function normalizeOperatorPanelWidth(
   const parsed = Number(storedValue);
   if (!Number.isFinite(parsed)) return resizeOperatorPanel(side, fallback, 0);
   // Exact legacy default → adopt the new startup size (custom widths stay).
-  if (parsed === LEGACY_DEFAULTS[side]) {
+  if (LEGACY_DEFAULTS[side].includes(parsed)) {
     return resizeOperatorPanel(side, OPERATOR_PANEL_DEFAULTS[side], 0);
   }
   return resizeOperatorPanel(side, parsed, 0);

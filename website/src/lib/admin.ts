@@ -184,3 +184,86 @@ export function formatDay(value: string | null): string {
   if (!value) return '—'
   return formatDate(value.length === 10 ? `${value}T12:00:00` : value)
 }
+
+// ─── Crash summaries ─────────────────────────────────────────────────────────
+
+export interface AdminCrashGroup {
+  kind: 'renderer' | 'child_process'
+  reason: string
+  exitCode: number
+  os: string
+  /** Crashes, counting repeats inside a report. */
+  crashes: number
+  users: number
+  installs: number
+  churches: number
+  versions: string[]
+  /** "10.0.26100 · x64" — each OS version and chip the crash was seen on. */
+  systems: string[]
+  lastAt: string
+  /** The newest report in the group, to open. */
+  latestId: string
+}
+
+export interface AdminCrashSummary {
+  days: number
+  crashes: number
+  reports: number
+  users: number
+  installs: number
+  churches: number
+  byDay: DayCount[]
+  top: AdminCrashGroup | null
+}
+
+export interface AdminCrash {
+  id: string
+  church: { id: string; name: string } | null
+  user: { id: string; name: string; email: string }
+  kind: 'renderer' | 'child_process'
+  process: string
+  reason: string
+  exitCode: number
+  count: number
+  appVersion: string
+  os: string
+  osVersion: string
+  arch: string
+  memoryGb: number
+  firstAt: string
+  lastAt: string
+}
+
+export interface AdminCrashes extends Page<AdminCrash> {
+  days: number
+  versions: string[]
+  groups: AdminCrashGroup[]
+}
+
+export interface AdminCrashDetail extends AdminCrash {
+  installId: string
+  system: Record<string, unknown> & { gpu?: Record<string, string> }
+  errors: string[]
+  log: string
+  /** Everyone who hit the same crash, newest first (this report included). */
+  affected: AdminCrash[]
+}
+
+/** "Windows 10.0.26100 · x64 · 16 GB" */
+export function crashSystemName(crash: { os: string; osVersion: string; arch: string; memoryGb?: number }): string {
+  return [`${OS_NAMES[crash.os] ?? crash.os} ${crash.osVersion}`.trim(), crash.arch, crash.memoryGb ? `${crash.memoryGb} GB` : '']
+    .filter(Boolean)
+    .join(' · ')
+}
+
+/** What died, in words: the operator window, an output, or a Chromium helper. */
+export function crashProcessName(crash: { kind: string; process: string }): string {
+  if (crash.process === 'main-window') return 'Main window'
+  return crash.kind === 'renderer' ? `Output · ${crash.process}` : crash.process
+}
+
+const dateTimeFormat = new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+
+export function formatDateTime(value: string | null): string {
+  return value ? dateTimeFormat.format(new Date(value)) : '—'
+}

@@ -49,7 +49,7 @@ test('documents list is registered on the same channel the page invokes', () => 
   assert.match(read('src/preload/index.ts'), /list: \(\) => ipcRenderer\.invoke\(DOCUMENTS\.LIST\)/)
   assert.match(read('src/preload/index.ts'), /capabilities: \(\) => ipcRenderer\.invoke\(DOCUMENTS\.CAPABILITIES\)/)
   assert.match(read('src/renderer/src/components/documents/Documents.tsx'), /window\.api\.documents\.list\(\)/)
-  assert.match(read('src/renderer/src/components/documents/Documents.tsx'), />\s*Import\s*</)
+  assert.match(read('src/renderer/src/components/documents/Documents.tsx'), /'Import a document'/)
 })
 
 test('document errors drop Electron\'s invoke wrapper', () => {

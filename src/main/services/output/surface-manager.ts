@@ -696,7 +696,7 @@ class SurfaceManager {
     })
   }
 
-  /** Program state changed (message, props, logo, camera, current / next, timer). */
+  /** Program state changed (message, props, logo, camera, web page, current / next, timer). */
   async setProgram(state: ProgramState): Promise<void> {
     const cameraSoundChanged = state.camera !== this.program.camera || state.cameraAudio !== this.program.cameraAudio
     this.program = state
@@ -711,8 +711,9 @@ class SurfaceManager {
     const camera = state.camera ? { label: state.camera, audioLabel: state.cameraAudio } : null
     const layersFor = (output: OverlayOutput): SurfaceLayers => ({
       ...programLayersFor(output, state, presentation),
-      // A lobby shows its playlist, never the service camera.
+      // A lobby shows its playlist, never the service camera or web page.
       camera: output.show.backgrounds && followsProgram(output) ? camera : null,
+      web: output.show.backgrounds && followsProgram(output) ? state.web : null,
       info: confidenceFor(output, state, presentation),
     })
     const surfaceWork = this.outputs
@@ -746,6 +747,13 @@ class SurfaceManager {
         ? { id: config.id, ready: false, reason: 'Off' }
         : this.stageStates.get(config.id) ?? { id: config.id, ready: false, reason: 'Display not connected' },
     )
+  }
+
+  /** The live web page follows the preview's scrolling on every screen showing it. */
+  scrollWeb(x: number, y: number): void {
+    for (const output of this.outputs) {
+      if (output.enabled && isRenderedKind(output.kind)) this.surfaceOf(output)?.scrollWeb(x, y)
+    }
   }
 
   // ─── Lookup ─────────────────────────────────────────────────────────────────

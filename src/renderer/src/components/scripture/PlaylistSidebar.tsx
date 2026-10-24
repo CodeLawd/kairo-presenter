@@ -169,10 +169,34 @@ export function PlaylistSidebar({
       className="hairline-r flex h-full min-h-0 shrink-0 flex-col overflow-hidden bg-surface-secondary"
       style={{ width }}
     >
-      {/* Library first, playlists under it — the same two-section rail the
+      {/* The main way a playlist starts, so it comes first: one card, plain to see, one line of formats. */}
+      <div className="shrink-0 px-3 pt-3">
+        <button
+          type="button"
+          className="flex w-full items-center gap-3 rounded-lg bg-surface-tertiary px-3 py-2.5 text-left transition-colors hover:bg-surface-elevated disabled:opacity-70"
+          onClick={onImportNotes}
+          disabled={importingNotes}
+          aria-busy={importingNotes}
+          title="You review the scripture references before the playlist is made"
+        >
+          <span className="grid size-8 shrink-0 place-items-center rounded-md bg-teal-500 text-on-accent">
+            {importingNotes
+              ? <Loader size={15} className="animate-spin motion-reduce:animate-none" aria-hidden="true" />
+              : <Upload size={15} aria-hidden="true" />}
+          </span>
+          <span className="min-w-0">
+            <span className="block text-[13px] font-semibold text-white">
+              {importingNotes ? "Reading sermon notes…" : "Upload sermon notes"}
+            </span>
+            <span className="block truncate text-[11px] text-slate-400">PDF, Word, TXT, Markdown or RTF</span>
+          </span>
+        </button>
+      </div>
+
+      {/* Then library, playlists under it — the same two-section rail the
           Lyrics page uses, so "where does this list come from" reads the same
           on both pages. A library owns kept passages; a playlist orders them. */}
-      <div className="shrink-0 px-1 py-1.5">
+      <div className="shrink-0 px-1 pb-1.5 pt-2">
         <LibrarySection
           kind="scripture"
           // One thing lit at a time: while search results fill the page, the
@@ -255,30 +279,6 @@ export function PlaylistSidebar({
             onClear={passageSelect.clear}
           />
         )}
-      </div>
-
-      {/* The main way a playlist starts: one card, plain to see, one line of formats. */}
-      <div className="shrink-0 px-3 pt-3">
-        <button
-          type="button"
-          className="flex w-full items-center gap-3 rounded-lg bg-surface-tertiary px-3 py-2.5 text-left transition-colors hover:bg-surface-elevated disabled:opacity-70"
-          onClick={onImportNotes}
-          disabled={importingNotes}
-          aria-busy={importingNotes}
-          title="You review the scripture references before the playlist is made"
-        >
-          <span className="grid size-8 shrink-0 place-items-center rounded-md bg-teal-500 text-on-accent">
-            {importingNotes
-              ? <Loader size={15} className="animate-spin motion-reduce:animate-none" aria-hidden="true" />
-              : <Upload size={15} aria-hidden="true" />}
-          </span>
-          <span className="min-w-0">
-            <span className="block text-[13px] font-semibold text-white">
-              {importingNotes ? "Reading sermon notes…" : "Upload sermon notes"}
-            </span>
-            <span className="block truncate text-[11px] text-slate-400">PDF, Word, TXT, Markdown or RTF</span>
-          </span>
-        </button>
       </div>
 
       <div className="flex shrink-0 items-center gap-0.5 px-3 pb-1 pt-3">

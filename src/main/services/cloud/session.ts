@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto'
 import type { UsageReport, UsageReportResult } from '@shared/cloud/usage'
+import type { CrashUpload, CrashUploadResult } from '@shared/cloud/crashes'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -556,6 +557,12 @@ export class CloudSessionService {
   async reportUsage(report: UsageReport): Promise<UsageReportResult> {
     if (!this.canUpload()) throw new Error('Not signed in')
     return this.api.request<UsageReportResult>('post', '/v1/usage/report', report, { timeoutMs: 15_000 })
+  }
+
+  /** Sends queued crash summaries (see `src/lib/cloud/crashes.ts`). Same gate as usage. */
+  async reportCrashes(upload: CrashUpload): Promise<CrashUploadResult> {
+    if (!this.canUpload()) throw new Error('Not signed in')
+    return this.api.request<CrashUploadResult>('post', '/v1/crashes', upload, { timeoutMs: 20_000 })
   }
 
   /** This install's id and the machine facts usage reports carry. */

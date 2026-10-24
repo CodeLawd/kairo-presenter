@@ -116,6 +116,7 @@
       <div class="pa-overlay-root" id="pa-program" style="position:absolute;inset:0;overflow:hidden;">
         <div class="pa-slot" id="pa-bg-layer"></div>
         <div class="pa-slot" id="pa-camera-layer"></div>
+        <div class="pa-slot" id="pa-web-layer"></div>
         <div class="pa-slot" id="pa-elements-below-layer"></div>
         <div class="pa-slot" id="pa-text-layer"></div>
         <div class="pa-slot" id="pa-elements-above-layer"></div>
@@ -153,6 +154,7 @@
       var layers = {
         bg: document.getElementById('pa-bg-layer'),
         camera: document.getElementById('pa-camera-layer'),
+        web: document.getElementById('pa-web-layer'),
         elementsBelow: document.getElementById('pa-elements-below-layer'),
         text: document.getElementById('pa-text-layer'),
         elementsAbove: document.getElementById('pa-elements-above-layer'),
@@ -798,6 +800,37 @@
         // A running countdown needs sub-second ticks; the clock alone only changes by the minute.
         if (next.timer && next.timer.endsAt !== null) infoTicker = setInterval(infoTick, 250);
         else if (next.clock) infoTicker = setInterval(infoTick, 1000);
+      };
+
+      // Live web page, in a sandboxed frame: it runs its own scripts, but can't
+      // reach this page, open windows, navigate the screen, download, or use a
+      // camera or microphone. The main process lets pages that refuse framing
+      // load here (src/main/services/web). `reload` changes to reload it.
+      var webShown = null;
+      window.__setWeb = function (url, reload) {
+        var key = url ? url + ' ' + reload : null;
+        if (key === webShown) return true;
+        webShown = key;
+        if (!url) {
+          swapLayer(layers.web, '', config.transitionMs);
+          return true;
+        }
+        var node = document.createElement('div');
+        node.style.background = '#fff';
+        var frame = document.createElement('iframe');
+        frame.name = 'kairo-web-screen'; // WEB_SCREEN_FRAME: the preview's scrolling finds it by name
+        frame.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms allow-presentation');
+        frame.setAttribute('allow', 'autoplay; fullscreen; encrypted-media; picture-in-picture');
+        frame.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
+        frame.style.cssText = 'width:100%;height:100%;border:0;display:block;background:#fff;';
+        frame.src = url;
+        node.appendChild(frame);
+        enter(layers.web, node, config.transitionMs);
+        var old = layers.web.children;
+        for (var i = old.length - 1; i >= 0; i--) {
+          if (old[i] !== node && !old[i].hasAttribute('data-leaving')) retire(old[i], config.transitionMs);
+        }
+        return true;
       };
 
       // Live camera / capture card, matched by label: device ids are salted

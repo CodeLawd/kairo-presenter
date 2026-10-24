@@ -290,7 +290,7 @@ function sumPairs(pairs: { k: string; v: number }[]): Map<string, number> {
 }
 
 /** Semantic-ish version order: 1.0.10 after 1.0.9. */
-function compareVersions(a: string, b: string): number {
+export function compareVersions(a: string, b: string): number {
   const pa = a.split('.').map(Number)
   const pb = b.split('.').map(Number)
   for (let i = 0; i < Math.max(pa.length, pb.length); i++) {

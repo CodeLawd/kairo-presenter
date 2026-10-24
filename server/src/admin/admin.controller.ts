@@ -4,6 +4,7 @@ import { IsEmail, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 
 import { CurrentUser } from '../common/decorators/current-user.decorator'
 import { AdminService, type Actor, type AdminEntry } from './admin.service'
 import { UsageAdminService } from './usage-admin.service'
+import { CrashesAdminService } from './crashes-admin.service'
 import { PlatformAdminGuard, SuperadminOnly, type AdminRequestUser } from './platform-admin.guard'
 
 export class ListQuery {
@@ -37,6 +38,13 @@ export class UsageChurchesQuery extends ListQuery {
   days?: number
 }
 
+export class CrashesQuery extends UsageChurchesQuery {
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  version?: string
+}
+
 export class GrantAdminDto {
   // Pasted addresses often carry spaces; trim before judging the format.
   @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
@@ -56,6 +64,7 @@ export class AdminController {
   constructor(
     private readonly admin: AdminService,
     private readonly usage: UsageAdminService,
+    private readonly crashes: CrashesAdminService,
   ) {}
 
   @Get('overview')
@@ -116,6 +125,23 @@ export class AdminController {
   @Get('usage/churches/:orgId')
   usageChurch(@Param('orgId') orgId: string, @Query() query: DownloadsQuery): Promise<unknown> {
     return this.usage.church(orgId, query.days ?? 30)
+  }
+
+  /** Crash summaries the desktop sent: commonest first, then every report. */
+  @Get('crashes')
+  crashList(@Query() query: CrashesQuery): Promise<unknown> {
+    return this.crashes.list(query)
+  }
+
+  /** The last 30 days at a glance. Declared before `crashes/:id`, which would take "summary". */
+  @Get('crashes/summary')
+  crashSummary(): Promise<unknown> {
+    return this.crashes.summary()
+  }
+
+  @Get('crashes/:id')
+  crash(@Param('id') id: string): Promise<unknown> {
+    return this.crashes.detail(id)
   }
 
   @Get('downloads')

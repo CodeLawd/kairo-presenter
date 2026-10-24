@@ -2,6 +2,7 @@ import { createAudioCapture } from '@/audio/capture'
 import { IMPORT_OPTIONS, isImportKind } from '@shared/import-menu'
 import { requestImport } from '@/hooks/useImportRequest'
 import Documents from '@/components/documents/Documents'
+import WebPage from '@/components/web/WebPage'
 import { useState, useEffect, useRef, useCallback, type PointerEvent } from 'react'
 import { AlertTriangle, RefreshCw, X } from '@/icons'
 import AppShell, { WorkspaceRail } from '@/components/layout/AppShell'
@@ -45,6 +46,7 @@ export type NavRoute =
   | 'operator'
   | 'theme'
   | 'documents'
+  | 'web'
 
 /**
  * Keeps account state current from the main process. Its own component so the
@@ -121,7 +123,7 @@ function AudioPipeline(): null {
   return null
 }
 
-const views: Record<Exclude<NavRoute, 'operator' | 'theme' | 'documents'>, React.ReactNode> = {
+const views: Record<Exclude<NavRoute, 'operator' | 'theme' | 'documents' | 'web'>, React.ReactNode> = {
   scripture: <Scripture />,
   lyrics: <Lyrics />,
 }
@@ -616,7 +618,14 @@ export default function App(): React.ReactElement {
             >
               <Documents active={route === 'documents'} />
             </div>
-            {route !== 'operator' && route !== 'scripture' && route !== 'theme' && route !== 'documents' && (
+            {/* Kept mounted like Documents, so a site keeps its place while another page shows. */}
+            <div
+              className={`${route === 'web' ? 'flex' : 'hidden'} min-h-0 w-full flex-1 flex-col overflow-hidden [&>*]:min-h-0 [&>*]:flex-1`}
+              aria-hidden={route !== 'web'}
+            >
+              <WebPage active={route === 'web'} />
+            </div>
+            {route !== 'operator' && route !== 'scripture' && route !== 'theme' && route !== 'documents' && route !== 'web' && (
               <div key={route} className="flex min-h-0 w-full flex-1 flex-col overflow-hidden [&>*]:min-h-0 [&>*]:flex-1">
                 {views[route]}
               </div>

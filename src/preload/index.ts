@@ -78,6 +78,8 @@ const appApi: KairoAPI['app'] = {
   onQuitRequested: (callback) => subscribe(IPC.APP.QUIT_REQUESTED, callback),
   quitPending: () => ipcRenderer.invoke(IPC.APP.QUIT_PENDING),
   respondToQuit: (confirmed) => ipcRenderer.invoke(IPC.APP.QUIT_RESPONSE, confirmed),
+  isFullScreen: () => ipcRenderer.invoke(IPC.APP.IS_FULL_SCREEN),
+  onFullScreenChange: (callback) => subscribe(IPC.APP.FULL_SCREEN, callback),
   onImportRequested(callback) {
     const unsubscribe = subscribe(IPC.APP.IMPORT_REQUESTED, callback)
     ipcRenderer.send(IPC.APP.IMPORT_READY)
@@ -713,6 +715,10 @@ const program: KairoAPI['program'] = {
   clearProps: () => ipcRenderer.invoke(PROGRAM.CLEAR_PROPS),
   setLogo: (on) => ipcRenderer.invoke(PROGRAM.SET_LOGO, on),
   setCamera: (label, audioLabel) => ipcRenderer.invoke(PROGRAM.SET_CAMERA, label, audioLabel ?? null),
+  setWeb: (url) => ipcRenderer.invoke(PROGRAM.SET_WEB, url),
+  reloadWeb: () => ipcRenderer.invoke(PROGRAM.RELOAD_WEB),
+  scrollWeb: (x, y) => ipcRenderer.send(PROGRAM.SCROLL_WEB, x, y),
+  onWebNavigated: (callback) => subscribe(PROGRAM.WEB_NAVIGATED, callback),
   timer: {
     set: (durationSec, id) => ipcRenderer.invoke(PROGRAM.TIMER_SET, durationSec, id),
     start: (id) => ipcRenderer.invoke(PROGRAM.TIMER_START, id),

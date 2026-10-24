@@ -40,6 +40,7 @@ import { inputKindLabel, listAudioInputDevices, resolveCaptureDeviceId } from '@
 import { applyAppTheme } from '@/lib/appTheme'
 import { normalizeOverlaySettings } from '@shared/overlay-defaults'
 import { normalizeCaptureSettings } from '@shared/capture'
+import { normalizeWebSettings } from '@shared/web'
 import { normalizePresentationSettings } from '@shared/program'
 import type {
   AppSettings,
@@ -1682,6 +1683,15 @@ function GeneralSection({
             onChange={(on) => update('usage', { shareStats: on })}
           />
         </PrefRow>
+        <PrefRow
+          label="Send crash reports"
+          hint="If Kairo crashes, send what failed and the end of its log so we can fix it. The log can name songs and files."
+        >
+          <Toggle
+            checked={settings.usage?.sendCrashReports !== false}
+            onChange={(on) => update('usage', { sendCrashReports: on })}
+          />
+        </PrefRow>
       </PrefGroup>
 
       <UpdateGroup />
@@ -1725,6 +1735,7 @@ export default function Settings({
         themeLibrary: stored.themeLibrary ?? prev.themeLibrary,
         workspace: { ...prev.workspace, ...stored.workspace },
         capture: normalizeCaptureSettings(stored.capture),
+        web: normalizeWebSettings(stored.web),
         media: { ...prev.media, ...stored.media },
         tracks: { ...prev.tracks, ...stored.tracks },
         church: { ...prev.church, ...stored.church },
