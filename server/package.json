@@ -4,7 +4,7 @@
   "private": true,
   "description": "Kairo cloud API — accounts, orgs, entitlements, config sync.",
   "scripts": {
-    "build": "nest build",
+    "build": "nest build --path tsconfig.build.json",
     "start": "node dist/server/src/main.js",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",

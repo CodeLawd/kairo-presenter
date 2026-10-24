@@ -5,7 +5,7 @@ COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
 WORKDIR /app/server
 COPY server/package.json server/bun.lock ./
 RUN bun install --frozen-lockfile
-COPY server/tsconfig.json server/nest-cli.json ./
+COPY server/tsconfig.json server/tsconfig.build.json server/nest-cli.json ./
 COPY server/src ./src
 COPY src/lib/cloud /app/src/lib/cloud
 RUN bun run build
