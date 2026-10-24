@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 /**
  * A word in the hero headline that cycles through `words`. Each word slides up
- * into place while the slot eases to its width, so the rest of the line follows
- * instead of leaving a gap. With reduced motion it stays on the first word.
+ * into a slot sized for the widest word, keeping the headline stable.
+ * With reduced motion it stays on the first word.
  */
 
 type Props = { words: string[]; interval?: number; delay?: number };
@@ -13,18 +13,6 @@ type Props = { words: string[]; interval?: number; delay?: number };
 export function RotatingWord({ words, interval = 3000, delay = 2300 }: Props): React.ReactElement {
   const [index, setIndex] = useState(0);
   const [previous, setPrevious] = useState<number | null>(null);
-  const [widths, setWidths] = useState<number[]>([]);
-  const wordRefs = useRef<(HTMLSpanElement | null)[]>([]);
-
-  useEffect(() => {
-    const measure = (): void =>
-      setWidths(wordRefs.current.map((el) => el?.getBoundingClientRect().width ?? 0));
-    measure();
-    void document.fonts?.ready.then(measure);
-    window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
-  }, []);
-
   useEffect(() => {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     let timer: number | undefined;
@@ -42,18 +30,16 @@ export function RotatingWord({ words, interval = 3000, delay = 2300 }: Props): R
     };
   }, [words.length, interval, delay]);
 
-  const width = widths[index];
-
   return (
-    <span className="landing-hero-rotate" style={width ? { width } : undefined}>
-      <span className="landing-hero-rotate-measure">{words[0]}</span>
+    <span className="landing-hero-rotate">
+      {words.map((word) => (
+        <span key={word} className="landing-hero-rotate-measure" aria-hidden="true">{word}</span>
+      ))}
       <span className="landing-hero-rotate-window">
         {words.map((word, i) => (
           <span
             key={word}
-            ref={(el) => {
-              wordRefs.current[i] = el;
-            }}
+            aria-hidden={i !== index}
             className="landing-hero-rotate-word"
             data-state={i === index ? "in" : i === previous ? "out" : "idle"}
           >

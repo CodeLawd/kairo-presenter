@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Logo } from "@/components/brand/Logo";
 import { LandingFooter } from "@/components/landing/LandingFooter";
 import { StretchyFooter } from "@/components/landing/StretchyFooter";
+import { SessionNavLink } from "@/components/landing/SessionNavLink";
 import "@/app/landing.css";
 
 /**
@@ -24,12 +25,7 @@ export function SubpageShell({ children }: { children: React.ReactNode }): React
         <header className={`${subpageContainer} flex h-[72px] items-center gap-6 min-[701px]:h-[88px]`}>
           <Logo href="/" priority />
           <nav className="ml-auto flex items-center gap-6" aria-label="Main navigation">
-            <Link
-              className="hidden text-sm font-medium text-[#EBE8E0] hover:underline hover:underline-offset-[5px] min-[701px]:block"
-              href="/login"
-            >
-              Sign in
-            </Link>
+            <SessionNavLink />
             <Link
               className="inline-flex h-9 items-center rounded-lg bg-[#F4F0E9] px-4 text-sm font-semibold text-[#11120D] transition-colors hover:bg-[#E9E5DE]"
               href="/#get"

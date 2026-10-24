@@ -323,7 +323,7 @@ function createWindow(): void {
     // Centred in the 60px header (.app-header), beside the page title.
     trafficLightPosition: { x: 18, y: 24 },
     // Native blur shows through the shell chrome; workspaces stay opaque.
-    backgroundColor: process.platform === "darwin" ? "#00000000" : "#181818",
+    backgroundColor: process.platform === "darwin" ? "#00000000" : "#111319",
     ...(process.platform === "darwin"
       ? { vibrancy: "under-window" as const, visualEffectState: "followWindow" as const }
       : {}),

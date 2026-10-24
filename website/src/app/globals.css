@@ -42,7 +42,7 @@
   --animate-verse-in: verse-in 0.7s cubic-bezier(0.22, 0.8, 0.28, 1) both;
   --animate-word-in: word-in 0.32s ease-out both;
   --animate-live-flash: live-flash 1.4s ease-out both;
-  --animate-chip-in: chip-in 0.45s cubic-bezier(0.34, 1.4, 0.64, 1) both;
+  --animate-chip-in: chip-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
   --animate-scene-rise: scene-rise 0.9s cubic-bezier(0.22, 0.8, 0.28, 1) both;
 
   @keyframes pulse-dot {

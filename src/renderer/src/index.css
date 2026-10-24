@@ -6,41 +6,42 @@
 
 @layer base {
   :root {
-    /* Neutral charcoal, matching the Codex reference: the workspace is near
-       black, panels sit one step above it, and controls remain distinct.
+    /* Cool near-black, the website's palette (#111319 workspace, #181B23
+       panels): a faint blue bias so the app and the site read as one product.
+       Panels sit one step above the workspace and controls remain distinct.
        Colour belongs to actions, live state, tool icons and status. */
-    --surface: 24 24 24;
-    --surface-secondary: 32 32 32;
-    --surface-tertiary: 44 44 44;
-    --surface-elevated: 53 53 53;
-    --surface-rail: 36 36 36;
+    --surface: 17 19 25;
+    --surface-secondary: 24 27 35;
+    --surface-tertiary: 33 37 48;
+    --surface-elevated: 42 46 59;
+    --surface-rail: 28 31 40;
     --surface-header: var(--surface-rail);
-    --surface-border: 64 64 64;
+    --surface-border: 56 61 76;
     /* Dropdown menus: a step lighter than anything under them, split by a line. */
-    --surface-menu: 62 62 62;
-    --surface-menu-hover: 76 76 76;
-    --surface-menu-line: 80 80 80;
+    --surface-menu: 50 55 69;
+    --surface-menu-hover: 62 67 83;
+    --surface-menu-line: 70 75 92;
     /* Hairline between regions (sidebar | workspace, header | body), on top of the tone step. */
-    --surface-line: 47 47 47;
+    --surface-line: 38 42 54;
     --panel-border-width: 0.5px;
     --panel-border-color: rgb(var(--surface-border) / 0.75);
     /* The black band behind a screen canvas, and the grey of a display on it. */
-    --surface-stage: 15 15 15;
-    --surface-display: 80 80 80;
-    /* Accent is a confident blue for what is picked and the primary action; red
+    --surface-stage: 10 11 16;
+    --surface-display: 76 81 98;
+    /* Accent is the website's stage blue (#3B6BFF) for what is picked and the primary action; red
        (broadcast tally) marks only what is live on screen. */
-    --control-accent: 32 112 232;
-    --accent-50: 236 243 255;
-    --accent-100: 214 230 254;
-    --accent-200: 176 207 253;
-    --accent-300: 132 180 251;
-    --accent-400: 92 154 248;
-    --accent-500: 32 112 232;
-    --accent-600: 24 96 206;
-    --accent-700: 20 78 170;
-    --accent-800: 22 58 118;
-    --accent-900: 24 42 78;
-    --accent-950: 26 34 52;
+    --control-accent: 59 107 255;
+    --accent-50: 236 242 255;
+    --accent-100: 214 227 255;
+    --accent-200: 176 202 255;
+    --accent-300: 138 180 255;
+    --accent-400: 104 146 255;
+    --accent-500: 59 107 255;
+    --accent-600: 47 91 224;
+    --accent-700: 38 74 190;
+    --accent-800: 32 54 128;
+    --accent-900: 27 38 82;
+    --accent-950: 22 28 52;
     --on-accent: 255 255 255;
     --live: 240 68 56;
     /* Icon hues, one per tool so a colour means the same thing everywhere.
@@ -56,63 +57,63 @@
     --hue-amber: 240 190 84;
     --hue-indigo: 138 146 245;
     /* Solid red wash for a live row, readable on surface and secondary. */
-    --tint-live: 78 44 42;
-    --tint-teal: 44 44 44;
-    --tint-red: 55 27 22;
-    --tint-amber: 44 44 44;
-    --tint-yellow: 44 44 44;
-    --tint-rose: 56 26 27;
-    --range-track: 62 62 62;
-    --text-primary: 230 230 230;
+    --tint-live: 74 40 44;
+    --tint-teal: 33 37 48;
+    --tint-red: 52 26 28;
+    --tint-amber: 33 37 48;
+    --tint-yellow: 33 37 48;
+    --tint-rose: 54 26 30;
+    --range-track: 50 55 69;
+    --text-primary: 238 238 242;
     /* Grey text, a step brighter than the neutral scale so labels read on
        charcoal. slate/zinc text-* map here (tailwind.config.js); bg/border don't. */
-    --fg-200: 249 249 249;
-    --fg-300: 218 218 218;
-    --fg-400: 194 194 194;
-    --fg-500: 166 166 166;
-    --fg-600: 138 138 138;
-    --neutral-50: 250 250 250;
-    --neutral-100: 241 241 241;
-    --neutral-200: 224 224 224;
-    --neutral-300: 204 204 204;
-    --neutral-400: 152 152 152;
-    --neutral-500: 112 112 112;
-    --neutral-600: 80 80 80;
-    --neutral-700: 64 64 64;
-    --neutral-800: 44 44 44;
-    --neutral-900: 32 32 32;
-    --neutral-950: 24 24 24;
+    --fg-200: 246 243 235;
+    --fg-300: 214 217 226;
+    --fg-400: 186 190 204;
+    --fg-500: 157 163 182;
+    --fg-600: 125 131 153;
+    --neutral-50: 250 250 252;
+    --neutral-100: 240 241 245;
+    --neutral-200: 222 224 231;
+    --neutral-300: 200 203 213;
+    --neutral-400: 148 153 170;
+    --neutral-500: 109 114 132;
+    --neutral-600: 76 81 98;
+    --neutral-700: 56 61 76;
+    --neutral-800: 33 37 48;
+    --neutral-900: 24 27 35;
+    --neutral-950: 17 19 25;
     /* Frosted glass (macOS vibrancy, as in ProPresenter's windows): the tone
        a modal's sidebar, title bar or whole small dialog is tinted with. */
-    --glass: 28 28 28;
+    --glass: 22 24 31;
     --radius: 0.375rem;
     --radius-md: 0.5rem;
     --radius-sm: 0.25rem;
   }
 
   [data-theme='light'] {
-    --glass: 238 239 241;
-    --surface: 249 250 252;
-    --surface-secondary: 236 237 239;
-    --surface-tertiary: 226 227 229;
+    --glass: 236 238 243;
+    --surface: 248 249 251;
+    --surface-secondary: 236 238 243;
+    --surface-tertiary: 225 228 235;
     --surface-elevated: 255 255 255;
-    --surface-border: 208 209 211;
+    --surface-border: 205 209 219;
     --surface-menu: 255 255 255;
-    --surface-menu-hover: 238 239 241;
-    --surface-menu-line: 226 227 229;
-    --surface-line: 220 221 224;
-    --surface-rail: 222 223 225;
-    --surface-header: 222 223 225;
-    --surface-stage: 206 207 209;
+    --surface-menu-hover: 236 238 243;
+    --surface-menu-line: 225 228 235;
+    --surface-line: 217 220 228;
+    --surface-rail: 221 224 231;
+    --surface-header: 221 224 231;
+    --surface-stage: 203 207 217;
     --surface-display: 250 250 250;
-    --control-accent: 24 108 226;
+    --control-accent: 47 91 224;
     --accent-50: 16 88 196;
     --accent-100: 16 88 196;
     --accent-200: 16 88 196;
     --accent-300: 16 88 196;
-    --accent-400: 20 98 212;
-    --accent-500: 24 108 226;
-    --accent-600: 18 92 198;
+    --accent-400: 52 98 236;
+    --accent-500: 47 91 224;
+    --accent-600: 38 78 200;
     --accent-700: 16 78 170;
     --accent-800: 64 100 160;
     --accent-900: 190 212 245;
@@ -130,29 +131,29 @@
     --hue-amber: 156 100 10;
     --hue-indigo: 72 64 196;
     --tint-live: 253 224 221;
-    --tint-teal: 226 227 229;
+    --tint-teal: 225 228 235;
     --tint-red: 253 227 221;
-    --tint-amber: 226 227 229;
-    --tint-yellow: 226 227 229;
+    --tint-amber: 225 228 235;
+    --tint-yellow: 225 228 235;
     --tint-rose: 254 227 225;
-    --range-track: 208 209 211;
-    --text-primary: 23 23 23;
-    --fg-200: 30 30 30;
-    --fg-300: 44 44 44;
-    --fg-400: 58 58 58;
-    --fg-500: 84 84 84;
-    --fg-600: 62 62 62;
+    --range-track: 205 209 219;
+    --text-primary: 10 11 16;
+    --fg-200: 22 24 31;
+    --fg-300: 38 41 52;
+    --fg-400: 54 58 72;
+    --fg-500: 82 87 104;
+    --fg-600: 62 66 80;
     --neutral-50: 23 23 23;
     --neutral-100: 28 28 28;
     --neutral-200: 34 34 34;
     --neutral-300: 50 50 50;
     --neutral-400: 64 64 64;
     --neutral-500: 102 102 102;
-    --neutral-600: 146 147 149;
-    --neutral-700: 202 203 205;
-    --neutral-800: 222 223 225;
-    --neutral-900: 239 240 242;
-    --neutral-950: 248 249 251;
+    --neutral-600: 144 148 160;
+    --neutral-700: 200 204 214;
+    --neutral-800: 221 224 231;
+    --neutral-900: 238 240 244;
+    --neutral-950: 247 248 251;
   }
 
   html,
@@ -589,6 +590,12 @@ html[data-window-material='vibrancy'] .workspace-rail {
     background: rgb(var(--surface-rail));
   }
 }
+/* A faint wash of the website's stage blue in the top bar, behind the Screens,
+   Live and Clear controls. Kept to the frame; the workspace stays flat. */
+.app-header { position: relative; isolation: isolate; }
+.app-header::before { content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background: radial-gradient(ellipse 38% 160% at 88% 0%, rgb(var(--control-accent) / .12), transparent 70%); }
+[data-theme='light'] .app-header::before { opacity: .6; }
 .header-context { flex: none; }
 .header-toolbar { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; overflow: hidden; }
 .header-statuses { flex: none; }

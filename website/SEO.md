@@ -6,7 +6,7 @@ The homepage is currently the only indexable marketing page. `/download` is an i
 
 `/robots.txt` permits public crawling and advertises `/sitemap.xml`. HTML utility pages remain crawlable so bots can read noindex directives. Root metadata defaults to noindex; account, API, download and token recap routes also get X-Robots-Tag headers. These are indexing controls, not access controls.
 
-The supplied screenshot is served at `/brand/kairo-og.jpg` (1200 × 670) and used in Open Graph and Twitter cards. Replace this file and update its metadata dimensions together when changing the sharing artwork.
+The supplied screenshot is served at `/brand/kairo-og.jpg` (1200 × 669) and used in Open Graph and Twitter cards. Replace this file and update its metadata dimensions together when changing the sharing artwork.
 
 After deployment:
 

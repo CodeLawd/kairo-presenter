@@ -9,7 +9,6 @@ import {
 } from "@/lib/seo";
 
 import { Fragment } from "react";
-import Link from "next/link";
 import {
   BookOpen,
   Film,
@@ -22,6 +21,7 @@ import {
 } from "lucide-react";
 import { Logo } from "@/components/brand/Logo";
 import { HeroDownload } from "@/components/landing/HeroDownload";
+import { SessionNavLink } from "@/components/landing/SessionNavLink";
 import { LandingFooter } from "@/components/landing/LandingFooter";
 import { OperatorDemo } from "@/components/landing/OperatorDemo";
 import { RotatingWord } from "@/components/landing/RotatingWord";
@@ -289,12 +289,7 @@ export default function HomePage(): React.ReactElement {
             ))}
           </nav>
           <div className="ml-auto flex items-center gap-6 min-[701px]:ml-0">
-            <Link
-              className="hidden text-sm font-medium text-[#EBE8E0] hover:underline hover:underline-offset-[5px] min-[701px]:block"
-              href="/login"
-            >
-              Sign in
-            </Link>
+            <SessionNavLink />
           </div>
         </header>
 

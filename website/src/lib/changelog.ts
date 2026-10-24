@@ -14,6 +14,17 @@ export type ChangelogEntry = {
 
 export const changelog: ChangelogEntry[] = [
   {
+    version: '1.0.17',
+    date: '2026-10-24',
+    title: 'A smoother way back to your church workspace',
+    notes: [
+      'Return to your dashboard from the website without signing in again while your session is active.',
+      'Export your account data or delete your account from the dashboard’s Account page.',
+      'A refreshed desktop palette brings Kairo’s app and website closer together.',
+      'Smoother website animations and an updated preview when you share Kairo.',
+    ],
+  },
+  {
     version: '1.0.16',
     date: '2026-10-24',
     title: 'A new home at kairopresenter.com',

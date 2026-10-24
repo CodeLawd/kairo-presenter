@@ -45,7 +45,7 @@
 .landing-hero-line { display: block; }
 .landing-hero-word { display: inline-block; }
 .landing-hero-cue { position: relative; }
-.landing-hero-rotate { display: inline-grid; grid-template-columns: minmax(0, 1fr); vertical-align: baseline; transition: width 600ms cubic-bezier(.22, 1, .36, 1); }
+.landing-hero-rotate { display: inline-grid; grid-template-columns: minmax(0, 1fr); vertical-align: baseline; }
 .landing-hero-rotate-measure { grid-area: 1 / 1; visibility: hidden; white-space: nowrap; }
 .landing-hero-rotate-window { grid-area: 1 / 1; position: relative; height: 1em; clip-path: inset(0 -100vw); }
 .landing-hero-rotate-word {
