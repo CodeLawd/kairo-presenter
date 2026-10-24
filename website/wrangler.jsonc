@@ -8,7 +8,10 @@
   "services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "kairo-presenter" }],
   "images": { "binding": "IMAGES" },
   "observability": { "enabled": true },
-  "routes": [{ "pattern": "kairopresenter.com", "custom_domain": true }],
+  "routes": [
+    { "pattern": "kairopresenter.com", "custom_domain": true },
+    { "pattern": "www.kairopresenter.com", "custom_domain": true }
+  ],
   "vars": {
     "SITE_URL": "https://kairopresenter.com",
     "SITE_INDEXING": "true",

@@ -8,6 +8,14 @@ const projectRoot = dirname(fileURLToPath(import.meta.url))
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  async redirects() {
+    return [{
+      source: '/:path*',
+      has: [{ type: 'host', value: 'www.kairopresenter.com' }],
+      destination: 'https://kairopresenter.com/:path*',
+      permanent: true,
+    }]
+  },
   async headers() {
     const privateRoutes = ['/api/:path*', '/v1/:path*', '/dashboard/:path*', '/admin/:path*', '/s/:path*', '/download/:path*', '/activate', '/login', '/signup', '/onboarding', '/verify-email', '/reset-password']
     return privateRoutes.map((source) => ({
