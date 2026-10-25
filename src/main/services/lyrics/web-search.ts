@@ -1,3 +1,4 @@
+import { managedJson } from '../cloud/managed'
 import axios from 'axios'
 import log from 'electron-log/main'
 
@@ -17,7 +18,6 @@ interface WebSearchBatch {
   results: WebSearchResult[]
 }
 
-const TIMEOUT_MS = 12_000
 const COUNT = 8
 // Shared by song and gloss lookups. Reserve slots synchronously so concurrent
 // requests cannot all wake up at once and exceed the provider's rate limit.
@@ -75,26 +75,18 @@ function normalizeResults(value: unknown): WebSearchResult[] {
  */
 export async function* searchWebProviders(
   query: string | readonly string[],
-  credentials: WebSearchCredentials = {},
+  _credentials: WebSearchCredentials = {},
 ): AsyncGenerator<WebSearchBatch> {
   const queries = [...new Set((typeof query === 'string' ? [query] : query).map((q) => q.trim()).filter(Boolean))]
   if (!queries.length) return
   for (const provider of ['deepseek', 'brave'] as const) {
-    const key = (provider === 'deepseek' ? credentials.deepseekApiKey : credentials.braveApiKey)?.trim()
-    if (!key) continue
     for (const q of queries) {
       if (provider === 'deepseek' && Array.from(q).length > 128) continue
       await throttle(provider)
       try {
-        const response = provider === 'deepseek'
-          ? await axios.post('https://api.deepseek.com/v1/tools/search',
-            { query: q, count: COUNT, need_content: false },
-            { headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }, timeout: TIMEOUT_MS })
-          : await axios.get('https://api.search.brave.com/res/v1/web/search', {
-            params: { q, count: COUNT },
-            headers: { 'X-Subscription-Token': key, Accept: 'application/json' },
-            timeout: TIMEOUT_MS,
-          })
+        const response = { data: await (provider === 'deepseek'
+          ? managedJson<{ results?: unknown }>('deepseek', '/v1/tools/search', { query: q, count: COUNT, need_content: false }, undefined, 'webSearch')
+          : managedJson<{ web?: { results?: unknown } }>('brave', '/res/v1/web/search', undefined, { q, count: COUNT }, 'webSearch')) } as { data: { results?: unknown; web?: { results?: unknown } } }
         const results = normalizeResults(provider === 'deepseek' ? response.data?.results : response.data?.web?.results)
         if (results.length) yield { provider, results }
       } catch (err) {

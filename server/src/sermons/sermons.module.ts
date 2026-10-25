@@ -1,3 +1,4 @@
+import { LicensingModule } from '../licensing/licensing.module'
 import { Module } from '@nestjs/common'
 import { MongooseModule } from '@nestjs/mongoose'
 import { OrgsModule } from '../orgs/orgs.module'
@@ -14,6 +15,7 @@ import { PublicSermonsController } from './public-sermons.controller'
     // For OrgsService (church name on the public page) and, in phase 2,
     // OrgSecretsService — the church's own LLM key.
     OrgsModule,
+    LicensingModule,
   ],
   controllers: [SermonsController, PublicSermonsController],
   providers: [SermonsService, SermonSummaryService, SermonGenerationService],

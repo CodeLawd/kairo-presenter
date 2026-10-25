@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import {
   AlignCenter,
   AlignJustify,
@@ -94,18 +94,24 @@ function CompactSelect({
   value,
   options,
   onChange,
+  disabled = false,
+  describedBy,
 }: {
   label: string
   value: string
   options: Array<{ label: string; value: string }>
   onChange: (value: string) => void
+  disabled?: boolean
+  describedBy?: string
 }): React.ReactElement {
   return (
     <div className="min-w-0">
       <FieldLabel>{label}</FieldLabel>
       <FieldShell className="relative pr-8">
         <select
-          className="h-full w-full appearance-none bg-transparent text-sm outline-none"
+          className="h-full w-full appearance-none bg-transparent text-sm outline-none disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={disabled}
+          aria-describedby={describedBy}
           value={value}
           onChange={(event) => onChange(event.target.value)}
           aria-label={label}
@@ -280,13 +286,14 @@ function CollapsibleSection({
 
 function TextFormatFields({
   style,
-  showSize,
+  automaticSize,
   onChange,
 }: {
   style: OverlayTextStyle
-  showSize: boolean
+  automaticSize: boolean
   onChange: (partial: Partial<OverlayTextStyle>) => void
 }): React.ReactElement {
+  const sizeHintId = useId()
   const weight = nearestWeight(style.fontWeight)
   const sizeValue = String(style.fontSizePx)
   const sizeOptions = [
@@ -305,22 +312,27 @@ function TextFormatFields({
         onChange={(fontFamily) => onChange({ fontFamily })}
       />
 
-      <div className={cn('grid gap-2', showSize ? 'grid-cols-2' : 'grid-cols-1')}>
+      <div className="grid grid-cols-2 gap-2">
         <CompactSelect
           label="Weight"
           value={String(weight)}
           options={WEIGHTS.map((item) => ({ label: item.label, value: String(item.value) }))}
           onChange={(next) => onChange({ fontWeight: Number(next) })}
         />
-        {showSize && (
-          <CompactSelect
-            label="Size"
-            value={sizeValue}
-            options={sizeOptions}
-            onChange={(next) => onChange({ fontSizePx: Number(next) })}
-          />
-        )}
+        <CompactSelect
+          label="Size"
+          disabled={automaticSize}
+          describedBy={automaticSize ? sizeHintId : undefined}
+          value={sizeValue}
+          options={sizeOptions}
+          onChange={(next) => onChange({ fontSizePx: Number(next) })}
+        />
       </div>
+      {automaticSize && (
+        <p id={sizeHintId} className="text-[11px] text-zinc-400">
+          Size is automatic while Fit to box is on. Turn it off to set the text size.
+        </p>
+      )}
 
       <div className="grid grid-cols-2 gap-2">
         <NumberField
@@ -623,11 +635,12 @@ export function ThemeTypePanel({
       <CollapsibleSection title={title} open={scriptureOpen} onOpenChange={setScriptureOpen}>
         {selectedLayer === 'verse' && (
           <div className="flex items-center justify-between gap-3">
-            <p className="text-[12px] text-zinc-300" title="Long verses shrink to fit the box; short ones keep their size.">Fit to box</p>
+            <p className="text-[12px] text-zinc-300" title="Automatically sizes text to fit its box.">Fit to box</p>
             <button
               type="button"
               role="switch"
               aria-checked={theme.layout.autoFitText}
+              aria-label="Fit to box"
               onClick={() => onAutoFitChange(!theme.layout.autoFitText)}
               className={cn(
                 'relative h-5 w-9 shrink-0 rounded-full transition-colors',
@@ -645,7 +658,7 @@ export function ThemeTypePanel({
         )}
         <TextFormatFields
           style={layer}
-          showSize={selectedLayer !== 'verse' || !theme.layout.autoFitText}
+          automaticSize={selectedLayer === 'verse' && theme.layout.autoFitText}
           onChange={(partial) => onUpdateLayer(selectedLayer, partial)}
         />
         {selectedLayer === 'reference' && theme.reference.show && (

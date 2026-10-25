@@ -1486,6 +1486,11 @@ export interface OnboardingAPI {
 }
 
 export interface AccountAPI {
+  getLicense: () => Promise<import('./cloud/licensing').LicenseSnapshot>
+  activateLicense: (key: string, name?: string) => Promise<import('./cloud/contracts').CloudResult<import('./cloud/licensing').LicenseSnapshot>>
+  refreshLicense: () => Promise<import('./cloud/contracts').CloudResult<import('./cloud/licensing').LicenseSnapshot>>
+  onLicenseChange: (callback: (snapshot: import('./cloud/licensing').LicenseSnapshot) => void) => Unsubscribe
+
   /** From the local cache — never blocks on the network. */
   getSession: () => Promise<import('./cloud/contracts').SessionSnapshot>
   signUp: (
@@ -1838,6 +1843,11 @@ export const IPC = {
     CHANGED: 'videoDevices:changed',
   },
   ACCOUNT: {
+    GET_LICENSE: 'account:getLicense',
+    ACTIVATE_LICENSE: 'account:activateLicense',
+    REFRESH_LICENSE: 'account:refreshLicense',
+    LICENSE_CHANGED: 'account:licenseChanged',
+
     GET_SESSION:            'account:getSession',            // invoke — SessionSnapshot
     SIGN_UP:                'account:signUp',                // invoke
     SIGN_IN:                'account:signIn',                // invoke

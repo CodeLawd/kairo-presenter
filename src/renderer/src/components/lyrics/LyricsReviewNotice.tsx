@@ -11,7 +11,7 @@ export function LyricsReviewNotice({ review }: { review?: LyricsReview }): React
     )
   }
   const detail = review.reason === 'missing-key'
-    ? 'Add a DeepSeek key in Settings → API Keys to review online lyrics.'
+    ? 'Activate this computer in Account → Licence & Devices to review online lyrics.'
     : review.reason === 'too-large'
       ? 'This source was too large to review safely.'
       : 'DeepSeek could not complete the review.'

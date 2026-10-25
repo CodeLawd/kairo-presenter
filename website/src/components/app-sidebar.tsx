@@ -49,7 +49,7 @@ const NAV_GROUPS = [
     items: [
       { title: 'Devices', href: '/dashboard/devices', icon: MonitorSmartphoneIcon },
       { title: 'Members', href: '/dashboard/members', icon: UsersIcon },
-      { title: 'API keys', href: '/dashboard/keys', icon: KeyRoundIcon },
+      { title: 'Licence & Devices', href: '/dashboard/licence', icon: KeyRoundIcon },
     ],
   },
   {

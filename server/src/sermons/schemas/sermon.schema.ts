@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose'
 import { HydratedDocument, Schema as MongooseSchema, Types } from 'mongoose'
+import type { RequestUser } from '../../common/decorators/current-user.decorator'
 import type { SermonStatus } from '@contracts/contracts'
 import type { SummaryErrorCode } from '../sermon-summary.service'
 
@@ -69,6 +70,10 @@ export class Sermon {
 
   @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User', required: true })
   createdByUserId!: Types.ObjectId
+
+  @Prop({ type: MongooseSchema.Types.Mixed, default: null })
+  generationActor!: RequestUser | null
+
 
   /**
    * The desktop's own `ServiceRecord.id`. A booth that was offline retries the

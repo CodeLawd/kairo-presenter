@@ -1,3 +1,4 @@
+import { LicensingModule } from './licensing/licensing.module'
 import { Module } from '@nestjs/common'
 import { APP_GUARD } from '@nestjs/core'
 import { MongooseModule } from '@nestjs/mongoose'
@@ -37,6 +38,7 @@ import { AppThrottlerGuard } from './common/guards/app-throttler.guard'
     CrashesModule,
     AdminModule,
     AccountModule,
+    LicensingModule,
   ],
   controllers: [HealthController],
   providers: [

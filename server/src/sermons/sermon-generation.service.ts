@@ -129,6 +129,7 @@ export class SermonGenerationService implements OnModuleInit, OnModuleDestroy {
       const segments = this.sermons.transcriptOf(sermon)
       const result = await this.summaries.generate({
         orgId: sermon.orgId.toString(),
+        actor: sermon.generationActor ?? undefined,
         title: sermon.title,
         speaker: sermon.speaker,
         preachedAt: sermon.preachedAt,

@@ -1,4 +1,4 @@
-import axios from 'axios'
+import { managedJson } from '../cloud/managed'
 import type { ScriptureVerse } from '@shared/ipc'
 import {
   API_BIBLE_BASE_URL,
@@ -82,7 +82,7 @@ export class ApiBibleRequestError extends Error {
 export class ApiBibleClient {
   constructor(
     private readonly apiKey: string,
-    private readonly transport: ApiBibleTransport = axios,
+    private readonly transport?: ApiBibleTransport,
   ) {}
 
   async listBibles(): Promise<ApiBibleSummary[]> {
@@ -164,6 +164,7 @@ export class ApiBibleClient {
 
   private async get(pathname: string, params?: Record<string, unknown>): Promise<unknown> {
     try {
+      if (!this.transport) return await managedJson('bible', `/v1${pathname}`, undefined, params as Record<string, string | number | boolean>)
       const response = await this.transport.get(`${API_BIBLE_BASE_URL}${pathname}`, {
         headers: { 'api-key': this.apiKey },
         timeout: REQUEST_TIMEOUT_MS,
@@ -238,7 +239,7 @@ export function parseApiBibleSearchResponse(payload: unknown): ApiBibleSearchHit
 function toRequestError(error: unknown): ApiBibleRequestError {
   if (error instanceof ApiBibleRequestError) return error
   const response = asRecord(asRecord(error).response)
-  const status = typeof response.status === 'number' ? response.status : null
+  const status = typeof response.status === 'number' ? response.status : typeof asRecord(error).status === 'number' ? asRecord(error).status as number : null
   const headers = asRecord(response.headers)
   const retryAfter = Number(headers['retry-after'] ?? headers['Retry-After'])
   return new ApiBibleRequestError(

@@ -1,3 +1,4 @@
+import { MANAGED, managedFetch } from "../cloud/managed";
 /* eslint-disable @typescript-eslint/no-unsafe-declaration-merging -- typed EventEmitter idiom: `declare interface` refines the inherited emitter surface. */
 import {
   matchChapterQuote,
@@ -74,6 +75,8 @@ export function canAutoPresentScriptureReference(
 }
 
 export interface DetectorConfig {
+  /** Use the managed gateway even when no local credential exists. */
+  managed?: boolean;
   /** LLM provider — 'anthropic' (default) or 'deepseek' (OpenAI-compatible) */
   provider?: "anthropic" | "deepseek";
   /** API key for the selected provider */
@@ -408,6 +411,9 @@ export class ScriptureDetector extends EventEmitter {
     | ((book: string, chapter: number) => QuoteCandidate[])
     | null = null;
   private pendingBook: { book: string; updatedAt: number } | null = null;
+  /** Session passage memory. Only explicit chapter/verse cues may reuse this
+   * after the short fragment context expires; bare numbers never do. */
+  private passageContext: { book: string; chapter?: number } | null = null;
   private chapterFallback: NodeJS.Timeout | null = null;
   private explicitContext: {
     book: string;
@@ -455,6 +461,7 @@ export class ScriptureDetector extends EventEmitter {
     const provider = config.provider ?? "anthropic";
     this.cfg = {
       provider,
+      managed: config.managed ?? config.apiKey === MANAGED,
       apiKey: config.apiKey,
       model:
         config.model ??
@@ -472,17 +479,17 @@ export class ScriptureDetector extends EventEmitter {
   private initClient(): void {
     // No key runs the local matchers only (analyze() never calls the model).
     // The OpenAI SDK throws on an empty key, so build no client at all.
-    if (!this.cfg.apiKey?.trim()) {
-      this.anthropic = null;
-      this.openaiCompat = null;
+    if (!this.cfg.managed && !this.cfg.apiKey.trim()) {
+      this.anthropic = null; this.openaiCompat = null;
     } else if (this.cfg.provider === "deepseek") {
       this.openaiCompat = new OpenAI({
-        apiKey: this.cfg.apiKey,
+        apiKey: MANAGED,
+        fetch: managedFetch("deepseek"),
         baseURL: DEEPSEEK_BASE_URL,
       });
       this.anthropic = null;
     } else {
-      this.anthropic = new Anthropic({ apiKey: this.cfg.apiKey });
+      this.anthropic = new Anthropic({ apiKey: MANAGED, fetch: managedFetch("anthropic") });
       this.openaiCompat = null;
     }
   }
@@ -497,7 +504,8 @@ export class ScriptureDetector extends EventEmitter {
     // locally before entering the throttled AI queue; the AI remains the path
     // for quotation/paraphrase detection when no explicit reference is present.
     if (this.analyzeWindowCitation(text)) return;
-    if (!this.cfg.apiKey.trim()) return;
+    if (!this.cfg.managed && !this.cfg.apiKey.trim()) return;
+
 
     this.pendingText = text;
     this.pendingOrigin = this.transcriptOrigin
@@ -536,7 +544,9 @@ export class ScriptureDetector extends EventEmitter {
     const spoken = normalizeWordNumbers(text).trim();
     const bookOnly = bareBookName(spoken);
     if (bookOnly) {
+      this.cancelChapterFallback();
       this.pendingBook = { book: bookOnly, updatedAt: now };
+      this.passageContext = { book: bookOnly };
       this.explicitContext = null;
       return false;
     }
@@ -544,8 +554,10 @@ export class ScriptureDetector extends EventEmitter {
 
     // Never carry a previous chapter into an unreadable new citation.
     if (CORRUPTED_CITATION_RE.test(normalized)) {
+      this.cancelChapterFallback();
       this.explicitContext = null;
       this.pendingBook = null;
+      this.passageContext = null;
     }
     const direct = matchNormalizedCitations(normalized, {
       splitMergedDigits: !deferAmbiguousRepeatedPair,
@@ -553,8 +565,10 @@ export class ScriptureDetector extends EventEmitter {
     // A new named citation must never borrow the previous book, even when its
     // numbers are invalid or its chapter has not arrived yet.
     if (direct.length === 0 && NAMED_CITATION_RE.test(normalized)) {
+      this.cancelChapterFallback();
       this.explicitContext = null;
       this.pendingBook = null;
+      this.passageContext = null;
     }
     const directWithVerse = direct.filter(
       (ref) =>
@@ -563,6 +577,7 @@ export class ScriptureDetector extends EventEmitter {
     );
     const remembered = direct[direct.length - 1];
     if (remembered) {
+      this.passageContext = { book: remembered.book, chapter: remembered.chapter };
       this.pendingBook = null;
       this.explicitContext = {
         book: remembered.book,
@@ -726,11 +741,33 @@ export class ScriptureDetector extends EventEmitter {
     this.chapterFallback = null;
   }
 
-  /** "Chapter 8" after "Go to Romans." means Romans 8. Takes normalized text. */
+  /** Reuse the spoken passage only when chapter/verse words make the intent
+   * explicit. The separate 12-second context still handles bare fragments. */
   private withRememberedBook(normalized: string): string {
-    if (!CHAPTER_ONLY_RE.test(normalized)) return normalized;
-    const book = this.pendingBook?.book ?? this.explicitContext?.book;
-    return book ? `${book} ${normalized.replace(LEADING_FILLER_RE, "")}` : normalized;
+    // A newly named book always wins, including an invalid new citation.
+    if (NAMED_CITATION_RE.test(normalized)) return normalized;
+    const book = this.pendingBook?.book ?? this.passageContext?.book ?? this.explicitContext?.book;
+    if (!book) return normalized;
+
+    // "Verse 30 of chapter 19" supplies its own chapter, even if the preacher
+    // last read a different one. Resolve it before the verse-only fallback.
+    const verseFirst = normalized.match(
+      /\bverses?\s+(\d+(?:\s*(?:-|to|through|thru|and)\s*\d+)?)\s+(?:of|in|from)\s+(?:the\s+)?chapter\s+(\d+)\b/,
+    );
+    if (verseFirst) return `${book} chapter ${verseFirst[2]} verse ${verseFirst[1]}`;
+
+    const chapter = normalized.match(/\bchapter\s+\d+\b/);
+    if (chapter) {
+      // Do not silently discard a verse that precedes an unreadable chapter.
+      if (/\bverses?\b/.test(normalized.slice(0, chapter.index))) return normalized;
+      return `${book} ${normalized.slice(chapter.index)}`;
+    }
+    const verse = normalized.match(/\bverses?\s+\d+\b/);
+    const rememberedChapter = this.passageContext?.chapter ?? this.explicitContext?.chapter;
+    if (verse && rememberedChapter !== undefined) {
+      return `${book} chapter ${rememberedChapter} ${normalized.slice(verse.index)}`;
+    }
+    return normalized;
   }
 
   /**
@@ -968,6 +1005,8 @@ export class ScriptureDetector extends EventEmitter {
     this.pendingText = null;
     this.pendingOrigin = null;
     this.explicitContext = null;
+    this.pendingBook = null;
+    this.passageContext = null;
     this.cancelChapterFallback();
     this.removeAllListeners();
   }
@@ -1165,7 +1204,7 @@ export class ScriptureDetector extends EventEmitter {
     }
 
     // Anthropic (default)
-    const stream = this.anthropic!.messages.stream(
+    const response = await this.anthropic!.messages.create(
       {
         model: this.cfg.model,
         max_tokens: this.cfg.maxTokens,
@@ -1175,7 +1214,7 @@ export class ScriptureDetector extends EventEmitter {
       },
       { signal },
     );
-    return stream.finalText();
+    return response.content.filter(block => block.type === 'text').map(block => block.type === 'text' ? block.text : '').join('');
   }
 
   /**
@@ -1604,9 +1643,6 @@ const NUMBER_AHEAD = `(?=\\s+(?:chapter\\s+)?(?:\\d+|${NUMBER_WORD_ALTERNATION})
 
 /** Filler that can open any spoken citation fragment: "So,", "And now". */
 const LEADING_FILLER = "(?:(?:and|so|now|okay|ok),?\\s+)?";
-const LEADING_FILLER_RE = new RegExp(`^${LEADING_FILLER}`);
-/** "Chapter 8" on its own, after the book was announced separately. */
-const CHAPTER_ONLY_RE = new RegExp(`^${LEADING_FILLER}chapter\\s+\\d+`);
 
 /**
  * Spoken lead-in before a bare book name: "Go to Romans.", "Open your Bible

@@ -96,12 +96,12 @@ const sections: LegalSection[] = [
     content: (
       <>
         <p>
-          Some features use outside services through keys your church adds, such as Deepgram for live
+          Some features use outside services through access managed by Kairo or keys your church supplies, such as Deepgram for live
           transcription, Anthropic or DeepSeek for Scripture detection and recaps, API.Bible for licensed
           translations, and Google Translate or Brave Search for lyrics.
         </p>
         <ul>
-          <li>Your use of each service is under that provider&apos;s own terms, and any charges are between you and them.</li>
+          <li>Outside services have their own terms. Any provider charges for keys you supply are between you and the provider.</li>
           <li>You&apos;re responsible for the keys you add and for keeping within each provider&apos;s limits.</li>
           <li>We don&apos;t control these services and aren&apos;t responsible for them being available or accurate.</li>
         </ul>

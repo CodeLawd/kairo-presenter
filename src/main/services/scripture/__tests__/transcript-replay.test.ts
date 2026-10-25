@@ -30,7 +30,7 @@ for (const scenario of cases) {
   });
 }
 
-test('replay: stale chapter expires without delaying a new explicit citation', () => {
+test('replay: explicit verse cues retain the passage without delaying a new named citation', () => {
   const detector = new ScriptureDetector({ apiKey: '' });
   const original = Date.now;
   let now = original();
@@ -41,9 +41,9 @@ test('replay: stale chapter expires without delaying a new explicit citation', (
     detector.analyzeExplicit('John chapter three', true);
     now += 13_000;
     detector.analyzeExplicit('verse sixteen', true);
-    assert.deepEqual(found, []);
+    assert.deepEqual(found, ['John 3:16']);
     detector.analyzeExplicit('Romans 8:28', true, true);
-    assert.deepEqual(found, ['Romans 8:28']);
+    assert.deepEqual(found, ['John 3:16', 'Romans 8:28']);
   } finally { Date.now = original; detector.destroy(); }
 });
 

@@ -83,8 +83,8 @@
     --neutral-800: 33 37 48;
     --neutral-900: 24 27 35;
     --neutral-950: 17 19 25;
-    /* Frosted glass (macOS vibrancy, as in ProPresenter's windows): the tone
-       a modal's sidebar, title bar or whole small dialog is tinted with. */
+    /* Frosted glass (as in ProPresenter's windows): the tone a modal's
+       sidebar, title bar or whole small dialog is tinted with. */
     --glass: 22 24 31;
     --radius: 0.375rem;
     --radius-md: 0.5rem;
@@ -556,40 +556,10 @@
   grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--lyrics-card-min, 180px)), 1fr));
 }
 
-/* The native material supplies desktop blur. Keep every ancestor transparent
-   so it reaches the chrome, with opaque page surfaces masking the workspace. */
-html[data-window-material='vibrancy'],
-html[data-window-material='vibrancy'] body,
-html[data-window-material='vibrancy'] #root,
-html[data-window-material='vibrancy'] .app-frame {
-  background: transparent;
-}
+/* The shell chrome is opaque, backed by the window's solid backgroundColor.
+   macOS vibrancy was removed because the native blur follows the system
+   appearance and washed the header and rail out to white in light mode. */
 
-html[data-window-material='vibrancy'] .app-header,
-html[data-window-material='vibrancy'] .workspace-rail,
-html[data-window-material='vibrancy'] .app-workspace-frame {
-  background: rgb(var(--surface-rail) / 0.62);
-}
-
-html[data-window-material='vibrancy'] .app-header,
-html[data-window-material='vibrancy'] .workspace-rail {
-  -webkit-backdrop-filter: blur(24px) saturate(125%);
-  backdrop-filter: blur(24px) saturate(125%);
-}
-
-@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
-  html[data-window-material='vibrancy'] .app-header,
-  html[data-window-material='vibrancy'] .workspace-rail,
-  html[data-window-material='vibrancy'] .app-workspace-frame {
-    background: rgb(var(--surface-header));
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
-  html[data-window-material='vibrancy'] .workspace-rail,
-  html[data-window-material='vibrancy'] .app-workspace-frame {
-    background: rgb(var(--surface-rail));
-  }
-}
 /* A faint wash of the website's stage blue in the top bar, behind the Screens,
    Live and Clear controls. Kept to the frame; the workspace stays flat. */
 .app-header { position: relative; isolation: isolate; }

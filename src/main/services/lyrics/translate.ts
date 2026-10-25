@@ -1,4 +1,5 @@
-import axios, { AxiosError } from "axios";
+import { MANAGED, managedFetch, managedJson } from "../cloud/managed";
+import { AxiosError } from "axios";
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import log from "electron-log/main";
@@ -12,9 +13,6 @@ import {
 } from "@shared/lyrics-translate";
 import { fetchOnlineGlossMap, lookupOnlineGloss } from "./online-glosses";
 
-const TRANSLATE_URL =
-  "https://translation.googleapis.com/language/translate/v2";
-const REQUEST_TIMEOUT_MS = 45_000;
 const BATCH_SIZE = 100;
 const LLM_BATCH_SIZE = 40;
 const DEFAULT_MODEL_ANTHROPIC = "claude-haiku-4-5";
@@ -50,7 +48,7 @@ export async function translateSections(
   sections: LyricsSongSection[],
   options: TranslateSectionsOptions,
 ): Promise<LyricsSongSection[]> {
-  const apiKey = options.apiKey?.trim();
+  const apiKey = MANAGED;
   const target = (options.target ?? "en").trim() || "en";
   const sourceLanguage = normalizeSource(options.sourceLanguage);
 
@@ -196,12 +194,13 @@ function resolveLlmClient(
   | { provider: "anthropic"; client: Anthropic; model: string }
   | { provider: "deepseek"; client: OpenAI; model: string }
   | null {
-  if (!llm?.apiKey?.trim()) return null;
+  if (!llm) return null;
   if (llm.provider === "deepseek") {
     return {
       provider: "deepseek",
       client: new OpenAI({
-        apiKey: llm.apiKey.trim(),
+        apiKey: MANAGED,
+        fetch: managedFetch("deepseek", "translation"),
         baseURL: DEEPSEEK_BASE_URL,
       }),
       model: DEFAULT_MODEL_DEEPSEEK,
@@ -209,7 +208,7 @@ function resolveLlmClient(
   }
   return {
     provider: "anthropic",
-    client: new Anthropic({ apiKey: llm.apiKey.trim() }),
+    client: new Anthropic({ apiKey: MANAGED, fetch: managedFetch("anthropic", "translation") }),
     model: DEFAULT_MODEL_ANTHROPIC,
   };
 }
@@ -324,7 +323,7 @@ async function translateBatch(
 
 async function translateChunk(
   texts: string[],
-  apiKey: string,
+  _apiKey: string,
   target: string,
   sourceLanguage: string,
 ): Promise<TranslatedLine[]> {
@@ -332,11 +331,7 @@ async function translateChunk(
     const body: Record<string, unknown> = { q: texts, target, format: "text" };
     if (sourceLanguage !== "auto") body.source = sourceLanguage;
 
-    const response = await axios.post(TRANSLATE_URL, body, {
-      params: { key: apiKey },
-      headers: { "Content-Type": "application/json" },
-      timeout: REQUEST_TIMEOUT_MS,
-    });
+    const response = { data: await managedJson('googleTranslate', '/language/translate/v2', body, undefined, 'translation') };
     const rows = (
       response.data as {
         data?: {

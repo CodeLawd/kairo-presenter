@@ -13,6 +13,12 @@ export interface LargeBodyRoute {
 
 export const LARGE_BODY_ROUTES: LargeBodyRoute[] = [
   {
+    // Managed song review/local recap: bounded 120k JSON prompt plus envelope.
+    method: 'POST',
+    path: /^\/v1\/managed\/request\/?$/,
+    limit: '160kb',
+  },
+  {
     // Sermon upload: a full service transcript with word-level timings. A
     // 45-minute service is roughly 0.5-1 MB; 12mb covers about four hours.
     method: 'POST',

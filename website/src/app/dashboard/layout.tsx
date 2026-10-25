@@ -26,7 +26,7 @@ const TITLES: Record<string, string> = {
   '/dashboard/devices': 'Devices',
   '/dashboard/members': 'Members',
   '/dashboard/billing': 'Plans & Billing',
-  '/dashboard/keys': 'API keys',
+  '/dashboard/licence': 'Licence & Devices',
   '/dashboard/account': 'Account',
   '/dashboard/church': 'Church',
   '/dashboard/download': 'Download',
@@ -73,9 +73,9 @@ function UserMenu(): React.ReactElement {
             <UserRoundIcon />
             Account
           </DropdownMenuItem>
-          <DropdownMenuItem render={<Link href="/dashboard/keys" />}>
+          <DropdownMenuItem render={<Link href="/dashboard/licence" />}>
             <KeyRoundIcon />
-            API keys
+            Licence & Devices
           </DropdownMenuItem>
           <DropdownMenuItem render={<Link href="/dashboard/billing" />}>
             <CreditCardIcon />

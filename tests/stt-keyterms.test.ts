@@ -1,3 +1,5 @@
+import { fakeTranscriptionAccess } from './stt-access-fixture'
+import type { DeepgramClient } from '@deepgram/sdk'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createRequire } from 'node:module'
@@ -43,11 +45,10 @@ test('Deepgram receives keyterms as query params, and only when there are some',
     sendCloseStream() {}, sendKeepAlive() {}, sendMedia() {},
   }
   const client = { listen: { v1: { connect: async (args: Record<string, unknown>) => { calls.push(args); return socket } } } }
-  const service = new DeepgramSTTService()
+  const service = new DeepgramSTTService(fakeTranscriptionAccess, () => client as unknown as DeepgramClient)
   // configure() builds a real client; swap in the recorder after each call.
   const configure = (language: string, keyterms: string[]): void => {
     service.configure('test', language, keyterms)
-    Object.assign(service, { client })
   }
   try {
     configure('en-US', ['Habakkuk', 'Song of Solomon'])

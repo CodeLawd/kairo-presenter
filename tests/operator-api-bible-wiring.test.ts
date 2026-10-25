@@ -20,11 +20,11 @@ test('Operator detections resolve verse text through the shared Scripture servic
   )
 
   // handleDetection delegates to the shared lookup helper with the shared
-  // Scripture service and the operator's API.Bible key — it must never
+  // Scripture service and managed API.Bible access — it must never
   // bypass them (e.g. with a private fetch or a hardcoded translation).
   assert.match(detectionHandler, /lookupDetectedScripture\(/)
   assert.match(detectionHandler, /lookupDetectedScripture\(\s*scriptureService/)
-  assert.match(detectionHandler, /store\.get\(["']stt["']\)\.bibleApiKey/)
+  assert.match(detectionHandler, /MANAGED/)
 })
 
 test('Shared detection lookup fans out through service.search with translation + key', () => {

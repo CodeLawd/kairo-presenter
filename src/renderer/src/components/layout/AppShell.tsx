@@ -23,6 +23,9 @@ import { clearLiveAll } from '@/lib/clear-live-output'
 import { useBootstrapStore } from '@/bootstrap/useBootstrapStore'
 import { isRenderedKind } from '@shared/overlay-outputs'
 import UpdatePill from './UpdatePill'
+import ActivationChip from './ActivationChip'
+import { ToolbarButton } from './ToolbarButton'
+import { ThemePicker } from './ThemePicker'
 import { cn } from '@/lib/utils'
 import { Popover } from 'radix-ui'
 import { Switch } from '@/components/ui/switch'
@@ -56,7 +59,7 @@ const workspaces: Array<{ id: NavRoute; label: string; icon: typeof CircleGauge;
   { id: 'lyrics', label: 'Lyrics', icon: Music2, hue: 'violet' },
   { id: 'documents', label: 'Documents', icon: FileText, hue: 'cyan' },
   { id: 'web', label: 'Web', icon: Globe, hue: 'indigo' },
-  { id: 'theme', label: 'Theme', icon: Palette, hue: 'pink' },
+  { id: 'theme', label: 'Theme Editor', icon: Palette, hue: 'pink' },
 ]
 
 
@@ -83,7 +86,7 @@ export function WorkspaceRail({
               onClick={() => onNavigate(id)}
               aria-label={label}
               aria-current={active ? 'page' : undefined}
-              data-tooltip={label}
+              data-tooltip={id === 'theme' ? 'Theme Editor — Create and edit themes' : label}
               data-tooltip-side="right"
               style={hueStyle(hue)}
               className={railHueClass(active)}
@@ -94,7 +97,6 @@ export function WorkspaceRail({
         })}
       </div>
       <div className="flex flex-col items-center gap-1 pb-1">
-        <MediaRailButton />
         <AudioRailButton />
         <AccountRailButton />
       </div>
@@ -113,31 +115,21 @@ export function WorkspaceRail({
   )
 }
 
-/**
- * Opens and closes the media dock. Not a workspace — the dock slides in over
- * whichever one is open — so it sits with the tools, not the pages. A blue dot
- * means media is on screen right now.
- */
-function MediaRailButton(): React.ReactElement {
-  const open = useMediaDockStore((s) => s.open)
-  const toggle = useMediaDockStore((s) => s.toggle)
-  const liveId = useMediaDockStore((s) => s.liveItemId)
-  const liveName = useMediaDockStore((s) => s.liveName)
-  const label = open ? 'Close media' : 'Open media'
+/** The media dock belongs beside the other presentation controls. */
+function MediaToolbarButton(): React.ReactElement {
+  const { open, toggle, liveItemId, liveName } = useMediaDockStore()
   return (
-    <button
-      type="button"
-      onClick={() => toggle()}
-      aria-label={liveName ? `${label} — ${liveName} on screen` : label}
-      aria-pressed={open}
-      data-tooltip={liveName ? `Media — ${liveName} on screen` : 'Media'}
-      data-tooltip-side="right"
-      style={hueStyle('orange')}
-      className={railHueClass(open)}
+    <ToolbarButton
+      label="Media"
+      title={`${open ? 'Close' : 'Open'} media${liveName ? ` — ${liveName} on screen` : ''}`}
+      onClick={toggle}
+      pressed={open}
     >
-      <MediaLibrary size={19} weight={open ? 'fill' : 'regular'} aria-hidden="true" />
-      {liveId && <span className="absolute right-2 top-2 size-1.5 rounded-full bg-live" aria-hidden="true" />}
-    </button>
+      <span className="relative" aria-hidden="true">
+        <MediaLibrary size={15} weight={open ? 'fill' : 'regular'} style={hueStyle('orange')} className="text-[rgb(var(--hue))]" />
+        {liveItemId && <span className="absolute -right-1 -top-0.5 size-2 rounded-full bg-live ring-2 ring-surface-tertiary" />}
+      </span>
+    </ToolbarButton>
   )
 }
 
@@ -145,62 +137,6 @@ interface AppShellProps {
   currentRoute: NavRoute
   /** Route-specific controls rendered inline in the top bar (see OperatorToolbar). */
   toolbar?: React.ReactNode
-}
-
-/**
- * A header button the way ProPresenter's toolbar draws them: the icon in a
- * rounded pill, a short label underneath. A tooltip carries the detail.
- */
-function ToolbarButton({
-  label,
-  title,
-  children,
-  onClick,
-  disabled,
-  tone = 'default',
-  labelClassName,
-}: {
-  label: string
-  /** Tooltip and screen-reader text: what it is and what clicking does. */
-  title: string
-  /** What sits in the pill: an icon or a status dot. */
-  children: React.ReactNode
-  onClick?: () => void
-  disabled?: boolean
-  /** `live`: something is on screen (red); `muted`: nothing to act on yet. */
-  tone?: 'default' | 'live' | 'muted'
-  labelClassName?: string
-}): React.ReactElement {
-  const pill = cn(
-    'grid h-7 w-11 place-items-center rounded-full transition-colors duration-150',
-    tone === 'live' ? 'bg-tint-live text-live' : 'bg-surface-tertiary text-zinc-200',
-    onClick && !disabled && 'group-hover:bg-surface-elevated',
-  )
-  const body = (
-    <>
-      <span className={pill}>{children}</span>
-      <span
-        className={cn(
-          'max-w-[10rem] truncate text-[10px] font-medium leading-none',
-          tone === 'live' ? 'text-live' : tone === 'muted' ? 'text-zinc-600' : 'text-zinc-400',
-          labelClassName,
-        )}
-      >
-        {label}
-      </span>
-    </>
-  )
-  const className =
-    'header-tool no-drag group flex shrink-0 flex-col items-center gap-1 rounded-md px-1 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/30 disabled:cursor-not-allowed disabled:opacity-40'
-  return onClick ? (
-    <button type="button" onClick={onClick} disabled={disabled} className={className} title={title} aria-label={title}>
-      {body}
-    </button>
-  ) : (
-    <div className={className} title={title} aria-label={title} role="status">
-      {body}
-    </div>
-  )
 }
 
 const LIVE_MENU_ITEM = 'flex min-h-8 w-full items-center gap-2 rounded-md px-3 py-2 text-left text-[13px] text-zinc-200 hover:bg-surface-menu-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-400 disabled:opacity-50'
@@ -424,7 +360,9 @@ export default function AppShell({
 
       <div id={HEADER_TOOLBAR_SLOT_ID} className="header-toolbar min-w-0">{toolbar}</div>
 
-      <div className="header-statuses flex items-center gap-1" aria-label="Service statuses">
+      <div className="header-statuses flex items-center gap-1" aria-label="Presentation controls">
+        <MediaToolbarButton />
+        <ThemePicker currentRoute={currentRoute} />
         <ToolbarButton
           label="Screens"
           title={`Screens: ${screens.detail}. Open Screens (⌥⌘1)`}
@@ -477,6 +415,7 @@ export default function AppShell({
         >
           <Eraser size={14} style={hueStyle('pink')} className="text-[rgb(var(--hue))]" aria-hidden="true" />
         </ToolbarButton>
+        <ActivationChip />
         <UpdatePill />
       </div>
     </header>

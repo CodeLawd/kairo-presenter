@@ -1,10 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common'
-import { InjectModel } from '@nestjs/mongoose'
-import { Model, Types } from 'mongoose'
-import { APP_CONFIG } from '../config/config.module'
-import type { AppConfig } from '../config/env'
-import { OrgSecrets, OrgSecretsDocument } from './schemas/org-secrets.schema'
-import { decryptJson, encryptJson, vaultKeyFromSecret } from './vault-crypto'
+import { ForbiddenException, Injectable } from '@nestjs/common'
 
 /** Plaintext map stored inside the AES envelope. Empty string = not set. */
 export interface OrgSecretsPayload {
@@ -62,22 +56,9 @@ export function secretsResponse(
 
 @Injectable()
 export class OrgSecretsService {
-  private readonly log = new Logger(OrgSecretsService.name)
-  private readonly key: Buffer
-
-  constructor(
-    @InjectModel(OrgSecrets.name)
-    private readonly model: Model<OrgSecretsDocument>,
-    @Inject(APP_CONFIG) config: AppConfig,
-  ) {
-    this.key = vaultKeyFromSecret(config.vaultEncryptionKey)
-  }
-
   async get(orgId: string): Promise<ReturnType<typeof secretsResponse>> {
-    const doc = await this.model.findOne({ orgId: new Types.ObjectId(orgId) }).exec()
-    if (!doc) return secretsResponse(EMPTY, null)
-    const payload = this.decryptDoc(doc)
-    return secretsResponse(payload, doc.updatedAt ?? null)
+    void orgId
+    return secretsResponse(EMPTY, null)
   }
 
   async put(
@@ -85,49 +66,8 @@ export class OrgSecretsService {
     userId: string,
     patch: OrgSecretsPatch,
   ): Promise<ReturnType<typeof secretsResponse>> {
-    const orgObjectId = new Types.ObjectId(orgId)
-    const existing = await this.model.findOne({ orgId: orgObjectId }).exec()
-    const current = existing ? this.decryptDoc(existing) : { ...EMPTY }
-    const merged = mergeSecretsPatch(current, patch)
-    const envelope = encryptJson(this.key, merged)
-
-    const doc = await this.model
-      .findOneAndUpdate(
-        { orgId: orgObjectId },
-        {
-          $set: {
-            ...envelope,
-            updatedByUserId: new Types.ObjectId(userId),
-          },
-          $setOnInsert: { orgId: orgObjectId },
-        },
-        { upsert: true, new: true },
-      )
-      .exec()
-
-    // Never log key material — only that a write happened.
-    this.log.debug(`Org secrets updated for ${orgId}`)
-    return secretsResponse(merged, doc?.updatedAt ?? new Date())
+    void orgId; void userId; void patch
+    throw new ForbiddenException('Provider keys are now managed centrally by Kairo. Contact your platform superadmin; church API-key editing is no longer available.')
   }
 
-  private decryptDoc(doc: OrgSecretsDocument): OrgSecretsPayload {
-    try {
-      const raw = decryptJson<Partial<OrgSecretsPayload>>(this.key, {
-        ciphertext: doc.ciphertext,
-        iv: doc.iv,
-        authTag: doc.authTag,
-      })
-      return mergeSecretsPatch(EMPTY, {
-        deepgramApiKey: raw.deepgramApiKey ?? '',
-        anthropicApiKey: raw.anthropicApiKey ?? '',
-        deepseekApiKey: raw.deepseekApiKey ?? '',
-        bibleApiKey: raw.bibleApiKey ?? '',
-        braveApiKey: raw.braveApiKey ?? '',
-        googleTranslateApiKey: raw.googleTranslateApiKey ?? '',
-      })
-    } catch (error) {
-      this.log.error(`Failed to decrypt org secrets for ${doc.orgId.toString()}`)
-      throw error
-    }
-  }
 }

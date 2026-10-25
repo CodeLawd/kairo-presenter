@@ -21,6 +21,9 @@ separation. Keep focus rings and selected/live outlines stronger than these divi
 Lyrics use one continuous responsive slide grid per song, filling each row across
 section boundaries. Preserve section colors, labels, numbering and hotkeys;
 zoom controls the minimum card width. Each playlist song starts its own grid.
+Scripture grid cards use the shared dark checkerboard with white text and no
+theme artwork or text backdrop, so operators can read verses clearly. Projected
+slides and the Live monitor retain the full selected theme.
 The sermon notes review modal always uses a scoped light theme with dark ink,
 pale panels and a 0.5px neutral border, independent of the app theme. Its detected-reference
 search filters by reference or translation, preserving original numbering and the
@@ -36,6 +39,14 @@ and Syphon Settings… with another thin divider. Omit boxes, settings gears,
 descriptive headings and saved-file messages. Keep source/status in tooltips,
 recording time beside Stop Capture, and actionable failures inline.
 Capture Settings closes with Save and never starts or stops recording.
+Theme Editor keeps text Size visible for both Scripture and Lyrics. Fit to box
+disables manual sizing with an accessible explanation; turning it off restores
+the saved manual size. Reference and song-label sizing stays independently editable.
+Media lives in the top toolbar beside Screen Themes and Screens and toggles the shared
+media dock. Screen Themes uses a monitor with a palette badge and opens a compact saved-theme thumbnail picker with Scripture
+and Lyrics choices and a screen/feed selector; authoring stays in the Theme
+workspace, named Theme Editor in the left rail with a palette icon. A pick changes only the selected output and content kind. Other
+screens and defaults for new screens stay as configured. Keep selection, applying feedback, and save errors visible in the picker.
 
 Runtime tokens are owned by `src/renderer/src/index.css` and mapped through
 `tailwind.config.js`. Use Source Sans 3 for controls, body copy, and headings.

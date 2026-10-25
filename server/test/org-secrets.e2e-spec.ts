@@ -2,7 +2,7 @@ import request from 'supertest'
 import { INestApplication } from '@nestjs/common'
 import { createTestApp, signUpVerified, TestContext } from './harness'
 
-describe('Org secrets vault (e2e)', () => {
+describe('Retired org secrets vault (e2e)', () => {
   let context: TestContext
   let app: INestApplication
   let alice: { token: string; orgId: string }
@@ -26,52 +26,35 @@ describe('Org secrets vault (e2e)', () => {
   })
 
   afterAll(async () => {
-    await context.close()
+    await context?.close()
   })
 
-  it('starts empty, accepts a put, and returns plaintext to the member', async () => {
-    const empty = await request(app.getHttpServer())
+  it('returns empty key fields and refuses provider-key writes with migration guidance', async () => {
+    const read = () => request(app.getHttpServer())
       .get(`/v1/orgs/${alice.orgId}/secrets`)
       .set('Authorization', `Bearer ${alice.token}`)
       .expect(200)
-
-    expect(empty.body.deepgramApiKey).toBe('')
+    const empty = await read()
+    for (const field of ['deepgramApiKey', 'bibleApiKey', 'anthropicApiKey', 'deepseekApiKey', 'braveApiKey', 'googleTranslateApiKey']) {
+      expect(empty.body[field]).toBe('')
+    }
     expect(empty.body.updatedAt).toBeNull()
-
     const put = await request(app.getHttpServer())
       .put(`/v1/orgs/${alice.orgId}/secrets`)
       .set('Authorization', `Bearer ${alice.token}`)
-      .send({ deepgramApiKey: 'dg-live', bibleApiKey: 'bible-live' })
-      .expect(200)
-
-    expect(put.body.deepgramApiKey).toBe('dg-live')
-    expect(put.body.bibleApiKey).toBe('bible-live')
-    expect(put.body.updatedAt).toBeTruthy()
-
-    const get = await request(app.getHttpServer())
-      .get(`/v1/orgs/${alice.orgId}/secrets`)
-      .set('Authorization', `Bearer ${alice.token}`)
-      .expect(200)
-
-    expect(get.body.deepgramApiKey).toBe('dg-live')
-    expect(get.body.bibleApiKey).toBe('bible-live')
+      .send({ deepgramApiKey: 'dg-private', bibleApiKey: 'bible-private' })
+      .expect(403)
+    expect(put.body.message).toMatch(/managed centrally/)
+    expect(JSON.stringify(put.body)).not.toContain('dg-private')
+    expect((await read()).body).toEqual(empty.body)
   })
 
-  it('merges partial puts and clears with null', async () => {
+  it('refuses partial edits and clearing retired credentials', async () => {
     await request(app.getHttpServer())
       .put(`/v1/orgs/${alice.orgId}/secrets`)
       .set('Authorization', `Bearer ${alice.token}`)
       .send({ anthropicApiKey: 'sk-ant-test', bibleApiKey: null })
-      .expect(200)
-
-    const get = await request(app.getHttpServer())
-      .get(`/v1/orgs/${alice.orgId}/secrets`)
-      .set('Authorization', `Bearer ${alice.token}`)
-      .expect(200)
-
-    expect(get.body.deepgramApiKey).toBe('dg-live')
-    expect(get.body.anthropicApiKey).toBe('sk-ant-test')
-    expect(get.body.bibleApiKey).toBe('')
+      .expect(403)
   })
 
   it('refuses another org’s vault', async () => {

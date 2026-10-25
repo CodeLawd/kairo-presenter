@@ -1,3 +1,4 @@
+import { MANAGED } from "./services/cloud/managed";
 import { dispatchToOutputs } from './services/output/dispatch';
 import { dispatchHealth } from '@shared/output-health';
 import { singleVerseSuggestion } from "@shared/single-verse-presentation";
@@ -404,6 +405,7 @@ class Orchestrator {
     const detector = new ScriptureDetector({
       provider: config.llmProvider,
       apiKey: config.llmApiKey,
+      managed: true,
       model: config.scriptureModel,
     });
     this.detector = detector;
@@ -492,7 +494,7 @@ class Orchestrator {
                 scriptureService,
                 ref,
                 candidate,
-                store.get("stt").bibleApiKey,
+                MANAGED,
               );
             } catch (err) {
               log.warn("[Orchestrator] Bible lookup error", {
@@ -707,7 +709,7 @@ class Orchestrator {
     const results = await scriptureService.search(
       suggestion.reference,
       translation,
-      store.get("stt").bibleApiKey,
+      MANAGED,
     );
     const verses = results.flatMap((result) => result.verses);
     if (verses.length === 0) {

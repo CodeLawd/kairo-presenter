@@ -49,6 +49,7 @@ const ADMIN_NAV: SidebarConfig = {
 
 const TITLES: Record<string, string> = {
   '/admin': 'Overview',
+  '/admin/licensing': 'Licensing',
   '/admin/users': 'Users',
   '/admin/churches': 'Churches',
   '/admin/team': 'Team',
@@ -73,7 +74,7 @@ function AdminChrome({ children }: { children: React.ReactNode }): React.ReactEl
   }, [allowed, router])
 
   if (!allowed) return null
-  const nav = { ...ADMIN_NAV, subtitle: session.user.platformRole === 'superadmin' ? 'Superadmin' : 'Admin' }
+  const nav = { ...ADMIN_NAV, subtitle: session.user.platformRole === 'superadmin' ? 'Superadmin' : 'Admin', groups: ADMIN_NAV.groups.map((group) => group.label === 'People' && session.user.platformRole === 'superadmin' ? { ...group, items: [...group.items, { title: 'Licensing', href: '/admin/licensing', icon: ShieldIcon }] } : group) }
 
   return (
     <div className="flex h-dvh overflow-hidden bg-sidebar text-foreground">

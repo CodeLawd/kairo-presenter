@@ -53,7 +53,7 @@ export class SermonsController {
     @CurrentUser() user: RequestUser,
     @Body() dto: UploadSermonDto,
   ): Promise<SermonUploadResult> {
-    const sermon = await this.sermons.upload(orgId, user.sub, dto)
+    const sermon = await this.sermons.upload(orgId, user.sub, dto, { ...user, orgId })
     this.generation.enqueue(sermon._id.toString())
     return { id: sermon._id.toString(), status: sermon.status }
   }
@@ -122,8 +122,9 @@ export class SermonsController {
   async regenerate(
     @Param('orgId') orgId: string,
     @Param('sermonId') sermonId: string,
+    @CurrentUser() user: RequestUser,
   ): Promise<SermonDetail> {
-    const sermon = await this.sermons.resetForRegeneration(orgId, sermonId)
+    const sermon = await this.sermons.resetForRegeneration(orgId, sermonId, { ...user, orgId })
     this.generation.enqueue(sermon._id.toString())
     return this.sermons.toDetail(sermon)
   }

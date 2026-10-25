@@ -454,3 +454,99 @@ for (const [segments, book, chapter, start, end] of [
     detector.destroy();
   });
 }
+
+for (const [initial, followUp, book, chapter, verse] of [
+  ['Matthew 19', 'lets continue from verse 30 of chapter 19', 'Matthew', 19, 30],
+  ['Matthew', 'lets continue from verse thirty of chapter nineteen', 'Matthew', 19, 30],
+  ['Matthew 18:10', 'verse 30 of chapter 19', 'Matthew', 19, 30],
+  ['Matthew 19', 'chapter 20 verse 3', 'Matthew', 20, 3],
+  ['Matthew 19:1', 'let us continue from verse 30', 'Matthew', 19, 30],
+] as const) {
+  test(`remembers the spoken passage after preaching: ${initial} / ${followUp}`, () => {
+    const detector = new ScriptureDetector({ apiKey: '' });
+    const refs: ScriptureReference[] = [];
+    detector.on('detection', batch => refs.push(...batch));
+    const originalNow = Date.now;
+    let now = originalNow();
+    Date.now = () => now;
+    try {
+      detector.analyzeExplicit(initial, true);
+      refs.length = 0;
+      now += 5 * 60_000;
+      detector.analyzeExplicit('We should consider how this applies to our lives today.', true);
+      detector.analyzeExplicit(followUp, true);
+      assert.deepEqual(refs.map(ref => [ref.book, ref.chapter, ref.verseStart]), [[book, chapter, verse]]);
+    } finally { Date.now = originalNow; detector.destroy(); }
+  });
+}
+
+test('an explicit chapter in a verse-first follow-up overrides recent chapter context', () => {
+  const detector = new ScriptureDetector({ apiKey: '' });
+  const refs: ScriptureReference[] = [];
+  detector.on('detection', batch => refs.push(...batch));
+  try {
+    detector.analyzeExplicit('Matthew 18', true);
+    detector.analyzeExplicit('verse 30 of chapter 19', true);
+    assert.deepEqual(refs.map(ref => [ref.book, ref.chapter, ref.verseStart]), [['Matthew', 19, 30]]);
+  } finally { detector.destroy(); }
+});
+
+test('naming a new book replaces the remembered book without borrowing its chapter', () => {
+  const detector = new ScriptureDetector({ apiKey: '' });
+  const refs: ScriptureReference[] = [];
+  detector.on('detection', batch => refs.push(...batch));
+  try {
+    detector.analyzeExplicit('Matthew 19', true);
+    detector.analyzeExplicit('Go to Luke', true);
+    detector.analyzeExplicit('verse 30', true);
+    assert.equal(refs.length, 0, 'Luke needs its own chapter');
+    detector.analyzeExplicit('verse 30 of chapter 19', true);
+    assert.deepEqual(refs.map(ref => [ref.book, ref.chapter, ref.verseStart]), [['Luke', 19, 30]]);
+  } finally { detector.destroy(); }
+});
+
+test('does not borrow an old book for an invalid named citation or an invalid follow-up chapter', () => {
+  const detector = new ScriptureDetector({ apiKey: '' });
+  const refs: ScriptureReference[] = [];
+  detector.on('detection', batch => refs.push(...batch));
+  try {
+    detector.analyzeExplicit('Matthew 19', true);
+    detector.analyzeExplicit('verse 30 of chapter 99', true);
+    assert.deepEqual(refs, []);
+    detector.analyzeExplicit('Hebrews chapter 14', true);
+    detector.analyzeExplicit('verse 30 of chapter 19', true);
+    assert.deepEqual(refs, []);
+  } finally { detector.destroy(); }
+});
+
+test('long-lived passage memory never turns an old bare-number fragment into a verse', () => {
+  const detector = new ScriptureDetector({ apiKey: '' });
+  const refs: ScriptureReference[] = [];
+  detector.on('detection', batch => refs.push(...batch));
+  const originalNow = Date.now;
+  let now = originalNow();
+  Date.now = () => now;
+  try {
+    detector.analyzeExplicit('Matthew 19', true);
+    now += 5 * 60_000;
+    detector.analyzeExplicit('thirty', true);
+    detector.analyzeExplicit('30 people were there', true);
+    assert.deepEqual(refs, []);
+  } finally { Date.now = originalNow; detector.destroy(); }
+});
+
+
+test('verse-first ranges use their stated chapter and need a known book', () => {
+  const detector = new ScriptureDetector({ apiKey: '' });
+  const refs: ScriptureReference[] = [];
+  detector.on('detection', batch => refs.push(...batch));
+  try {
+    detector.analyzeExplicit('verse 29 to 30 of chapter 19', true);
+    assert.equal(refs.length, 0);
+    detector.analyzeExplicit('Matthew 18', true);
+    detector.analyzeExplicit('verses 29 to 30 of chapter 19', true);
+    assert.deepEqual(refs.map(ref => [ref.book, ref.chapter, ref.verseStart, ref.verseEnd]), [['Matthew', 19, 29, 30]]);
+    detector.analyzeExplicit('verses 30 to 29 of chapter 19', true);
+    assert.equal(refs.length, 1, 'Reversed ranges are rejected');
+  } finally { detector.destroy(); }
+});

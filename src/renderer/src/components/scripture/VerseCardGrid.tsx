@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { BookOpen } from "@/icons";
 import { cn } from "@/lib/utils";
 import { VerseThemePreview } from "./VerseThemePreview";
@@ -53,6 +54,16 @@ export function VerseCardGrid({
   onMarqueeBegin,
   onMarqueeChange,
 }: VerseCardGridProps): React.ReactElement {
+  // Operator cards stay readable on the existing checkerboard. This copy is
+  // local to the grid; projection and the live monitor keep the full theme.
+  const cardTheme = useMemo<OverlayTheme>(() => ({
+    ...theme,
+    background: { type: "transparent", color: "#000000", opacity: 0 },
+    elements: [],
+    verse: { ...theme.verse, color: "#ffffff" },
+    reference: { ...theme.reference, color: "#ffffff" },
+    layout: { ...theme.layout, backdropBox: false },
+  }), [theme]);
   let flatIndex = 0;
   const activeLocation = locateFlatCard(rows, activeCardIndex);
 
@@ -74,7 +85,7 @@ export function VerseCardGrid({
             <VerseThemePreview
               key={`${row.id}-${card.result.reference}-${localIdx}`}
               result={card.result}
-              theme={theme}
+              theme={cardTheme}
               showTranslation={showTranslation}
               showVerseNumbers={showVerseNumbers}
               maxVerses={maxVerses}

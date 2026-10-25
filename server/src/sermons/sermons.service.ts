@@ -1,3 +1,4 @@
+import type { RequestUser } from '../common/decorators/current-user.decorator'
 import { randomBytes } from 'crypto'
 import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common'
 import { InjectModel } from '@nestjs/mongoose'
@@ -114,6 +115,7 @@ export class SermonsService {
     orgId: string,
     userId: string,
     dto: UploadSermonDto,
+    actor?: RequestUser,
   ): Promise<SermonDocument> {
     const segments: SermonUploadSegment[] = dto.transcript.map((segment) => ({
       id: segment.id,
@@ -139,6 +141,7 @@ export class SermonsService {
         { orgId: orgObjectId, localId: dto.localId },
         {
           $set: {
+            generationActor: actor ?? null,
             title: dto.title.trim() || 'Untitled service',
             speaker: dto.speaker?.trim() ?? '',
             preachedAt: new Date(dto.startedAt),
@@ -288,10 +291,11 @@ export class SermonsService {
    * the existing summary stays put until a new one replaces it — the dashboard
    * shows the old recap alongside "regenerating".
    */
-  async resetForRegeneration(orgId: string, sermonId: string): Promise<SermonDocument> {
+  async resetForRegeneration(orgId: string, sermonId: string, actor?: RequestUser): Promise<SermonDocument> {
     const sermon = await this.requireInOrg(orgId, sermonId)
     return this.apply(sermon, {
       $set: {
+        generationActor: actor ?? null,
         status: 'pending',
         attempts: 0,
         failureReason: null,

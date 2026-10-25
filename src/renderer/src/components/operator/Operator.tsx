@@ -1,3 +1,4 @@
+import { useLicense } from "@/stores/useLicenseStore";
 import { useContentAutoScroll } from "./useContentAutoScroll";
 import { singleVerseSuggestion, splitVerseSuggestions } from "@shared/single-verse-presentation";
 import {
@@ -288,7 +289,8 @@ function resultToSegment(r: TranscriptResult): DisplaySegment {
 export default function Operator(): React.ReactElement {
   const bootstrapSettings = useBootstrapStore((state) => state.settings);
   // Transcription runs on Deepgram; without a key there is nothing to listen with.
-  const hasDeepgram = useBootstrapStore((state) => Boolean(state.settings.secretsConfigured?.deepgram));
+  const license = useLicense();
+  const hasDeepgram = Boolean(license?.activated && license.providers.deepgram);
   // Asked for at the moment it matters: pressing Start without a key.
   const [keyPromptOpen, setKeyPromptOpen] = useState(false);
   const livePlan = useBootstrapStore((state) => state.livePlan);
@@ -1178,8 +1180,7 @@ export default function Operator(): React.ReactElement {
 
   const handleTogglePipeline = async () => {
     if (pipelineBusyRef.current) return;
-    // Starting without a Deepgram key would open a service that hears nothing;
-    // ask for the key instead.
+    // Offer activation before opening a new managed transcription session.
     if (!isTranscribing && !hasDeepgram) {
       setKeyPromptOpen(true);
       return;

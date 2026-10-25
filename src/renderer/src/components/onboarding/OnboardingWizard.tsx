@@ -1,3 +1,4 @@
+import { useLicense } from '@/stores/useLicenseStore'
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import type { OnboardingState, OnboardingStepId } from '@shared/ipc'
 import { canEnterApp } from '@shared/cloud/auth-state'
@@ -36,7 +37,9 @@ export default function OnboardingWizard({ onDismiss }: {
   const settings = useBootstrapStore((s) => s.settings)
   const state = useBootstrapStore((s) => s.onboarding)
   const setOnboarding = useBootstrapStore((s) => s.setOnboarding)
-  const accountReady = useAccountStore((s) => canEnterApp(s.session))
+  const license = useLicense()
+  const signedIn = useAccountStore((s) => canEnterApp(s.session))
+  const accountReady = signedIn && Boolean(license?.activated)
   const orgName = useAccountStore((s) => s.session.org?.name ?? '')
   const [busy, setBusy] = useState(false)
   const [savingScreen, setSavingScreen] = useState(false)

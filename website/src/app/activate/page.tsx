@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { AppTheme } from '@/components/dashboard/app-theme'
 import { AuthSplit } from '@/components/auth/AuthSplit'
-import { btnPrimary, btnSecondary, input, label, msg, msgError, msgOk } from '@/components/auth/styles'
+import { btnPrimary, btnSecondary, codeInput, label, linkBtn, msg, msgError } from '@/components/auth/styles'
 import { api, authedApi, ApiError } from '@/lib/api'
 import { getSession, useAccessToken, type SessionSnapshot } from '@/lib/session'
 import { isValidUserCode, normalizeUserCode } from '@contracts/device-code'
@@ -69,29 +69,63 @@ function ActivateContent(): React.ReactElement {
   }
 
   const church = session?.orgs.find((org) => org.id === session.orgId)?.name ?? 'your church'
-  return (
-    <AuthSplit title={outcome === 'approved' ? 'Your computer is connected' : 'Connect Kairo'} blurb="Approve the computer you’re signing in on." footer={<Link className="text-paper hover:underline" href="/dashboard">Go to your dashboard</Link>}>
-      {outcome ? (
-        <p className={`${msg} ${msgOk}`} role="status">
-          {outcome === 'approved' ? 'Return to Kairo. It will finish signing in automatically.' : 'That request was declined. You can start again in Kairo.'}
-        </p>
-      ) : !session ? (
-        <p className={msg} role="status">{error ?? 'Loading your account…'}</p>
-      ) : device ? (
-        <div className="flex flex-col gap-5">
-          <p className="text-sm text-paper">Sign in <strong>{device.deviceName || 'Kairo computer'}</strong> to <strong>{church}</strong> as {session.user.email}.</p>
-          <p className="font-mono text-2xl tracking-widest text-paper">{device.userCode}</p>
-          <p className="text-sm text-faint">Check that this code matches the one shown in Kairo before approving.</p>
+  const dashboardLink = <Link className="font-medium text-paper underline-offset-2 hover:underline" href="/dashboard">Go to your dashboard</Link>
+
+  if (outcome) {
+    return (
+      <AuthSplit
+        title={outcome === 'approved' ? 'Computer connected' : 'Request declined'}
+        blurb={outcome === 'approved' ? 'Return to Kairo. It finishes signing in on its own.' : 'Nothing was connected. You can start again from Kairo.'}
+        footer={dashboardLink}
+      >
+        {null}
+      </AuthSplit>
+    )
+  }
+
+  if (session && device) {
+    const rows: Array<[string, string]> = [
+      ['Computer', device.deviceName || 'Kairo computer'],
+      ['Church', church],
+      ['Account', session.user.email],
+    ]
+    return (
+      <AuthSplit
+        title="Connect Kairo"
+        blurb="Make sure this code matches the one on the computer’s screen."
+        footer={<button className={linkBtn} type="button" disabled={busy} onClick={() => { setError(null); setDevice(null) }}>Use a different code</button>}
+      >
+        <div className="flex flex-col gap-6">
+          <div className="overflow-hidden rounded-xl border border-line bg-panel">
+            <p className="m-0 px-4 py-5 text-center font-mono text-[26px] tracking-[0.2em] text-paper">{device.userCode}</p>
+            <dl className="m-0 border-t border-line">
+              {rows.map(([name, value]) => (
+                <div key={name} className="flex items-baseline justify-between gap-4 px-4 py-3 border-t border-line text-[14px] first:border-t-0">
+                  <dt className="text-mute">{name}</dt>
+                  <dd className="m-0 min-w-0 truncate text-right font-medium text-paper" title={value}>{value}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
           {error && <p className={`${msg} ${msgError}`} role="alert">{error}</p>}
-          <button className={btnPrimary} disabled={busy} onClick={() => void decide(true)}>{busy ? 'Working…' : 'Approve this computer'}</button>
-          <button className={btnSecondary} disabled={busy} onClick={() => void decide(false)}>Decline</button>
-          <button className="text-sm text-faint hover:text-paper" disabled={busy} onClick={() => setDevice(null)}>Use a different code</button>
+          <div className="flex flex-col gap-3">
+            <button className={btnPrimary} disabled={busy} onClick={() => void decide(true)}>{busy ? 'Working…' : 'Approve'}</button>
+            <button className={btnSecondary} disabled={busy} onClick={() => void decide(false)}>Decline</button>
+          </div>
         </div>
+      </AuthSplit>
+    )
+  }
+
+  return (
+    <AuthSplit title="Connect Kairo" blurb="Enter the code shown in Kairo to sign that computer in to your church." footer={dashboardLink}>
+      {!session ? (
+        <p className={msg} role="status">{error ?? 'Loading your account…'}</p>
       ) : (
         <form className="flex flex-col gap-5" onSubmit={(event) => { event.preventDefault(); void describe(code) }}>
           <div>
-            <label className={label} htmlFor="device-code">Code shown in Kairo</label>
-            <input className={input} id="device-code" value={code} onChange={(event) => setCode(event.target.value)} placeholder="PROA-7K2X" autoComplete="off" spellCheck={false} disabled={busy} required />
+            <label className={label} htmlFor="device-code">Code</label>
+            <input className={codeInput} id="device-code" value={code} onChange={(event) => setCode(event.target.value)} placeholder="PROA-7K2X" autoComplete="off" spellCheck={false} disabled={busy} required />
           </div>
           {error && <p className={`${msg} ${msgError}`} role="alert">{error}</p>}
           <button className={btnPrimary} disabled={busy}>{busy ? 'Checking…' : 'Continue'}</button>

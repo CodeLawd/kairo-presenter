@@ -7,6 +7,7 @@ import { User, UserDocument } from '../src/users/schemas/user.schema'
 import { Organization, OrganizationDocument } from '../src/orgs/schemas/organization.schema'
 import { Membership, MembershipDocument } from '../src/orgs/schemas/membership.schema'
 import { OrgSecrets, OrgSecretsDocument } from '../src/orgs/schemas/org-secrets.schema'
+import { encryptJson, vaultKeyFromSecret } from '../src/orgs/vault-crypto'
 import { Session, SessionDocument } from '../src/auth/schemas/session.schema'
 import { EmailToken, EmailTokenDocument } from '../src/auth/schemas/email-token.schema'
 import { Sermon, SermonDocument } from '../src/sermons/schemas/sermon.schema'
@@ -80,9 +81,12 @@ describe('Account data rights (e2e)', () => {
         ],
       })
       .expect(202)
-    await as(account.token, 'put', `/v1/orgs/${account.orgId}/secrets`)
-      .send({ deepgramApiKey: 'dg-secret-value' })
-      .expect(200)
+    // Customer key writes are retired; churches that saved keys earlier still have a vault.
+    await model<OrgSecretsDocument>(OrgSecrets.name).create({
+      orgId: new Types.ObjectId(account.orgId),
+      ...encryptJson(vaultKeyFromSecret(process.env.VAULT_ENCRYPTION_KEY!), { deepgramApiKey: 'dg-secret-value' }),
+      updatedByUserId: new Types.ObjectId(account.userId),
+    })
     await as(account.token, 'post', '/v1/usage/page').send({ path: '/dashboard' }).expect(204)
     await model<CrashReportDocument>(CrashReport.name).create({
       installId: `install-${account.email}`,
@@ -140,7 +144,7 @@ describe('Account data rights (e2e)', () => {
       expect(org).toMatchObject({ id: alice.orgId, name: 'Export Chapel', yourRole: 'owner', ownedByYou: true })
       expect(org.sermons).toHaveLength(1)
       expect(org.sermons[0].transcript[0].text).toBe('grace upon grace for every one of you')
-      expect(org.apiKeys.configured).toEqual(['deepgramApiKey'])
+      expect(org.apiKeys.configured).toEqual([])
 
       expect(body.crashReports).toHaveLength(1)
       expect(body.usageDays).toHaveLength(1)

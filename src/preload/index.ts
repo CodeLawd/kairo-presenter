@@ -586,6 +586,11 @@ const onboarding: KairoAPI['onboarding'] = {
 }
 
 const account: KairoAPI['account'] = {
+  getLicense: () => ipcRenderer.invoke(IPC.ACCOUNT.GET_LICENSE),
+  activateLicense: (key, name) => ipcRenderer.invoke(IPC.ACCOUNT.ACTIVATE_LICENSE, key, name),
+  refreshLicense: () => ipcRenderer.invoke(IPC.ACCOUNT.REFRESH_LICENSE),
+  onLicenseChange: (callback) => subscribe(IPC.ACCOUNT.LICENSE_CHANGED, callback),
+
   getSession() {
     return ipcRenderer.invoke(IPC.ACCOUNT.GET_SESSION)
   },

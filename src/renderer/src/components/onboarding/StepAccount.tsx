@@ -1,6 +1,7 @@
+import LicensePanel from '@/components/account/LicensePanel'
 import { useState, type CSSProperties } from 'react'
 import { PRODUCT_NAME } from '@shared/brand'
-import { needsEmailConfirmation } from '@shared/cloud/auth-state'
+import { canEnterApp, needsEmailConfirmation } from '@shared/cloud/auth-state'
 import AuthPanel, { type AuthMode } from '@/components/account/AuthPanel'
 import VerifyEmailNotice from '@/components/account/VerifyEmailNotice'
 import { useAccountStore } from '@/stores/useAccountStore'
@@ -31,8 +32,9 @@ export default function StepAccount({ mode, onModeChange }: {
     }
   }
 
-  const title = verifying ? 'Confirm your email' : mode === 'signUp' ? 'Create your account' : `Sign in to ${PRODUCT_NAME}`
-  const blurb = verifying
+  const ready = canEnterApp(session)
+  const title = ready ? 'Activate this computer' : verifying ? 'Confirm your email' : mode === 'signUp' ? 'Create your account' : `Sign in to ${PRODUCT_NAME}`
+  const blurb = ready ? 'Turn on live transcription, scripture lookup and lyric tools for your church.' : verifying
     ? `Enter the 6-digit code we sent to ${session.user?.email ?? 'your email'}.`
     : mode === 'signUp'
       ? 'Your church’s songs, themes and settings follow you to every Kairo computer.'
@@ -43,7 +45,7 @@ export default function StepAccount({ mode, onModeChange }: {
       <h2 id="onboarding-slide-title" key={title} className="onboarding-setup-title ob-in">{title}</h2>
       <p className="ob-rise mt-2 max-w-[44ch] text-center text-[14px] leading-relaxed text-slate-400" style={at(1)}>{blurb}</p>
       <div className="ob-in mt-8 w-full max-w-[380px]" style={at(2)}>
-        {verifying ? (
+        {ready ? <LicensePanel /> : verifying ? (
           <div className="flex flex-col items-center gap-6">
             <VerifyEmailNotice showEmail={false} centered />
             <button

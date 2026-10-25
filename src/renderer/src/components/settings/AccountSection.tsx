@@ -1,3 +1,4 @@
+import LicensePanel from '@/components/account/LicensePanel'
 import { useState, type ReactNode } from 'react'
 import { AlertTriangle, ChevronRight, Church, CircleUser, Clock, Lightbulb, LogOut, RefreshCw } from '@/icons'
 import { needsEmailConfirmation } from '@shared/cloud/auth-state'
@@ -155,6 +156,8 @@ export default function AccountSection({
           <VerifyEmailNotice />
         </div>
       )}
+
+      <LicensePanel />
 
       <Group>
         {session.org && <Row icon={<Church size={15} />} label="Organization" value={session.org.name} />}

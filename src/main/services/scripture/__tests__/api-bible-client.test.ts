@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { ApiBibleClient, ApiBibleRequestError, type ApiBibleTransport } from '../api-bible-client'
+import type { ManagedRequest } from '../../../../lib/cloud/licensing'
 
 const BIBLE_ID = 'de4e12af7f28f599-01'
 
@@ -166,4 +167,18 @@ test('propagates rate limiting with the Retry-After delay', async () => {
       return true
     },
   )
+})
+
+test('managed Bible search keeps its query shape and normalizes asynchronous gateway failures', async (t) => {
+  const { managedTransport } = await import('../../cloud/managed')
+  const calls: unknown[] = []
+  const stub = t.mock.method(managedTransport, 'request', async (request: ManagedRequest) => {
+    calls.push(request)
+    return { data: { verses: [] } }
+  })
+  const client = new ApiBibleClient('kairo-managed')
+  await client.search(BIBLE_ID, 'love is patient', 8)
+  assert.deepEqual(calls[0], { provider: 'bible', path: `/v1/bibles/${BIBLE_ID}/search`, method: 'GET', query: { query: 'love is patient', limit: 8, sort: 'relevance' } })
+  stub.mock.mockImplementation(async () => { throw { status: 429, message: 'Managed provider is rate limited' } })
+  await assert.rejects(client.listBibles(), error => error instanceof ApiBibleRequestError && error.isRateLimited)
 })

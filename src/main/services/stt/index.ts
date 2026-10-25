@@ -74,6 +74,8 @@ class STTService {
   }
 
   async start(): Promise<void> {
+    const { licensing } = await import('../cloud/licensing')
+    licensing.assertFeature('transcription')
     if (this.provider === 'none') {
       log.warn('[STT] start called but no provider configured')
       return

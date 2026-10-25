@@ -1,4 +1,4 @@
-import axios from 'axios'
+import { managedJson } from '../cloud/managed'
 import { createHash } from 'node:crypto'
 import type { LyricsReview, LyricsSectionType } from '@shared/ipc'
 import { isSectionLine } from './section-label'
@@ -48,15 +48,13 @@ export async function reviewOnlineLyrics(
   const unverified = (reason: Extract<LyricsReview, { status: 'unverified' }>['reason']): ReviewedLyrics => ({
     text, review: { status: 'unverified', reason },
   })
-  const apiKey = options.apiKey?.trim()
-  if (!apiKey) return unverified('missing-key')
   const lines = text.replace(/\r\n?/g, '\n').split('\n')
   // Review a whole song or nothing: truncation could discard the final verses.
   if (text.length > 100_000 || lines.length > 2000) return unverified('too-large')
 
   let choice: { finish_reason?: string; message?: { content?: string } } | undefined
   try {
-    const response = await axios.post('https://api.deepseek.com/chat/completions', {
+    const response = { data: await managedJson<{ choices?: { finish_reason?: string; message?: { content?: string } }[] }>('deepseek', '/chat/completions', {
       model: 'deepseek-flash',
       messages: [
         { role: 'system', content: SYSTEM },
@@ -67,10 +65,7 @@ export async function reviewOnlineLyrics(
       thinking: { type: 'disabled' },
       temperature: 0,
       max_tokens: 8192,
-    }, {
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      timeout: 20_000,
-    })
+    }, undefined, 'translation') }
     choice = response.data?.choices?.[0]
   } catch {
     // Axios errors contain credentials and source text: do not log them.

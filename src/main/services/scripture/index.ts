@@ -1,3 +1,4 @@
+import { MANAGED } from '../cloud/managed'
 import type { QuoteCandidate } from './quote-recovery'
 import log from 'electron-log/main'
 import fs from 'fs'
@@ -270,7 +271,7 @@ export class ScriptureService {
 
   // ─── Scripture lookup / search ────────────────────────────────────────────
 
-  async search(query: string, translation = this.defaultTranslation, apiKey = ''): Promise<ScriptureResult[]> {
+  async search(query: string, translation = this.defaultTranslation, apiKey = MANAGED): Promise<ScriptureResult[]> {
     log.info('Scripture search', { query, translation })
     if (!this.db) {
       log.warn('Scripture DB not open')
@@ -481,7 +482,7 @@ export class ScriptureService {
     }))
   }
 
-  async getTranslationOptions(apiKey = '', strict = false): Promise<ScriptureTranslationOption[]> {
+  async getTranslationOptions(apiKey = MANAGED, strict = false): Promise<ScriptureTranslationOption[]> {
     const catalog = TRANSLATION_CATALOG
     const localRows = this.db?.getAllTranslations() ?? []
     const local = new Set(localRows.map((item) => item.id.toUpperCase()))

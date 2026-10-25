@@ -1,9 +1,21 @@
+import type { TranscriptionGrant } from '@shared/cloud/licensing'
 /* eslint-disable @typescript-eslint/no-unsafe-declaration-merging -- typed EventEmitter idiom: `declare interface` refines the inherited emitter surface. */
 import { EventEmitter } from 'events'
 import type { Readable } from 'stream'
 import log from 'electron-log/main'
 import { DeepgramClient } from '@deepgram/sdk'
 import type { TranscriptResult, InterimResult, TranscriptWord } from '@shared/ipc'
+
+export interface TranscriptionAccess {
+  transcription(): Promise<TranscriptionGrant>
+  renewTranscription(id: string): Promise<TranscriptionGrant>
+  releaseTranscription(id: string): Promise<void>
+}
+const managedAccess: TranscriptionAccess = {
+  transcription: async () => (await import('../cloud/licensing')).licensing.transcription(),
+  renewTranscription: async id => (await import('../cloud/licensing')).licensing.renewTranscription(id),
+  releaseTranscription: async id => (await import('../cloud/licensing')).licensing.releaseTranscription(id),
+}
 
 // ─── Local message types (subset of SDK types we care about) ─────────────────
 
@@ -79,8 +91,11 @@ export declare interface DeepgramSTTService {
 // ─── Service ──────────────────────────────────────────────────────────────────
 
 export class DeepgramSTTService extends EventEmitter {
+  constructor(private readonly access: TranscriptionAccess = managedAccess, private readonly clientFactory: (accessToken: string) => DeepgramClient = accessToken => new DeepgramClient({ accessToken })) { super() }
+
   private connectionGeneration = 0
-  private apiKey   = ''
+  private grantId: string | null = null
+  private renewalTimer: ReturnType<typeof setTimeout> | null = null
   private language = 'en'
   private keyterms: string[] = []
   private client:  DeepgramClient | null = null
@@ -114,21 +129,16 @@ export class DeepgramSTTService extends EventEmitter {
    * `keyterms` are boosted vocabulary (Nova-3 keyterm prompting). They are
    * fixed per connection, so a change applies from the next (re)connect.
    */
-  configure(apiKey: string, language = 'en', keyterms: string[] = []): void {
-    this.apiKey   = apiKey
+  configure(_apiKey: string, language = 'en', keyterms: string[] = []): void {
     this.language = language
     this.keyterms = [...keyterms]
-    this.client   = new DeepgramClient({ apiKey })
+    this.client   = null
     log.info('[Deepgram] Configured', { language, keyterms: keyterms.length })
   }
 
   // ─── Connect / Disconnect ──────────────────────────────────────────────────
 
   async connect(): Promise<void> {
-    if (!this.client || !this.apiKey) {
-      this.emit('error', new Error('DeepgramSTTService not configured — call configure() first'))
-      return
-    }
     if (this.active) return
 
     this.destroyed      = false
@@ -140,6 +150,7 @@ export class DeepgramSTTService extends EventEmitter {
 
   disconnect(): void {
     this.connectionGeneration++
+    void this.releaseGrant()
     this.destroyed        = true
     this.active           = false
     this.reconnecting     = false
@@ -217,13 +228,19 @@ export class DeepgramSTTService extends EventEmitter {
   // ─── Internal: socket lifecycle ────────────────────────────────────────────
 
   private async openSocket(): Promise<void> {
-    if (!this.client || !this.active || this.destroyed) return
+    if (!this.active || this.destroyed) return
     const generation = ++this.connectionGeneration
 
     this.connectStartedAt = Date.now()
     log.info('[Deepgram] Opening WebSocket', { attempt: this.reconnectAttempt })
 
     try {
+      await this.releaseGrant()
+      const grant = await this.access.transcription()
+      if (!this.active || generation !== this.connectionGeneration) { void this.access.releaseTranscription(grant.sessionId).catch(() => undefined); return }
+      this.grantId = grant.sessionId
+      this.scheduleRenewal(grant.sessionId, grant.renewAfterSeconds)
+      this.client = this.clientFactory(grant.accessToken)
       const candidate = await this.client.listen.v1.connect({
         model:            'nova-3',
         language:         this.language,
@@ -243,7 +260,7 @@ export class DeepgramSTTService extends EventEmitter {
         encoding:         'linear16',
         sample_rate:      16000,
         channels:         1,
-        Authorization:    `Token ${this.apiKey}`,
+        Authorization:    `Bearer ${grant.accessToken}`,
         reconnectAttempts: 0,
       })
       if (!this.active || generation !== this.connectionGeneration) {
@@ -314,6 +331,27 @@ export class DeepgramSTTService extends EventEmitter {
     })
 
     socket.connect()
+  }
+
+  private async releaseGrant(): Promise<void> {
+    if (this.renewalTimer) clearTimeout(this.renewalTimer)
+    this.renewalTimer = null
+    const id = this.grantId
+    this.grantId = null
+    if (id) await this.access.releaseTranscription(id).catch(() => undefined)
+  }
+
+  private scheduleRenewal(id: string, seconds: number): void {
+    this.renewalTimer = setTimeout(() => {
+      this.renewalTimer = null
+      if (this.grantId !== id || !this.active) return
+      void this.access.renewTranscription(id).then(grant => {
+        if (this.grantId === id) this.scheduleRenewal(id, grant.renewAfterSeconds)
+      }).catch(() => {
+        // Entitlement changes stop further cloud capture, never presentation output.
+        if (this.grantId === id) { this.disconnect(); this.emit('error', new Error('Transcription access could not be renewed. Your presentation is still live.')) }
+      })
+    }, Math.max(1, seconds) * 1000)
   }
 
   private closeSocket(): void {

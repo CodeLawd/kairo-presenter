@@ -220,6 +220,7 @@ export const MessageSquare = wrap(PhChatTeardropText)
 export const Mic = wrap(PhMicrophone)
 export const MicOff = wrap(PhMicrophoneSlash)
 export const Minus = wrap(PhMinus)
+export const Monitor = wrap(PhMonitor)
 export const MonitorOff = wrap(PhMonitor)
 /** A set of pictures — the whole media library. */
 export const Images = wrap(PhImages)

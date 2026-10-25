@@ -3,7 +3,8 @@ import { Inject, Injectable, Logger } from '@nestjs/common'
 import type { SermonSummary, SummaryErrorCode } from '@contracts/contracts'
 import { APP_CONFIG } from '../config/config.module'
 import type { AppConfig, SermonReasoningEffort } from '../config/env'
-import { OrgSecretsService } from '../orgs/org-secrets.service'
+import { LicensingService } from '../licensing/licensing.service'
+import type { RequestUser } from '../common/decorators/current-user.decorator'
 import {
   buildSummaryPrompt,
   buildSummaryReviewPrompt,
@@ -29,6 +30,7 @@ export class SummaryError extends Error {
 
 export interface SummaryInput {
   orgId: string
+  actor?: RequestUser
   title: string
   speaker: string
   preachedAt: Date
@@ -43,17 +45,6 @@ export interface SummaryResult {
 
 const DEEPSEEK_URL = 'https://api.deepseek.com/chat/completions'
 
-/** The provider's own words, trimmed to something loggable and never a key. */
-function describeProviderError(body: string): string {
-  try {
-    const parsed = JSON.parse(body) as { error?: { message?: string } | string }
-    const message = typeof parsed.error === 'string' ? parsed.error : parsed.error?.message
-    if (message) return message.slice(0, 300)
-  } catch {
-    // Not JSON — fall through to the raw body.
-  }
-  return body.trim().slice(0, 300)
-}
 const REQUEST_TIMEOUT_MS = 180_000
 /**
  * Generous on purpose.
@@ -99,18 +90,19 @@ export class SermonSummaryService {
   private readonly log = new Logger(SermonSummaryService.name)
 
   constructor(
-    private readonly secrets: OrgSecretsService,
+    private readonly licensing: LicensingService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
   async generate(input: SummaryInput): Promise<SummaryResult> {
-    const vault = await this.secrets.get(input.orgId)
+    if (!input.actor || input.actor.orgId !== input.orgId) throw new SummaryError('no-api-key', 'Activate this device before generating a recap.')
+    const vault = await this.licensing.summaryKeys(input.actor)
     const prompt = buildSummaryPrompt(input)
 
     if (!vault.anthropicApiKey && !vault.deepseekApiKey) {
       throw new SummaryError(
         'no-api-key',
-        'Add an Anthropic or DeepSeek API key to your church vault to generate recaps.',
+        'Kairo has not configured a recap provider. Contact your platform superadmin.',
       )
     }
 
@@ -222,10 +214,10 @@ export class SermonSummaryService {
       // A bare status code sends whoever reads it guessing between a bad model
       // name, a rejected parameter and an expired key. DeepSeek says which in
       // the body; a failed read must not mask the status we already have.
-      const detail = await response.text().then(describeProviderError, () => '')
+      await response.body?.cancel()
       throw new SummaryError(
         'provider',
-        `DeepSeek refused the request (${response.status})${detail ? `: ${detail}` : '.'}`,
+        `DeepSeek refused the request (${response.status}).`,
         retryable,
       )
     }
@@ -274,7 +266,7 @@ export class SermonSummaryService {
     if (error instanceof Anthropic.AuthenticationError) {
       return new SummaryError(
         'no-api-key',
-        'Your church Anthropic key was rejected. Check it under API keys.',
+        'The managed recap provider rejected access. Contact your platform superadmin.',
       )
     }
     if (error instanceof Anthropic.RateLimitError) {

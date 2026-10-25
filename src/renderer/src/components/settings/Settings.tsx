@@ -1,3 +1,4 @@
+import LicensePanel from '@/components/account/LicensePanel'
 import KeyboardShortcutsSection from './KeyboardShortcutsSection'
 import { MacTrafficLights } from '@/components/shared/MacTrafficLights'
 import { Fragment, useState, useEffect, useRef, useCallback } from 'react'
@@ -16,23 +17,12 @@ import {
   Trash2,
   CircleUser,
   Search,
-  MoreVertical,
-  ExternalLink,
   FolderOpen,
-  Cloud,
   type Icon,
 } from '@/icons'
 import { cn } from '@/lib/utils'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import AccountSection, { AccountAvatar } from './AccountSection'
 import { requestCoachTour } from '@/components/onboarding/CoachTour'
-import { useSecretDraft } from '@/components/ui/secret-key-field'
 import { Switch } from '@/components/ui/switch'
 import { Slider } from '@/components/ui/slider'
 import { type SettingsSectionId } from '@/stores/useAppStore'
@@ -50,7 +40,6 @@ import type {
   AudioLevel,
   AutoPresentDelaySec,
   ScriptureTranslation,
-  SettingsSecretClearKey,
 } from '@shared/ipc'
 import { LocalBiblePackManager } from './LocalBiblePackManager'
 import { ScriptureLatencyPanel } from './ScriptureLatencyPanel'
@@ -58,7 +47,6 @@ import { DEFAULT_SETTINGS } from '@/lib/defaultSettings'
 import { useBootstrapStore } from '@/bootstrap/useBootstrapStore'
 import { useUpdates } from '@/hooks/useUpdates'
 import { useAccountStore } from '@/stores/useAccountStore'
-import { ProviderLogo, type ProviderId } from '@/components/brand/ProviderLogos'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -75,7 +63,7 @@ const SECTION_NAV: { id: Section; label: string; hint: string; icon?: Icon }[] =
   { id: 'overlay', label: 'Verses on screen', hint: 'Translation & verse numbers', icon: MonitorPlay },
   { id: 'scripture', label: 'Scripture', hint: 'Detection & display', icon: BookOpen },
   { id: 'audio', label: 'Audio', hint: 'Input device & levels', icon: Mic },
-  { id: 'apikeys', label: 'API Keys', hint: 'Deepgram, Claude, DeepSeek, Bible, Brave', icon: Key },
+  { id: 'apikeys', label: 'Licence & Devices', hint: 'Activation and managed cloud services', icon: Key },
   { id: 'shortcuts', label: 'Keyboard Shortcuts', hint: 'Commands & key bindings', icon: SlidersHorizontal },
   { id: 'account', label: 'Account', hint: 'Sign in, team sync & setup', icon: CircleUser },
 ]
@@ -237,244 +225,10 @@ function LevelMeter({ level, active }: { level: AudioLevel | null; active: boole
 }
 
 
-// ─── Helper: Connection dot ───────────────────────────────────────────────────
-
-function openProviderDocs(url: string): void {
-  window.open(url, '_blank', 'noopener,noreferrer')
-}
-
-/**
- * Fixed choices rather than a free-text field: four options are easy to reason
- * about and to test, and nobody needs 1,750ms.
- */
 const AUTO_PRESENT_DELAYS = [
-  { value: 0, label: 'Instant' },
-  { value: 1, label: '1s' },
-  { value: 2, label: '2s' },
-  { value: 3, label: '3s' },
+  { value: 0, label: 'Instant' }, { value: 1, label: '1s' },
+  { value: 2, label: '2s' }, { value: 3, label: '3s' },
 ] as const satisfies readonly { value: AutoPresentDelaySec; label: string }[]
-
-type SecretDraft = ReturnType<typeof useSecretDraft>
-
-/** Where each key is used, in the operator's words rather than the vendor's. */
-const PROVIDER_PURPOSE: Record<ProviderId, string> = {
-  deepgram: 'Live speech-to-text',
-  anthropic: 'Scripture detection',
-  deepseek: 'Primary song search; scripture detection when selected',
-  bible: 'Online Bible translations',
-  brave: 'Fallback web search for song lyrics',
-  google: 'Lyric translation',
-}
-
-function KeyStatus({
-  tone,
-  children,
-}: {
-  tone: 'ok' | 'fail' | 'pending' | 'idle' | 'warn'
-  children: React.ReactNode
-}): React.ReactElement {
-  const dot: Record<typeof tone, string> = {
-    ok: 'bg-[#30D158]',
-    fail: 'bg-[#FF453A]',
-    pending: 'bg-teal-500',
-    warn: 'bg-amber-400',
-    idle: 'bg-surface-border',
-  }
-  return (
-    <span className="inline-flex items-center gap-1.5 text-[11px] text-white/50">
-      <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', dot[tone])} aria-hidden="true" />
-      {children}
-    </span>
-  )
-}
-
-const KEY_ACTION =
-  'inline-flex h-7 items-center gap-1.5 rounded-md bg-surface-elevated px-2.5 text-[12px] font-medium text-white transition-colors hover:bg-surface-border disabled:opacity-40'
-
-function ProviderKeyRow({
-  provider,
-  name,
-  docsUrl,
-  configured,
-  pendingRemoval,
-  secret,
-  onRemove,
-  onUndoRemove,
-  placeholder,
-  fieldName,
-  'aria-label': ariaLabel,
-  test,
-  onSave,
-}: {
-  provider: ProviderId
-  name: string
-  docsUrl: string
-  /** A key is saved and not marked for removal. */
-  configured: boolean
-  pendingRemoval: boolean
-  secret: SecretDraft
-  onRemove: () => void
-  onUndoRemove: () => void
-  placeholder: string
-  fieldName: string
-  'aria-label': string
-  test?: { status: TestStatus; message: string; onClick: () => void }
-  /** Saves right from the row — a pasted key should not depend on a button at the page's foot. */
-  onSave?: () => void
-}): React.ReactElement {
-  const editing = secret.replacing
-  const hasDraft = secret.draft.trim().length > 0
-  const canTest = Boolean(test) && (hasDraft || (configured && !editing))
-
-  const status = (() => {
-    if (pendingRemoval) return <KeyStatus tone="warn">Removed on save</KeyStatus>
-    if (test?.status === 'testing') return <KeyStatus tone="pending">Testing…</KeyStatus>
-    if (test?.status === 'ok') return <KeyStatus tone="ok">Verified</KeyStatus>
-    if (test?.status === 'fail') return <KeyStatus tone="fail">Key rejected</KeyStatus>
-    if (hasDraft) return <KeyStatus tone="pending">Unsaved</KeyStatus>
-    if (configured) return <KeyStatus tone="ok">Connected</KeyStatus>
-    return <KeyStatus tone="idle">Not set</KeyStatus>
-  })()
-
-  return (
-    <div className="px-3.5 py-3">
-      <div className="flex items-center gap-3">
-        <ProviderLogo id={provider} />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <p className="truncate text-[13px] font-medium leading-tight text-white">{name}</p>
-            {status}
-          </div>
-          <p className="mt-0.5 truncate text-[11px] leading-snug text-white/40">{PROVIDER_PURPOSE[provider]}</p>
-        </div>
-
-        <div className="flex shrink-0 items-center gap-1">
-          {pendingRemoval ? (
-            <button type="button" className={KEY_ACTION} onClick={onUndoRemove}>
-              Undo
-            </button>
-          ) : (
-            <>
-              {test && canTest && !editing ? (
-                <button
-                  type="button"
-                  className={KEY_ACTION}
-                  disabled={test.status === 'testing'}
-                  onClick={test.onClick}
-                >
-                  {test.status === 'testing' ? <Loader size={12} className="animate-spin" aria-hidden="true" /> : null}
-                  Test
-                </button>
-              ) : null}
-              {!editing ? (
-                <button type="button" className={KEY_ACTION} onClick={secret.beginReplace}>
-                  {configured ? 'Change' : 'Add key'}
-                </button>
-              ) : null}
-            </>
-          )}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-white/35 hover:bg-surface-tertiary hover:text-white"
-                aria-label={`${name} actions`}
-              >
-                <MoreVertical size={15} aria-hidden="true" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="min-w-[168px] bg-surface-tertiary text-white">
-              <DropdownMenuItem onSelect={() => openProviderDocs(docsUrl)}>
-                <ExternalLink size={13} aria-hidden="true" />
-                Get a {name} key
-              </DropdownMenuItem>
-              <DropdownMenuSeparator className="bg-surface-elevated" />
-              <DropdownMenuItem
-                variant="destructive"
-                disabled={!configured && !editing}
-                onSelect={onRemove}
-              >
-                <Trash2 size={13} aria-hidden="true" />
-                Remove key
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </div>
-
-      {editing ? (
-        <div className="ml-11 mt-2.5 space-y-1.5">
-          <div className="flex items-center gap-1.5">
-            <input
-              type="password"
-              value={secret.draft}
-              onChange={(e) => secret.setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && hasDraft && onSave) {
-                  e.preventDefault()
-                  onSave()
-                }
-              }}
-              onCopy={(e) => e.preventDefault()}
-              onCut={(e) => e.preventDefault()}
-              placeholder={placeholder}
-              className="input h-8 min-w-0 flex-1 py-0 font-mono text-[12px]"
-              autoComplete="off"
-              spellCheck={false}
-              aria-label={ariaLabel}
-              name={fieldName}
-              autoFocus
-            />
-            {test ? (
-              <button
-                type="button"
-                className={KEY_ACTION}
-                disabled={!hasDraft || test.status === 'testing'}
-                onClick={test.onClick}
-              >
-                {test.status === 'testing' ? <Loader size={12} className="animate-spin" aria-hidden="true" /> : null}
-                Test
-              </button>
-            ) : null}
-            {onSave && hasDraft ? (
-              <button type="button" className="btn-primary h-8 px-3 py-0 text-[12px]" onClick={onSave}>
-                Save
-              </button>
-            ) : null}
-            <button
-              type="button"
-              className="h-7 px-2 text-[12px] text-white/50 hover:text-white"
-              onClick={secret.cancelReplace}
-            >
-              Cancel
-            </button>
-          </div>
-          <p className="text-[11px] text-white/35">
-            {configured ? 'Replaces the saved key when you press Save. ' : 'Saved when you press Save. '}
-            <button
-              type="button"
-              className="text-teal-400 hover:text-teal-300"
-              onClick={() => openProviderDocs(docsUrl)}
-            >
-              Get a key ↗
-            </button>
-          </p>
-        </div>
-      ) : null}
-
-      {test && test.status !== 'idle' && test.status !== 'testing' && test.message ? (
-        <p
-          className={cn(
-            'ml-11 mt-1.5 text-[11px] leading-relaxed',
-            test.status === 'ok' ? 'text-[#30D158]' : 'text-[#FF453A]',
-          )}
-        >
-          {test.message}
-        </p>
-      ) : null}
-    </div>
-  )
-}
 
 function SaveBar({
   sectionId,
@@ -730,320 +484,6 @@ function AudioSection({
 }
 
 // ─── Section: API Keys ────────────────────────────────────────────────────────
-
-function ApiKeysSection({
-  settings,
-  update,
-  onSaveComplete,
-  savedSection,
-}: {
-  settings: AppSettings
-  update: UpdateFn
-  onSaveComplete: () => void
-  savedSection: string | null
-}) {
-  const configured = useBootstrapStore((s) => s.settings.secretsConfigured)
-  const setBootstrapSettings = useBootstrapStore((s) => s.setSettings)
-  const storedStt = useBootstrapStore((s) => s.settings.stt)
-  const signedIn = useAccountStore((s) => s.session.state === 'active' || s.session.state === 'stale')
-  const syncHint = signedIn
-    ? 'Saved on this Mac · synced to your church account'
-    : 'Saved on this Mac · sign in to sync across devices'
-  const [deepgramStatus, setDeepgramStatus] = useState<TestStatus>('idle')
-  const [deepgramMsg, setDeepgramMsg] = useState('')
-  const [anthropicStatus, setAnthropicStatus] = useState<TestStatus>('idle')
-  const [anthropicMsg, setAnthropicMsg] = useState('')
-  const [bibleStatus, setBibleStatus] = useState<TestStatus>('idle')
-  const [bibleMsg, setBibleMsg] = useState('')
-  const [braveStatus, setBraveStatus] = useState<TestStatus>('idle')
-  const [braveMsg, setBraveMsg] = useState('')
-  const [clearStt, setClearStt] = useState<SettingsSecretClearKey[]>([])
-  const [clearLyrics, setClearLyrics] = useState<SettingsSecretClearKey[]>([])
-
-  const deepgram = useSecretDraft(configured.deepgram)
-  const anthropic = useSecretDraft(configured.anthropic)
-  const deepseek = useSecretDraft(configured.deepseek)
-  const bible = useSecretDraft(configured.bible)
-  const brave = useSecretDraft(configured.brave)
-  const googleTranslate = useSecretDraft(configured.googleTranslate)
-
-  // When this section opens, pull the church vault so website edits show up
-  // without restarting the app.
-  useEffect(() => {
-    if (!signedIn) return
-    let cancelled = false
-    void (async () => {
-      try {
-        await window.api.account.syncOrgSecrets()
-        if (cancelled) return
-        const fresh = await window.api.settings.getAll()
-        if (!cancelled) setBootstrapSettings(fresh)
-      } catch {
-        // Offline / unsigned — leave whatever is already on disk.
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [signedIn, setBootstrapSettings])
-
-  const testDeepgram = async () => {
-    setDeepgramStatus('testing')
-    setDeepgramMsg('')
-    const result = await window.api.settings.testApiKey('deepgram', deepgram.takeSaveValue())
-    setDeepgramStatus(result.ok ? 'ok' : 'fail')
-    setDeepgramMsg(result.message)
-  }
-
-  const testAnthropic = async () => {
-    setAnthropicStatus('testing')
-    setAnthropicMsg('')
-    const result = await window.api.settings.testApiKey('anthropic', anthropic.takeSaveValue())
-    setAnthropicStatus(result.ok ? 'ok' : 'fail')
-    setAnthropicMsg(result.message)
-  }
-
-  // The web tier falls back silently when Brave rejects a key, so without a
-  // test here a wrong key looks configured and songs the catalogues miss just
-  // never turn up.
-  const testBrave = async () => {
-    setBraveStatus('testing')
-    setBraveMsg('')
-    const result = await window.api.settings.testApiKey('brave', brave.takeSaveValue())
-    setBraveStatus(result.ok ? 'ok' : 'fail')
-    setBraveMsg(result.message)
-  }
-
-  const testBible = async () => {
-    setBibleStatus('testing')
-    setBibleMsg('')
-    const draft = bible.takeSaveValue()
-    const result = await window.api.settings.testApiKey('bible', draft)
-    setBibleStatus(result.ok ? 'ok' : 'fail')
-    setBibleMsg(result.message)
-    if (result.ok) {
-      try {
-        const translations = await window.api.scripture.getTranslations(draft)
-        useBootstrapStore.getState().setTranslations(translations)
-        useBootstrapStore.getState().setApiBibleAuth('authorized')
-      } catch {
-        useBootstrapStore.getState().setApiBibleAuth('unauthorized')
-      }
-    } else {
-      useBootstrapStore.getState().setApiBibleAuth('unauthorized')
-    }
-  }
-
-  const markClear = (key: SettingsSecretClearKey, section: 'stt' | 'lyrics') => {
-    if (section === 'stt') setClearStt((prev) => (prev.includes(key) ? prev : [...prev, key]))
-    else setClearLyrics((prev) => (prev.includes(key) ? prev : [...prev, key]))
-  }
-
-  const unmarkClear = (key: SettingsSecretClearKey, section: 'stt' | 'lyrics') => {
-    if (section === 'stt') setClearStt((prev) => prev.filter((k) => k !== key))
-    else setClearLyrics((prev) => prev.filter((k) => k !== key))
-  }
-
-  const handleSave = async () => {
-    const deepgramValue = deepgram.takeSaveValue()
-    const anthropicValue = anthropic.takeSaveValue()
-    const deepseekValue = deepseek.takeSaveValue()
-    const bibleValue = bible.takeSaveValue()
-    const braveValue = brave.takeSaveValue()
-    const googleValue = googleTranslate.takeSaveValue()
-
-    const sttPatch = {
-      ...settings.stt,
-      apiKey: deepgramValue ?? '',
-      anthropicApiKey: anthropicValue ?? '',
-      deepseekApiKey: deepseekValue ?? '',
-      bibleApiKey: bibleValue ?? '',
-      provider:
-        deepgramValue || (configured.deepgram && !clearStt.includes('apiKey'))
-          ? ('deepgram' as const)
-          : settings.stt.provider,
-      clearKeys: clearStt,
-    }
-    const lyricsPatch = {
-      ...settings.lyrics,
-      braveApiKey: braveValue ?? '',
-      googleTranslateApiKey: googleValue ?? '',
-      clearKeys: clearLyrics,
-    }
-
-    await Promise.all([
-      window.api.settings.set('stt', sttPatch),
-      window.api.settings.set('lyrics', lyricsPatch),
-    ])
-
-    // Don't rely only on the push event — refresh flags so the UI flips to the
-    // masked "saved" state immediately after Save.
-    const fresh = await window.api.settings.getAll()
-    setBootstrapSettings(fresh)
-
-    deepgram.markSaved()
-    anthropic.markSaved()
-    deepseek.markSaved()
-    bible.markSaved()
-    brave.markSaved()
-    googleTranslate.markSaved()
-    setClearStt([])
-    setClearLyrics([])
-    onSaveComplete()
-  }
-
-  const secrets = [deepgram, anthropic, deepseek, bible, brave, googleTranslate]
-  const dirty =
-    clearStt.length > 0 ||
-    clearLyrics.length > 0 ||
-    secrets.some((secret) => secret.draft.trim().length > 0) ||
-    settings.stt.llmProvider !== storedStt.llmProvider
-
-  /** Row props shared by every provider: saved state, draft, remove/undo. */
-  const keyRow = (
-    secret: SecretDraft,
-    isConfigured: boolean,
-    clearKey: SettingsSecretClearKey,
-    section: 'stt' | 'lyrics',
-  ) => {
-    const pendingRemoval = isConfigured && (section === 'stt' ? clearStt : clearLyrics).includes(clearKey)
-    return {
-      secret,
-      configured: isConfigured && !pendingRemoval,
-      pendingRemoval,
-      onRemove: () => {
-        secret.cancelReplace()
-        if (isConfigured) markClear(clearKey, section)
-      },
-      onUndoRemove: () => unmarkClear(clearKey, section),
-      onSave: () => void handleSave(),
-    }
-  }
-
-  const configuredCount = [
-    configured.deepgram && !clearStt.includes('apiKey'),
-    configured.anthropic && !clearStt.includes('anthropicApiKey'),
-    configured.deepseek && !clearStt.includes('deepseekApiKey'),
-    configured.bible && !clearStt.includes('bibleApiKey'),
-    configured.brave && !clearLyrics.includes('braveApiKey'),
-    configured.googleTranslate && !clearLyrics.includes('googleTranslateApiKey'),
-  ].filter(Boolean).length
-
-  const llmProvider = settings.stt.llmProvider
-
-  return (
-    <div className="space-y-5">
-      <div className="flex items-center gap-2.5 rounded-xl bg-surface-secondary px-3.5 py-2.5">
-        <Cloud size={15} className="shrink-0 text-white/40" aria-hidden="true" />
-        <p className="min-w-0 flex-1 text-[11px] leading-snug text-white/50">{syncHint}</p>
-        <span className="shrink-0 text-[11px] tabular-nums text-white/35">{configuredCount} of 6 set</span>
-      </div>
-
-      <PrefGroup title="Speech" description="Turns the sermon audio into text.">
-        <ProviderKeyRow
-          provider="deepgram"
-          name="Deepgram"
-          docsUrl="https://console.deepgram.com/"
-          {...keyRow(deepgram, configured.deepgram, 'apiKey', 'stt')}
-          placeholder="Paste token"
-          fieldName="deepgram-key"
-          aria-label="Deepgram API Token"
-          test={{ status: deepgramStatus, message: deepgramMsg, onClick: () => void testDeepgram() }}
-        />
-      </PrefGroup>
-
-      <PrefGroup title="Scripture detection" description="Reads the transcript and suggests verses. Only one provider is used at a time.">
-        <PrefRow label="Provider">
-          <div className="flex items-center gap-0.5 rounded-md bg-surface-tertiary p-0.5" role="radiogroup" aria-label="Detection provider">
-            {(['anthropic', 'deepseek'] as const).map((id) => {
-              const active = llmProvider === id
-              return (
-                <button
-                  key={id}
-                  type="button"
-                  role="radio"
-                  aria-checked={active}
-                  onClick={() => {
-                    update('stt', { llmProvider: id })
-                    // A choice, not a draft: keep it the moment it is made.
-                    // Blank secret fields in the stored copy mean "unchanged".
-                    void window.api.settings.set('stt', { ...storedStt, llmProvider: id })
-                  }}
-                  className={cn(
-                    'rounded-md px-3 py-1 text-[12px] font-medium transition-colors',
-                    active ? 'bg-surface-border text-white shadow-sm' : 'text-white/45 hover:text-white/75',
-                  )}
-                >
-                  {id === 'anthropic' ? 'Anthropic' : 'DeepSeek'}
-                </button>
-              )
-            })}
-          </div>
-        </PrefRow>
-        {llmProvider === 'anthropic' && (
-          <ProviderKeyRow
-            provider="anthropic"
-            name="Anthropic"
-            docsUrl="https://console.anthropic.com/settings/keys"
-            {...keyRow(anthropic, configured.anthropic, 'anthropicApiKey', 'stt')}
-            placeholder="sk-ant-…"
-            fieldName="anthropic-key"
-            aria-label="Anthropic API Key"
-            test={{ status: anthropicStatus, message: anthropicMsg, onClick: () => void testAnthropic() }}
-          />
-        )}
-      </PrefGroup>
-
-      <PrefGroup title="Lookups" description="DeepSeek searches song lyrics first, with Brave as fallback. Both search keys are optional.">
-        <ProviderKeyRow
-          provider="deepseek"
-          name="DeepSeek"
-          docsUrl="https://platform.deepseek.com/api_keys"
-          {...keyRow(deepseek, configured.deepseek, 'deepseekApiKey', 'stt')}
-          placeholder="sk-…"
-          fieldName="deepseek-key"
-          aria-label="DeepSeek API Key"
-        />
-        <ProviderKeyRow
-          provider="bible"
-          name="API.Bible"
-          docsUrl="https://scripture.api.bible/"
-          {...keyRow(bible, configured.bible, 'bibleApiKey', 'stt')}
-          placeholder="Paste key"
-          fieldName="bible-key"
-          aria-label="Bible API Key"
-          test={{ status: bibleStatus, message: bibleMsg, onClick: () => void testBible() }}
-        />
-        <ProviderKeyRow
-          provider="brave"
-          name="Brave Search"
-          docsUrl="https://api.search.brave.com/app/keys"
-          {...keyRow(brave, configured.brave, 'braveApiKey', 'lyrics')}
-          placeholder="Paste key"
-          fieldName="brave-key"
-          aria-label="Brave Search API Key"
-          test={{ status: braveStatus, message: braveMsg, onClick: () => void testBrave() }}
-        />
-        <ProviderKeyRow
-          provider="google"
-          name="Google Translate"
-          docsUrl="https://console.cloud.google.com/apis/credentials"
-          {...keyRow(googleTranslate, configured.googleTranslate, 'googleTranslateApiKey', 'lyrics')}
-          placeholder="Paste key"
-          fieldName="google-translate-key"
-          aria-label="Google Translate API Key"
-        />
-      </PrefGroup>
-
-      <SaveBar
-        sectionId="apikeys"
-        savedSection={savedSection}
-        disabled={!dirty}
-        onSave={() => void handleSave()}
-      />
-    </div>
-  )
-}
 
 // ─── Section: Scripture Settings ──────────────────────────────────────────────
 
@@ -2018,12 +1458,7 @@ export default function Settings({
                   publish('display', display)
                 }} />}
                 {activeSection === 'apikeys' && (
-                  <ApiKeysSection
-                    settings={settings}
-                    update={update}
-                    onSaveComplete={() => showSaved('apikeys')}
-                    savedSection={savedSection}
-                  />
+                  <LicensePanel />
                 )}
                 {activeSection === 'scripture' && (
                   <ScriptureSection

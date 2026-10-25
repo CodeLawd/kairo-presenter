@@ -1,9 +1,11 @@
-import type { OrgSecretsService } from '../orgs/org-secrets.service'
+import type { LicensingService } from '../licensing/licensing.service'
+import type { RequestUser } from '../common/decorators/current-user.decorator'
 import { testConfig } from '../config/test-config'
 import { SermonSummaryService, SummaryError } from './sermon-summary.service'
 
 const INPUT = {
   orgId: 'org-1',
+  actor: { orgId: 'org-1' } as RequestUser,
   title: 'Sunday Service',
   speaker: 'Pastor',
   preachedAt: new Date('2026-09-06'),
@@ -12,10 +14,10 @@ const INPUT = {
 }
 
 /** Only the DeepSeek key is set, so `generate` always takes the DeepSeek path. */
-const secretsWithDeepSeek = (): OrgSecretsService =>
+const secretsWithDeepSeek = (): LicensingService =>
   ({
-    get: async () => ({ anthropicApiKey: '', deepseekApiKey: 'sk-deepseek' }),
-  }) as unknown as OrgSecretsService
+    summaryKeys: async () => ({ anthropicApiKey: '', deepseekApiKey: 'sk-deepseek' }),
+  }) as unknown as LicensingService
 
 describe('SermonSummaryService — DeepSeek failures', () => {
   const fetchMock = jest.fn()
@@ -41,16 +43,16 @@ describe('SermonSummaryService — DeepSeek failures', () => {
     })
   }
 
-  it("carries the provider's own words, not just a status code", async () => {
+  it("reports status without leaking provider response bodies", async () => {
     refuse(400, JSON.stringify({ error: { message: 'Model Not Exist' } }))
 
-    await expect(service().generate(INPUT)).rejects.toThrow(/400.*Model Not Exist/)
+    await expect(service().generate(INPUT)).rejects.toThrow(/\(400\)/)
   })
 
-  it('falls back to the raw body when the error is not JSON', async () => {
+  it('sanitizes non-JSON provider response bodies', async () => {
     refuse(502, '  upstream unavailable  ')
 
-    await expect(service().generate(INPUT)).rejects.toThrow(/\(502\): upstream unavailable/)
+    await expect(service().generate(INPUT)).rejects.toThrow(/\(502\)/)
   })
 
   it('still reports the status when the body cannot be read', async () => {
@@ -113,5 +115,21 @@ describe('automatic review', () => {
     }) as typeof fetch
     await expect(new SermonSummaryService(secretsWithDeepSeek(), testConfig()).generate(INPUT))
       .rejects.toMatchObject({ code: 'provider', retryable: true })
+  })
+})
+
+describe('managed recap authorization', () => {
+  it('requires a persisted actor and rejects an actor for a different church', async () => {
+    const summaryKeys = jest.fn()
+    const service = new SermonSummaryService({ summaryKeys } as unknown as LicensingService, testConfig())
+    await expect(service.generate({ ...INPUT, actor: undefined })).rejects.toThrow(/Activate/)
+    await expect(service.generate({ ...INPUT, actor: { orgId: 'other-org' } as RequestUser })).rejects.toThrow(/Activate/)
+    expect(summaryKeys).not.toHaveBeenCalled()
+  })
+  it('propagates disabled licence authorization before any provider request', async () => {
+    const summaryKeys = jest.fn().mockRejectedValue(new Error('Licence suspended'))
+    const service = new SermonSummaryService({ summaryKeys } as unknown as LicensingService, testConfig())
+    await expect(service.generate(INPUT)).rejects.toThrow('Licence suspended')
+    expect(summaryKeys).toHaveBeenCalledWith(INPUT.actor)
   })
 })

@@ -321,3 +321,46 @@ test("a detector with no LLM key starts for every provider", () => {
     detector.destroy();
   }
 });
+
+for (const opening of ['Matthew 19', 'Go to Matthew']) {
+  test(`live finals remember ${opening} across preaching and replace it when a new book is named`, () => {
+    let finalListener!: (result: TranscriptResult) => void;
+    const source = {
+      onTranscript(listener: typeof finalListener) { finalListener = listener; },
+      offTranscript() {}, onInterim() {}, offInterim() {},
+    };
+    const detector = new ScriptureDetector({ apiKey: '' });
+    const refs: ScriptureReference[] = [];
+    detector.on('detection', batch => refs.push(...batch));
+    const cleanup = subscribeExplicitScriptureDetection(source, detector);
+    const originalNow = Date.now;
+    let now = originalNow();
+    Date.now = () => now;
+    const send = (text: string): void => finalListener({ id: text, text, words: [], timestamp: now, duration: 0, isFinal: true });
+    try {
+      send(opening);
+      now += 5 * 60_000;
+      send('We need to think about how we live every day.');
+      send('lets continue from verse 30 of chapter 19');
+      send('Go to Luke');
+      now += 5 * 60_000;
+      send('verse 30 of chapter 19');
+      assert.deepEqual(refs.map(ref => [ref.book, ref.chapter, ref.verseStart]), [['Matthew', 19, 30], ['Luke', 19, 30]]);
+      assert.ok(refs.every(ref => ref.transcriptSource === 'final' && ref.resolver === 'explicit'));
+    } finally { Date.now = originalNow; cleanup(); detector.destroy(); }
+  });
+}
+
+test('naming a new book cancels the old chapter-only fallback', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const detector = new ScriptureDetector({ apiKey: '' });
+  const refs: ScriptureReference[] = [];
+  detector.on('detection', batch => refs.push(...batch));
+  try {
+    detector.analyzeExplicit('Matthew 19', true);
+    detector.holdIncompleteCitation('Matthew 19');
+    detector.analyzeExplicit('Go to Luke', true);
+    t.mock.timers.tick(5_001);
+    assert.equal(refs.length, 0, 'The previous chapter must not appear after the speaker changes book');
+  } finally { detector.destroy(); t.mock.timers.reset(); }
+});

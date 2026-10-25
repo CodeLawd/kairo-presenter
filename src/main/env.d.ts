@@ -7,6 +7,7 @@
  * URLs and feature flags only, never a credential.
  */
 interface ImportMetaEnv {
+  readonly MAIN_VITE_LICENSE_PUBLIC_KEY?: string
   /** Kairo cloud API base URL, e.g. http://localhost:3000 in development. */
   readonly MAIN_VITE_API_URL?: string
   /** Web app base URL, for links opened in the system browser. */

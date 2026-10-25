@@ -322,11 +322,11 @@ function createWindow(): void {
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
     // Centred in the 60px header (.app-header), beside the page title.
     trafficLightPosition: { x: 18, y: 24 },
-    // Native blur shows through the shell chrome; workspaces stay opaque.
-    backgroundColor: process.platform === "darwin" ? "#00000000" : "#111319",
-    ...(process.platform === "darwin"
-      ? { vibrancy: "under-window" as const, visualEffectState: "followWindow" as const }
-      : {}),
+    // Opaque dark shell. macOS used to use a transparent window plus native
+    // vibrancy, but the `under-window` blur tracks the *system* appearance, so a
+    // Mac in light mode washed the header and rail out to white. A solid surface
+    // keeps the chrome dark regardless of the desktop theme.
+    backgroundColor: "#111319",
     webPreferences: {
       preload: join(__dirname, "../preload/index.js"),
       sandbox: false,

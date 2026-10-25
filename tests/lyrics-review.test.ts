@@ -1,3 +1,4 @@
+import './helpers/managed-transport'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import axios from 'axios'
@@ -11,8 +12,7 @@ const selected = (keepLineIds: number[], sections = [{ type: 'verse', startLineI
 test('review removes page prose using source IDs, preserving languages, glosses, repeats and sections', async (t) => {
   t.mock.method(axios, 'post', async (_url, body, config) => {
     assert.equal(body.response_format.type, 'json_object')
-    assert.equal(config.headers.Authorization, 'Bearer test-key')
-    assert.equal(config.timeout, 20000)
+    assert.deepEqual(config.headers, {}, 'Provider credentials stay off the desktop')
     const input = JSON.parse(body.messages[1].content)
     assert.equal(input.lines[3].text, 'Ẹ ṣe Olúwa')
     return response(selected([2, 3, 4, 6, 7, 8], [{ type: 'verse', startLineId: 3 }, { type: 'chorus', startLineId: 7 }]))
@@ -22,11 +22,11 @@ test('review removes page prose using source IDs, preserving languages, glosses,
   assert.deepEqual(result.review, { status: 'reviewed', removedLines: 2 })
 })
 
-test('missing key preserves original and reports unverified without calling DeepSeek', async (t) => {
+test('unavailable managed access preserves original and reports unverified', async (t) => {
   t.mock.method(axios, 'post', async () => { throw new Error('must not call') })
   const result = await reviewOnlineLyrics(text, { ...source, apiKey: '' })
   assert.equal(result.text, text)
-  assert.deepEqual(result.review, { status: 'unverified', reason: 'missing-key' })
+  assert.deepEqual(result.review, { status: 'unverified', reason: 'unavailable' })
 })
 
 for (const selection of [[3, 3], [4, 3], [-1], [999], ['3'], [3.5]]) {

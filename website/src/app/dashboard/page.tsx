@@ -195,10 +195,10 @@ export default function DashboardPage(): React.ReactElement {
 
   const shortcuts = [
     {
-      href: '/dashboard/keys',
+      href: '/dashboard/licence',
       icon: KeyRoundIcon,
-      title: 'API keys',
-      description: 'Sync keys to every Kairo computer',
+      title: 'Licence & Devices',
+      description: 'Activate computers and manage your church licence',
     },
     {
       href: '/dashboard/devices',

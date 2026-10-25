@@ -1,3 +1,4 @@
+import './helpers/managed-transport'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import axios from 'axios'
@@ -5,10 +6,10 @@ import axios from 'axios'
 import { translateSections } from '../src/main/services/lyrics/translate'
 import type { LyricsSongSection } from '../src/lib/ipc'
 
-test('translateSections requires an API key when nothing can be resolved', async () => {
+test('translateSections reports activation when managed access is unavailable', async () => {
   await assert.rejects(
     () => translateSections([{ type: 'verse', label: 'Verse', lines: ['Hola'] }], { apiKey: '' }),
-    /Google Translate|Anthropic|DeepSeek|online glosses/i
+    /Activate|managed services/i
   )
 })
 

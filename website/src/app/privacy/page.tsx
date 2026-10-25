@@ -78,9 +78,8 @@ const sections: LegalSection[] = [
         <h3>Service keys</h3>
         <ul>
           <li>
-            The keys your church adds for outside services (such as Deepgram, Anthropic, DeepSeek, API.Bible,
-            Brave Search and Google Translate) are stored, encrypted, so they&apos;re available on your
-            church&apos;s other computers.
+            Keys supplied for outside services (such as Deepgram, Anthropic, DeepSeek, API.Bible,
+            Brave Search and Google Translate) are stored encrypted. Kairo manages platform provider keys centrally; church computers receive licensed service access rather than the saved platform keys.
           </li>
         </ul>
         <h3>Crash reports</h3>
@@ -120,7 +119,7 @@ const sections: LegalSection[] = [
     content: (
       <>
         <p>
-          These features run through outside services using keys your church adds, so each provider also handles
+          These features run through outside services with access managed by Kairo or keys supplied by your church, so each provider also handles
           the data under its own privacy terms:
         </p>
         <ul>

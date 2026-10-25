@@ -38,7 +38,6 @@ import {
   STT_SECRET_KEYS,
   mergeSecretSection,
   redactSettingsSecrets,
-  secretsConfiguredFromSettings,
 } from "@shared/cloud/org-secrets";
 import type { SettingsSecretClearKey, SettingsWithSecretsStatus } from "@shared/ipc";
 import { store } from "../db";
@@ -76,6 +75,8 @@ import { dialogParentWindow, getMainWindow } from "../main-window";
 import { allowPickedOverlayMedia } from "../services/ndi/media-allowlist";
 import { runBootstrap } from "../bootstrap";
 import { onboardingService } from "../services/cloud/onboarding";
+import { licensing } from "../services/cloud/licensing";
+import { MANAGED } from "../services/cloud/managed";
 import { cloudSession } from "../services/cloud/session";
 import { usageService } from "../services/usage";
 import { startCrashReports } from "../services/crash-reports";
@@ -183,12 +184,12 @@ function registerScriptureHandlers(): void {
 
   ipcMain.handle(IPC.SCRIPTURE.SEARCH, async (_event, query: string, translation?: AppSettings['scripture']['defaultTranslation']) => {
     usageService.track('scripture_search');
-    return scriptureService.search(query, translation, store.get('stt').bibleApiKey);
+    return scriptureService.search(query, translation, MANAGED);
   });
 
   ipcMain.handle(IPC.SCRIPTURE.GET_TRANSLATIONS, async (_event, apiKey?: string) => {
     return scriptureService.getTranslationOptions(
-      apiKey ?? store.get('stt').bibleApiKey,
+      MANAGED,
       apiKey !== undefined,
     );
   });
@@ -274,7 +275,7 @@ function registerScriptureHandlers(): void {
   // pushed, so the renderer stays responsive (and can pause) while it runs.
   ipcMain.handle(IPC.SCRIPTURE.DOWNLOAD_TRANSLATION, async (_event, bibleId: string) => {
     usageService.track('bible_download');
-    await scriptureService.ensureAuthorizedBibleId(bibleId, store.get("stt").bibleApiKey);
+    await scriptureService.ensureAuthorizedBibleId(bibleId, MANAGED);
     await getDownloadManager().startDownloadInBackground(bibleId);
   });
 
@@ -283,7 +284,7 @@ function registerScriptureHandlers(): void {
   });
 
   ipcMain.handle(IPC.SCRIPTURE.REFRESH_OFFLINE_TRANSLATION, async (_event, bibleId: string) => {
-    await scriptureService.ensureAuthorizedBibleId(bibleId, store.get("stt").bibleApiKey);
+    await scriptureService.ensureAuthorizedBibleId(bibleId, MANAGED);
     await getDownloadManager().refreshInBackground(bibleId);
   });
 
@@ -412,21 +413,14 @@ function registerTranscriptionHandlers(): void {
 
 function registerOrchestratorHandlers(): void {
   ipcMain.handle(IPC.ORCHESTRATOR.START, async (_event, config: OrchestratorConfig) => {
+    licensing.assertFeature("transcription");
     if (!serviceRecords.active()) throw new Error('Create a service in Operator before starting transcription.');
-    // Renderer settings are redacted — fill secret fields from the local store.
-    const stt = store.get("stt");
+    // The main process chooses managed services; renderer credentials are ignored.
     const hydrated: OrchestratorConfig = {
       ...config,
-      sttApiKey: config.sttApiKey?.trim() || stt.apiKey,
-      llmApiKey:
-        config.llmApiKey?.trim() ||
-        (config.llmProvider === "deepseek" ? stt.deepseekApiKey : stt.anthropicApiKey),
-      sttProvider:
-        config.sttProvider !== "none"
-          ? config.sttProvider
-          : stt.apiKey
-            ? "deepgram"
-            : stt.provider,
+      sttApiKey: MANAGED,
+      llmApiKey: MANAGED,
+      sttProvider: "deepgram",
     };
     await orchestrator.start(hydrated);
   });
@@ -610,16 +604,14 @@ function registerLyricsHandlers(): void {
         artist?: string;
       },
     ) => {
-      const lyrics = store.get("lyrics");
       const stt = store.get("stt");
       const provider = stt.llmProvider === "deepseek" ? "deepseek" : "anthropic";
-      const llmKey =
-        provider === "deepseek" ? stt.deepseekApiKey?.trim() : stt.anthropicApiKey?.trim();
+      const llmKey = MANAGED;
       const { translateSections } = await import("../services/lyrics/translate");
       return translateSections(sections, {
-        apiKey: lyrics.googleTranslateApiKey ?? "",
-        deepseekApiKey: stt.deepseekApiKey,
-        braveApiKey: lyrics.braveApiKey,
+        apiKey: MANAGED,
+        deepseekApiKey: MANAGED,
+        braveApiKey: MANAGED,
         target: options?.target ?? "en",
         sourceLanguage: options?.sourceLanguage ?? "auto",
         title: options?.title,
@@ -1115,7 +1107,7 @@ function settingsForRenderer(): SettingsWithSecretsStatus {
   };
   return {
     ...redactSettingsSecrets(raw),
-    secretsConfigured: secretsConfiguredFromSettings(raw),
+    secretsConfigured: licensing.getStatus().providers,
   };
 }
 
@@ -1168,9 +1160,8 @@ function registerSettingsHandlers(): void {
           incoming,
           STT_SECRET_KEYS,
         );
-        store.set("stt", merged);
+        store.set("stt", { ...merged, apiKey: "", anthropicApiKey: "", deepseekApiKey: "", bibleApiKey: "" });
         broadcastSettingsChanged();
-        void cloudSession.pushOrgSecrets(incoming.clearKeys ?? []);
       } else if (key === "lyrics") {
         const incoming = value as AppSettings["lyrics"] & { clearKeys?: SettingsSecretClearKey[] };
         const merged = mergeSecretSection(
@@ -1178,9 +1169,8 @@ function registerSettingsHandlers(): void {
           incoming,
           LYRICS_SECRET_KEYS,
         );
-        store.set("lyrics", merged);
+        store.set("lyrics", { ...merged, braveApiKey: "", googleTranslateApiKey: "" });
         broadcastSettingsChanged();
-        void cloudSession.pushOrgSecrets(incoming.clearKeys ?? []);
       } else if (key === "capture") {
         store.set("capture", normalizeCaptureSettings({ ...store.get("capture"), ...(value as Partial<AppSettings["capture"]>) }));
       } else if (key === "web") {
@@ -1219,95 +1209,7 @@ function registerSettingsHandlers(): void {
 
   ipcMain.handle(IPC.SETTINGS.GET_ALL, () => settingsForRenderer());
 
-  ipcMain.handle(
-    IPC.SETTINGS.TEST_API_KEY,
-    async (_event, kind: "deepgram" | "anthropic" | "bible" | "brave", draft?: string) => {
-      const stt = store.get("stt");
-      const key =
-        (typeof draft === "string" && draft.trim()) ||
-        (kind === "deepgram"
-          ? stt.apiKey
-          : kind === "anthropic"
-            ? stt.anthropicApiKey
-            : kind === "brave"
-              ? store.get("lyrics").braveApiKey
-              : stt.bibleApiKey);
-
-      if (!key) return { ok: false, message: "No key entered" };
-
-      if (kind === "brave") {
-        try {
-          const res = await fetch(
-            "https://api.search.brave.com/res/v1/web/search?q=test&count=1",
-            { headers: { "X-Subscription-Token": key, Accept: "application/json" } },
-          );
-          if (res.ok) return { ok: true, message: "Key valid" };
-          // Brave answers a bad token with 422 and its own error code — not 401 —
-          // so an untested key can sit in Settings looking configured while
-          // every web-tier search silently falls back.
-          const body = (await res.json().catch(() => null)) as
-            | { error?: { code?: string; detail?: string } }
-            | null;
-          const code = body?.error?.code;
-          if (code === "SUBSCRIPTION_TOKEN_INVALID" || res.status === 401 || res.status === 403) {
-            return { ok: false, message: "Invalid key — Brave rejected it" };
-          }
-          if (code === "RATE_LIMITED" || res.status === 429) {
-            return { ok: true, message: "Key valid (rate limited right now)" };
-          }
-          return { ok: false, message: body?.error?.detail ?? `HTTP ${res.status}` };
-        } catch {
-          return { ok: false, message: "Could not reach Brave Search" };
-        }
-      }
-
-      if (kind === "deepgram") {
-        try {
-          const res = await fetch("https://api.deepgram.com/v1/projects", {
-            headers: { Authorization: `Token ${key}` },
-          });
-          if (res.ok) return { ok: true, message: "Key valid" };
-          if (res.status === 401) return { ok: false, message: "Unauthorized — invalid key" };
-          return { ok: false, message: `HTTP ${res.status}` };
-        } catch {
-          const valid = key.length >= 20 && !/\s/.test(key);
-          return {
-            ok: valid,
-            message: valid ? "Format valid (network check blocked)" : "Key format invalid",
-          };
-        }
-      }
-
-      if (kind === "anthropic") {
-        if (!key.startsWith("sk-ant-") || key.length < 30) {
-          return { ok: false, message: "Must start with sk-ant-" };
-        }
-        try {
-          const res = await fetch("https://api.anthropic.com/v1/models", {
-            headers: { "x-api-key": key, "anthropic-version": "2023-06-01" },
-          });
-          if (res.ok || res.status === 200) return { ok: true, message: "Key valid" };
-          if (res.status === 401) return { ok: false, message: "Unauthorized — check key" };
-          return { ok: true, message: `Accepted (HTTP ${res.status})` };
-        } catch {
-          return { ok: true, message: "Format valid (network check blocked)" };
-        }
-      }
-
-      try {
-        const translations = await scriptureService.getTranslationOptions(key, true);
-        const available = translations.filter(
-          (item: { available: boolean }) => item.available,
-        );
-        return { ok: true, message: `${available.length} translations available` };
-      } catch (error) {
-        return {
-          ok: false,
-          message: error instanceof Error ? error.message : "Unable to validate key",
-        };
-      }
-    },
-  );
+  ipcMain.handle(IPC.SETTINGS.TEST_API_KEY, () => ({ ok: false, message: 'Provider credentials are managed in your church account.' }));
 }
 
 // ─── Push event wiring ────────────────────────────────────────────────────────
@@ -1404,6 +1306,11 @@ function registerOnboardingHandlers(): void {
  * operator-facing message intact all the way to the field it belongs under.
  */
 function registerAccountHandlers(): void {
+  ipcMain.handle(IPC.ACCOUNT.GET_LICENSE, () => licensing.getStatus());
+  ipcMain.handle(IPC.ACCOUNT.ACTIVATE_LICENSE, (_event, key: string, name?: string) => cloudResult(() => licensing.activate(key, name)));
+  ipcMain.handle(IPC.ACCOUNT.REFRESH_LICENSE, () => cloudResult(() => licensing.refresh()));
+  licensing.onChange(snapshot => { broadcast(IPC.ACCOUNT.LICENSE_CHANGED, snapshot); broadcastSettingsChanged(); });
+
   ipcMain.handle(IPC.ACCOUNT.GET_SESSION, async () => cloudSession.getSession());
 
   ipcMain.handle(IPC.ACCOUNT.SIGN_UP, async (_e, input: SignUpInput) =>
@@ -1445,7 +1352,7 @@ function registerAccountHandlers(): void {
     // Fired when the window gains focus: also the moment to try a stale
     // session again, rather than waiting for the next scheduled retry.
     cloudSession.reconnect();
-    await cloudSession.pullOrgSecrets();
+    await licensing.refresh().catch(() => undefined);
   });
 }
 
@@ -1547,6 +1454,7 @@ export function registerIpcHandlers(quit: {
   // empty and fills in when the scan lands.
   // Restores a stored sign-in and starts the quiet refresh loop. Never awaited:
   // the account is not allowed to delay startup by so much as a frame.
+  licensing.start();
   cloudSession.start();
   // Waking from sleep is the usual moment a laptop's network comes back.
   powerMonitor.on("resume", () => cloudSession.reconnect());

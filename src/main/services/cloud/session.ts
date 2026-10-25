@@ -12,7 +12,6 @@ import type {
   DevicePairingState,
   DeviceStartPayload,
   DevicePollPayload,
-  OrgSecretsPayload,
   RefreshPayload,
   SermonUploadInput,
   SermonUploadResult,
@@ -21,10 +20,6 @@ import type {
   SignUpInput,
 } from '@shared/cloud/contracts'
 import { isTerminalOutcome, nextPollDelaySec } from '@shared/cloud/device-code'
-import {
-  applyOrgSecretsToSettings,
-  settingsToOrgSecretsPatch,
-} from '@shared/cloud/org-secrets'
 import { store } from '@main/db'
 import { CloudApiClient, toApiError } from './api-client'
 import { SecureStore, createSecureStore } from './secure-store'
@@ -50,13 +45,6 @@ const REFRESH_INTERVAL_MS = 10 * 60 * 1000
  * still only a quiet retry now and then.
  */
 const OFFLINE_RETRY_MS = [5_000, 15_000, 30_000, 60_000, 120_000, 300_000]
-/**
- * Floor between vault reads. The pull is event-driven — launch, sign-in, and
- * window focus — so this only exists to swallow bursts (alt-tabbing, a window
- * that fires focus twice), not to poll on a timer.
- */
-const SECRETS_MIN_INTERVAL_MS = 10 * 1000
-
 const EMPTY_SESSION: SessionSnapshot = {
   state: 'signed-out',
   user: null,
@@ -101,14 +89,6 @@ export class CloudSessionService {
   private offlineAttempts = 0
   private offlineRetry: ReturnType<typeof setTimeout> | null = null
   private deviceId = ''
-  /** False until the first pull attempt finishes — blocks push from wiping the vault. */
-  private secretsHydrated = false
-  private secretsPullInFlight: Promise<void> | null = null
-  /** `updatedAt` of the vault revision already on disk — skips no-op writes. */
-  private lastSecretsUpdatedAt: string | null = null
-  /** Set while a local save is being pushed, so a pull cannot overwrite it mid-flight. */
-  private secretsPushInFlight = 0
-  private lastSecretsPullAt = 0
 
   constructor(store?: SecureStore) {
     this.store = store ?? createSecureStore()
@@ -135,6 +115,12 @@ export class CloudSessionService {
    * validates it runs afterwards, so launch never waits on the internet.
    */
   start(): void {
+    // Retire plaintext provider credentials left by older desktop versions.
+    const stt = store.get('stt')
+    const lyrics = store.get('lyrics')
+    if (stt.apiKey || stt.anthropicApiKey || stt.deepseekApiKey || stt.bibleApiKey) store.set('stt', { ...stt, apiKey: '', anthropicApiKey: '', deepseekApiKey: '', bibleApiKey: '' })
+    if (lyrics.braveApiKey || lyrics.googleTranslateApiKey) store.set('lyrics', { ...lyrics, braveApiKey: '', googleTranslateApiKey: '' })
+
     const token = this.store.read(REFRESH_TOKEN_NAME)
     if (token) {
       this.snapshot = { ...this.snapshot, state: 'stale' }
@@ -187,8 +173,6 @@ export class CloudSessionService {
 
   async signOut(): Promise<SessionSnapshot> {
     this.cancelPairing()
-    this.secretsHydrated = false
-    this.lastSecretsUpdatedAt = null
     try {
       await this.api.request('post', '/v1/auth/logout', undefined, { allowRefresh: false })
     } catch {
@@ -428,104 +412,15 @@ export class CloudSessionService {
     return snapshot
   }
 
-  /**
-   * Hydrate local API keys from the org vault. Best-effort — a dead network
-   * leaves whatever is already on disk and never blocks the booth.
-   *
-   * Called on launch, on sign-in, and when the window regains focus — never on
-   * a timer, so an idle booth makes no requests at all.
-   *
-   * After a successful pull, cloud wins for every known secret field (including
-   * empties), so a clear on the website is what the booth uses next.
-   */
-  async pullOrgSecrets(options: { throttle?: boolean } = {}): Promise<void> {
-    if (this.secretsPullInFlight) return this.secretsPullInFlight
-    // Focus-driven pulls arrive in bursts; a hard gate keeps that to one read.
-    if (options.throttle && Date.now() - this.lastSecretsPullAt < SECRETS_MIN_INTERVAL_MS) {
-      return
-    }
-    this.lastSecretsPullAt = Date.now()
+  /** Provider credentials stay on the server. Retained as a compatibility no-op. */
+  async pullOrgSecrets(_options: { throttle?: boolean } = {}): Promise<void> {}
 
-    this.secretsPullInFlight = this.runPullOrgSecrets().finally(() => {
-      this.secretsPullInFlight = null
-    })
-    return this.secretsPullInFlight
-  }
+  async pushOrgSecrets(_clearLocalKeys: readonly string[] = []): Promise<void> {}
 
-  private async runPullOrgSecrets(): Promise<void> {
-    const orgId = this.snapshot.org?.id
-    if (!orgId || this.snapshot.state === 'signed-out') {
-      this.secretsHydrated = true
-      return
-    }
-    if (!this.snapshot.user?.emailVerified) {
-      this.secretsHydrated = true
-      return
-    }
-    // A save started locally is still travelling to the vault; a pull that lands
-    // now would hand back the pre-save revision and undo it on screen.
-    if (this.secretsPushInFlight > 0) return
-    try {
-      const secrets = await this.api.request<OrgSecretsPayload>(
-        'get',
-        `/v1/orgs/${orgId}/secrets`,
-      )
-      const revision = secrets.updatedAt ?? null
-      // Same revision as what is already on disk: nothing to write, and no
-      // settings:changed broadcast to blank a field the operator is typing into.
-      if (this.secretsHydrated && revision !== null && revision === this.lastSecretsUpdatedAt) {
-        return
-      }
-      const merged = applyOrgSecretsToSettings(
-        { stt: store.get('stt'), lyrics: store.get('lyrics') },
-        secrets,
-      )
-      store.set('stt', merged.stt)
-      store.set('lyrics', merged.lyrics)
-      this.lastSecretsUpdatedAt = revision
-      log.info('[Cloud] Org secrets pulled')
-      this.emitSecretsChanged()
-    } catch (error) {
-      log.warn('[Cloud] Org secrets pull failed', { reason: toApiError(error).message })
-    } finally {
-      this.secretsHydrated = true
-    }
-  }
-
-  /**
-   * Push local API-key changes to the org vault. Empty locals are omitted so a
-   * machine that has not hydrated yet cannot wipe keys saved on the website.
-   * Pass `clearLocalKeys` only when the operator explicitly cleared a field.
-   */
-  async pushOrgSecrets(clearLocalKeys: readonly string[] = []): Promise<void> {
-    if (!this.secretsHydrated) {
-      if (this.secretsPullInFlight) await this.secretsPullInFlight
-    }
-    const orgId = this.snapshot.org?.id
-    if (!orgId || this.snapshot.state === 'signed-out') return
-    if (!this.snapshot.user?.emailVerified) return
-    let pushing = false
-    try {
-      const patch = settingsToOrgSecretsPatch(
-        { stt: store.get('stt'), lyrics: store.get('lyrics') },
-        clearLocalKeys,
-      )
-      if (Object.keys(patch).length === 0) return
-      pushing = true
-      this.secretsPushInFlight += 1
-      const saved = await this.api.request<OrgSecretsPayload>(
-        'put',
-        `/v1/orgs/${orgId}/secrets`,
-        { ...patch, updatedAt: new Date().toISOString() },
-      )
-      // Record the revision we just wrote so the next poll sees no change.
-      this.lastSecretsUpdatedAt = saved?.updatedAt ?? null
-      log.info('[Cloud] Org secrets pushed')
-    } catch (error) {
-      log.warn('[Cloud] Org secrets push failed', { reason: toApiError(error).message })
-    } finally {
-      if (pushing) this.secretsPushInFlight -= 1
-    }
+  /** Authenticated main-process requests; never exposed by preload. */
+  managedRequest<T>(method: 'get' | 'post' | 'delete', pathname: string, body?: unknown): Promise<T> {
+    if (!/^\/v1\/(licensing(?:\/|$)|managed(?:\/|$))/.test(pathname)) throw new Error('Unsupported managed endpoint')
+    return this.api.request<T>(method, pathname, body, { timeoutMs: 30_000 })
   }
 
   /**
@@ -683,7 +578,7 @@ export class CloudSessionService {
   }
 
   /** Stable per install, so the server can name and revoke this machine. */
-  private getDeviceId(): string {
+  getDeviceId(): string {
     if (this.deviceId) return this.deviceId
     const file = path.join(app.getPath('userData'), 'cloud', 'device.json')
     try {

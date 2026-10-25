@@ -1,3 +1,4 @@
+import './helpers/managed-transport'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import axios from 'axios'
@@ -12,7 +13,7 @@ test('DeepSeek is first and Brave is not called when the consumer accepts its re
   const post = t.mock.method(axios, 'post', async (url, body, config) => {
     assert.equal(url, 'https://api.deepseek.com/v1/tools/search')
     assert.deepEqual(body, { query: 'A song lyrics', count: 8, need_content: false })
-    assert.equal(config.headers.Authorization, 'Bearer deepseek-test')
+    assert.deepEqual(config.headers, {})
     return { data: { results: [hit] } }
   })
   const get = t.mock.method(axios, 'get', async () => { throw new Error('Brave should not run') })
@@ -31,7 +32,7 @@ for (const status of [401, 402, 429, 504]) {
       throw Object.assign(new Error('failed'), { isAxiosError: true, response: { status } })
     })
     t.mock.method(axios, 'get', async (_url, config) => {
-      assert.equal(config.headers['X-Subscription-Token'], 'brave-test')
+      assert.deepEqual(config.headers, {})
       return { data: { web: { results: [hit] } } }
     })
     const batches = []
@@ -66,11 +67,14 @@ test('DeepSeek length limit counts Unicode characters and strips tracking URLs',
   }
 })
 
-test('missing keys do not send paid requests', async (t) => {
-  const post = t.mock.method(axios, 'post', async () => { throw new Error('no key') })
-  const get = t.mock.method(axios, 'get', async () => { throw new Error('no key') })
-  for await (const _batch of searchWebProviders('A song lyrics', {})) assert.fail('unexpected batch')
-  assert.equal(post.mock.callCount() + get.mock.callCount(), 0)
+test('missing customer keys still use managed access', async (t) => {
+  const post = t.mock.method(axios, 'post', async () => ({ data: { results: [hit] } }))
+  const get = t.mock.method(axios, 'get', async () => { throw new Error('unneeded fallback') })
+  const batches = []
+  for await (const batch of searchWebProviders('A song lyrics', {})) { batches.push(batch); break }
+  assert.equal(batches[0].provider, 'deepseek')
+  assert.equal(post.mock.callCount(), 1)
+  assert.equal(get.mock.callCount(), 0)
 })
 
 test('unverified DeepSeek hits continue to Brave; verified results are cached', async (t) => {

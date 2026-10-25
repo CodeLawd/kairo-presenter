@@ -681,7 +681,7 @@ export default function Scripture({ active = true }: { active?: boolean }): Reac
     const missing = refreshed.items.filter((item) => !item.available);
     if (missing.length > 0) {
       setError(
-        `${missing.length} playlist item${missing.length !== 1 ? "s" : ""} still have no verse text. Check Bible translations / API key.`,
+        `${missing.length} playlist item${missing.length !== 1 ? "s" : ""} still have no verse text. Check installed Bible translations or your managed services.`,
       );
     }
   }, [setScriptureViewState, translation, translations]);
@@ -1512,8 +1512,8 @@ export default function Scripture({ active = true }: { active?: boolean }): Reac
               <div className="flex gap-2 rounded-lg bg-tint-yellow px-3.5 py-3 text-xs text-yellow-400">
                 <AlertCircle size={14} className="shrink-0" />
                 {translations.find((item) => item.id === translation)?.downloadable
-                  ? `${translation} is the default but isn't installed yet. Download it in Settings → Scripture, or add an API.Bible key authorized for ${translation} in Settings → API Keys.`
-                  : `${translation} is the default, but its text requires an API.Bible key authorized for ${translation}. Add the key in Settings → API Keys.`}
+                  ? `${translation} is the default but isn't installed yet. Download it in Settings → Scripture, or check managed Bible access in Account → Licence & Devices.`
+                  : `${translation} is the default, but its text requires managed Bible access. Check Account → Licence & Devices.`}
               </div>
             )}
 

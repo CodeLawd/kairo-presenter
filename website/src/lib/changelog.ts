@@ -14,6 +14,17 @@ export type ChangelogEntry = {
 
 export const changelog: ChangelogEntry[] = [
   {
+    version: '1.0.19',
+    date: '2026-10-25',
+    title: 'Activate Kairo with one key — no more API keys',
+    notes: [
+      'Live transcription, scripture lookup and lyric tools now come included. Your church no longer needs its own Deepgram or API.Bible accounts.',
+      'Church owners and admins create activation keys on the Licence & devices page and paste one into Kairo to activate each computer. Licences are free for now.',
+      'Pick a theme for each screen or feed straight from the toolbar, and set lyric text size even when Fit to box is on.',
+      'Scripture detection remembers the book and chapter the preacher is in, so “verse 30 of chapter 19” lands on the right passage.',
+    ],
+  },
+  {
     version: '1.0.18',
     date: '2026-10-24',
     title: 'A smoother way back to your church workspace',
