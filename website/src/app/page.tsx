@@ -93,8 +93,10 @@ const downloads = [
   },
 ];
 
-const thesis =
-  "You can prepare the songs and readings. You can't predict every verse that comes up. Kairo helps you find it, check it, and put it on screen.";
+const thesis = {
+  heading: "Because every moment matters.",
+  body: "Church services don't always go according to plan. From unexpected Scripture references to spontaneous moments of worship, Kairo listens, recognizes Scripture, and helps you present the right content at the right moment.",
+};
 
 const features = [
   {
@@ -164,32 +166,42 @@ const questions = [
 ];
 
 function Thesis(): React.ReactElement {
-  const total = thesis.replace(/ /g, "").length;
+  // One letter count across heading and body, so the scroll reveal runs through both in order.
+  const total = (thesis.heading + thesis.body).replace(/ /g, "").length;
   let letter = 0;
+  const reveal = (text: string): React.ReactElement => (
+    <span aria-hidden="true">
+      {text.split(" ").map((word, w) => (
+        <Fragment key={w}>
+          {w > 0 && " "}
+          <span className="whitespace-nowrap">
+            {[...word].map((char, c) => {
+              const at = letter++ / total;
+              return (
+                <span
+                  key={c}
+                  style={{ "--at": at.toFixed(4) } as React.CSSProperties}
+                >
+                  {char}
+                </span>
+              );
+            })}
+          </span>
+        </Fragment>
+      ))}
+    </span>
+  );
   return (
-    <p className="landing-thesis-text mt-7 max-w-[1180px] text-[clamp(34px,4.4vw,72px)] leading-[1.08] font-medium tracking-[-.05em]">
-      <span className="sr-only">{thesis}</span>
-      <span aria-hidden="true">
-        {thesis.split(" ").map((word, w) => (
-          <Fragment key={w}>
-            {w > 0 && " "}
-            <span className="whitespace-nowrap">
-              {[...word].map((char, c) => {
-                const at = letter++ / total;
-                return (
-                  <span
-                    key={c}
-                    style={{ "--at": at.toFixed(4) } as React.CSSProperties}
-                  >
-                    {char}
-                  </span>
-                );
-              })}
-            </span>
-          </Fragment>
-        ))}
-      </span>
-    </p>
+    <div className="landing-thesis-text">
+      <h2 className="mt-7 max-w-[1180px] text-[clamp(34px,4.4vw,72px)] leading-[1.08] font-medium tracking-[-.05em]">
+        <span className="sr-only">{thesis.heading}</span>
+        {reveal(thesis.heading)}
+      </h2>
+      <p className="mt-6 max-w-[900px] text-[clamp(20px,2vw,30px)] leading-[1.35] font-medium tracking-[-.03em] min-[701px]:mt-8">
+        <span className="sr-only">{thesis.body}</span>
+        {reveal(thesis.body)}
+      </p>
+    </div>
   );
 }
 
