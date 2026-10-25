@@ -167,7 +167,7 @@ function Thesis(): React.ReactElement {
   const total = thesis.replace(/ /g, "").length;
   let letter = 0;
   return (
-    <p className="landing-thesis-text mt-7 max-w-[1180px] text-[clamp(34px,4.4vw,72px)] leading-[1.08] font-medium tracking-[-.05em]">
+    <p className="landing-thesis-text mt-7 max-w-[1180px] text-[clamp(28px,3.4vw,56px)] leading-[1.12] font-medium tracking-[-.05em]">
       <span className="sr-only">{thesis}</span>
       <span aria-hidden="true">
         {thesis.split(" ").map((word, w) => (
