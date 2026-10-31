@@ -6,7 +6,7 @@ import { ApiError } from '@/lib/api'
 import { getSession, mintAccessToken } from '@/lib/session'
 
 /** Public navigation uses the same HttpOnly session as the dashboard. */
-export function SessionNavLink(): React.ReactElement {
+export function SessionNavLink({ variant = 'button' }: { variant?: 'button' | 'text' }): React.ReactElement {
   const [signedIn, setSignedIn] = useState<boolean | null>(null)
 
   useEffect(() => {
@@ -42,13 +42,13 @@ export function SessionNavLink(): React.ReactElement {
 
   return (
     <Link
-      className="inline-flex min-h-11 min-w-[124px] items-center justify-center rounded-lg bg-[#F4F0E9] px-5 text-sm font-semibold text-[#11120D] transition-colors hover:bg-[#E9E5DE] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#F4F0E9]"
+      className={`inline-flex min-h-11 shrink-0 items-center justify-center whitespace-nowrap text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#F4F0E9] ${variant === 'text' ? 'min-w-[76px] text-[#EBE8E0] hover:text-white' : 'min-w-[124px] rounded-lg bg-[#F4F0E9] px-5 text-[#11120D] hover:bg-[#E9E5DE]'}`}
       href={signedIn === false ? '/login' : '/dashboard'}
     >
       {signedIn === null ? (
         <>
           <span className="sr-only">Checking session…</span>
-          <span aria-hidden="true" className="h-3 w-16 rounded bg-[#11120D]/15" />
+          <span aria-hidden="true" className={`h-3 w-16 rounded ${variant === 'text' ? 'bg-white/15' : 'bg-[#11120D]/15'}`} />
         </>
       ) : signedIn ? 'Dashboard' : 'Sign in'}
     </Link>

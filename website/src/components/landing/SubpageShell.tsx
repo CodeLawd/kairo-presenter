@@ -22,15 +22,15 @@ export function SubpageShell({ children }: { children: React.ReactNode }): React
         id="top"
         data-stretchy-page=""
       >
-        <header className={`${subpageContainer} flex h-[72px] items-center gap-6 min-[701px]:h-[88px]`}>
-          <Logo href="/" priority />
-          <nav className="ml-auto flex items-center gap-6" aria-label="Main navigation">
-            <SessionNavLink />
+        <header className={`${subpageContainer} flex h-[72px] items-center gap-3 min-[701px]:h-[88px]`}>
+          <Logo href="/" priority className="shrink-0" />
+          <nav className="ml-auto flex items-center gap-3 sm:gap-5" aria-label="Main navigation">
+            <SessionNavLink variant="text" />
             <Link
-              className="inline-flex h-9 items-center rounded-lg bg-[#F4F0E9] px-4 text-sm font-semibold text-[#11120D] transition-colors hover:bg-[#E9E5DE]"
+              className="inline-flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-md px-1 text-sm font-semibold text-[#11120D] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F4F0E9] group"
               href="/#get"
             >
-              Download
+              <span className="inline-flex h-8 items-center rounded-md bg-[#F4F0E9] px-3 transition-colors group-hover:bg-[#E9E5DE]">Download</span>
             </Link>
           </nav>
         </header>
