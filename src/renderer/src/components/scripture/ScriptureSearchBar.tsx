@@ -182,45 +182,48 @@ export function ScriptureSearchBar({
   };
 
   return (
-    <div className={BAR_FIELD}>
-      {loading ? (
-        <Loader size={13} className="ml-2.5 shrink-0 animate-spin text-slate-400" aria-hidden="true" />
-      ) : (
-        <BookOpen size={13} className="ml-2.5 shrink-0 text-slate-500" aria-hidden="true" />
-      )}
-      <input
-        ref={inputRef as React.Ref<HTMLInputElement>}
-        className="h-full min-w-0 flex-1 bg-transparent px-2 text-[13px] text-slate-100 outline-none placeholder:text-slate-500"
-        placeholder="Search a reference or words — John 3:16, love is patient"
-        value={query}
-        onChange={(e) => onQueryChange(e.target.value)}
-        onKeyDown={handleKeyDown}
-        onFocus={() => {
-          setFocused(true);
-          onFocus();
-        }}
-        onBlur={() => {
-          setFocused(false);
-          setRecentsOpen(false);
-        }}
-        autoComplete="off"
-        spellCheck={false}
-        aria-label="Search scripture by reference or words"
-        aria-autocomplete="list"
-        aria-controls="scripture-search-suggestions"
-        aria-expanded={open}
-        aria-activedescendant={open && active >= 0 ? `scripture-suggestion-${active}` : undefined}
-        role="combobox"
-        name="scripture-query"
-      />
-      {query && (
-        <Button type="button" variant="ghost" size="icon-xs" className="shrink-0" onClick={onClearQuery} aria-label="Clear reference">
-          <X aria-hidden="true" />
-        </Button>
-      )}
+    <div className="relative flex min-w-0 items-center gap-1.5">
+      <div className={cn(BAR_FIELD, "flex-1")}>
+        {loading ? (
+          <Loader size={13} className="ml-2.5 shrink-0 animate-spin text-slate-400" aria-hidden="true" />
+        ) : (
+          <BookOpen size={13} className="ml-2.5 shrink-0 text-slate-500" aria-hidden="true" />
+        )}
+        <input
+          ref={inputRef as React.Ref<HTMLInputElement>}
+          className="h-full min-w-0 flex-1 bg-transparent px-2 text-[13px] text-slate-100 outline-none placeholder:text-slate-500"
+          placeholder="Scripture Lookup"
+          title="A reference or remembered words — John 3:16, love is patient"
+          value={query}
+          onChange={(e) => onQueryChange(e.target.value)}
+          onKeyDown={handleKeyDown}
+          onFocus={() => {
+            setFocused(true);
+            onFocus();
+          }}
+          onBlur={() => {
+            setFocused(false);
+            setRecentsOpen(false);
+          }}
+          autoComplete="off"
+          spellCheck={false}
+          aria-label="Search scripture by reference or words"
+          aria-autocomplete="list"
+          aria-controls="scripture-search-suggestions"
+          aria-expanded={open}
+          aria-activedescendant={open && active >= 0 ? `scripture-suggestion-${active}` : undefined}
+          role="combobox"
+          name="scripture-query"
+        />
+        {query && (
+          <Button type="button" variant="ghost" size="icon-xs" className="shrink-0" onClick={onClearQuery} aria-label="Clear reference">
+            <X aria-hidden="true" />
+          </Button>
+        )}
+      </div>
       <button
         type="button"
-        className="mr-1 grid h-6 w-6 shrink-0 place-items-center rounded text-slate-500 hover:bg-surface-tertiary hover:text-white disabled:opacity-40"
+        className="grid h-8 w-7 shrink-0 place-items-center rounded-md border border-input bg-surface-secondary text-slate-400 transition-colors hover:bg-surface-tertiary hover:text-white disabled:opacity-40"
         disabled={recentLookups.length === 0}
         aria-label="Recent lookups"
         title={recentLookups.length === 0 ? "No recent lookups yet" : "Recent lookups"}
@@ -238,7 +241,7 @@ export function ScriptureSearchBar({
         <div
           id="scripture-search-suggestions"
           role="listbox"
-          className="absolute left-0 right-0 top-[calc(100%+4px)] z-40 max-h-80 overflow-y-auto rounded-lg bg-surface-elevated p-1"
+          className="absolute left-0 top-[calc(100%+4px)] z-40 max-h-80 w-[min(36rem,calc(100vw-2rem))] overflow-y-auto rounded-lg bg-surface-elevated p-1"
           // Keep focus in the field so a click lands before blur closes the list.
           onMouseDown={(event) => event.preventDefault()}
         >
@@ -361,7 +364,7 @@ export function ScriptureTranslationSelect({
   return (
     <Select value={translation} disabled={disabled} onValueChange={(value) => onChange(value as ScriptureTranslation)}>
       <SelectTrigger
-        className="h-8 w-full min-w-0 justify-between gap-2 rounded-md border border-input bg-surface-secondary px-2.5 text-[13px] text-slate-200 dark:bg-surface-secondary dark:hover:bg-surface-tertiary"
+        className="h-8 min-w-0 flex-1 justify-between gap-2 rounded-md border border-input bg-surface-secondary px-2.5 text-[13px] text-slate-200 dark:bg-surface-secondary dark:hover:bg-surface-tertiary"
         aria-label="Scripture translation"
       >
         <SelectValue>

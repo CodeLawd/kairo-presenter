@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3'
 import type BetterSqlite3 from 'better-sqlite3'
 import log from 'electron-log/main'
+import { spokenVerseText } from '@shared/verse-text'
 
 /** Tiny words that drown phrase FTS (e.g. “love is patient”). */
 const FTS_STOPWORDS = new Set([
@@ -19,9 +20,8 @@ function significantSearchTokens(query: string): string[] {
 
 /** Prefer near-exact remembered phrases (Psalm 23) over loose token hits. */
 function scorePhraseMatch(text: string, query: string, tokens: string[]): number {
-  const hay = text
+  const hay = spokenVerseText(text)
     .toLowerCase()
-    .replace(/\{[^}]+\}/g, ' ')
     .replace(/[^a-z0-9\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()

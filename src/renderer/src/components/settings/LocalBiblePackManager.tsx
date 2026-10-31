@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useState } from 'react'
-import { AlertTriangle, Check, Download, Loader, Trash2 } from '@/icons'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { AlertDialog, DropdownMenu } from 'radix-ui'
+import { AlertTriangle, Check, Download, Loader, MoreHorizontal, Trash2 } from '@/icons'
 import type { InstalledLocalBiblePack, LocalBiblePackStatus } from '@shared/ipc'
+import { isBundledTranslation } from '@shared/bible-translations'
 import { useBootstrapStore } from '@/bootstrap/useBootstrapStore'
 import { cn } from '@/lib/utils'
 
@@ -32,9 +34,12 @@ export function LocalBiblePackManager(): JSX.Element {
   const refreshAll = useCallback(() => setEpoch((value) => value + 1), [])
 
   const bundled = translations.filter(
-    (option) => option.access === 'local' && option.available && !option.downloadable,
+    (option) => isBundledTranslation(option.id) && option.available,
   )
   const downloadable = translations.filter((option) => option.downloadable)
+  const online = translations.filter((option) =>
+    option.available && option.requiresApiKey && !option.downloadable && !isBundledTranslation(option.id),
+  )
 
   // Downloadable registry packs first (installed or not), then every other
   // installed pack. Before the first snapshot loads, the registry default
@@ -77,6 +82,11 @@ export function LocalBiblePackManager(): JSX.Element {
           onChanged={refreshAll}
         />
       ))}
+      {online.map((option) => (
+        <BibleRowShell key={option.id} id={option.id} name={option.name} detail="Available online · No offline download available">
+          <span className="text-[11px] text-white/65">Online</span>
+        </BibleRowShell>
+      ))}
     </ul>
   )
 }
@@ -104,11 +114,11 @@ function BibleRowShell({
           {id}
         </span>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[13px] leading-tight text-white">{name}</p>
+          <p className="text-[13px] leading-tight text-white">{name}</p>
           <p
             className={cn(
-              'mt-0.5 truncate text-[11px] leading-snug',
-              detailTone === 'warn' ? 'text-amber-400' : 'text-white/40',
+              'mt-0.5 break-words text-[12px] leading-snug',
+              detailTone === 'warn' ? 'text-amber-400' : 'text-white/65',
             )}
           >
             {detail}
@@ -122,9 +132,9 @@ function BibleRowShell({
 }
 
 const ROW_ACTION =
-  'inline-flex h-7 items-center gap-1.5 rounded-md bg-surface-elevated px-2.5 text-[12px] font-medium text-white transition-colors hover:bg-surface-border disabled:opacity-40'
+  'inline-flex h-7 items-center gap-1.5 rounded-md bg-surface-elevated px-2.5 text-[12px] font-medium text-white transition-colors hover:bg-surface-border disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400'
 const ROW_ICON_ACTION =
-  'grid h-7 w-7 place-items-center rounded-md text-white/35 transition-colors hover:bg-surface-tertiary hover:text-[#FF453A] disabled:opacity-40'
+  'grid h-7 w-7 place-items-center rounded-md text-white/50 transition-colors hover:bg-surface-tertiary hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400 disabled:opacity-40'
 
 function LocalBiblePackRow({
   translationId,
@@ -145,23 +155,15 @@ function LocalBiblePackRow({
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState<'download' | 'remove' | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [removeDialogOpen, setRemoveDialogOpen] = useState(false)
+  const actionsRef = useRef<HTMLButtonElement>(null)
+  const cancelRef = useRef<HTMLButtonElement>(null)
 
   const reload = useCallback(async () => {
     const next = await window.api.scripture.getLocalBiblePackStatus(translationId)
-    setStatus(next)
+    setStatus(previous => (previous?.installation?.revision ?? 0) > (next.installation?.revision ?? 0) ? previous : next)
     return next
   }, [translationId])
-
-  useEffect(() => {
-    let active = true
-    setLoading(true)
-    window.api.scripture
-      .getLocalBiblePackStatus(translationId)
-      .then((next) => { if (active) setStatus(next) })
-      .catch((err: Error) => { if (active) setError(err.message) })
-      .finally(() => { if (active) setLoading(false) })
-    return () => { active = false }
-  }, [translationId, epoch])
 
   const refreshTranslations = useCallback(async () => {
     try {
@@ -172,12 +174,47 @@ function LocalBiblePackRow({
     }
   }, [])
 
+  useEffect(() => {
+    let active = true
+    const unsubscribe = window.api.scripture.onLocalBibleInstallProgress(progress => {
+      if (!active || progress.translation !== translationId) return
+      setError(null)
+      setStatus(previous => {
+        if ((previous?.installation?.revision ?? 0) > progress.revision) return previous
+        return {
+          translation: translationId, verseCount: previous?.verseCount ?? 0,
+          chapterCount: previous?.chapterCount ?? 0,
+          installed: progress.phase === 'ready' || Boolean(previous?.installed),
+          installation: progress,
+        }
+      })
+      if (progress.phase === 'ready') {
+        const bootstrap = useBootstrapStore.getState()
+        bootstrap.setTranslations(bootstrap.translations.map(option => option.id === translationId
+          ? { ...option, available: true, requiresApiKey: false }
+          : option))
+        void reload().then(() => refreshTranslations()).then(onChanged).catch(() => {})
+      }
+    })
+    window.api.scripture
+      .getLocalBiblePackStatus(translationId)
+      .then((next) => {
+        if (active) setStatus(previous => (previous?.installation?.revision ?? 0) > (next.installation?.revision ?? 0) ? previous : next)
+      })
+      .catch((err: Error) => { if (active) setError(err.message) })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false; unsubscribe() }
+  }, [translationId, epoch, reload, onChanged, refreshTranslations])
+
+
+
   const download = useCallback(async () => {
     setBusy('download')
     setError(null)
     try {
       const next = await window.api.scripture.downloadLocalBibleTranslation(translationId)
-      setStatus(next)
+      setStatus(previous => ({ ...next, installation: previous?.installation }))
+      setBusy(null)
       await refreshTranslations()
       onChanged()
     } catch (err) {
@@ -189,18 +226,12 @@ function LocalBiblePackRow({
   }, [onChanged, refreshTranslations, reload, translationId])
 
   const remove = useCallback(async () => {
-    const confirmed = window.confirm(
-      `Remove ${translationName} from this computer?\n\n` +
-        (downloadable
-          ? 'You can download it again at any time, or search it online with an API.Bible key.'
-          : 'This translation is no longer offered for download, so it cannot be reinstalled from here.'),
-    )
-    if (!confirmed) return
     setBusy('remove')
     setError(null)
     try {
       const next = await window.api.scripture.removeLocalBibleTranslation(translationId)
       setStatus(next)
+      setRemoveDialogOpen(false)
       await refreshTranslations()
       onChanged()
     } catch (err) {
@@ -209,74 +240,126 @@ function LocalBiblePackRow({
     } finally {
       setBusy(null)
     }
-  }, [downloadable, onChanged, refreshTranslations, reload, translationId, translationName])
+  }, [onChanged, refreshTranslations, reload, translationId])
 
   const isInstalled = Boolean(status?.installed)
-  const detail = error
-    ? error
+  const installation = status?.installation
+  const phase = installation?.phase
+  const installing = phase === 'downloading' || phase === 'verifying' || phase === 'installing' || (busy === 'download' && phase !== 'ready' && phase !== 'failed')
+  const failure = (phase === 'failed' ? installation?.error : null) || error
+  const received = installation?.receivedBytes ?? 0
+  const total = installation?.totalBytes
+  const percent = total ? Math.min(100, Math.floor(received / total * 100)) : undefined
+  const amount = (bytes: number): string => `${(bytes / 1_048_576).toFixed(1)} MB`
+  const detail = failure
+    ? failure
+    : installing
+      ? phase === 'verifying' ? 'Checking download…'
+        : phase === 'installing' ? 'Finishing installation…'
+          : received > 0 ? `Downloading · ${amount(received)}${total ? ` of ${amount(total)} · ${percent}%` : ' received'}`
+            : 'Connecting to download…'
     : loading
       ? 'Checking…'
-      : busy === 'download'
-        ? 'Downloading and verifying…'
         : isInstalled
-          ? `Installed · ${status!.verseCount.toLocaleString()} verses · works offline`
+          ? 'Ready offline · No internet needed'
           : downloadable
             ? `${size ? `${size.replace(/^about /, '~')} · ` : ''}Download once to use offline`
             : 'Not installed'
 
   // Nothing to offer on a non-downloadable pack that is already gone.
-  if (!loading && !isInstalled && !downloadable && !error) return null
+  if (!loading && !isInstalled && !downloadable && !failure) return null
 
   return (
-    <BibleRowShell
-      id={translationId}
-      name={translationName}
-      detail={
-        error ? (
-          <span className="inline-flex items-center gap-1">
-            <AlertTriangle size={11} className="shrink-0" aria-hidden="true" />
-            {detail}
+    <AlertDialog.Root open={removeDialogOpen} onOpenChange={(open) => { if (busy !== 'remove') setRemoveDialogOpen(open) }}>
+      <BibleRowShell
+        id={translationId}
+        name={translationName}
+        detail={
+          failure ? (
+            <span role="alert" className="inline-flex items-start gap-1">
+              <AlertTriangle size={12} className="mt-0.5 shrink-0" aria-hidden="true" />
+              {detail}
+            </span>
+          ) : <span role="status" aria-live="polite">{detail}</span>
+        }
+        detailTone={failure ? 'warn' : 'muted'}
+        footer={installing ? (
+          <div className="mt-2 pl-[52px]">
+            {phase === 'downloading' && total ? (
+              <div role="progressbar" aria-label={`Downloading ${translationId}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent} className="h-1 overflow-hidden rounded-full bg-surface-border">
+                <div className="h-full rounded-full bg-teal-400 transition-[width] duration-150 motion-reduce:transition-none" style={{ width: `${percent}%` }} />
+              </div>
+            ) : <div role="progressbar" aria-label={`Installing ${translationId}`} className="h-1 rounded-full bg-surface-border" />}
+            <p className="mt-1.5 text-[11px] text-white/60">You can keep using Kairo while this finishes.</p>
+          </div>
+        ) : undefined}
+      >
+        {installing ? (
+          <span className="inline-flex items-center gap-1.5 text-[12px] text-white/65">
+            <Loader size={12} className="animate-spin motion-reduce:animate-none" aria-hidden="true" />
+            Installing…
           </span>
-        ) : detail
-      }
-      detailTone={error ? 'warn' : 'muted'}
-    >
-      {isInstalled ? (
-        <>
-          <span className="inline-flex items-center gap-1 pr-1 text-[11px] text-[#30D158]">
-            <Check size={12} aria-hidden="true" />
-            Installed
-          </span>
+        ) : isInstalled ? (
+          <>
+            <span className="inline-flex items-center gap-1 pr-1 text-[11px] text-[#30D158]">
+              <Check size={12} aria-hidden="true" />
+              Installed
+            </span>
+            <DropdownMenu.Root modal={false}>
+              <DropdownMenu.Trigger asChild>
+                <button ref={actionsRef} type="button" className={ROW_ICON_ACTION} disabled={busy !== null || loading}
+                  aria-label={`Actions for ${translationName}`} title="More actions">
+                  <MoreHorizontal size={16} aria-hidden="true" />
+                </button>
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Portal>
+                <DropdownMenu.Content align="end" sideOffset={4}
+                  onCloseAutoFocus={(event) => { if (removeDialogOpen) event.preventDefault() }}
+                  className="z-[80] min-w-[180px] rounded-lg bg-surface-elevated p-1 text-[13px] text-white shadow-lg outline-none">
+                  <DropdownMenu.Item className="flex cursor-default items-center gap-2 rounded-md px-3 py-2 text-red-400 outline-none focus:bg-surface-border"
+                    onSelect={() => { setError(null); setRemoveDialogOpen(true) }}>
+                    <Trash2 size={14} aria-hidden="true" />
+                    Remove download…
+                  </DropdownMenu.Item>
+                </DropdownMenu.Content>
+              </DropdownMenu.Portal>
+            </DropdownMenu.Root>
+          </>
+        ) : downloadable ? (
           <button
             type="button"
-            className={ROW_ICON_ACTION}
+            className={ROW_ACTION}
             disabled={busy !== null || loading}
-            onClick={() => { void remove() }}
-            aria-label={`Remove ${translationName}`}
-            title="Remove from this computer"
+            onClick={() => { void download() }}
           >
-            {busy === 'remove' ? (
-              <Loader size={13} className="animate-spin" aria-hidden="true" />
-            ) : (
-              <Trash2 size={13} aria-hidden="true" />
-            )}
-          </button>
-        </>
-      ) : downloadable ? (
-        <button
-          type="button"
-          className={ROW_ACTION}
-          disabled={busy !== null || loading}
-          onClick={() => { void download() }}
-        >
-          {busy === 'download' ? (
-            <Loader size={12} className="animate-spin" aria-hidden="true" />
-          ) : (
             <Download size={12} aria-hidden="true" />
-          )}
-          {busy === 'download' ? 'Installing…' : 'Install'}
-        </button>
-      ) : null}
-    </BibleRowShell>
+            {failure ? 'Retry' : 'Install'}
+          </button>
+        ) : null}
+      </BibleRowShell>
+      <AlertDialog.Portal>
+        <AlertDialog.Overlay className="fixed inset-0 z-[80] bg-black/50" />
+        <AlertDialog.Content className="fixed left-1/2 top-1/2 z-[81] w-[calc(100%-2rem)] max-w-[420px] -translate-x-1/2 -translate-y-1/2 rounded-xl bg-surface-secondary p-6 text-white shadow-xl outline-none"
+          onOpenAutoFocus={(event) => { event.preventDefault(); cancelRef.current?.focus() }}
+          onCloseAutoFocus={(event) => { event.preventDefault(); actionsRef.current?.focus() }}
+          onEscapeKeyDown={(event) => { event.preventDefault(); if (busy !== 'remove') setRemoveDialogOpen(false) }}>
+          <AlertDialog.Title className="text-[18px] font-semibold leading-snug">Remove {translationId} download?</AlertDialog.Title>
+          <AlertDialog.Description className="mt-2 text-[14px] leading-relaxed text-white/70">
+            {translationName} will be removed from this computer.
+            {downloadable ? ' You can download it again whenever you need it.' : ' This Bible is no longer available for download in Kairo.'}
+          </AlertDialog.Description>
+          {error && <p role="alert" className="mt-3 text-[13px] text-red-400">{error}</p>}
+          <div className="mt-6 flex justify-end gap-2">
+            <AlertDialog.Cancel asChild>
+              <button ref={cancelRef} type="button" className="btn-secondary" disabled={busy === 'remove'}>Cancel</button>
+            </AlertDialog.Cancel>
+            <button type="button" className="rounded-md bg-red-600 px-3 py-2 text-[13px] font-medium text-white hover:bg-red-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 disabled:opacity-50"
+              disabled={busy === 'remove'} onClick={() => { void remove() }}>
+              {busy === 'remove' ? 'Removing…' : 'Remove download'}
+            </button>
+          </div>
+        </AlertDialog.Content>
+      </AlertDialog.Portal>
+    </AlertDialog.Root>
   )
 }

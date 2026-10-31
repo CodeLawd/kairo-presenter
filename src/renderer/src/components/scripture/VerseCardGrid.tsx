@@ -54,15 +54,23 @@ export function VerseCardGrid({
   onMarqueeBegin,
   onMarqueeChange,
 }: VerseCardGridProps): React.ReactElement {
-  // Operator cards stay readable on the existing checkerboard. This copy is
-  // local to the grid; projection and the live monitor keep the full theme.
+  // Operator cards are for reading, not previewing the look: projection and the
+  // live monitor keep the full theme. Here the verse gets the whole card and
+  // fills it (Fit to box), and the reference is left to the card's label, so a
+  // thumbnail can be read at a glance instead of only recognised.
   const cardTheme = useMemo<OverlayTheme>(() => ({
     ...theme,
     background: { type: "transparent", color: "#000000", opacity: 0 },
     elements: [],
-    verse: { ...theme.verse, color: "#ffffff" },
-    reference: { ...theme.reference, color: "#ffffff" },
-    layout: { ...theme.layout, backdropBox: false },
+    verse: {
+      ...theme.verse,
+      color: "#ffffff",
+      align: "center",
+      verticalAlign: "middle",
+      box: { xPct: 6, yPct: 8, widthPct: 88, heightPct: 84 },
+    },
+    reference: { ...theme.reference, color: "#ffffff", show: false },
+    layout: { ...theme.layout, backdropBox: false, autoFitText: true },
   }), [theme]);
   let flatIndex = 0;
   const activeLocation = locateFlatCard(rows, activeCardIndex);
@@ -74,7 +82,7 @@ export function VerseCardGrid({
     >
     <div
       ref={gridRef as React.Ref<HTMLDivElement>}
-      className="flex w-full flex-col gap-5"
+      className="flex w-full flex-col gap-3"
     >
       {rows.map((row) => {
         const rowStart = flatIndex;
@@ -129,13 +137,18 @@ export function VerseCardGrid({
               else rowRefs.current.delete(rowKey);
             }}
             data-plan-item={row.planItemId ?? undefined}
-            className="min-w-0 space-y-4 scroll-mt-3"
+            className={cn(
+              "min-w-0 scroll-mt-3 space-y-2.5",
+              // Each passage sits in its own panel so where one reference ends
+              // and the next begins is plain at a glance.
+              rows.length > 1 && "rounded-lg bg-surface-secondary p-3",
+            )}
           >
             {/* A lone passage needs no heading — its slide already shows the reference. */}
             {(rows.length > 1 || row.note) && (
-              <div className="-mx-5 flex min-h-9 flex-wrap items-center gap-2 bg-black/25 px-5 py-2 lg:-mx-6 lg:px-6">
-                <BookOpen size={14} weight="fill" className="shrink-0 text-slate-400" aria-hidden="true" />
-                <p className={cn("min-w-0 truncate text-xs font-semibold", rowIsLive ? "text-live" : "text-slate-300")}>
+              <div className="flex min-h-6 flex-wrap items-center gap-2">
+                <BookOpen size={13} weight="fill" className={cn("shrink-0", rowIsLive ? "text-live" : "text-slate-500")} aria-hidden="true" />
+                <p className={cn("min-w-0 truncate text-[13px] font-semibold", rowIsLive ? "text-live" : "text-slate-200")}>
                   {row.reference}
                 </p>
                 {row.note && (

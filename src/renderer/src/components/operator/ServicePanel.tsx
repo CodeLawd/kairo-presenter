@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { create } from 'zustand'
 import { Dialog } from 'radix-ui'
-import { X } from '@/icons'
+import { Square, X } from '@/icons'
 import { useBootstrapStore } from '@/bootstrap/useBootstrapStore'
 import { cn, downloadFile } from '@/lib/utils'
 import { serviceTalkTimeMs, serviceTextExport, type ServiceRecord, type ServiceSnapshot } from '@shared/service-records'
@@ -124,31 +124,36 @@ export function ServicePanel(): React.ReactElement {
 
   return <>
     {active || error ? (
-      <div className="shrink-0 px-4 pb-2">
+      <div className="flex min-w-0 flex-1 items-center">
         {active ? (
-          // The session at a glance on one row: recording light + talk time and
-          // the name (click it to review), then End. The clock stops while paused.
-          <div className="flex min-w-0 items-center gap-1 rounded-lg bg-surface-tertiary p-1">
+          // The session at a glance, in the transcript's foot bar: recording light,
+          // talk time and the name (click it to review), then End. The clock
+          // stops while paused.
+          <div className="flex min-w-0 flex-1 items-center gap-1">
             <button
               type="button"
               onClick={() => setViewId(active.id)}
               title={`Review — ${active.speaker ? `${liveLabel} · ${active.speaker}` : liveLabel}`}
-              className="flex h-7 min-w-0 flex-1 items-center gap-2.5 rounded-md px-2 text-left transition-colors hover:bg-surface-elevated"
+              className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left transition-colors hover:bg-surface-tertiary"
             >
               <span
                 aria-hidden="true"
-                className={cn('size-2 shrink-0 rounded-full', paused ? 'bg-zinc-500' : 'bg-red-500 motion-safe:animate-pulse')}
+                className={cn('size-1.5 shrink-0 rounded-full', paused ? 'bg-zinc-500' : 'bg-red-500 motion-safe:animate-pulse')}
               />
-              <span className={cn('shrink-0 font-mono text-[13px] tabular-nums', paused ? 'text-zinc-500' : 'text-zinc-100')}>{elapsedLabel}</span>
+              <span className={cn('shrink-0 font-mono text-[12px] tabular-nums', paused ? 'text-zinc-500' : 'text-zinc-100')}>{elapsedLabel}</span>
               <span className="sr-only">{paused ? 'Paused' : 'Recording'} — review</span>
               <span className={cn('min-w-0 truncate text-[12px]', active.title ? 'text-zinc-300' : 'text-zinc-500')}>
                 {liveLabel}
               </span>
             </button>
-            <button type="button" disabled={busy} title="End service" className="h-7 shrink-0 rounded-md bg-surface-elevated px-2.5 text-[11px] font-medium text-zinc-100 transition-colors hover:bg-surface-border disabled:opacity-40" onClick={() => setConfirmEnd(true)}>End</button>
+            {/* Labelled, so no tooltip: one would cover the service name beside it. */}
+            <button type="button" disabled={busy} aria-label="End service" className="flex h-8 shrink-0 items-center gap-1.5 rounded-md bg-red-500/10 px-2.5 text-[12px] font-medium text-red-400 transition-colors hover:bg-red-500/20 hover:text-red-300 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60" onClick={() => setConfirmEnd(true)}>
+              <Square size={9} weight="fill" aria-hidden="true" />
+              End
+            </button>
           </div>
         ) : null}
-        {error && <p role="alert" className="mt-1.5 text-[11px] text-red-400">{error}</p>}
+        {error && <p role="alert" title={error} className="min-w-0 truncate px-2 text-[11px] text-red-400">{error}</p>}
       </div>
     ) : null}
     <Dialog.Root open={confirmEnd && Boolean(active)} onOpenChange={open => { if (!open && !busy) setConfirmEnd(false) }}>

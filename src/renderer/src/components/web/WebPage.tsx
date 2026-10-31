@@ -40,7 +40,7 @@ interface History {
  */
 // `active` is taken for parity with the other kept-mounted pages; nothing here needs it yet.
 export default function WebPage(_props: { active?: boolean }): React.ReactElement {
-  const sidebar = useSidebarWidth('kairo.web-sidebar-width', 240)
+  const sidebar = useSidebarWidth()
   const liveRail = useLiveRailWidth()
   const live = useProgramState().web
   const settings = normalizeWebSettings(useBootstrapStore((s) => s.settings.web))

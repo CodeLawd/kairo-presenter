@@ -1,3 +1,4 @@
+import type { LiveScriptureContext } from '../scripture/voice-navigation'
 import log from 'electron-log/main'
 import {
   EMPTY_PROGRAM_STATE,
@@ -27,6 +28,20 @@ type Listener = (state: ProgramState) => void
 class ProgramService {
   private state: ProgramState = { ...EMPTY_PROGRAM_STATE }
   private listeners = new Set<Listener>()
+  private scripture: LiveScriptureContext | null = null
+  private scriptureRevision = 0
+  /** When the live verse went up, so spoken commands can tell it from a newer detection. */
+  private scriptureAt = 0
+
+  getScripture(): LiveScriptureContext | null { return this.scripture ? { ...this.scripture } : null }
+
+  getScriptureSince(): number { return this.scriptureAt }
+
+  setScriptureSlide(current: ProgramSlideInfo, context: Omit<LiveScriptureContext, 'revision'>): void {
+    this.scripture = { ...context, revision: ++this.scriptureRevision }
+    this.scriptureAt = Date.now()
+    this.set({ current, next: null })
+  }
 
   getState(): ProgramState {
     return this.state
@@ -164,11 +179,15 @@ class ProgramService {
   // ─── Current / next (stage displays) ────────────────────────────────────────
 
   setSlide(current: ProgramSlideInfo | null, next: ProgramSlideInfo | null = null): void {
+    this.scripture = null
+    this.scriptureRevision++
     this.set({ current, next })
   }
 
   /** Text came down; the stage keeps showing what is next. */
   clearCurrent(): void {
+    this.scripture = null
+    this.scriptureRevision++
     if (this.state.current) this.set({ current: null })
   }
 
@@ -178,6 +197,8 @@ class ProgramService {
    * countdown are the booth's, not the room's, so they stay.
    */
   clearProgram(): void {
+    this.scripture = null
+    this.scriptureRevision++
     this.set({ message: null, activePropIds: [], logo: false, camera: null, cameraAudio: null, web: null, current: null, next: null })
   }
 }

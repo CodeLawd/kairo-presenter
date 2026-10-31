@@ -70,14 +70,15 @@ const SECTION_NAV: { id: Section; label: string; hint: string; icon?: Icon }[] =
 
 const INTEGRATION_SECTIONS: ReadonlySet<Section> = new Set([])
 
+// macOS System Settings tile colours: neutral greys, plus the system pink for Sound.
 const NAV_ICON_BG: Record<Section, string> = {
-  audio: 'bg-[#4F6888]',
-  apikeys: 'bg-[#374151]',
+  audio: 'bg-[#FF375F]',
+  apikeys: 'bg-[#636366]',
   scripture: 'bg-[#5BA85A]',
   overlay: 'bg-[#4A9EBF]',
-  shortcuts: 'bg-[#527C78]',
+  shortcuts: 'bg-[#636366]',
   general: 'bg-[#8E8E93]',
-  account: 'bg-[#374151]',
+  account: 'bg-[#636366]',
 }
 
 
@@ -569,13 +570,13 @@ function ScriptureSection({
 
       <PrefGroup
         title="Bible library"
-        description="Installed Bibles work offline and need no API key."
+        description="Download Bibles for offline use. Translations marked Online are available through your internet connection."
       >
         <LocalBiblePackManager />
       </PrefGroup>
 
       <PrefGroup title="Auto-detection">
-        <PrefRow label="Enabled" hint="Suggest verses from the live transcript">
+        <PrefRow label="Automation" hint="Show confident verses on screen by themselves. Off, they wait as suggestions.">
           <Toggle checked={sc.autoMode} onChange={(v) => update('scripture', { autoMode: v })} />
         </PrefRow>
         <div className={cn(!sc.autoMode && 'pointer-events-none opacity-40')}>

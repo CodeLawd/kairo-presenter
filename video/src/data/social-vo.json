@@ -1,0 +1,44 @@
+[
+  {
+    "file": "audio/vo/social-00.wav",
+    "text": "The pastor quotes a verse.",
+    "startMs": 300,
+    "durMs": 1556
+  },
+  {
+    "file": "audio/vo/social-01.wav",
+    "text": "Nobody planned it.",
+    "startMs": 2793,
+    "durMs": 1168
+  },
+  {
+    "file": "audio/vo/social-02.wav",
+    "text": "Kairo heard it.",
+    "startMs": 6700,
+    "durMs": 1055
+  },
+  {
+    "file": "audio/vo/social-03.wav",
+    "text": "Found the passage.",
+    "startMs": 8336,
+    "durMs": 1255
+  },
+  {
+    "file": "audio/vo/social-04.wav",
+    "text": "Even paraphrased.",
+    "startMs": 9971,
+    "durMs": 1343
+  },
+  {
+    "file": "audio/vo/social-05.wav",
+    "text": "You press send.",
+    "startMs": 14300,
+    "durMs": 1014
+  },
+  {
+    "file": "audio/vo/social-06.wav",
+    "text": "Because every moment matters.",
+    "startMs": 18800,
+    "durMs": 1735
+  }
+]

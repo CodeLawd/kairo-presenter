@@ -131,9 +131,7 @@ test('converter rejects empty verse text and duplicate references', () => {
   const dupe = buildFixtureSource()
   const chapter = dupe.books[0]?.chapters[0]
   if (chapter) chapter.verses.push({ verse: 1, text: 'A second verse numbered 1.' })
-  // A trailing duplicate shifts every later verse number, so the first error
-  // surfaces as a numbering mismatch — still a rejection of bad input.
-  assert.throws(() => parsePackSource(dupe), /expected verse \d+, found 1/)
+  assert.throws(() => parsePackSource(dupe), /unexpected verse 1/)
 })
 
 test('row validation rejects a verse-count mismatch, a chapter gap and an empty row', () => {

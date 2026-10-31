@@ -19,6 +19,9 @@ const managedAccess: TranscriptionAccess = {
 
 // ─── Local message types (subset of SDK types we care about) ─────────────────
 
+/** Retries for a failed renewal, all inside the lease's two minutes of slack. */
+const RENEWAL_RETRY_SECONDS = [5, 15, 30]
+
 interface DGWord {
   word: string
   punctuated_word?: string
@@ -29,6 +32,7 @@ interface DGWord {
 
 interface DGResultsMsg {
   type: 'Results'
+  start?: number
   is_final?: boolean
   speech_final?: boolean
   duration?: number
@@ -341,15 +345,39 @@ export class DeepgramSTTService extends EventEmitter {
     if (id) await this.access.releaseTranscription(id).catch(() => undefined)
   }
 
-  private scheduleRenewal(id: string, seconds: number): void {
+  /**
+   * Keeps the licence session alive. A lease lasts three minutes and is renewed
+   * every one, so a failed renewal is retried inside that slack. If the server
+   * still can't be reached, transcription reconnects with a fresh session once
+   * the network is back; only a real refusal (minutes used up, licence inactive)
+   * stops it, with the server's reason. Presentation output is never affected.
+   */
+  private scheduleRenewal(id: string, seconds: number, attempt = 0): void {
+    if (this.renewalTimer) clearTimeout(this.renewalTimer)
     this.renewalTimer = setTimeout(() => {
       this.renewalTimer = null
       if (this.grantId !== id || !this.active) return
       void this.access.renewTranscription(id).then(grant => {
         if (this.grantId === id) this.scheduleRenewal(id, grant.renewAfterSeconds)
-      }).catch(() => {
-        // Entitlement changes stop further cloud capture, never presentation output.
-        if (this.grantId === id) { this.disconnect(); this.emit('error', new Error('Transcription access could not be renewed. Your presentation is still live.')) }
+      }).catch((error: unknown) => {
+        if (this.grantId !== id) return
+        const reason = (error as { message?: unknown })?.message
+        log.warn('[Deepgram] Transcription renewal failed', { attempt, reason })
+        if (attempt < RENEWAL_RETRY_SECONDS.length) {
+          this.scheduleRenewal(id, RENEWAL_RETRY_SECONDS[attempt], attempt + 1)
+          return
+        }
+        const status = (error as { status?: unknown })?.status
+        if (typeof status === 'number' && status >= 400 && status < 500) {
+          this.disconnect()
+          const why = typeof reason === 'string' && reason ? `${reason}. ` : ''
+          this.emit('error', new Error(`Transcription stopped: ${why}Your presentation is still live.`))
+          return
+        }
+        // Unreachable or failing server: treat it like a dropped connection.
+        log.warn('[Deepgram] Licence server unreachable — reconnecting with a fresh session')
+        this.closeSocket()
+        this.handleSocketClose()
       })
     }, Math.max(1, seconds) * 1000)
   }
@@ -448,6 +476,9 @@ export class DeepgramSTTService extends EventEmitter {
         text,
         words,
         isFinal:   true,
+        audioEpoch: this.connectionGeneration,
+        audioStart: msg.start,
+        audioDuration: msg.duration,
         timestamp: now,
         duration:  msg.duration ?? 0,
       }
@@ -457,6 +488,9 @@ export class DeepgramSTTService extends EventEmitter {
       const interim: InterimResult = {
         text,
         stability: confidence,
+        audioEpoch: this.connectionGeneration,
+        audioStart: msg.start,
+        audioDuration: msg.duration,
         timestamp: now,
       }
       this.emit('interim', interim)

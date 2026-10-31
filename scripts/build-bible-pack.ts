@@ -19,7 +19,7 @@
  *     books: [{ index: 1, name: 'Genesis', chapters: [{ chapter: 1, verses: [{ verse: 1, text: '…' }] }] }] }
  *
  * To add a new translation pack: supply its JSON with --translation <ID>.
- * No code change needed — validation is structural (canonical 66-book canon).
+ * Validation uses the 66-book canon and verified translation-specific numbering.
  */
 
 import Database from 'better-sqlite3'
@@ -29,6 +29,7 @@ import { dirname, resolve } from 'path'
 import { BOOKS } from '../src/main/services/scripture/bible-db'
 import { validatePackRowsFor, type PackVerseRow } from '../src/main/services/scripture/local-bible-pack'
 import { DEFAULT_PACK_TRANSLATION_ID } from '../src/lib/bible-translations'
+import { getPackVerseNumbers } from '../src/main/services/scripture/bible-pack-versification'
 
 // ─── Source JSON shapes ───────────────────────────────────────────────────────
 
@@ -178,9 +179,13 @@ export function parsePackSource(
         fail(`book "${book.name}" chapter ${chapterNum} has no verses`)
       }
 
+      const expectedVerses = getPackVerseNumbers(translationId, bookId, chapterNum)
       for (let v = 0; v < chapter.verses.length; v++) {
         const verse = chapter.verses[v] as SourceVerse
-        const verseNum = v + 1
+        const verseNum = expectedVerses[v]
+        if (verseNum === undefined) {
+          fail(`book "${book.name}" chapter ${chapterNum}: unexpected verse ${JSON.stringify(verse.verse)}`)
+        }
         if (verse.verse !== verseNum) {
           fail(
             `book "${book.name}" chapter ${chapterNum}: expected verse ${verseNum}, found ${JSON.stringify(verse.verse)}`,

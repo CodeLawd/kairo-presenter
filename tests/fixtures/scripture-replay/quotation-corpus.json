@@ -1,0 +1,794 @@
+{
+  "version": 1,
+  "description": "Synthetic transcript revision corpus; demo cases use reviewed video wording, not provider recordings. Provider timing is deliberately not inferred from offline Whisper word timestamps. Held-out examples were authored independently from the existing demo scorer tests; they are a small validation set, not a precision guarantee.",
+  "cases": [
+    {
+      "id": "demo-luke",
+      "split": "calibration",
+      "category": "exact",
+      "events": [
+        {
+          "atMs": 500,
+          "type": "interim",
+          "text": "Give and it shall be",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1000,
+          "type": "interim",
+          "text": "Give and it shall be given unto you good measure",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1500,
+          "type": "final",
+          "text": "Give and it shall be given unto you good measure pressed down and shaken together",
+          "audioStart": 0
+        }
+      ],
+      "expected": [
+        "Luke 6:38"
+      ],
+      "expectedResolution": "local"
+    },
+    {
+      "id": "demo-love-world",
+      "split": "calibration",
+      "category": "exact",
+      "events": [
+        {
+          "atMs": 500,
+          "type": "interim",
+          "text": "Love not the world neither",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1000,
+          "type": "interim",
+          "text": "Love not the world neither the things that are in",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1500,
+          "type": "final",
+          "text": "Love not the world neither the things that are in the world",
+          "audioStart": 0
+        }
+      ],
+      "expected": [
+        "1 John 2:15"
+      ],
+      "expectedResolution": "local"
+    },
+    {
+      "id": "demo-greater",
+      "split": "calibration",
+      "category": "exact",
+      "events": [
+        {
+          "atMs": 500,
+          "type": "interim",
+          "text": "Greater is he that is",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1000,
+          "type": "interim",
+          "text": "Greater is he that is in you than he that",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1500,
+          "type": "final",
+          "text": "Greater is he that is in you than he that is in the world",
+          "audioStart": 0
+        }
+      ],
+      "expected": [
+        "1 John 4:4"
+      ],
+      "expectedResolution": "local"
+    },
+    {
+      "id": "demo-garment",
+      "split": "calibration",
+      "category": "ambiguous",
+      "events": [
+        {
+          "atMs": 500,
+          "type": "interim",
+          "text": "If only I touch the",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1000,
+          "type": "interim",
+          "text": "If only I touch the hem of his garment I",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1500,
+          "type": "final",
+          "text": "If only I touch the hem of his garment I shall be made whole",
+          "audioStart": 0
+        }
+      ],
+      "expected": [
+        "Matthew 9:20",
+        "Matthew 9:21",
+        "Matthew 14:36",
+        "Mark 5:28",
+        "Luke 8:44"
+      ],
+      "expectedResolution": "AI"
+    },
+    {
+      "id": "demo-noisy-measure",
+      "split": "calibration",
+      "category": "noisy",
+      "events": [
+        {
+          "atMs": 500,
+          "type": "interim",
+          "text": "Give and it shall be",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1000,
+          "type": "interim",
+          "text": "Give and it shall be given unto you good pressure",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1500,
+          "type": "final",
+          "text": "Give and it shall be given unto you good pressure pressed down shaking together",
+          "audioStart": 0
+        }
+      ],
+      "expected": [
+        "Luke 6:38"
+      ],
+      "expectedResolution": "local"
+    },
+    {
+      "id": "calibration-shepherd",
+      "split": "calibration",
+      "category": "exact",
+      "events": [
+        {
+          "atMs": 500,
+          "type": "interim",
+          "text": "The Lord is my shepherd",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1000,
+          "type": "final",
+          "text": "The Lord is my shepherd I shall not want",
+          "audioStart": 0
+        }
+      ],
+      "expected": [
+        "Psalms 23:1"
+      ],
+      "expectedResolution": "local"
+    },
+    {
+      "id": "calibration-seek",
+      "split": "calibration",
+      "category": "exact",
+      "events": [
+        {
+          "atMs": 500,
+          "type": "interim",
+          "text": "Seek ye first the kingdom",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1000,
+          "type": "final",
+          "text": "Seek ye first the kingdom of God and his righteousness",
+          "audioStart": 0
+        }
+      ],
+      "expected": [
+        "Matthew 6:33"
+      ],
+      "expectedResolution": "local"
+    },
+    {
+      "id": "calibration-cast",
+      "split": "calibration",
+      "category": "exact",
+      "events": [
+        {
+          "atMs": 500,
+          "type": "interim",
+          "text": "Casting all your care upon",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1000,
+          "type": "interim",
+          "text": "Casting all your care upon him for he careth for",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1500,
+          "type": "final",
+          "text": "Casting all your care upon him for he careth for you",
+          "audioStart": 0
+        }
+      ],
+      "expected": [
+        "1 Peter 5:7"
+      ],
+      "expectedResolution": "local"
+    },
+    {
+      "id": "held-out-grace",
+      "split": "held-out",
+      "category": "exact",
+      "events": [
+        {
+          "atMs": 500,
+          "type": "interim",
+          "text": "For by grace are ye",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1000,
+          "type": "interim",
+          "text": "For by grace are ye saved through faith and that",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1500,
+          "type": "final",
+          "text": "For by grace are ye saved through faith and that not of yourselves it is the gift of God",
+          "audioStart": 0
+        }
+      ],
+      "expected": [
+        "Ephesians 2:8"
+      ],
+      "expectedResolution": "local"
+    },
+    {
+      "id": "held-out-strength",
+      "split": "held-out",
+      "category": "exact",
+      "events": [
+        {
+          "atMs": 500,
+          "type": "interim",
+          "text": "I can do all things",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1000,
+          "type": "final",
+          "text": "I can do all things through Christ which strengtheneth me",
+          "audioStart": 0
+        }
+      ],
+      "expected": [
+        "Philippians 4:13"
+      ],
+      "expectedResolution": "local"
+    },
+    {
+      "id": "held-out-work",
+      "split": "held-out",
+      "category": "exact",
+      "events": [
+        {
+          "atMs": 500,
+          "type": "interim",
+          "text": "And we know that all",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1000,
+          "type": "interim",
+          "text": "And we know that all things work together for good",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1500,
+          "type": "final",
+          "text": "And we know that all things work together for good to them that love God",
+          "audioStart": 0
+        }
+      ],
+      "expected": [
+        "Romans 8:28"
+      ],
+      "expectedResolution": "local"
+    },
+    {
+      "id": "held-out-wings",
+      "split": "held-out",
+      "category": "exact",
+      "events": [
+        {
+          "atMs": 500,
+          "type": "interim",
+          "text": "They that wait upon the",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1000,
+          "type": "interim",
+          "text": "They that wait upon the Lord shall renew their strength",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1500,
+          "type": "final",
+          "text": "They that wait upon the Lord shall renew their strength they shall mount up with wings as eagles",
+          "audioStart": 0
+        }
+      ],
+      "expected": [
+        "Isaiah 40:31"
+      ],
+      "expectedResolution": "local"
+    },
+    {
+      "id": "held-out-noisy-faith",
+      "split": "held-out",
+      "category": "noisy",
+      "events": [
+        {
+          "atMs": 500,
+          "type": "interim",
+          "text": "Now faith is the substance",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1000,
+          "type": "interim",
+          "text": "Now faith is the substance of things hoped for the",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1500,
+          "type": "final",
+          "text": "Now faith is the substance of things hoped for the evidence of things not scene",
+          "audioStart": 0
+        }
+      ],
+      "expected": [
+        "Hebrews 11:1"
+      ],
+      "expectedResolution": "local"
+    },
+    {
+      "id": "held-out-paraphrase",
+      "split": "held-out",
+      "category": "paraphrase",
+      "events": [
+        {
+          "atMs": 500,
+          "type": "interim",
+          "text": "God cared about humanity enough",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1000,
+          "type": "interim",
+          "text": "God cared about humanity enough to send his unique son",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1500,
+          "type": "final",
+          "text": "God cared about humanity enough to send his unique son so trusting people could live forever",
+          "audioStart": 0
+        }
+      ],
+      "expected": [
+        "John 3:16"
+      ],
+      "expectedResolution": "AI"
+    },
+    {
+      "id": "negative-announcements",
+      "split": "held-out",
+      "category": "negative",
+      "events": [
+        {
+          "atMs": 500,
+          "type": "interim",
+          "text": "We have three announcements and",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1000,
+          "type": "final",
+          "text": "We have three announcements and sixteen volunteers meeting after church",
+          "audioStart": 0
+        }
+      ],
+      "expected": [],
+      "expectedResolution": "local"
+    },
+    {
+      "id": "negative-generosity",
+      "split": "held-out",
+      "category": "negative",
+      "events": [
+        {
+          "atMs": 500,
+          "type": "interim",
+          "text": "Please give generously to your",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1000,
+          "type": "interim",
+          "text": "Please give generously to your neighbours this week and help",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1500,
+          "type": "final",
+          "text": "Please give generously to your neighbours this week and help with their shopping",
+          "audioStart": 0
+        }
+      ],
+      "expected": [],
+      "expectedResolution": "local"
+    },
+    {
+      "id": "negative-generic-faith",
+      "split": "held-out",
+      "category": "negative",
+      "events": [
+        {
+          "atMs": 500,
+          "type": "interim",
+          "text": "God is good and we",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1000,
+          "type": "interim",
+          "text": "God is good and we love him let us be",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1500,
+          "type": "final",
+          "text": "God is good and we love him let us be kind to one another today",
+          "audioStart": 0
+        }
+      ],
+      "expected": [],
+      "expectedResolution": "local"
+    },
+    {
+      "id": "negative-narrative",
+      "split": "held-out",
+      "category": "negative",
+      "events": [
+        {
+          "atMs": 500,
+          "type": "interim",
+          "text": "And it came to pass",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1000,
+          "type": "interim",
+          "text": "And it came to pass that he said unto them",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1500,
+          "type": "final",
+          "text": "And it came to pass that he said unto them behold",
+          "audioStart": 0
+        }
+      ],
+      "expected": [],
+      "expectedResolution": "local"
+    },
+    {
+      "id": "negative-negated-quote",
+      "split": "held-out",
+      "category": "negative",
+      "events": [
+        {
+          "atMs": 500,
+          "type": "interim",
+          "text": "Do not give and it",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1000,
+          "type": "interim",
+          "text": "Do not give and it shall be given unto you",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1500,
+          "type": "final",
+          "text": "Do not give and it shall be given unto you good measure pressed down",
+          "audioStart": 0
+        }
+      ],
+      "expected": [],
+      "expectedResolution": "local"
+    },
+    {
+      "id": "negative-instruction-quoted",
+      "split": "held-out",
+      "category": "negative",
+      "events": [
+        {
+          "atMs": 500,
+          "type": "interim",
+          "text": "Next verse is what he",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1000,
+          "type": "final",
+          "text": "Next verse is what he told the operator yesterday",
+          "audioStart": 0
+        }
+      ],
+      "expected": [],
+      "expectedResolution": "local"
+    },
+    {
+      "id": "negative-family-world",
+      "split": "held-out",
+      "category": "negative",
+      "events": [
+        {
+          "atMs": 500,
+          "type": "interim",
+          "text": "The world is full of",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1000,
+          "type": "interim",
+          "text": "The world is full of things we should discuss with",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1500,
+          "type": "final",
+          "text": "The world is full of things we should discuss with our family",
+          "audioStart": 0
+        }
+      ],
+      "expected": [],
+      "expectedResolution": "local"
+    },
+    {
+      "id": "negative-finances",
+      "split": "held-out",
+      "category": "negative",
+      "events": [
+        {
+          "atMs": 500,
+          "type": "interim",
+          "text": "We should measure the new",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1000,
+          "type": "interim",
+          "text": "We should measure the new wall before we press down",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1500,
+          "type": "final",
+          "text": "We should measure the new wall before we press down the floor tiles",
+          "audioStart": 0
+        }
+      ],
+      "expected": [],
+      "expectedResolution": "local"
+    },
+    {
+      "id": "negative-fashion",
+      "split": "held-out",
+      "category": "negative",
+      "events": [
+        {
+          "atMs": 500,
+          "type": "interim",
+          "text": "She touched the hem of",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1000,
+          "type": "interim",
+          "text": "She touched the hem of the garment while checking the",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1500,
+          "type": "final",
+          "text": "She touched the hem of the garment while checking the stitching in the shop",
+          "audioStart": 0
+        }
+      ],
+      "expected": [],
+      "expectedResolution": "local"
+    },
+    {
+      "id": "negative-translated-name",
+      "split": "held-out",
+      "category": "negative",
+      "events": [
+        {
+          "atMs": 500,
+          "type": "interim",
+          "text": "The message today is about",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1000,
+          "type": "interim",
+          "text": "The message today is about grace and the passion of",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1500,
+          "type": "final",
+          "text": "The message today is about grace and the passion of Christ",
+          "audioStart": 0
+        }
+      ],
+      "expected": [],
+      "expectedResolution": "local"
+    },
+    {
+      "id": "negative-pastor-story",
+      "split": "held-out",
+      "category": "negative",
+      "events": [
+        {
+          "atMs": 500,
+          "type": "interim",
+          "text": "I spoke to John this",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1000,
+          "type": "interim",
+          "text": "I spoke to John this morning and Matthew will join",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1500,
+          "type": "final",
+          "text": "I spoke to John this morning and Matthew will join us next week",
+          "audioStart": 0
+        }
+      ],
+      "expected": [],
+      "expectedResolution": "local"
+    },
+    {
+      "id": "negative-careful",
+      "split": "held-out",
+      "category": "negative",
+      "events": [
+        {
+          "atMs": 500,
+          "type": "interim",
+          "text": "We should not assume that",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1000,
+          "type": "interim",
+          "text": "We should not assume that every familiar sounding phrase is",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1500,
+          "type": "final",
+          "text": "We should not assume that every familiar sounding phrase is a quotation",
+          "audioStart": 0
+        }
+      ],
+      "expected": [],
+      "expectedResolution": "local"
+    },
+    {
+      "id": "held-out-negative-formula-story",
+      "split": "held-out",
+      "category": "negative",
+      "expectedResolution": "local",
+      "expected": [],
+      "events": [
+        {
+          "atMs": 500,
+          "type": "interim",
+          "text": "And he answered and said unto",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1500,
+          "type": "final",
+          "text": "And he answered and said unto them we shall have a good day together",
+          "audioStart": 0
+        }
+      ]
+    },
+    {
+      "id": "held-out-negative-generic-hope",
+      "split": "held-out",
+      "category": "negative",
+      "expectedResolution": "local",
+      "expected": [],
+      "events": [
+        {
+          "atMs": 500,
+          "type": "interim",
+          "text": "We have faith and hope because",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1500,
+          "type": "final",
+          "text": "We have faith and hope because God has been good to us this year",
+          "audioStart": 0
+        }
+      ]
+    },
+    {
+      "id": "held-out-negative-bookshop",
+      "split": "held-out",
+      "category": "negative",
+      "expectedResolution": "local",
+      "expected": [],
+      "events": [
+        {
+          "atMs": 500,
+          "type": "interim",
+          "text": "I found a book about the",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1500,
+          "type": "final",
+          "text": "I found a book about the world and its many things in the library",
+          "audioStart": 0
+        }
+      ]
+    },
+    {
+      "id": "held-out-negative-wrong-negation",
+      "split": "held-out",
+      "category": "negative",
+      "expectedResolution": "local",
+      "expected": [],
+      "events": [
+        {
+          "atMs": 500,
+          "type": "interim",
+          "text": "Do not seek first the kingdom",
+          "audioStart": 0
+        },
+        {
+          "atMs": 1500,
+          "type": "final",
+          "text": "Do not seek first the kingdom of God and his righteousness",
+          "audioStart": 0
+        }
+      ]
+    }
+  ]
+}

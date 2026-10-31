@@ -84,6 +84,7 @@ module.exports = {
           menu: 'rgb(var(--surface-menu) / <alpha-value>)',
           'menu-hover': 'rgb(var(--surface-menu-hover) / <alpha-value>)',
           'menu-line': 'rgb(var(--surface-menu-line) / <alpha-value>)',
+          canvas: 'rgb(var(--surface-canvas) / <alpha-value>)',
           stage: 'rgb(var(--surface-stage) / <alpha-value>)',
           display: 'rgb(var(--surface-display) / <alpha-value>)',
         },

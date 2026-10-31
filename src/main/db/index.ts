@@ -30,7 +30,7 @@ const defaults: AppSettings = {
   scripture: {
     defaultTranslation: DEFAULT_TRANSLATION_ID,
     showVerseNumbers: true,
-    autoMode: false,
+    autoMode: true,
     confidenceThreshold: 0.7,
     autoPresentDelaySec: 1,
     debounceInterval: 8,

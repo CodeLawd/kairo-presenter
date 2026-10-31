@@ -1,8 +1,11 @@
+import { QuoteWorkerClient } from './quote-worker-client'
+import type { GlobalQuoteMatch, GlobalQuoteCandidate } from './global-quote'
 import { MANAGED } from '../cloud/managed'
 import type { QuoteCandidate } from './quote-recovery'
 import log from 'electron-log/main'
 import fs from 'fs'
 import type {
+  ScriptureRowTranslation,
   ScriptureSuggestion,
   ScriptureResult,
   ScriptureVerse,
@@ -11,8 +14,10 @@ import type {
   InstalledLocalBiblePack,
   LocalBiblePackInstallResult,
   LocalBiblePackStatus,
+  LocalBibleInstallProgress,
 } from '@shared/ipc'
 import { BibleDatabase } from './bible-db'
+import { LocalBibleInstaller } from './local-bible-installer'
 import { parseScriptureReference } from './reference'
 import { buildApiBibleIdMap } from './api-bible'
 import { ApiBibleClient } from './api-bible-client'
@@ -37,7 +42,35 @@ import {
 type SuggestionCallback = (suggestion: ScriptureSuggestion) => void
 
 export class ScriptureService {
+  private readonly packInstaller = new LocalBibleInstaller({
+    download: (translation, update) => downloadBiblePack(translation, fetch, undefined, update),
+    install: (translation, sqlite) => {
+      const temporaryPath = temporaryPackPath(translation)
+      try {
+        fs.writeFileSync(temporaryPath, sqlite, { flag: 'wx', mode: 0o600 })
+        return this.installLocalBiblePack(temporaryPath, translation)
+      } finally {
+        try { fs.unlinkSync(temporaryPath) } catch { /* best-effort temporary cleanup */ }
+      }
+    },
+  })
+
+  onLocalBibleInstallProgress(callback: (progress: LocalBibleInstallProgress) => void): () => void {
+    return this.packInstaller.subscribe(callback)
+  }
+
   private db: BibleDatabase | null = null
+  private quoteWorker: QuoteWorkerClient | null = null
+  private quoteDbPath: string | null = null
+  private quoteWorkerFactory: (dbPath: string) => QuoteWorkerClient = dbPath => new QuoteWorkerClient(dbPath)
+  private quoteCorpusVersion = 0
+  /** The worker's copy of cached text; rebuilt without retracting cards when text is only added. */
+  private quoteCacheBuild = 0
+  private quoteCacheUnsubscribe: (() => void) | null = null
+  private quoteCacheTimer: ReturnType<typeof setTimeout> | null = null
+  private quoteExpiryTimer: ReturnType<typeof setTimeout> | null = null
+  private quoteCorpusListeners = new Set<() => void>()
+  private quoteStopped = false
   private apiCache: ApiBibleCache | null = null
   private client: ApiBibleClient | null = null
   private clientKey = ''
@@ -64,12 +97,23 @@ export class ScriptureService {
     // development checkouts. Copied on first run only; an existing userData
     // database (including a previously installed local NKJV) is never replaced.
     const p = dbPath ?? resolveWritableBibleDbPath()
+    this.quoteWorker?.close()
     this.db = new BibleDatabase(p)
+    this.quoteDbPath = p
+    this.quoteWorker = this.createQuoteWorker(p)
+    this.quoteStopped = false
+    this.invalidateApiQuoteCorpus()
   }
 
   /** Injected by the main process once `userData` paths and encryption resolve. */
   attachApiCache(cache: ApiBibleCache | null): void {
+    this.quoteCacheUnsubscribe?.()
     this.apiCache = cache
+    this.quoteCacheUnsubscribe = cache?.onQuoteCorpusChange(change => {
+      if (change === 'removed') this.invalidateApiQuoteCorpus()
+      else this.scheduleApiQuoteRefresh()
+    }) ?? null
+    this.invalidateApiQuoteCorpus()
     this.lookup = null
     log.info('[Scripture] API.Bible cache', { attached: cache !== null })
   }
@@ -124,6 +168,9 @@ export class ScriptureService {
       verseCount: status.verseCount,
       chapterCount: status.chapterCount,
       installed: status.installed,
+      ...(this.packInstaller.getProgress(normalized)
+        ? { installation: this.packInstaller.getProgress(normalized) }
+        : {}),
     }
   }
 
@@ -152,6 +199,7 @@ export class ScriptureService {
     }
     // Single-transaction replace of this translation's verses + FTS rows.
     // A throw here rolls back to the previously installed copy.
+    this.invalidateQuoteCorpus()
     db.importTranslationPack(
       pack.translationId,
       pack.translationName,
@@ -175,16 +223,7 @@ export class ScriptureService {
     if (!getDownloadablePack(normalized)) {
       throw new Error(`No downloadable local pack is available for ${normalized}.`)
     }
-    const sqlite = await downloadBiblePack(normalized)
-    const temporaryPath = temporaryPackPath(normalized)
-    try {
-      fs.writeFileSync(temporaryPath, sqlite, { flag: 'wx', mode: 0o600 })
-      // Pass the requested id through so a mislabeled pack is rejected even
-      // when its checksum matches the registry entry.
-      return this.installLocalBiblePack(temporaryPath, normalized)
-    } finally {
-      try { fs.unlinkSync(temporaryPath) } catch { /* best-effort temporary cleanup */ }
-    }
+    return this.packInstaller.start(normalized)
   }
 
   /**
@@ -195,13 +234,19 @@ export class ScriptureService {
   removeLocalBibleTranslation(translation: string): LocalBiblePackStatus {
     const db = this.requireDb()
     const normalized = translation.toUpperCase()
+    const phase = this.packInstaller.getProgress(normalized)?.phase
+    if (phase && phase !== 'ready' && phase !== 'failed') {
+      throw new Error('Wait for this Bible to finish installing before removing it.')
+    }
     if (isBundledTranslation(normalized)) {
       throw new Error(`The bundled ${normalized} copy cannot be removed.`)
     }
     if (db.hasTranslation(normalized)) {
+      this.invalidateQuoteCorpus()
       db.removeTranslation(normalized)
       log.info('[Scripture] Local Bible translation removed', { translation: normalized })
     }
+    this.packInstaller.clear(normalized)
     return this.getLocalBiblePackStatus(normalized)
   }
 
@@ -211,8 +256,21 @@ export class ScriptureService {
     this.suggestionCallbacks.push(callback)
   }
 
+  private rowTranslationCallbacks = new Set<(request: ScriptureRowTranslation) => void>()
+
+  /** The operator view owns a row's verses, so it does the switch; this only asks. */
+  onRowTranslation(callback: (request: ScriptureRowTranslation) => void): () => void {
+    this.rowTranslationCallbacks.add(callback)
+    return () => { this.rowTranslationCallbacks.delete(callback) }
+  }
+
+  requestRowTranslation(passageId: string, translation: ScriptureTranslation): void {
+    this.rowTranslationCallbacks.forEach((cb) => cb({ passageId, translation }))
+  }
+
   private emitSuggestion(suggestion: ScriptureSuggestion): void {
-    this.pendingSuggestions.set(suggestion.id, suggestion)
+    if (suggestion.retracted) this.pendingSuggestions.delete(suggestion.id)
+    else this.pendingSuggestions.set(suggestion.id, suggestion)
     this.suggestionCallbacks.forEach((cb) => cb(suggestion))
   }
 
@@ -247,6 +305,146 @@ export class ScriptureService {
   dismissSuggestion(suggestionId: string): void {
     this.pendingSuggestions.delete(suggestionId)
     log.info('Scripture suggestion dismissed', { suggestionId })
+  }
+
+  /** Read-only FTS and scoring live in a persistent worker, never in presentation IPC. */
+  async searchGeneralQuote(text: string, possible = false): Promise<GlobalQuoteMatch[]> {
+    const version = this.quoteCorpusVersion
+    const matches = await this.quoteWorker?.search(text, possible) ?? []
+    if (version !== this.quoteCorpusVersion) return []
+    return matches.filter(match => this.isGeneralQuoteEligible({ ...match, quoteCorpusVersion: version }))
+      .map(match => ({ ...match, quoteCorpusVersion: version }))
+  }
+
+  /** Must also be called at the final publication boundary after output-translation lookup. */
+  isGeneralQuoteEligible(source: Pick<GlobalQuoteCandidate, 'cacheSource' | 'quoteCorpusVersion'>): boolean {
+    if (source.quoteCorpusVersion !== undefined && source.quoteCorpusVersion !== this.quoteCorpusVersion) return false
+    return !source.cacheSource || this.apiCache?.isQuoteSourceEligible(source.cacheSource) === true
+  }
+
+  onGeneralQuoteCorpusChange(listener: () => void): () => void {
+    this.quoteCorpusListeners.add(listener)
+    return () => { this.quoteCorpusListeners.delete(listener) }
+  }
+
+  private notifyGeneralQuoteCorpusChange(): void {
+    for (const listener of this.quoteCorpusListeners) {
+      try { listener() } catch { /* Diagnostics must never interrupt pack/cache mutation. */ }
+    }
+  }
+
+  /** Removed, revoked or expired text: results and cards from the old corpus stop being eligible. */
+  private invalidateApiQuoteCorpus(): void {
+    ++this.quoteCorpusVersion
+    this.notifyGeneralQuoteCorpusChange()
+    this.rebuildApiQuoteCache(150)
+  }
+
+  /**
+   * Newly cached text (a lookup, or a background download one chapter at a
+   * time). Nothing became ineligible, so cards stay; the worker's copy is
+   * rebuilt once the cache goes quiet instead of after every chapter.
+   */
+  private scheduleApiQuoteRefresh(): void {
+    if (this.quoteStopped || !this.quoteWorker || !this.apiCache) return
+    if (this.quoteCacheTimer) clearTimeout(this.quoteCacheTimer)
+    this.quoteCacheTimer = setTimeout(() => {
+      this.quoteCacheTimer = null
+      this.rebuildApiQuoteCache(0)
+    }, 2_000)
+    this.quoteCacheTimer.unref()
+  }
+
+  private clearQuoteTimers(): void {
+    if (this.quoteCacheTimer) clearTimeout(this.quoteCacheTimer)
+    if (this.quoteExpiryTimer) clearTimeout(this.quoteExpiryTimer)
+    this.quoteCacheTimer = null
+    this.quoteExpiryTimer = null
+  }
+
+  private rebuildApiQuoteCache(delayMs: number): void {
+    const build = ++this.quoteCacheBuild
+    this.clearQuoteTimers()
+    if (this.quoteStopped || !this.quoteWorker) return
+    try {
+      // Clear the previous cache view immediately; partial replacement indexes are never queried.
+      this.quoteWorker.beginCache(build)
+      if (!this.apiCache) { this.quoteWorker.commitCache(build); return }
+      if (delayMs === 0) { void this.buildApiQuoteCorpus(build); return }
+      this.quoteCacheTimer = setTimeout(() => {
+        this.quoteCacheTimer = null
+        void this.buildApiQuoteCorpus(build)
+      }, delayMs)
+      this.quoteCacheTimer.unref()
+    } catch (error) {
+      log.warn('[Scripture] Cache recognition unavailable', { message: (error as Error).message })
+    }
+  }
+
+  private async buildApiQuoteCorpus(build: number): Promise<void> {
+    const cache = this.apiCache
+    const worker = this.quoteWorker
+    if (!cache || !worker) return
+    let cursor = 0
+    let expiry = Infinity
+    try {
+      while (!this.quoteStopped && build === this.quoteCacheBuild) {
+        const batch = cache.readQuoteBatch(cursor, 128)
+        if (batch.rows.length) {
+          for (const row of batch.rows) expiry = Math.min(expiry, row.cacheSource.expiresAt)
+          // The worker acknowledges each batch, so index construction cannot fill an unbounded queue.
+          await worker.appendCache(build, batch.rows)
+        }
+        if (build !== this.quoteCacheBuild || this.quoteStopped) return
+        if (batch.complete) {
+          worker.commitCache(build)
+          if (Number.isFinite(expiry)) {
+            const delay = Math.max(1, Math.min(2_147_483_647, expiry - Date.now()))
+            this.quoteExpiryTimer = setTimeout(() => this.invalidateApiQuoteCorpus(), delay)
+            this.quoteExpiryTimer.unref()
+          }
+          return
+        }
+        cursor = batch.nextCursor
+        // Decryption remains bounded and yields between batches, never per transcript update.
+        await new Promise<void>(resolve => setImmediate(resolve))
+      }
+    } catch (error) {
+      if (build === this.quoteCacheBuild && !this.quoteStopped) {
+        log.warn('[Scripture] Cache recognition index failed', { message: (error as Error).message })
+        try { worker.beginCache(build) } catch { /* Public/local matching may still recover independently. */ }
+      }
+    }
+  }
+
+  private createQuoteWorker(dbPath: string): QuoteWorkerClient {
+    const worker = this.quoteWorkerFactory(dbPath)
+    let cacheRestarts = 0
+    worker.onFailure(() => {
+      if (!this.quoteStopped && worker === this.quoteWorker && this.apiCache && cacheRestarts++ < 2) {
+        // A crashed worker lost its transient index. Rebuild it with bounded retries, not on every query.
+        // The cache itself is unchanged, so cards already shown stay eligible.
+        this.rebuildApiQuoteCache(150)
+      }
+    })
+    return worker
+  }
+
+  private invalidateQuoteCorpus(): void {
+    this.quoteWorker?.close()
+    this.quoteWorker = this.quoteDbPath ? this.createQuoteWorker(this.quoteDbPath) : null
+    this.invalidateApiQuoteCorpus()
+  }
+
+  closeQuoteWorker(): void {
+    this.quoteStopped = true
+    this.quoteCorpusVersion++
+    this.clearQuoteTimers()
+    this.quoteCacheUnsubscribe?.()
+    this.quoteCacheUnsubscribe = null
+    this.notifyGeneralQuoteCorpusChange()
+    this.quoteWorker?.close()
+    this.quoteWorker = null
   }
 
   /** Local-only candidate lookup for a damaged spoken citation. */

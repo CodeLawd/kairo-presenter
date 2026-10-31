@@ -348,7 +348,7 @@ function SuggestionsPanel({
             <div>
               <p className="text-sm font-semibold text-teal-300 leading-tight font-sans tracking-tight">{s.reference}</p>
               <p className="text-[10px] text-slate-500 mt-0.5 font-sans font-medium">
-                {s.translation} · {Math.round(s.confidence * 100)}% Match
+                {s.translation} · {s.suggestionOnly ? (s.ambiguous ? 'Possible passage' : s.provisional ? 'Checking quotation' : 'Local quotation') : `${Math.round(s.confidence * 100)}% Match`}
               </p>
             </div>
             {s.verses.length > 0 && (
@@ -703,6 +703,10 @@ export default function Transcription(): React.ReactElement {
     })
 
     const unsubSuggestion = window.api.scripture.onSuggestion((suggestion: ScriptureSuggestion) => {
+      if (suggestion.retracted) {
+        setSuggestions(prev => prev.filter(item => item.id !== suggestion.id))
+        return
+      }
       markSuggestionRendered(suggestion.correlationId)
       applyScriptureHighlight(suggestion)
       setSuggestions((prev) => {

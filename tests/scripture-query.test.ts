@@ -130,6 +130,19 @@ test('builds next and previous queries from the loaded queue edges', () => {
   assert.deepEqual(getAdjacentVerseQueries(loaded, 'previous'), ['Joshua 1:7'])
 })
 
+test('AMPC navigation skips its omitted Mark verses in both directions', () => {
+  const loaded = (verse: number, translation = 'AMPC'): ScriptureResult[] => [{
+    reference: `Mark 9:${verse}`, translation,
+    verses: [{ book: 'Mark', chapter: 9, verse, text: 'Synthetic fixture.' }],
+  }]
+  assert.equal(getAdjacentVerseQueries(loaded(43), 'next')[0], 'Mark 9:45')
+  assert.equal(getAdjacentVerseQueries(loaded(45), 'next')[0], 'Mark 9:47')
+  assert.deepEqual(getAdjacentVerseQueries(loaded(47), 'previous'), ['Mark 9:45'])
+  assert.deepEqual(getAdjacentVerseQueries(loaded(45), 'previous'), ['Mark 9:43'])
+  assert.equal(getAdjacentVerseQueries(loaded(43, 'KJV'), 'next')[0], 'Mark 9:44')
+  assert.deepEqual(getAdjacentVerseQueries(loaded(45, 'NKJV'), 'previous'), ['Mark 9:44'])
+})
+
 test('uses a capped chapter range when navigating before verse one', () => {
   const loaded: ScriptureResult[] = [
     { reference: 'Joshua 2:1', translation: 'KJV', verses: [{ book: 'Joshua', chapter: 2, verse: 1, text: 'One' }] },

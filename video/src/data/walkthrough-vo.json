@@ -1,0 +1,218 @@
+[
+  {
+    "file": "audio/vo/walkthrough-00.wav",
+    "text": "Welcome to Kairo.",
+    "startMs": 1200,
+    "durMs": 1314
+  },
+  {
+    "file": "audio/vo/walkthrough-01.wav",
+    "text": "Let's walk through one Sunday, from setup to benediction.",
+    "startMs": 2836,
+    "durMs": 3336
+  },
+  {
+    "file": "audio/vo/walkthrough-02.wav",
+    "text": "First, connect your screens.",
+    "startMs": 7960,
+    "durMs": 2068
+  },
+  {
+    "file": "audio/vo/walkthrough-03.wav",
+    "text": "Kairo shows each one on a canvas.",
+    "startMs": 10188,
+    "durMs": 2216
+  },
+  {
+    "file": "audio/vo/walkthrough-04.wav",
+    "text": "Add an NDI feed if your switcher or stream takes one.",
+    "startMs": 14720,
+    "durMs": 3120
+  },
+  {
+    "file": "audio/vo/walkthrough-05.wav",
+    "text": "Pick your translation.",
+    "startMs": 21480,
+    "durMs": 1402
+  },
+  {
+    "file": "audio/vo/walkthrough-06.wav",
+    "text": "KJV, BSB and BBE are built in.",
+    "startMs": 23116,
+    "durMs": 3063
+  },
+  {
+    "file": "audio/vo/walkthrough-07.wav",
+    "text": "Others come through your church's license.",
+    "startMs": 28240,
+    "durMs": 2328
+  },
+  {
+    "file": "audio/vo/walkthrough-08.wav",
+    "text": "Most of the work happens the day before.",
+    "startMs": 36200,
+    "durMs": 2245
+  },
+  {
+    "file": "audio/vo/walkthrough-09.wav",
+    "text": "Import your sermon notes.",
+    "startMs": 43960,
+    "durMs": 1599
+  },
+  {
+    "file": "audio/vo/walkthrough-10.wav",
+    "text": "Kairo reads every reference it finds.",
+    "startMs": 46024,
+    "durMs": 2308
+  },
+  {
+    "file": "audio/vo/walkthrough-11.wav",
+    "text": "Review them, and they become a playlist of verses.",
+    "startMs": 51720,
+    "durMs": 2875
+  },
+  {
+    "file": "audio/vo/walkthrough-12.wav",
+    "text": "Now open the Theme Editor and design the slide once.",
+    "startMs": 59480,
+    "durMs": 2886
+  },
+  {
+    "file": "audio/vo/walkthrough-13.wav",
+    "text": "The preview is exactly what goes out on Sunday.",
+    "startMs": 67240,
+    "durMs": 2787
+  },
+  {
+    "file": "audio/vo/walkthrough-14.wav",
+    "text": "Open Lyrics and import a song.",
+    "startMs": 76200,
+    "durMs": 1990
+  },
+  {
+    "file": "audio/vo/walkthrough-15.wav",
+    "text": "Kairo keeps its sections: verse, chorus, bridge.",
+    "startMs": 85800,
+    "durMs": 3725
+  },
+  {
+    "file": "audio/vo/walkthrough-16.wav",
+    "text": "Add songs to the set, and present them in order.",
+    "startMs": 95400,
+    "durMs": 2806
+  },
+  {
+    "file": "audio/vo/walkthrough-17.wav",
+    "text": "When the sermon starts, open Operator and press Start.",
+    "startMs": 106200,
+    "durMs": 3485
+  },
+  {
+    "file": "audio/vo/walkthrough-18.wav",
+    "text": "Kairo listens to the feed from your sound desk.",
+    "startMs": 111580,
+    "durMs": 2657
+  },
+  {
+    "file": "audio/vo/walkthrough-19.wav",
+    "text": "The meter shows it's hearing, and the transcript scrolls as the pastor speaks.",
+    "startMs": 116960,
+    "durMs": 4424
+  },
+  {
+    "file": "audio/vo/walkthrough-20.wav",
+    "text": "When a passage comes up, Kairo stages it in your queue.",
+    "startMs": 122340,
+    "durMs": 3392
+  },
+  {
+    "file": "audio/vo/walkthrough-21.wav",
+    "text": "It works from meaning, so a paraphrase still finds the verse.",
+    "startMs": 127720,
+    "durMs": 3561
+  },
+  {
+    "file": "audio/vo/walkthrough-22.wav",
+    "text": "A range comes through as slides, in order.",
+    "startMs": 133100,
+    "durMs": 2504
+  },
+  {
+    "file": "audio/vo/walkthrough-23.wav",
+    "text": "Live output is on top.",
+    "startMs": 138480,
+    "durMs": 1548
+  },
+  {
+    "file": "audio/vo/walkthrough-24.wav",
+    "text": "Your queue is below.",
+    "startMs": 140973,
+    "durMs": 1270
+  },
+  {
+    "file": "audio/vo/walkthrough-25.wav",
+    "text": "Stage the next verse while this one is still live.",
+    "startMs": 143860,
+    "durMs": 2603
+  },
+  {
+    "file": "audio/vo/walkthrough-26.wav",
+    "text": "Arm a passage, and Kairo follows the reading verse by verse.",
+    "startMs": 149240,
+    "durMs": 3769
+  },
+  {
+    "file": "audio/vo/walkthrough-27.wav",
+    "text": "Nothing goes on screen until you send it.",
+    "startMs": 154620,
+    "durMs": 2317
+  },
+  {
+    "file": "audio/vo/walkthrough-28.wav",
+    "text": "Need something nobody said?",
+    "startMs": 161200,
+    "durMs": 1644
+  },
+  {
+    "file": "audio/vo/walkthrough-29.wav",
+    "text": "Search by reference, or by a phrase.",
+    "startMs": 163264,
+    "durMs": 2557
+  },
+  {
+    "file": "audio/vo/walkthrough-30.wav",
+    "text": "Put a document or a web page on screen.",
+    "startMs": 169650,
+    "durMs": 2483
+  },
+  {
+    "file": "audio/vo/walkthrough-31.wav",
+    "text": "Drop in backgrounds from your media folder.",
+    "startMs": 178100,
+    "durMs": 2442
+  },
+  {
+    "file": "audio/vo/walkthrough-32.wav",
+    "text": "On a Mac, record any output to a movie file.",
+    "startMs": 186550,
+    "durMs": 3083
+  },
+  {
+    "file": "audio/vo/walkthrough-33.wav",
+    "text": "That's one Sunday with Kairo.",
+    "startMs": 196200,
+    "durMs": 1798
+  },
+  {
+    "file": "audio/vo/walkthrough-34.wav",
+    "text": "It's free during early access, at kairopresenter.com.",
+    "startMs": 200800,
+    "durMs": 3724
+  },
+  {
+    "file": "audio/vo/walkthrough-35.wav",
+    "text": "Because every moment matters.",
+    "startMs": 205400,
+    "durMs": 1735
+  }
+]

@@ -1,3 +1,4 @@
+import { followUpContext, pickCommandContext, ScriptureVoiceNavigation, type LiveScriptureContext } from './services/scripture/voice-navigation';
 import { MANAGED } from "./services/cloud/managed";
 import { dispatchToOutputs } from './services/output/dispatch';
 import { dispatchHealth } from '@shared/output-health';
@@ -122,8 +123,40 @@ interface Session {
 
 // ─── Orchestrator ─────────────────────────────────────────────────────────────
 
+/** How long a detected passage stays the place spoken commands step from. */
+const FOLLOW_UP_WINDOW_MS = 120_000;
+
 class Orchestrator {
   private cfg: OrchestratorConfig | null = null;
+  private readonly voiceNavigation = new ScriptureVoiceNavigation({
+    // Built in: "next verse" and "previous verse" work whenever Kairo is listening.
+    enabled: () => this.running,
+    autoMode: () => this.cfg?.autoMode ?? false,
+    // The live verse or the passage just detected, whichever came last, so
+    // "Matthew 1:8 … next verse" gives 1:9 even while an older verse is up.
+    current: () => {
+      const live = programService.getScripture();
+      return pickCommandContext(
+        live ? { context: live, at: programService.getScriptureSince() } : null,
+        this.recentFollowUp(),
+      );
+    },
+    chapter: async (book, chapter, translation) => (await scriptureService.search(`${book} ${chapter}`, translation, MANAGED)).flatMap(result => result.verses),
+    present: suggestion => this.presentScripture(suggestion),
+    suggest: suggestion => { this.pendingSuggestions.set(suggestion.id, suggestion); this.noteFollowUp(suggestion); scriptureService.receiveSuggestion(suggestion); },
+    retranslateRow: (passageId, translation) => {
+      // The row is now in this translation, so the next spoken step continues in it.
+      if (this.followUp?.context.passageId === passageId) {
+        this.followUp = { ...this.followUp, context: { ...this.followUp.context, translation } };
+      }
+      scriptureService.requestRowTranslation(passageId, translation);
+    },
+    error: error => log.warn('[Voice navigation]', error),
+  });
+  /** Where a spoken command steps from when nothing is live. */
+  private followUp: { context: LiveScriptureContext; at: number } | null = null;
+  /** Counts down from -1 so a follow-up can never share a program revision. */
+  private followUpRevision = 0;
   private running = false;
   private db: BibleDatabase | null = null;
   public detector: ScriptureDetector | null = null;
@@ -266,6 +299,8 @@ class Orchestrator {
     if (!this.running) return;
     log.info("[Orchestrator] Stopping");
     this.running = false;
+    this.voiceNavigation.reset();
+    this.followUp = null;
 
     // Cancel all auto-present countdowns
     for (const [id, timer] of this.autoTimers) {
@@ -307,6 +342,7 @@ class Orchestrator {
     }
 
     this.running = false;
+    this.voiceNavigation.reset();
     this.emitStatus();
 
     const stats = this.getStats();
@@ -341,6 +377,17 @@ class Orchestrator {
       usageService.track("scripture_manual");
       await this.presentScripture(manual);
     }
+  }
+
+  private noteFollowUp(suggestion: ScriptureSuggestion): void {
+    const context = followUpContext(suggestion, --this.followUpRevision);
+    if (context) this.followUp = { context, at: Date.now() };
+  }
+
+  /** Same two-minute window as a spoken translation follow-up. */
+  private recentFollowUp(): { context: LiveScriptureContext; at: number } | null {
+    if (!this.followUp || Date.now() - this.followUp.at > FOLLOW_UP_WINDOW_MS) return null;
+    return { context: { ...this.followUp.context }, at: this.followUp.at };
   }
 
   dismissSuggestion(suggestionId: string): void {
@@ -411,6 +458,19 @@ class Orchestrator {
     this.detector = detector;
     detector.setPlanIndexProvider(() => livePlanService.getIndex());
     detector.setQuoteSearchProvider(phrase => scriptureService.searchLocalQuoteCandidates(phrase));
+    detector.setGeneralQuoteProvider((text, possible) => scriptureService.searchGeneralQuote(text, possible));
+    detector.setGeneralQuoteEligibilityProvider(
+      ref => scriptureService.isGeneralQuoteEligible(ref),
+      invalidate => scriptureService.onGeneralQuoteCorpusChange(invalidate),
+    );
+    detector.on('quoteRetracted', (evidence: string) => {
+      for (const [id, suggestion] of this.pendingSuggestions) {
+        if (!suggestion.suggestionOnly || suggestion.quoteEvidence !== evidence) continue;
+        this.dismissSuggestion(id);
+        scriptureTrace.complete(suggestion.correlationId, { status: "superseded" });
+        scriptureService.receiveSuggestion({ ...suggestion, retracted: true });
+      }
+    });
     detector.setChapterVerseProvider((book, chapter) => scriptureService.getLocalChapterVerses(book, chapter));
     detector.on("planProgress", (reference, itemId) => livePlanService.observe(reference, itemId));
 
@@ -444,6 +504,7 @@ class Orchestrator {
     this.explicitDetectionCleanup = subscribeExplicitScriptureDetection(
       sttService,
       detector,
+      result => this.voiceNavigation.claim(result),
     );
   }
 
@@ -522,6 +583,11 @@ class Orchestrator {
         return;
       }
 
+      if (ref.suggestionOnly && !this.detector?.isGeneralQuoteCurrent(ref)) {
+        scriptureTrace.complete(correlationId, { status: "superseded" });
+        continue;
+      }
+
       if (verses.length === 0) {
         scriptureTrace.complete(correlationId, {
           status: "failed",
@@ -578,6 +644,13 @@ class Orchestrator {
           ...(requestedTranslation ? { requestedTranslation } : {}),
           confidence: ref.confidence,
           source: "auto",
+          suggestionOnly: ref.suggestionOnly,
+          ambiguous: ref.ambiguous,
+          provisional: ref.provisional,
+          quoteEvidence: ref.quoteEvidence,
+          cacheSource: ref.cacheSource,
+          quoteCorpusVersion: ref.quoteCorpusVersion,
+          quoteRevision: ref.quoteRevision,
           triggerText: ref.sourceText,
           passageId,
           passageReference,
@@ -605,6 +678,8 @@ class Orchestrator {
 
         // Publish through scriptureService so existing IPC/renderer pipeline works
         scriptureService.receiveSuggestion(suggestion);
+        // Each card of a passage moves the follow-up on, so "next verse" continues after it.
+        this.noteFollowUp(suggestion);
         if (verseIndex === 0) {
           scriptureTrace.mark(correlationId, "suggestionPublishedAt");
         }
@@ -757,7 +832,14 @@ class Orchestrator {
 
     livePlanService.observe(suggestion.reference, suggestion.planItemId);
     if (this.session) this.session.totalPresentations++;
-    if (content) programService.setSlide({ reference: content.reference, text: content.text });
+    if (content && suggestion.verses.length) {
+      const first = suggestion.verses[0];
+      programService.setScriptureSlide({ reference: content.reference, text: content.text }, {
+        book: first.book, chapter: first.chapter, verseStart: first.verse,
+        verseEnd: suggestion.verses[suggestion.verses.length - 1].verse, translation: suggestion.translation,
+        passageId: suggestion.passageId ?? suggestion.id, passageIndex: suggestion.passageIndex ?? 0,
+      });
+    }
     scriptureTrace.mark(correlationId, "presenterStateCheckStartedAt");
     const confirmation = results.some((result) => result.ok) ? "request-accepted" as const : "none" as const;
     scriptureTrace.complete(correlationId, {

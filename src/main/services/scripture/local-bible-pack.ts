@@ -6,6 +6,8 @@ import { createHash, randomUUID } from 'crypto'
 import { gunzipSync } from 'zlib'
 import os from 'os'
 import { BIBLE_VERSE_COUNTS } from './bible-verse-counts'
+import type { LocalBibleInstallProgress } from '@shared/ipc'
+import { getPackVerseNumbers, hasCustomPackVersification, packTotalsFor } from './bible-pack-versification'
 import {
   DEFAULT_PACK_TRANSLATION_ID,
   getDownloadablePack,
@@ -15,19 +17,7 @@ import {
 // ─── Expected pack shape ────────────────────────────────────────────────────
 // The converter (scripts/build-bible-pack.ts) enforces the same expectations on
 // the source JSON. Both sides must agree before a single row is imported: the
-// canonical Protestant versification (BIBLE_VERSE_COUNTS) for every pack.
-
-function canonicalTotals(): { books: number; chapters: number; verses: number } {
-  let chapters = 0
-  let verses = 0
-  for (const book of BIBLE_VERSE_COUNTS) {
-    chapters += book.length
-    for (const count of book) verses += count
-  }
-  return { books: BIBLE_VERSE_COUNTS.length, chapters, verses }
-}
-
-const CANONICAL_TOTALS = canonicalTotals()
+// canonical Protestant canon, with verified translation-specific numbering.
 
 const MAX_COMPRESSED_PACK_BYTES = 10 * 1024 * 1024
 const MAX_UNCOMPRESSED_PACK_BYTES = 24 * 1024 * 1024
@@ -111,9 +101,8 @@ function tableExists(db: BetterSqlite3.Database, name: string): boolean {
 /**
  * Validate a SQLite Bible pack file without modifying it.
  *
- * Accepts any single-translation pack. When `expectedTranslationId` is given
- * (file-picker installs of a specific translation) the pack must contain only
- * that id; downloads always pass the registry id they requested.
+ * Accepts any single-translation pack. Downloads always provide the requested
+ * registry id as `expectedTranslationId`; the pack must contain only that id.
  *
  * Throws a plain Error describing the first problem found. Returns the pack
  * contents ready for transactional import.
@@ -203,20 +192,52 @@ export async function downloadBiblePack(
   translationId: string,
   fetcher: typeof fetch = fetch,
   expectedHash?: string,
+  onProgress?: (progress: Pick<LocalBibleInstallProgress, 'phase' | 'receivedBytes' | 'totalBytes'>) => void,
 ): Promise<Buffer> {
   const normalized = translationId.toUpperCase()
   const pack = getDownloadablePack(normalized)
   if (!pack) {
     throw new Error(`No downloadable local pack is available for ${normalized}.`)
   }
-  const response = await fetcher(pack.url, { redirect: 'follow' })
+  const response = await fetcher(pack.url, { redirect: 'follow', signal: AbortSignal.timeout(120_000) })
   if (!response.ok) {
     throw new Error(`${normalized} download failed (HTTP ${response.status}).`)
   }
-  const compressed = Buffer.from(await response.arrayBuffer())
+  const rawLength = Number(response.headers?.get('content-length'))
+  const totalBytes = Number.isSafeInteger(rawLength) && rawLength > 0 ? rawLength : undefined
+  if (totalBytes && totalBytes > MAX_COMPRESSED_PACK_BYTES) {
+    await response.body?.cancel()
+    throw new Error(`The downloaded ${normalized} pack has an invalid size.`)
+  }
+  let receivedBytes = 0
+  onProgress?.({ phase: 'downloading', receivedBytes, totalBytes })
+  let compressed: Buffer
+  if (response.body) {
+    const reader = response.body.getReader()
+    const chunks: Buffer[] = []
+    try {
+      for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) {
+        const value = chunk.value
+        receivedBytes += value.byteLength
+        if (receivedBytes > MAX_COMPRESSED_PACK_BYTES) {
+          await reader.cancel()
+          throw new Error(`The downloaded ${normalized} pack has an invalid size.`)
+        }
+        chunks.push(Buffer.from(value))
+        onProgress?.({ phase: 'downloading', receivedBytes, totalBytes })
+      }
+    } finally {
+      reader.releaseLock()
+    }
+    compressed = Buffer.concat(chunks, receivedBytes)
+  } else {
+    compressed = Buffer.from(await response.arrayBuffer())
+    receivedBytes = compressed.length
+  }
   if (compressed.length === 0 || compressed.length > MAX_COMPRESSED_PACK_BYTES) {
     throw new Error(`The downloaded ${normalized} pack has an invalid size.`)
   }
+  onProgress?.({ phase: 'verifying', receivedBytes, totalBytes })
   const digest = createHash('sha256').update(compressed).digest('hex')
   if (digest !== (expectedHash ?? pack.sha256)) {
     throw new Error(`The downloaded ${normalized} pack failed its security check.`)
@@ -245,7 +266,7 @@ export function validatePackRowsFor(
   verses: Array<{ bookId: number; chapter: number; verse: number; text: string | null }>,
 ): ValidatedPack {
   const normalized = translationId.toUpperCase()
-  const { books, chapters, verses: expectedVerses } = CANONICAL_TOTALS
+  const { books, chapters, verses: expectedVerses } = packTotalsFor(normalized)
 
   if (verses.length !== expectedVerses) {
     throw new Error(
@@ -256,7 +277,7 @@ export function validatePackRowsFor(
   const seen = new Set<string>()
   const booksSeen = new Set<number>()
   const chaptersSeen = new Set<string>()
-  // Highest verse observed per (book, chapter), to prove contiguity from 1.
+  // Highest verse observed per chapter, checked against its numbering profile.
   const chapterMaxVerse = new Map<string, number>()
   // Highest chapter observed per book, to prove contiguity from 1.
   const bookMaxChapter = new Map<number, number>()
@@ -321,29 +342,32 @@ export function validatePackRowsFor(
     }
     for (let chapter = 1; chapter <= expectedChapterVerses.length; chapter++) {
       const actualVerseCount = chapterMaxVerse.get(`${bookId}:${chapter}`) ?? 0
-      const expectedVerseCount = expectedChapterVerses[chapter - 1]
+      const expectedNumbers = getPackVerseNumbers(normalized, bookId, chapter)
+      const expectedVerseCount = expectedNumbers[expectedNumbers.length - 1]
       if (actualVerseCount !== expectedVerseCount) {
         throw new Error(
           `${bookLabel(bookId)} ${chapter} expected ${expectedVerseCount} verses, found ${actualVerseCount}.`,
         )
       }
+      const expectedSet = new Set(expectedNumbers)
+      for (let verse = 1; verse <= actualVerseCount; verse++) {
+        const present = seen.has(`${bookId}:${chapter}:${verse}`)
+        if (expectedSet.has(verse) && !present) {
+          throw new Error(`Missing verse ${verse} in ${bookLabel(bookId)} chapter ${chapter}.`)
+        }
+        if (!expectedSet.has(verse) && present) {
+          throw new Error(`${bookLabel(bookId)} ${chapter} has unexpected verse ${verse} for ${normalized}.`)
+        }
+      }
     }
   }
 
-  // Contiguity: chapters per book must be exactly 1..max, verses per chapter
-  // exactly 1..max. (Order in the pack is normalized above, so gaps are the
-  // only remaining failure mode.)
+  // Chapters remain contiguous; verse membership was checked against the
+  // translation's exact numbering above, including any verified omissions.
   for (const [bookId, maxChapter] of bookMaxChapter) {
     for (let chapter = 1; chapter <= maxChapter; chapter++) {
       if (!chaptersSeen.has(`${bookId}:${chapter}`)) {
         throw new Error(`Missing chapter ${chapter} in book ${bookId}.`)
-      }
-    }
-  }
-  for (const [chapterKey, maxVerse] of chapterMaxVerse) {
-    for (let verse = 1; verse <= maxVerse; verse++) {
-      if (!seen.has(`${chapterKey}:${verse}`)) {
-        throw new Error(`Missing verse ${verse} in ${chapterKey.replace(':', ' chapter ')}.`)
       }
     }
   }
@@ -367,10 +391,11 @@ export function packStatusFor(
   hasTranslation: boolean,
 ): LocalBiblePackStatusShape {
   const normalized = translation.toUpperCase()
+  const totals = packTotalsFor(normalized)
   const installed =
     hasTranslation &&
-    (getDownloadablePack(normalized)
-      ? verseCount === CANONICAL_TOTALS.verses && chapterCount === CANONICAL_TOTALS.chapters
+    (getDownloadablePack(normalized) || hasCustomPackVersification(normalized)
+      ? verseCount === totals.verses && chapterCount === totals.chapters
       : verseCount > 0)
   return { translation, verseCount, chapterCount, installed }
 }

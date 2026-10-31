@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, HttpException, Inject, Injectable, ServiceUnavailableException } from '@nestjs/common'
+import { BadRequestException, ForbiddenException, HttpException, Inject, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common'
 import { InjectConnection } from '@nestjs/mongoose'
 import { Connection, Types } from 'mongoose'
 import { createHash, generateKeyPairSync, randomBytes, randomUUID, sign } from 'node:crypto'
@@ -16,11 +16,32 @@ interface KeyRow { hash: string; createdAt?: string; sealed?: { ciphertext: stri
 interface LicenseRow extends ChurchLicense { key?: KeyRow | null; keyRevokedAt?: string; sessions: { id: string; deviceId: string; until: number; nextRenew: number }[] }
 const period = () => new Date().toISOString().slice(0, 7)
 const hash = (s: string) => createHash('sha256').update(s).digest('hex')
+/**
+ * A transcription session's lease. Renewed every minute (billing and revocation
+ * stay minute-accurate), it lasts three, so a church Wi-Fi drop of up to two
+ * minutes heals without the session lapsing.
+ */
+const LEASE_MS = 180_000
+
+/** Why a transcription renewal was refused, in words a church can act on. */
+export function renewalRefusal(row: LicenseRow | null, id: string, deviceId: string, now: number): string {
+  if (!row || row.status !== 'active' || (row.expiresAt && Date.parse(row.expiresAt) <= now)) return 'The licence is no longer active'
+  if (!row.features.includes('transcription')) return 'Transcription is not part of this licence'
+  if (!row.devices.some((d) => d.deviceId === deviceId)) return 'This computer is no longer activated on the licence'
+  const session = row.sessions.find((s) => s.id === id && s.deviceId === deviceId)
+  if (!session || session.until <= now) return 'The transcription session expired'
+  if (session.nextRenew > now) return 'The transcription session was renewed too early'
+  if (row.usage.period === period() && row.usage.transcriptionMinutes + 1 > row.transcriptionMinutes) return "This month's transcription minutes are used up"
+  if (row.sessions.filter((s) => s.until > now).length > row.maxTranscriptionSessions) return 'Too many transcription sessions are open on this licence'
+  return 'The transcription session could not be renewed'
+}
+
 const active = () => ({ status: 'active' as const, $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date().toISOString() } }] })
 
 @Injectable()
 export class LicensingService {
   private readonly key: Buffer
+  private readonly log = new Logger(LicensingService.name)
   constructor(@InjectConnection() private readonly db: Connection, @Inject(APP_CONFIG) config: AppConfig) { this.key = vaultKeyFromSecret(config.vaultEncryptionKey) }
   private get licenses() { return this.db.collection<LicenseRow>('church_licenses') }
   private get configs() { return this.db.collection('licensing_config') }
@@ -223,23 +244,37 @@ export class LicensingService {
     if (!current || current.status !== 'active' || (current.expiresAt && Date.parse(current.expiresAt) <= Date.now()) || !current.devices.some(d => d.deviceId === user.deviceId) || !current.features.includes('transcription')) throw new ForbiddenException('Activate this device and enable transcription on the licence')
     const { secrets } = await this.config(), key = secrets.providers.deepgramApiKey
     if (!key) throw new ServiceUnavailableException('Transcription provider is not configured')
-    const now = Date.now(), id = randomUUID()
-    const live = { $filter: { input: '$sessions', as: 's', cond: { $gt: ['$$s.until', now] } } }
-    const row = await this.licenses.findOneAndUpdate({ orgId: user.orgId, ...active(), features: 'transcription', 'devices.deviceId': user.deviceId, 'usage.period': period(), $expr: { $and: [{ $lt: [{ $size: live }, '$maxTranscriptionSessions'] }, { $lte: [{ $add: ['$usage.transcriptionMinutes', 2] }, '$transcriptionMinutes'] }] } }, [{ $set: { sessions: { $concatArrays: [live, { $literal: [{ id, deviceId: user.deviceId, until: now + 90000, nextRenew: now + 60000 }] }] }, 'usage.transcriptionMinutes': { $add: ['$usage.transcriptionMinutes', 2] } } }], { returnDocument: 'after' })
+    const now = Date.now(), id = randomUUID(), reservedPeriod = period()
+    // A computer that reconnects or restarts replaces its own session rather than
+    // competing with it: the limit counts other computers' live sessions.
+    const live = { $filter: { input: '$sessions', as: 's', cond: { $and: [{ $gt: ['$$s.until', now] }, { $ne: ['$$s.deviceId', user.deviceId] }] } } }
+    const row = await this.licenses.findOneAndUpdate({ orgId: user.orgId, ...active(), features: 'transcription', 'devices.deviceId': user.deviceId, 'usage.period': reservedPeriod, $expr: { $and: [{ $lt: [{ $size: live }, '$maxTranscriptionSessions'] }, { $lte: [{ $add: ['$usage.transcriptionMinutes', 2] }, '$transcriptionMinutes'] }] } }, [{ $set: { sessions: { $concatArrays: [live, { $literal: [{ id, deviceId: user.deviceId, until: now + LEASE_MS, nextRenew: now + 60000 }] }] }, 'usage.transcriptionMinutes': { $add: ['$usage.transcriptionMinutes', 2] } } }], { returnDocument: 'after' })
     if (!row) throw new ForbiddenException('Transcription session or monthly minute limit reached; check activation')
     try {
       const response = await fetch('https://api.deepgram.com/v1/auth/grant', { method: 'POST', headers: { Authorization: 'Token ' + key, 'Content-Type': 'application/json' }, body: JSON.stringify({ ttl_seconds: 30 }), redirect: 'error', signal: AbortSignal.timeout(15000) })
-      if (!response.ok) throw new Error('grant failed')
+      // Deepgram's reason (a revoked key, or one without the Member role grants need) never reaches the church.
+      if (!response.ok) throw new Error('Deepgram grant ' + response.status + ': ' + (await response.text().catch(() => '')).slice(0, 200))
       const grant = await response.json() as { access_token?: string; expires_in?: number }
       if (typeof grant.access_token !== 'string' || !grant.access_token) throw new Error('invalid grant')
       return { accessToken: grant.access_token, expiresIn: Math.min(grant.expires_in ?? 30, 30), sessionId: id, renewAfterSeconds: 60 }
-    } catch { await this.licenses.updateOne({ orgId: user.orgId }, { $pull: { sessions: { id } } }); throw new ServiceUnavailableException('Transcription grant unavailable') }
+    } catch (error) {
+      this.log.warn('Transcription grant failed: ' + (error as Error).message)
+      await this.licenses.updateOne({ orgId: user.orgId }, { $pull: { sessions: { id } } })
+      // Nothing was transcribed, so the two minutes reserved above go back — unless the month rolled over meanwhile.
+      await this.licenses.updateOne({ orgId: user.orgId, 'usage.period': reservedPeriod }, { $inc: { 'usage.transcriptionMinutes': -2 } })
+      throw new ServiceUnavailableException('Transcription grant unavailable')
+    }
   }
   async renew(user: RequestUser, id: string) {
     await this.member(user); await this.resetPeriod(user.orgId)
     const now = Date.now()
-    const result = await this.licenses.findOneAndUpdate({ orgId: user.orgId, ...active(), features: 'transcription', 'devices.deviceId': user.deviceId, 'usage.period': period(), sessions: { $elemMatch: { id, deviceId: user.deviceId, until: { $gt: now }, nextRenew: { $lte: now } } }, $expr: { $and: [{ $lte: [{ $add: ['$usage.transcriptionMinutes', 1] }, '$transcriptionMinutes'] }, { $lte: [{ $size: { $filter: { input: '$sessions', as: 's', cond: { $gt: ['$$s.until', now] } } } }, '$maxTranscriptionSessions'] }] } }, { $set: { 'sessions.$.until': now + 90000, 'sessions.$.nextRenew': now + 60000 }, $inc: { 'usage.transcriptionMinutes': 1 } }, { returnDocument: 'after' })
-    if (!result) throw new ForbiddenException('Session expired, renewal too early, or licence usage exhausted')
+    const result = await this.licenses.findOneAndUpdate({ orgId: user.orgId, ...active(), features: 'transcription', 'devices.deviceId': user.deviceId, 'usage.period': period(), sessions: { $elemMatch: { id, deviceId: user.deviceId, until: { $gt: now }, nextRenew: { $lte: now } } }, $expr: { $and: [{ $lte: [{ $add: ['$usage.transcriptionMinutes', 1] }, '$transcriptionMinutes'] }, { $lte: [{ $size: { $filter: { input: '$sessions', as: 's', cond: { $gt: ['$$s.until', now] } } } }, '$maxTranscriptionSessions'] }] } }, { $set: { 'sessions.$.until': now + LEASE_MS, 'sessions.$.nextRenew': now + 60000 }, $inc: { 'usage.transcriptionMinutes': 1 } }, { returnDocument: 'after' })
+    if (!result) {
+      // Say which rule refused it: one vague message hid an out-of-minutes licence behind "expired".
+      const reason = renewalRefusal(await this.row(user.orgId), id, user.deviceId, now)
+      this.log.warn('Transcription renewal refused: ' + reason)
+      throw new ForbiddenException(reason)
+    }
     return { renewAfterSeconds: 60 }
   }
   async release(user: RequestUser, id: string) { await this.member(user); await this.licenses.updateOne({ orgId: user.orgId }, { $pull: { sessions: { id, deviceId: user.deviceId } } }); return { released: true } }

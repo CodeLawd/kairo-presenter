@@ -217,7 +217,6 @@ test('isLocalTranslation reflects the installed NKJV', () => {
 // ─── IPC / preload / type contract ────────────────────────────────────────────
 
 const LOCAL_PACK_OPERATIONS = [
-  ['INSTALL_LOCAL_BIBLE_PACK', 'installLocalBiblePack'],
   ['GET_LOCAL_BIBLE_PACK_STATUS', 'getLocalBiblePackStatus'],
   ['REMOVE_LOCAL_BIBLE_TRANSLATION', 'removeLocalBibleTranslation'],
   ['DOWNLOAD_LOCAL_BIBLE_TRANSLATION', 'downloadLocalBibleTranslation'],
@@ -232,13 +231,12 @@ test('every local-pack operation has an IPC channel', () => {
   }
 })
 
-test('ScriptureAPI exposes a zero-argument picker-only local-pack install', () => {
+test('ScriptureAPI exposes downloads and management without file-picker installation', () => {
   const source = read('src/lib/ipc.ts')
   const api = source.slice(source.indexOf('export interface ScriptureAPI'))
-  assert.ok(api.includes('installLocalBiblePack:'), 'ScriptureAPI.installLocalBiblePack is missing')
+  assert.ok(!api.includes('installLocalBiblePack:'), 'file-picker installation must not be exposed')
   assert.ok(api.includes('getLocalBiblePackStatus:'), 'ScriptureAPI.getLocalBiblePackStatus is missing')
   assert.ok(api.includes('removeLocalBibleTranslation:'), 'ScriptureAPI.removeLocalBibleTranslation is missing')
-  assert.match(api, /installLocalBiblePack: \(\) => Promise<LocalBiblePackInstallResult \| null>/)
   assert.ok(!api.includes('filePath?: string'), 'renderer must not be allowed to choose an arbitrary path')
   assert.match(api, /getLocalBiblePackStatus: \(translation: string\) => Promise<LocalBiblePackStatus>/)
   assert.match(api, /removeLocalBibleTranslation: \(translation: string\) => Promise<LocalBiblePackStatus>/)
@@ -274,12 +272,12 @@ test('the main process handles every local-pack invoke channel', () => {
   for (const [constant] of LOCAL_PACK_OPERATIONS) {
     assert.ok(handlers.includes(`IPC.SCRIPTURE.${constant}`), `no handler for ${constant}`)
   }
-  // The native picker runs in main; the renderer never picks a filesystem path.
-  assert.ok(handlers.includes('dialog.showOpenDialog'), 'install must use a main-process native picker')
-  assert.ok(!handlers.includes('filePath?: string'), 'install handler must not accept a renderer path')
-  assert.ok(handlers.includes('if (result.canceled || !result.filePaths[0]) return null'))
   const settingsUi = read('src/renderer/src/components/settings/LocalBiblePackManager.tsx')
-  assert.ok(!settingsUi.includes('showOpenDialog'), 'renderer must not touch the file dialog')
+  assert.ok(!settingsUi.includes('Install from file'), 'file-install button must stay removed')
+  assert.ok(!settingsUi.includes('installLocalBiblePack'), 'renderer must not offer file installation')
+  assert.ok(!handlers.includes('IPC.SCRIPTURE.INSTALL_LOCAL_BIBLE_PACK'), 'file-install handler must stay removed')
+  assert.ok(!read('src/preload/index.ts').includes('installLocalBiblePack'), 'preload must not expose file installation')
+  assert.ok(!('INSTALL_LOCAL_BIBLE_PACK' in IPC.SCRIPTURE), 'file-install channel must stay removed')
 })
 
 test('selecting an unavailable downloadable translation starts the one-click download flow', () => {

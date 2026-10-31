@@ -1,6 +1,7 @@
 import type { ScriptureReference } from './detector';
 import { isValidScriptureReference } from './verse-bounds';
 import { tokenize } from '@shared/scripture-live-progress';
+import { spokenVerseText } from '@shared/verse-text';
 
 export interface QuoteCandidate { book: string; chapter: number; verse: number; text: string }
 
@@ -96,9 +97,8 @@ export function tokenizeChapter(candidates: QuoteCandidate[]): ChapterVerseToken
   const seen = new Set<string>();
   const verses: ChapterVerseTokens[] = [];
   for (const candidate of candidates) {
-    // Bundled Bible text can contain editorial notes in braces. They are not
-    // spoken scripture and must not break a contiguous reading match.
-    const tokens = tokenize(candidate.text.replace(/\{[^}]*\}/g, ' '));
+    // Braces hold both read-aloud supplied words and unspoken notes; keep only what is read.
+    const tokens = tokenize(spokenVerseText(candidate.text));
     const key = `${candidate.verse}|${tokens.join(' ')}`;
     if (seen.has(key)) continue;
     seen.add(key);

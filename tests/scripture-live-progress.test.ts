@@ -301,3 +301,15 @@ test("the same passage in another translation sits beside the first, in its own 
     ["KJV", "NLT"],
   );
 });
+
+test('a row never shows the same verse twice in one translation', () => {
+  const verse = (id: string, reference: string, translation: string, passageIndex: number) => ({
+    id, reference, translation, passageId: 'row', passageIndex, confidence: 1, source: 'manual' as const,
+    verses: [{ book: 'Matthew', chapter: 1, verse: Number(reference.split(':')[1]), text: reference }], triggerText: '',
+  })
+  // "Go back" added Matthew 1:8 in KJV while the row was still switching from NKJV to KJV.
+  const [row] = groupScriptureSuggestions([
+    verse('detected', 'Matthew 1:8', 'KJV', 0), verse('next', 'Matthew 1:9', 'KJV', 1), verse('back', 'Matthew 1:8', 'KJV', 0),
+  ])
+  assert.deepEqual(row.suggestions.map((item) => item.reference), ['Matthew 1:8', 'Matthew 1:9'])
+})

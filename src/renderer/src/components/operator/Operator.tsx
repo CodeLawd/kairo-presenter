@@ -5,10 +5,10 @@ import {
   commandForShortcut,
   shortcutFromEvent,
 } from "@shared/keyboard-shortcuts";
-import { CARD_BASE_WIDTH as OPERATOR_CARD_WIDTH, CARD_BASE_HEIGHT as OPERATOR_CARD_HEIGHT } from "../scripture/types";
 import { ServicePanel, useServiceRecords } from "./ServicePanel";
 import { DeepgramKeyDialog } from "./DeepgramKeyDialog";
 import { Switch } from "@/components/ui/switch";
+import { spokenVerseText } from "@shared/verse-text";
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
   BookOpen,
@@ -39,12 +39,6 @@ import {
 import type { OperatorPanelSide } from "@shared/operator-layout";
 import { Button } from "@/components/ui/button";
 import { DEFAULT_TRANSLATION_ID } from "@shared/bible-translations";
-import { VerseThemePreview } from "@/components/scripture/VerseThemePreview";
-import {
-  DEFAULT_OVERLAY_SETTINGS,
-  normalizeOverlaySettings,
-} from "@shared/overlay-defaults";
-import { liveOverlayTheme } from "@shared/overlay-outputs";
 import { LiveOutputRail } from "./LiveOutputRail";
 import { BoothWorkspace } from "@/components/layout/BoothWorkspace";
 import { useLiveRailWidth } from "./useLiveRailWidth";
@@ -382,7 +376,7 @@ export default function Operator(): React.ReactElement {
   const [suggestions, setSuggestions] = useState<ScriptureSuggestion[]>([]);
   const suggestionsRef = useRef<ScriptureSuggestion[]>([]);
   const recentReadingTextRef = useRef("");
-  const verseCardRefs = useRef(new Map<string, HTMLButtonElement>());
+  const verseCardRefs = useRef(new Map<string, HTMLElement>());
   const queueScrollRef = useContentAutoScroll(
     "top",
     JSON.stringify(suggestions.map(({ id, reference, verses }) => [id, reference, verses.map((verse) => verse.text)])),
@@ -401,6 +395,23 @@ export default function Operator(): React.ReactElement {
   /** Passage being switched to another translation, for its spinner. */
   const [retranslating, setRetranslating] = useState<string | null>(null);
   const translationOptions = useBootstrapStore((state) => state.translations);
+  const refreshTranslationOptions = useCallback((): void => {
+    void window.api.scripture.getTranslations()
+      .then((options) => useBootstrapStore.getState().setTranslations(options))
+      .catch(() => { /* keep the list already shown */ });
+  }, []);
+
+  /** A spoken "switch to KJV" switches the row it was said over, in place. */
+  useEffect(
+    () =>
+      window.api.scripture.onRetranslateRow(({ passageId, translation }) => {
+        const cards = suggestionsRef.current.filter((item) => (item.passageId ?? item.id) === passageId);
+        if (cards.length && cards.some((item) => item.translation !== translation)) {
+          void retranslateRef.current(passageId, cards, translation);
+        }
+      }),
+    [],
+  );
 
   /** Shows a detected passage in another translation — every card in it. */
   const retranslatePassage = useCallback(
@@ -428,6 +439,8 @@ export default function Operator(): React.ReactElement {
     },
     [],
   );
+  const retranslateRef = useRef(retranslatePassage);
+  retranslateRef.current = retranslatePassage;
   const [, setReadingProgress] = useState<{
     matchedId: string;
     nextId: string;
@@ -455,9 +468,6 @@ export default function Operator(): React.ReactElement {
     followStateRef.current = null;
     recentReadingTextRef.current = "";
   }, [serviceSnapshot.activeId, serviceSnapshot.loaded]);
-  const [overlay, setOverlay] = useState<AppSettings["overlay"]>(
-    DEFAULT_OVERLAY_SETTINGS,
-  );
   const [defaultTranslation, setDefaultTranslation] =
     useState<AppSettings["scripture"]["defaultTranslation"]>(DEFAULT_TRANSLATION_ID);
   const [pendingAuto, setPendingAuto] = useState<PendingAutoPresent[]>([]);
@@ -491,6 +501,20 @@ export default function Operator(): React.ReactElement {
     () => groupScriptureSuggestions(suggestions),
     [suggestions],
   );
+  /**
+   * On screen means this verse in this translation — KJV and NKJV share a
+   * reference. The wording decides; when the slide's text was reformatted and
+   * no wording matches, the reference alone does, as before.
+   */
+  const projectedIds = useMemo(() => {
+    if (!activeProjection) return new Set<string>();
+    const sameReference = suggestions.filter((item) => item.reference === activeProjection.reference);
+    const sameWording = sameReference.filter(
+      (item) => item.verses[0]?.text && activeProjection.text.includes(item.verses[0].text),
+    );
+    return new Set((sameWording.length ? sameWording : sameReference).map((item) => item.id));
+  }, [activeProjection, suggestions]);
+  const isProjected = (item: ScriptureSuggestion): boolean => projectedIds.has(item.id);
   const activeGroupId =
     followStateRef.current?.passageId ??
     suggestionGroups.find((group) =>
@@ -520,10 +544,10 @@ export default function Operator(): React.ReactElement {
   }, [suggestions]);
   const visibleSuggestionIds = useMemo(
     () =>
-      suggestionSections.current.flatMap((group) =>
+      [...suggestionSections.current, ...suggestionSections.history].flatMap((group) =>
         group.suggestions.map((item) => item.id),
       ),
-    [suggestionSections.current],
+    [suggestionSections],
   );
 
   // Held detections must not outlive the list they belong to.
@@ -580,7 +604,6 @@ export default function Operator(): React.ReactElement {
   // Settings arrive with the startup snapshot and stay current as other screens
   // save them, so Operator never re-reads them on mount.
   useEffect(() => {
-    setOverlay(normalizeOverlaySettings(bootstrapSettings.overlay));
     setDefaultTranslation(bootstrapSettings.scripture.defaultTranslation);
   }, [bootstrapSettings]);
 
@@ -597,7 +620,7 @@ export default function Operator(): React.ReactElement {
     const candidate = suggestionsRef.current.find(
       (item) => item.id === update.nextSuggestionId,
     );
-    if (!candidate) return;
+    if (!candidate || candidate.suggestionOnly) return;
 
     const sent = new Set(sentSuggestionIdsRef.current).add(candidate.id);
     sentSuggestionIdsRef.current = sent;
@@ -758,6 +781,17 @@ export default function Operator(): React.ReactElement {
     });
 
     const unsubSuggestion = window.api.scripture.onSuggestion((suggestion) => {
+      if (suggestion.retracted) {
+        setSuggestions(prev => {
+          const next = prev.filter(item => item.id !== suggestion.id);
+          suggestionsRef.current = next;
+          return next;
+        });
+        setSegments(prev => prev.map(segment => ({ ...segment,
+          scriptureHighlights: segment.scriptureHighlights.filter(item => item.id !== suggestion.id),
+        })));
+        return;
+      }
       // Closes the latency trace's last local hop: transcript → visible here.
       markSuggestionRendered(suggestion.correlationId);
       // 1. Apply visual highlight to the transcript segment containing the trigger
@@ -790,7 +824,19 @@ export default function Operator(): React.ReactElement {
       // 2. Always render a detection immediately. Manual browsing suppresses
       // auto-scroll only; it must never hide a live scripture from the operator
       // or starve auto-follow of the passage it needs to advance.
+      // A spoken "next verse" joins its row; select it there — or the copy the
+      // row already holds, when the verse was preloaded before.
+      const spokenStep = suggestion.source === "manual" && suggestion.passageId !== undefined;
+      const already = spokenStep
+        ? suggestionsRef.current.find(
+            (item) =>
+              (item.passageId ?? item.id) === suggestion.passageId &&
+              item.reference === suggestion.reference &&
+              item.translation === suggestion.translation,
+          )
+        : undefined;
       insertSuggestion(suggestion);
+      if (spokenStep) setSelectedSuggestionId(already?.id ?? suggestion.id);
     });
 
     const unsubPendingAuto = window.api.orchestrator.onPendingAuto(
@@ -1336,35 +1382,10 @@ export default function Operator(): React.ReactElement {
   const sttHealth = resilienceStatus?.health.find((h) => h.service === "stt");
 
 
-  // Starting is guarded by a 5-second countdown so a stray click can be undone
-  // before the microphone opens. Pausing stays instant.
-  const START_COUNTDOWN = 5;
-  const [startCountdown, setStartCountdown] = useState<number | null>(null);
-  const toggleRef = useRef(handleTogglePipeline);
-  toggleRef.current = handleTogglePipeline;
-  useEffect(() => {
-    if (startCountdown === null) return;
-    if (startCountdown === 0) {
-      setStartCountdown(null);
-      void toggleRef.current();
-      return;
-    }
-    const timer = window.setTimeout(() => setStartCountdown((n) => (n === null ? null : n - 1)), 1000);
-    return () => window.clearTimeout(timer);
-  }, [startCountdown]);
-  useEffect(() => {
-    if (startCountdown === null) return;
-    const onKey = (event: KeyboardEvent): void => {
-      if (event.key === "Escape") { event.preventDefault(); setStartCountdown(null); }
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [startCountdown]);
-  /** Start / Resume go through the countdown; Pause acts at once; a second press cancels. */
+  /** Start, Resume and Pause all act at once. */
   const pressListen = (): void => {
-    if (isTranscribing) { void handleTogglePipeline(); return; }
-    if (!hasDeepgram) { setKeyPromptOpen(true); return; }
-    setStartCountdown((n) => (n === null ? START_COUNTDOWN : null));
+    if (!isTranscribing && !hasDeepgram) { setKeyPromptOpen(true); return; }
+    void handleTogglePipeline();
   };
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-surface">
@@ -1629,25 +1650,11 @@ export default function Operator(): React.ReactElement {
                 <span className="truncate text-[12px] font-semibold text-zinc-200">
                   Transcript
                 </span>
-                {/* With a service open, its row below carries the status. */}
-                {!activeService && <span className="flex shrink-0 items-center gap-1.5 text-[11px] text-zinc-500">
-                  <span
-                    aria-hidden="true"
-                    className={cn(
-                      "size-1.5 rounded-full",
-                      isTranscribing
-                        ? sttHealth?.status === "error" || sttHealth?.status === "degraded"
-                          ? "bg-amber-400"
-                          : "animate-pulse bg-teal-400"
-                        : "bg-zinc-600",
-                    )}
-                  />
-                  {isTranscribing
-                    ? sttHealth?.status === "error" || sttHealth?.status === "degraded"
-                      ? "Reconnecting"
-                      : "Listening"
-                    : "Paused"}
-                </span>}
+                <InputLevelMeter
+                  level={audioLevel?.rms ?? 0}
+                  clipping={audioLevel?.clipping ?? false}
+                  active={isTranscribing}
+                />
               </div>
               <div className="flex shrink-0 items-center gap-1">
                 <button
@@ -1669,26 +1676,6 @@ export default function Operator(): React.ReactElement {
                   />
                   {nuggets.length > 0 && <span className="tabular-nums">{nuggets.length}</span>}
                 </button>
-                {!transcriptIdle && <button
-                  type="button"
-                  onClick={pressListen}
-                  disabled={pipelineBusy}
-                  title={isTranscribing ? "Pause transcription" : "Resume transcription"}
-                  data-tour="transcript-start"
-                  className={cn(
-                    "flex h-7 items-center gap-1.5 rounded-md pl-2 pr-2.5 text-[11px] font-semibold transition-colors disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/60 active:scale-[0.97]",
-                    isTranscribing
-                      ? "bg-surface-tertiary text-zinc-200 hover:bg-surface-elevated"
-                      : "bg-teal-500 text-on-accent hover:bg-teal-600",
-                  )}
-                >
-                  {isTranscribing ? (
-                    <Pause size={11} weight="fill" aria-hidden="true" />
-                  ) : (
-                    <Play size={11} weight="fill" aria-hidden="true" />
-                  )}
-                  {isTranscribing ? "Pause" : startCountdown !== null ? `Cancel · ${startCountdown}` : "Resume"}
-                </button>}
               </div>
               {nuggetsOpen && (
                 <div
@@ -1769,11 +1756,10 @@ export default function Operator(): React.ReactElement {
                 </div>
               )}
             </div>
-            <ServicePanel />
             <DeepgramKeyDialog
               open={keyPromptOpen}
               onOpenChange={setKeyPromptOpen}
-              onSaved={() => setStartCountdown(START_COUNTDOWN)}
+              onSaved={() => void handleTogglePipeline()}
             />
             {resilienceStatus &&
               (sttHealth?.status === "degraded" ||
@@ -1785,11 +1771,11 @@ export default function Operator(): React.ReactElement {
                   </span>
                 </div>
               )}
-            <div className="flex min-h-0 flex-1">
+            <div className="relative flex min-h-0 flex-1">
             <div
               ref={transcriptScrollRef}
               className={cn(
-                "min-w-0 min-h-0 flex-1 overflow-y-auto px-4 py-4 font-sans text-[14px] leading-[1.75] text-zinc-300 antialiased select-text break-words",
+                "min-w-0 min-h-0 flex-1 overflow-y-auto px-4 py-4 font-sans text-[14px] leading-[1.75] text-zinc-500 antialiased select-text break-words",
                 segments.length === 0 && !interimText
                   ? "flex flex-col"
                   : "space-y-2",
@@ -1852,56 +1838,70 @@ export default function Operator(): React.ReactElement {
                       <Mic size={17} aria-hidden />
                     </div>
                     <p className="mt-4 text-[13px] font-medium text-zinc-300">Ready when you are</p>
-                    {startCountdown === null ? (
-                      <>
-                        <p className="mt-1 text-[12px] leading-relaxed text-zinc-500">Start when the message begins.</p>
-                        <button
-                          type="button"
-                          onClick={pressListen}
-                          disabled={pipelineBusy}
-                          title="Start transcription"
-                          data-tour="transcript-start"
-                          className="btn-primary mt-5 inline-flex items-center gap-2 px-5 py-2 active:scale-[0.97]"
-                        >
-                          <Play size={12} weight="fill" aria-hidden="true" />
-                          Start listening
-                        </button>
-                      </>
-                    ) : (
-                      <StartCountdown seconds={startCountdown} total={START_COUNTDOWN} onCancel={() => setStartCountdown(null)} />
-                    )}
+                    <p className="mt-1 text-[12px] leading-relaxed text-zinc-500">Start when the message begins.</p>
+                    <button
+                      type="button"
+                      onClick={pressListen}
+                      disabled={pipelineBusy}
+                      title="Start transcription"
+                      data-tour="transcript-start"
+                      className="btn-primary mt-5 inline-flex items-center gap-2 px-5 py-2 active:scale-[0.97]"
+                    >
+                      <Play size={12} weight="fill" aria-hidden="true" />
+                      Start listening
+                    </button>
                   </div>
                 ) : (
-                  <div className="flex flex-1 flex-col items-center justify-center text-center">
-                    {isTranscribing ? (
-                      <>
-                        <span className="flex h-4 items-end gap-[3px]" aria-hidden="true">
-                          {[0, 1, 2, 3].map((bar) => (
-                            <span key={bar} className="w-[3px] rounded-full bg-zinc-500 motion-safe:animate-[listening_1.1s_ease-in-out_infinite]" style={{ animationDelay: `${bar * 0.15}s`, height: "40%" }} />
-                          ))}
-                        </span>
-                        <p className="mt-3 text-[13px] font-medium text-zinc-300">Listening…</p>
-                        <p className="mt-1 text-[12px] text-zinc-500">Words appear here as they’re spoken.</p>
-                      </>
-                    ) : (
-                      <>
-                        <Pause size={16} weight="fill" className="text-zinc-500" aria-hidden="true" />
-                        <p className="mt-3 text-[13px] font-medium text-zinc-300">Paused</p>
-                        <p className="mt-1 text-[12px] text-zinc-500">Press Resume to keep listening.</p>
-                      </>
-                    )}
-                  </div>
+                  isTranscribing && (
+                    <div className="flex flex-1 flex-col items-center justify-center text-center">
+                      <span className="flex h-4 items-end gap-[3px]" aria-hidden="true">
+                        {[0, 1, 2, 3].map((bar) => (
+                          <span key={bar} className="w-[3px] rounded-full bg-zinc-500 motion-safe:animate-[listening_1.1s_ease-in-out_infinite]" style={{ animationDelay: `${bar * 0.15}s`, height: "40%" }} />
+                        ))}
+                      </span>
+                      <p className="mt-3 text-[13px] font-medium text-zinc-300">Listening…</p>
+                      <p className="mt-1 text-[12px] text-zinc-500">Words appear here as they’re spoken.</p>
+                    </div>
+                  )
                 ))}
               </div>
-
-              {/* Input level: a slim rail the height of the transcript —
-                  green, then amber, then red as it nears clipping. */}
-              <InputLevelMeter
-                level={audioLevel?.rms ?? 0}
-                clipping={audioLevel?.clipping ?? false}
-                active={isTranscribing}
-              />
-
+            </div>
+            {/* Session bar: Pause / Resume, the live status or service, End.
+                Hidden until something starts; ServicePanel stays mounted
+                because it keeps the service records this panel reads. While
+                paused the transcript stays plain and readable — Resume is
+                here, in the same place Pause was. */}
+            <div className={cn("hairline-t h-12 shrink-0 items-center gap-1 px-2", transcriptIdle ? "hidden" : "flex")}>
+              <button
+                type="button"
+                onClick={pressListen}
+                disabled={pipelineBusy}
+                title={isTranscribing ? "Pause transcription" : "Resume transcription"}
+                data-tour="transcript-start"
+                className={cn(
+                  "flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-[12px] font-medium transition-colors disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/60 active:scale-[0.97]",
+                  isTranscribing
+                    ? "text-zinc-200 hover:bg-surface-tertiary"
+                    : "bg-teal-500 text-on-accent hover:bg-teal-600",
+                )}
+              >
+                {isTranscribing ? (
+                  <Pause size={12} weight="fill" aria-hidden="true" />
+                ) : (
+                  <Play size={12} weight="fill" aria-hidden="true" />
+                )}
+                {isTranscribing ? "Pause" : "Resume"}
+              </button>
+              {!activeService && (
+                <span className="flex min-w-0 flex-1 items-center justify-end gap-1.5 px-2 text-[11px] text-zinc-500">
+                  {isTranscribing
+                    ? sttHealth?.status === "error" || sttHealth?.status === "degraded"
+                      ? "Reconnecting"
+                      : "Listening"
+                    : "Paused"}
+                </span>
+              )}
+              <ServicePanel />
             </div>
           </section>
 
@@ -1928,9 +1928,9 @@ export default function Operator(): React.ReactElement {
                 <span className="text-[11px] font-medium text-zinc-400">
                   Detected
                 </span>
-                {suggestionSections.current.length > 0 && (
+                {suggestionGroups.length > 0 && (
                   <span className="tabular-nums text-[10px] text-zinc-600">
-                    {suggestionSections.current.length}
+                    {suggestionGroups.length}
                   </span>
                 )}
               </div>
@@ -1973,215 +1973,204 @@ export default function Operator(): React.ReactElement {
               ref={queueScrollRef}
               className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-3"
             >
-              <div className="flex w-full min-w-0 flex-col space-y-5">
-                {suggestionSections.current.map((group) => {
+              {/* Newest on top; older references keep moving down. */}
+              <div className="flex w-full min-w-0 flex-col gap-2">
+                {[...suggestionSections.current, ...suggestionSections.history].map((group) => {
                   const followState = followStateRef.current;
                   // Follow-along (Reading / Up next) only means something on the
                   // passage that is on screen; elsewhere it reads as "live".
-                  const groupLive = group.suggestions.some(
-                    (item) => activeProjection?.reference === item.reference,
-                  );
+                  const groupLive = group.suggestions.some(isProjected);
                   const following = groupLive && followState?.passageId === group.id;
+                  const flags = (item: ScriptureSuggestion) => {
+                    const isReading = following && followState !== null && followState.currentIndex === item.passageIndex;
+                    const isUpNext = following && followState !== null && followState.currentIndex + 1 === item.passageIndex;
+                    const isLive = isProjected(item);
+                    return { isLive, isReading, isUpNext, state: detectionState({ isLive, isReading, isUpNext }) };
+                  };
+                  // The verse this row shows and presents: what the operator picked,
+                  // else what is on screen, else what is being read, else the first.
+                  const shown =
+                    group.suggestions.find((item) => item.id === selectedSuggestionId) ??
+                    group.suggestions.find((item) => flags(item).isLive) ??
+                    group.suggestions.find((item) => flags(item).isReading) ??
+                    group.suggestions[0];
+                  if (!shown) return null;
+                  const shownFlags = flags(shown);
+                  const passage = group.suggestions.length > 1;
+                  const source = detectionSource(shown);
+                  const registerRef = (id: string) => (element: HTMLElement | null) => {
+                    if (element) verseCardRefs.current.set(id, element);
+                    else verseCardRefs.current.delete(id);
+                  };
                   return (
                     <section
                       key={group.id}
-                      className="flex w-full min-w-0 flex-col space-y-3"
+                      className={cn(
+                        // Each reference is its own block, two surface steps up from the
+                        // workspace, so neighbours never run together.
+                        "group/row relative w-full min-w-0 rounded-lg px-3.5 py-3 transition-colors motion-safe:animate-[detect-card-in_.35s_cubic-bezier(.16,1,.3,1)_both]",
+                        // Live is a solid red block in white text; the live verse chip
+                        // turns white so it still stands out on the red.
+                        groupLive
+                          ? "bg-live/70 text-white [&_*:not([data-live-chip])]:!text-white [&_button:hover]:!bg-white/15"
+                          : "bg-surface-tertiary hover:bg-surface-elevated",
+                      )}
                     >
-                      <div className="flex w-full items-center justify-between gap-3">
-                        <div className="flex min-w-0 items-baseline gap-2">
-                          <h3 className="truncate text-[13px] font-semibold text-zinc-100">
-                            {group.reference}
-                          </h3>
-                          {/* The passage's translation; pick another to show it in that one. */}
-                          {group.suggestions[0] && (
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <button
-                                  type="button"
-                                  disabled={retranslating === group.id}
-                                  className="flex shrink-0 items-center gap-1 self-center rounded-md px-1.5 py-0.5 text-[11px] font-medium text-zinc-400 hover:bg-surface-tertiary hover:text-white disabled:opacity-60 data-[state=open]:bg-surface-tertiary data-[state=open]:text-white"
-                                  title="Show this passage in another translation"
-                                  aria-label={`${group.reference} in ${group.suggestions[0].translation}. Change translation`}
-                                >
-                                  {retranslating === group.id && <Loader size={10} className="animate-spin" aria-hidden="true" />}
-                                  {group.suggestions[0].translation}
-                                  <ChevronDown size={10} aria-hidden="true" />
-                                </button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="start" className="max-h-72 min-w-[220px] overflow-y-auto">
-                                {translationOptions.filter((option) => option.available).map((option) => (
-                                  <DropdownMenuItem
-                                    key={option.id}
-                                    disabled={option.id === group.suggestions[0]?.translation}
-                                    onSelect={() => void retranslatePassage(group.id, group.suggestions, option.id)}
-                                  >
-                                    <span className="w-12 shrink-0 font-medium">{option.id}</span>
-                                    <span className="truncate text-zinc-400">{option.name}</span>
-                                  </DropdownMenuItem>
-                                ))}
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          )}
-                          {group.suggestions[0]?.requestedTranslation && (
-                            <span
-                              className="shrink-0 text-[11px] text-zinc-500"
-                              title={`The preacher asked for ${group.suggestions[0].requestedTranslation}, which isn't available here. Download it or add an API.Bible key in Settings → Scripture.`}
+                      <div className="flex w-full items-center gap-2">
+                        {/* The verse this row would put up — a passage's title follows its numbers. */}
+                        <h3 className="min-w-0 truncate text-[13px] font-semibold text-zinc-100">
+                          {shown.reference}
+                        </h3>
+                        {/* The passage's translation; pick another to show it in that one.
+                            Opening it refreshes the list, so licensed Bibles that became
+                            available after startup are offered. */}
+                        <DropdownMenu onOpenChange={(open) => { if (open) refreshTranslationOptions(); }}>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              type="button"
+                              disabled={retranslating === group.id}
+                              className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-zinc-400 hover:bg-surface-border hover:text-white disabled:opacity-60 data-[state=open]:bg-surface-border data-[state=open]:text-white"
+                              title="Show this passage in another translation"
+                              aria-label={`${group.reference} in ${shown.translation}. Change translation`}
                             >
-                              {group.suggestions[0].requestedTranslation} not available
+                              {retranslating === group.id && <Loader size={10} className="animate-spin" aria-hidden="true" />}
+                              {shown.translation}
+                              <ChevronDown size={10} aria-hidden="true" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="start" className="max-h-72 min-w-[220px] overflow-y-auto">
+                            {translationOptions.filter((option) => option.available).map((option) => (
+                              <DropdownMenuItem
+                                key={option.id}
+                                disabled={option.id === shown.translation}
+                                onSelect={() => void retranslatePassage(group.id, group.suggestions, option.id)}
+                              >
+                                <span className="w-12 shrink-0 font-medium">{option.id}</span>
+                                <span className="truncate text-zinc-400">{option.name}</span>
+                              </DropdownMenuItem>
+                            ))}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                        {shown.requestedTranslation && (
+                          <span
+                            className="shrink-0 text-[11px] text-zinc-500"
+                            title={`The preacher asked for ${shown.requestedTranslation}, which isn't available here. Download it or add an API.Bible key in Settings → Scripture.`}
+                          >
+                            {shown.requestedTranslation} not available
+                          </span>
+                        )}
+                        <span key={shownFlags.state ?? "none"} className="flex min-w-0 shrink-0 items-center motion-safe:animate-[detect-state-in_.3s_ease-out_both]">
+                          {groupLive ? (
+                            <span className="flex items-center gap-1 text-[10px] font-semibold">
+                              <span className="size-1.5 rounded-full bg-white" aria-hidden="true" />
+                              On screen
                             </span>
+                          ) : shownFlags.state === "reading" ? (
+                            <span className="rounded-full bg-teal-500 px-1.5 py-px text-[10px] font-semibold text-on-accent">Reading</span>
+                          ) : source ? (
+                            <span className="truncate text-[10px] text-zinc-500">{source}</span>
+                          ) : null}
+                        </span>
+                        <span className="flex-1" />
+                        {/* Row actions appear on hover or keyboard focus, so the list stays calm. */}
+                        <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover/row:opacity-100 group-focus-within/row:opacity-100">
+                          {!shownFlags.isLive && (
+                            <button
+                              type="button"
+                              onClick={() => void handleApproveSuggestion(shown.id)}
+                              className="mr-1 flex h-6 items-center gap-1 rounded-md bg-teal-500 px-2 text-[11px] font-semibold text-on-accent transition-colors hover:bg-teal-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/60"
+                              aria-label={`Present ${shown.reference} ${shown.translation}`}
+                            >
+                              <Play size={10} weight="fill" aria-hidden="true" />
+                              Present
+                            </button>
                           )}
-                          {following && (() => {
-                            const reading = group.suggestions.find((item) => item.passageIndex === followState?.currentIndex);
-                            const verse = reading?.reference.split(":").pop();
-                            return (
-                              <span className="shrink-0 rounded-full bg-teal-500 px-2 py-0.5 text-[10px] font-semibold text-on-accent">
-                                {verse ? `Reading v${verse}` : "Following"}
-                              </span>
-                            );
-                          })()}
-                        </div>
-                        <div className="flex shrink-0 items-center">
                           <button
                             type="button"
-                            onClick={() =>
-                              void loadAdjacentDetectedVerse(
-                                group.id,
-                                "previous",
-                              )
-                            }
+                            onClick={() => void loadAdjacentDetectedVerse(group.id, "previous")}
                             disabled={adjacentLoading !== null}
-                            className="grid size-6 place-items-center text-zinc-500 hover:text-zinc-200 disabled:opacity-40"
+                            className="grid size-6 place-items-center rounded-md text-zinc-500 hover:bg-surface-border hover:text-zinc-200 disabled:opacity-40"
                             title="Preload previous verse"
                             aria-label={`Preload verse before ${group.reference}`}
                           >
-                            {adjacentLoading === `${group.id}:previous` ? (
-                              <Loader size={12} className="animate-spin" />
-                            ) : (
-                              <ChevronLeft size={14} />
-                            )}
+                            {adjacentLoading === `${group.id}:previous` ? <Loader size={12} className="animate-spin" /> : <ChevronLeft size={14} />}
                           </button>
                           <button
                             type="button"
-                            onClick={() =>
-                              void loadAdjacentDetectedVerse(group.id, "next")
-                            }
+                            onClick={() => void loadAdjacentDetectedVerse(group.id, "next")}
                             disabled={adjacentLoading !== null}
-                            className="grid size-6 place-items-center text-zinc-500 hover:text-zinc-200 disabled:opacity-40"
+                            className="grid size-6 place-items-center rounded-md text-zinc-500 hover:bg-surface-border hover:text-zinc-200 disabled:opacity-40"
                             title="Preload next verse"
                             aria-label={`Preload verse after ${group.reference}`}
                           >
-                            {adjacentLoading === `${group.id}:next` ? (
-                              <Loader size={12} className="animate-spin" />
-                            ) : (
-                              <ChevronRight size={14} />
-                            )}
+                            {adjacentLoading === `${group.id}:next` ? <Loader size={12} className="animate-spin" /> : <ChevronRight size={14} />}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => addToQueue(shown)}
+                            className="grid size-6 place-items-center rounded-md text-zinc-500 hover:bg-surface-border hover:text-zinc-200"
+                            title={`Add ${shown.reference} to queue`}
+                            aria-label={`Add ${shown.reference} to queue`}
+                          >
+                            <Plus size={12} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { for (const item of group.suggestions) void handleDismissSuggestion(item.id); }}
+                            className="grid size-6 place-items-center rounded-md text-zinc-500 hover:bg-surface-border hover:text-rose-300"
+                            title={`Dismiss ${group.reference}`}
+                            aria-label={`Dismiss ${group.reference}`}
+                          >
+                            <X size={12} />
                           </button>
                         </div>
                       </div>
-                      <div
-                        className="grid w-full gap-3"
-                        style={{
-                          gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${OPERATOR_CARD_WIDTH}px), 1fr))`,
-                        }}
+                      {/* A passage is one row; its verse numbers pick which verse goes up. */}
+                      {passage && (
+                        <div className="mt-1.5 flex flex-wrap gap-1" role="group" aria-label={`Verses of ${group.reference}`}>
+                          {group.suggestions.map((item) => {
+                            const itemFlags = flags(item);
+                            // A step across a chapter keeps its chapter, so "2:1" never reads as "1".
+                            const [itemChapter, itemVerse] = item.reference.split(" ").pop()?.split(":") ?? [];
+                            const firstChapter = group.suggestions[0]?.reference.split(" ").pop()?.split(":")[0];
+                            const verse = itemChapter && itemChapter !== firstChapter ? `${itemChapter}:${itemVerse}` : itemVerse;
+                            return (
+                              <button
+                                key={item.id}
+                                type="button"
+                                ref={registerRef(item.id)}
+                                data-live-chip={itemFlags.isLive || undefined}
+                                onClick={() => void handleApproveSuggestion(item.id)}
+                                onFocus={() => setSelectedSuggestionId(item.id)}
+                                title={`Present ${item.reference}`}
+                                aria-label={`Present ${item.reference}${itemFlags.isLive ? ", on screen" : ""}`}
+                                className={cn(
+                                  "h-6 min-w-6 rounded-md px-1.5 text-[11px] font-medium tabular-nums transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/60",
+                                  itemFlags.isLive
+                                    ? "bg-white text-live"
+                                    : item.id === shown.id
+                                      ? "bg-teal-500 text-on-accent"
+                                      : "text-zinc-400 hover:bg-surface-border hover:text-zinc-100",
+                                )}
+                              >
+                                {verse}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        ref={passage ? undefined : registerRef(shown.id)}
+                        onClick={() => void handleApproveSuggestion(shown.id)}
+                        onFocus={() => { if (!passage) setSelectedSuggestionId(shown.id); }}
+                        title={`Present ${shown.reference}`}
+                        className="mt-1 block w-full rounded-sm text-left text-[13px] leading-relaxed text-zinc-400 transition-colors hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/60"
                       >
-                        {group.suggestions.map((s, cardIndex) => {
-                          const isReading =
-                            following &&
-                            followState !== null &&
-                            followState.passageId === s.passageId &&
-                            followState.currentIndex === s.passageIndex;
-                          const isUpNext =
-                            following &&
-                            followState !== null &&
-                            followState.passageId === s.passageId &&
-                            followState.currentIndex + 1 === s.passageIndex;
-                          const isLive =
-                            activeProjection?.reference === s.reference;
-                          const state = detectionState({ isLive, isReading, isUpNext });
-                          const source = detectionSource(s);
-                          return (
-                            <article
-                              key={s.id}
-                              className="group/card relative min-w-0 motion-safe:animate-[detect-card-in_.45s_cubic-bezier(.16,1,.3,1)_both]"
-                              style={{ animationDelay: `${Math.min(cardIndex, 6) * 60}ms` }}
-                            >
-                              <VerseThemePreview
-                                result={{
-                                  reference: s.reference,
-                                  translation: s.translation,
-                                  verses: s.verses,
-                                }}
-                                theme={liveOverlayTheme(overlay)}
-                                showTranslation={overlay.showTranslation}
-                                showVerseNumbers={overlay.showVerseNumbers}
-                                maxVerses={1}
-                                responsive
-                                width={OPERATOR_CARD_WIDTH}
-                                height={OPERATOR_CARD_HEIGHT}
-                                footer={{ number: cardIndex + 1 }}
-                                isActive={selectedSuggestionId === s.id}
-                                isFocused={
-                                  isReading ||
-                                  isUpNext ||
-                                  selectedSuggestionId === s.id
-                                }
-                                isLive={isLive}
-                                sendStatus={isLive ? "sent" : "idle"}
-                                onSelect={() => {
-                                  verseCardRefs.current
-                                    .get(s.id)
-                                    ?.focus({ preventScroll: true });
-                                  void handleApproveSuggestion(s.id);
-                                }}
-                                cardRef={(element) => {
-                                  if (element)
-                                    verseCardRefs.current.set(s.id, element);
-                                  else verseCardRefs.current.delete(s.id);
-                                }}
-                              />
-                              <div className="absolute right-1 top-1 z-[1] flex opacity-0 transition-opacity group-hover/card:opacity-100 group-focus-within/card:opacity-100">
-                                <button
-                                  type="button"
-                                  onClick={() => addToQueue(s)}
-                                  className="grid size-6 place-items-center rounded-md bg-black text-zinc-200 hover:bg-black hover:text-white"
-                                  title={`Add ${s.reference} to queue`}
-                                  aria-label={`Add ${s.reference} to queue`}
-                                >
-                                  <Plus size={12} />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    void handleDismissSuggestion(s.id)
-                                  }
-                                  className="grid size-6 place-items-center rounded-md bg-black text-zinc-200 hover:bg-black hover:text-rose-300"
-                                  title={`Dismiss ${s.reference}`}
-                                  aria-label={`Dismiss ${s.reference}`}
-                                >
-                                  <X size={12} />
-                                </button>
-                              </div>
-                              {/* The shared card footer owns the reference; keep detection state separate. */}
-                              {(state || source) && <div className="mt-1.5 flex min-w-0 items-center justify-end gap-2">
-                                <span key={state ?? "none"} className="shrink-0 motion-safe:animate-[detect-state-in_.3s_ease-out_both]">
-                                  {state === "live" ? (
-                                    <span className="flex items-center gap-1 text-[10px] font-semibold text-live">
-                                      <span className="size-1.5 rounded-full bg-live" aria-hidden="true" />
-                                      On screen
-                                    </span>
-                                  ) : state === "reading" ? (
-                                    <span className="rounded-full bg-teal-500 px-1.5 py-px text-[10px] font-semibold text-on-accent">Reading</span>
-                                  ) : state === "next" ? (
-                                    <span className="rounded-full px-1.5 py-px text-[10px] font-medium text-zinc-300 ring-1 ring-inset ring-surface-border">Up next</span>
-                                  ) : source ? (
-                                    <span className="text-[10px] text-zinc-500">{source}</span>
-                                  ) : null}
-                                </span>
-                              </div>}
-                            </article>
-                          );
-                        })}
-                      </div>
+                        <span className="line-clamp-2">
+                          {shown.verses[0] ? spokenVerseText(shown.verses[0].text) : "Text unavailable in this translation."}
+                        </span>
+                      </button>
                     </section>
                   );
                 })}
@@ -2210,12 +2199,12 @@ export default function Operator(): React.ReactElement {
   );
 }
 
-const METER_SEGMENTS = 24
+const METER_BARS = 5
 
 /**
- * The input level as a slim vertical rail beside the transcript: a clip light
- * on top, rounded segments that fill from the bottom (green, amber near the top,
- * red at the very top), and the mic at the foot. The exact level is on hover.
+ * The input level as five small rising bars beside the panel title: they light
+ * green from the left as the voice comes in, red when the input clips. Dim
+ * while not listening. The exact level is on hover.
  */
 function InputLevelMeter({ level, clipping, active }: {
   level: number
@@ -2226,67 +2215,28 @@ function InputLevelMeter({ level, clipping, active }: {
   const percent = Math.round(value * 100)
   return (
     <div
-      className="flex w-6 shrink-0 flex-col items-center gap-2.5 py-3"
+      className="flex h-3 shrink-0 items-end gap-[2px]"
+      role="meter"
+      aria-label={clipping ? "Input level, clipping" : "Input level"}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={percent}
       title={clipping ? "Input is clipping" : `Input level ${percent}%`}
     >
-      <span
-        className={cn("size-1.5 shrink-0 rounded-full transition-colors", clipping ? "bg-red-500" : "bg-surface-elevated")}
-        aria-label={clipping ? "Clipping" : undefined}
-      />
-      <div
-        className="flex w-1.5 flex-1 flex-col-reverse gap-[3px]"
-        role="meter"
-        aria-label="Input level"
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={percent}
-      >
-        {Array.from({ length: METER_SEGMENTS }, (_, i) => {
-          const lit = value >= (i + 1) / METER_SEGMENTS
-          const tone = i >= METER_SEGMENTS - 3 ? "bg-red-500" : i >= METER_SEGMENTS - 7 ? "bg-amber-400" : "bg-emerald-500"
-          return (
-            <div
-              key={i}
-              className={cn("min-h-0 w-full flex-1 rounded-[2px] transition-colors duration-75", lit ? tone : "bg-surface-elevated")}
-            />
-          )
-        })}
-      </div>
-      <Mic size={12} className={cn("shrink-0 transition-colors", active ? "text-zinc-300" : "text-zinc-600")} aria-hidden="true" />
+      {Array.from({ length: METER_BARS }, (_, i) => {
+        const lit = active && value >= (i + 0.5) / METER_BARS
+        return (
+          <span
+            key={i}
+            className={cn(
+              "w-[3px] rounded-full transition-colors duration-75",
+              lit ? (clipping ? "bg-red-500" : "bg-emerald-500") : "bg-surface-elevated",
+            )}
+            style={{ height: `${40 + i * 15}%` }}
+          />
+        )
+      })}
     </div>
   )
 }
 
-/**
- * The countdown before the mic opens: a ring that drains over the whole countdown,
- * the number in the middle, and Cancel. Escape cancels too.
- */
-function StartCountdown({ seconds, total, onCancel }: {
-  seconds: number
-  total: number
-  onCancel: () => void
-}): React.ReactElement {
-  const radius = 26
-  const circumference = 2 * Math.PI * radius
-  return (
-    <div className="mt-4 flex flex-col items-center" role="status" aria-live="assertive">
-      <div className="relative grid size-16 place-items-center">
-        <svg className="absolute inset-0 -rotate-90" viewBox="0 0 64 64" aria-hidden="true">
-          <circle cx="32" cy="32" r={radius} fill="none" strokeWidth="3" className="stroke-surface-elevated" />
-          <circle
-            cx="32" cy="32" r={radius} fill="none" strokeWidth="3" strokeLinecap="round"
-            className="stroke-teal-500 motion-safe:animate-[countdown-drain_var(--countdown)_linear_forwards]"
-            style={{ strokeDasharray: circumference, ["--countdown" as string]: `${total}s`, ["--circ" as string]: `${circumference}` }}
-          />
-        </svg>
-        <span key={seconds} className="text-[24px] font-semibold tabular-nums text-zinc-100 motion-safe:animate-[countdown-tick_.35s_cubic-bezier(.16,1,.3,1)]">
-          {seconds}
-        </span>
-      </div>
-      <p className="mt-3 text-[12px] text-zinc-400">Starting in {seconds}…</p>
-      <button type="button" className="btn-secondary mt-3 px-4 py-1.5 text-[12px]" onClick={onCancel} autoFocus>
-        Cancel
-      </button>
-    </div>
-  )
-}

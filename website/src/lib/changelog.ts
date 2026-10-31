@@ -14,6 +14,17 @@ export type ChangelogEntry = {
 
 export const changelog: ChangelogEntry[] = [
   {
+    version: '1.0.20',
+    date: '2026-10-31',
+    title: 'A calmer, clearer Kairo',
+    notes: [
+      'A new neutral grey look, closer to ProPresenter: blue only marks what you pick, and the Scripture and Lyrics sidebars clearly separate your library, playlists and items.',
+      'Scripture cards are easier to read at a glance, each passage in a playlist sits in its own panel, and the item filter stays put at the bottom.',
+      'A simpler Theme Editor: add shapes, images and video from a floating bar over the slide, pick layers from a list, and style text from a tidier panel.',
+      'Offline Bibles show their download progress, the Amplified Classic can be installed, and scripture detection recognises quoted verses more reliably.',
+    ],
+  },
+  {
     version: '1.0.19',
     date: '2026-10-25',
     title: 'Activate Kairo with one key — no more API keys',

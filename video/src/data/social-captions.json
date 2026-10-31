@@ -1,0 +1,51 @@
+[
+  {
+    "text": "The pastor quotes a verse.",
+    "startMs": 300,
+    "endMs": 1856,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "Nobody planned it.",
+    "startMs": 2793,
+    "endMs": 3961,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "Kairo heard it.",
+    "startMs": 6700,
+    "endMs": 7755,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "Found the passage.",
+    "startMs": 8336,
+    "endMs": 9591,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "Even paraphrased.",
+    "startMs": 9971,
+    "endMs": 11314,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "You press send.",
+    "startMs": 14300,
+    "endMs": 15314,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "Because every moment matters.",
+    "startMs": 18800,
+    "endMs": 20535,
+    "timestampMs": null,
+    "confidence": null
+  }
+]

@@ -1,6 +1,6 @@
 import { memo, useState, useEffect, useRef, useCallback, useDeferredValue, useMemo } from 'react'
 import { SegmentedControl } from '@/components/shared/SegmentedControl'
-import { Check, Copy, Film, Image, Loader, MoreHorizontal, Plus, Redo, RotateCcw, Trash2, Undo } from '@/icons'
+import { Check, ChevronDown, Copy, Film, Image, Loader, MoreHorizontal, Plus, Redo, RotateCcw, Square, Star, TextT, Trash2, Undo } from '@/icons'
 import { cn } from '@/lib/utils'
 import {
   contentKindLabel,
@@ -12,7 +12,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
@@ -55,7 +54,7 @@ import { overlayShape } from '@shared/overlay-shapes'
 import { ThemeTypePanel } from './ThemeTypePanel'
 import { ThemeLayoutPanel } from './ThemeLayoutPanel'
 import { useThemeHistory } from './useThemeHistory'
-import { LabeledSegmented, MediaAdjustments, MediaPicker, Slider, pct } from './fields'
+import { LabeledSegmented, MediaAdjustments, MediaPicker, SelectField, Slider, pct } from './fields'
 import { useBootstrapStore } from '@/bootstrap/useBootstrapStore'
 
 // ─── Sample content for the WYSIWYG preview ────────────────────────────────────
@@ -128,7 +127,7 @@ function ColorField({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           spellCheck={false}
-          className="input h-9 w-full pl-11 font-mono text-xs"
+          className="input h-8 w-full pl-11 font-mono text-xs"
           placeholder="#rrggbb or rgba(...)"
           aria-label={`${label} value`}
         />
@@ -465,9 +464,9 @@ export default function ThemeEditor(): React.ReactElement {
    * This theme becomes the default for its kind: every screen and NDI feed
    * switches to it now, and screens added later start with it.
    */
-  const makeDefault = (): void => {
+  const makeDefault = (id: string | null = selectedId): void => {
     flush()
-    const entry = libraryRef.current.find((t) => t.id === selectedId)
+    const entry = libraryRef.current.find((t) => t.id === id)
     if (!entry) return
     const next = { ...useBootstrapStore.getState().settings.themeDefaults, [entry.kind]: entry.id }
     useBootstrapStore.getState().patchSettings('themeDefaults', next)
@@ -506,14 +505,19 @@ export default function ThemeEditor(): React.ReactElement {
   const selectedElement = draft.elements.find((el) => el.id === selectedLayer) ?? null
   // No edits since the reset point (the bottom "Save theme" button).
   const isDefault = !selected || sameValue(draft, normalizeOverlayTheme(themeBaseline(selected)))
-  const isKindDefault = Boolean(selected) && themeDefaults[kind] === selected?.id
   const templates = builtInThemesForKind(kind)
 
+  // The selected layer's frame in output pixels, for the status bar.
+  const selectedBox: OverlayBox | null =
+    selectedLayer === 'verse' || selectedLayer === 'reference'
+      ? draft[selectedLayer].box
+      : selectedElement?.box ?? null
+
   return (
-    <div className="grid h-full grid-cols-[220px_minmax(0,1fr)_320px] overflow-hidden bg-surface">
-      {/* Library */}
-      <aside className="flex min-h-0 flex-col bg-surface-secondary">
-        <div className="space-y-3 p-3">
+    <div className="grid h-full grid-cols-[208px_minmax(0,1fr)_300px] overflow-hidden bg-surface">
+      {/* Library: themes above, the selected theme's layers below — as in ProPresenter. */}
+      <aside className="hairline-r flex min-h-0 flex-col bg-surface-secondary">
+        <div className="shrink-0 p-2.5 pb-1.5">
           <SegmentedControl
             role="tablist"
             label="Theme kind"
@@ -521,33 +525,54 @@ export default function ThemeEditor(): React.ReactElement {
             options={OVERLAY_CONTENT_KINDS.map((k) => ({ value: k, label: contentKindLabel(k) }))}
             onChange={switchKind}
           />
-
-          <NewThemeMenu templates={templates} blankName={nextUntitledThemeName(library, kind)} onCreate={create} />
         </div>
-        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-3 pb-3">
-          {themes.map((item) => (
+        <SidebarHeading title="Themes">
+          <NewThemeMenu templates={templates} blankName={nextUntitledThemeName(library, kind)} onCreate={create} />
+        </SidebarHeading>
+        <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-1.5 pb-2">
+          {themes.map((item, index) => (
             <ThemeTile
               key={item.id}
+              index={index + 1}
               name={item.id === selectedId ? name || 'Untitled theme' : item.name}
               theme={item.id === selectedId ? previewTheme : item.theme}
               kind={kind}
               selected={item.id === selectedId}
               isDefault={themeDefaults[kind] === item.id}
               onClick={() => select(item)}
+              onMakeDefault={() => {
+                select(item)
+                makeDefault(item.id)
+              }}
               onDuplicate={() => duplicate(item)}
               onDelete={() => remove(item)}
             />
           ))}
         </div>
+        {selected && (
+          <div className="hairline-t flex max-h-[38%] shrink-0 flex-col">
+            <SidebarHeading title="Layers" />
+            <LayerList
+              theme={draft}
+              contentKind={kind}
+              selected={selectedLayer}
+              onSelect={(id) => {
+                setSelectedLayer(id)
+                // A text layer's look is on the Text tab; Background says nothing about it.
+                if (isTextLayer(id) && tab === 'background') setTab('type')
+              }}
+            />
+          </div>
+        )}
       </aside>
 
-      {/* Preview */}
+      {/* Slide */}
       <main className="flex min-h-0 min-w-0 flex-col">
         {selected ? (
           <>
-            <div className="flex h-14 shrink-0 items-center gap-3 px-6">
+            <div className="hairline-b flex h-11 shrink-0 items-center gap-2 px-4">
               <input
-                className="min-w-0 flex-1 bg-transparent text-[17px] font-semibold text-white outline-none placeholder:text-slate-500"
+                className="min-w-0 flex-1 bg-transparent text-[15px] font-semibold text-white outline-none placeholder:text-slate-500"
                 value={name}
                 placeholder="Untitled theme"
                 aria-label="Theme name"
@@ -556,21 +581,6 @@ export default function ThemeEditor(): React.ReactElement {
               />
               {saveError ? <span role="alert" className="text-[11px] text-red-400">{saveError}</span>
                 : <span className={cn('text-[11px] text-slate-400 transition-opacity', saved ? 'opacity-100' : 'opacity-0')}>Saved</span>}
-              {isKindDefault ? (
-                <span className="shrink-0 rounded-md bg-surface-secondary px-2.5 py-1 text-[12px] font-medium text-slate-300">
-                  Default theme
-                </span>
-              ) : (
-                <button
-                  type="button"
-                  className="btn-secondary shrink-0 px-3 py-1 text-[12px]"
-                  onClick={makeDefault}
-                  data-tooltip="Use this theme on every screen, and for screens you add later"
-                >
-                  Make default
-                </button>
-              )}
-              <AddElementMenu disabled={draft.elements.length >= MAX_OVERLAY_ELEMENTS} onAdd={(pick) => void addElement(pick)} />
               <div className="flex items-center">
                 {([
                   { label: 'Undo', shortcut: '⌘Z', icon: Undo, enabled: history.canUndo, run: undo },
@@ -583,7 +593,7 @@ export default function ThemeEditor(): React.ReactElement {
                     data-tooltip={`${label} (${shortcut})`}
                     disabled={!enabled}
                     onClick={run}
-                    className="grid size-7 place-items-center rounded-md text-slate-300 transition-colors hover:bg-surface-secondary hover:text-white disabled:text-slate-600 disabled:hover:bg-transparent"
+                    className="grid size-7 place-items-center rounded-md text-slate-300 transition-colors hover:bg-surface-tertiary hover:text-white disabled:text-slate-600 disabled:hover:bg-transparent"
                   >
                     <Icon size={15} aria-hidden="true" />
                   </button>
@@ -601,17 +611,27 @@ export default function ThemeEditor(): React.ReactElement {
                 className="shrink-0 bg-surface-secondary"
                 itemClassName="px-2.5 py-0.5 text-[11px]"
               />
-
             </div>
 
+            {/* The pasteboard: mid grey so a dark or a light slide shows its edges. */}
             <div
               ref={stageRef}
-              className="min-h-0 flex-1 overflow-y-auto px-6"
+              className="relative grid min-h-0 flex-1 place-items-center overflow-hidden bg-surface-canvas px-6 pb-6 pt-16"
               onPointerDown={(e) => {
                 if (e.target === e.currentTarget) setSelectedLayer(null)
               }}
             >
-              <div className="relative isolate overflow-hidden rounded-lg" style={{ width: frameWidth || undefined }}>
+              <InsertToolbar
+                full={draft.elements.length >= MAX_OVERLAY_ELEMENTS}
+                referenceShown={draft.reference.show}
+                onShowReference={() => {
+                  editTheme((current) => ({ ...current, reference: { ...current.reference, show: true } }))
+                  setSelectedLayer('reference')
+                  setTab('type')
+                }}
+                onAdd={(pick) => void addElement(pick)}
+              />
+              <div className="relative isolate overflow-hidden ring-1 ring-black/40" style={{ width: frameWidth || undefined }}>
                 <ScaledOverlayPreview html={previewHtml} autoFit={draft.layout.autoFitText} motion />
                 <OverlayCanvas
                   theme={draft}
@@ -627,40 +647,43 @@ export default function ThemeEditor(): React.ReactElement {
                   }}
                 />
               </div>
+            </div>
 
-              <div className="flex flex-wrap items-center gap-1.5 py-4">
-                <span className="mr-1 text-[12px] text-slate-400">Used on</span>
-                {screens.length === 0 && <span className="text-[12px] text-slate-500">no screens yet — add one in Screens</span>}
-                {screens.map((output) => {
-                  const on = outputUsesTheme(output, selected)
-                  // Scripture always needs a theme: pick another theme to move a screen off this one.
-                  const locked = on && kind === 'scripture'
-                  return (
-                    <button
-                      key={output.id}
-                      type="button"
-                      aria-pressed={on}
-                      disabled={locked}
-                      title={
-                        locked
-                          ? 'Choose another theme to move this screen off it'
-                          : kind === 'lyrics' && !on
-                            ? 'Use this theme for lyrics on this screen'
-                            : undefined
-                      }
-                      onClick={() => toggleOutput(output)}
-                      className={cn(
-                        'flex items-center gap-1.5 rounded-full px-3 py-1 text-[12px] transition-colors',
-                        on ? 'bg-slate-200 text-surface' : 'bg-surface-secondary text-slate-300 hover:bg-surface-tertiary hover:text-white',
-                        locked && 'cursor-default',
-                      )}
-                    >
-                      {on && <Check size={12} aria-hidden="true" />}
-                      {output.name}
-                    </button>
-                  )
-                })}
-              </div>
+            {/* Status bar: where the theme is used, and the selected layer's frame. */}
+            <div className="hairline-t flex h-9 shrink-0 items-center gap-1.5 bg-surface-secondary px-3">
+              <span className="mr-1 text-[11px] text-slate-400">Used on</span>
+              {screens.length === 0 && <span className="text-[11px] text-slate-500">no screens yet — add one in Screens</span>}
+              {screens.map((output) => {
+                const on = outputUsesTheme(output, selected)
+                // Scripture always needs a theme: pick another theme to move a screen off this one.
+                const locked = on && kind === 'scripture'
+                return (
+                  <button
+                    key={output.id}
+                    type="button"
+                    aria-pressed={on}
+                    disabled={locked}
+                    title={
+                      locked
+                        ? 'Choose another theme to move this screen off it'
+                        : kind === 'lyrics' && !on
+                          ? 'Use this theme for lyrics on this screen'
+                          : undefined
+                    }
+                    onClick={() => toggleOutput(output)}
+                    className={cn(
+                      'flex h-6 items-center gap-1 rounded-full px-2.5 text-[11px] transition-colors',
+                      on ? 'bg-slate-200 text-surface' : 'bg-surface-tertiary text-slate-300 hover:bg-surface-elevated hover:text-white',
+                      locked && 'cursor-default',
+                    )}
+                  >
+                    {on && <Check size={11} aria-hidden="true" />}
+                    {output.name}
+                  </button>
+                )
+              })}
+              <span className="flex-1" />
+              {selectedBox && <FrameReadout box={selectedBox} />}
             </div>
           </>
         ) : (
@@ -682,7 +705,18 @@ export default function ThemeEditor(): React.ReactElement {
       </main>
 
       {/* Inspector */}
-      <aside className="flex min-h-0 flex-col bg-surface-secondary">
+      <aside className="hairline-l flex min-h-0 flex-col bg-surface-secondary">
+        {selected && !selectedElement && (
+          <div className="hairline-b shrink-0 p-3">
+            <SegmentedControl
+              role="tablist"
+              label="Theme settings"
+              value={activeTab}
+              options={tabs.map((t) => ({ value: t, label: t === 'background' ? 'Background' : t === 'type' ? 'Text' : 'Layout' }))}
+              onChange={setTab}
+            />
+          </div>
+        )}
         {selected && (
           <div ref={inspectorRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
             {selectedElement ? (
@@ -698,16 +732,6 @@ export default function ThemeEditor(): React.ReactElement {
               />
             ) : (
             <>
-            {draft.elements.length > 0 && <ElementList elements={draft.elements} onSelect={setSelectedLayer} />}
-            <p className="text-[12px] text-slate-400">Select a shape on the slide or in Elements to edit its look, flip it, or align it.</p>
-            <SegmentedControl
-              role="tablist"
-              label="Theme settings"
-              value={activeTab}
-              options={tabs.map((t) => ({ value: t, label: t === 'background' ? 'Background' : t === 'type' ? 'Text' : 'Layout' }))}
-              onChange={setTab}
-            />
-
             {activeTab === 'background' && (
               <BackgroundFields theme={draft} onChange={(partial) => updateTheme('background', partial)} onPickMedia={pickMedia} />
             )}
@@ -758,7 +782,7 @@ export default function ThemeEditor(): React.ReactElement {
           </div>
         )}
         {selected && (
-          <div className="flex shrink-0 gap-2 p-4 pt-3">
+          <div className="hairline-t flex shrink-0 gap-2 p-3">
             <button
               type="button"
               className="btn-secondary flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap text-[12px]"
@@ -800,7 +824,6 @@ function sameValue(a: unknown, b: unknown): boolean {
  * The widest 16:9 frame that fits the stage both ways, so the canvas fills
  * whatever room the window gives it instead of only following its width.
  */
-const USED_ON_ROOM = 64
 
 function useFitFrame(): [React.RefCallback<HTMLDivElement>, number] {
   const [width, setWidth] = useState(0)
@@ -813,8 +836,7 @@ function useFitFrame(): [React.RefCallback<HTMLDivElement>, number] {
       const style = getComputedStyle(node)
       const w = node.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)
       const h = node.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom)
-      // Leave room under the frame for the "Used on" row.
-      setWidth(Math.max(0, Math.floor(Math.min(w, ((h - USED_ON_ROOM) * 16) / 9))))
+      setWidth(Math.max(0, Math.floor(Math.min(w, (h * 16) / 9))))
     }
     observer.current = new ResizeObserver(measure)
     observer.current.observe(node)
@@ -825,45 +847,62 @@ function useFitFrame(): [React.RefCallback<HTMLDivElement>, number] {
 
 const MEDIA_ICONS = { image: Image, video: Film } as const
 
-function AddElementMenu({
-  disabled,
+/**
+ * ProPresenter's floating insert bar over the slide: add a layer, and the
+ * inspector switches to it. T brings back a hidden reference — the theme's
+ * text layers are fixed, so that is the only text there is to add.
+ */
+function InsertToolbar({
+  full,
+  referenceShown,
+  onShowReference,
   onAdd,
 }: {
-  disabled: boolean
+  full: boolean
+  referenceShown: boolean
+  onShowReference: () => void
   onAdd: (pick: ShapePick | { kind: 'image' | 'video' }) => void
 }): React.ReactElement {
+  const fullTip = `A theme holds up to ${MAX_OVERLAY_ELEMENTS} elements`
+  const button = 'flex h-8 items-center justify-center gap-0.5 rounded-md px-3 text-slate-200 transition-colors hover:bg-surface-elevated hover:text-white disabled:text-slate-600 disabled:hover:bg-transparent data-[state=open]:bg-surface-elevated'
+  const divider = <span className="h-4 w-px bg-surface-border" aria-hidden="true" />
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          disabled={disabled}
-          data-tooltip={disabled ? `A theme holds up to ${MAX_OVERLAY_ELEMENTS} elements` : 'Add a shape, image or video'}
-          className="flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-2 text-[12px] text-slate-300 transition-colors hover:bg-surface-secondary hover:text-white disabled:text-slate-600 disabled:hover:bg-transparent"
-        >
-          <Plus size={13} aria-hidden="true" /> Add Element
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="max-h-[70vh] w-[316px] overflow-y-auto p-2">
-        <DropdownMenuLabel className="px-1 pb-1 pt-0.5 text-[11px] font-medium text-slate-500">Media</DropdownMenuLabel>
-        <div className="grid grid-cols-2 gap-1.5">
-          {(['image', 'video'] as const).map((kind) => {
-            const Icon = MEDIA_ICONS[kind]
-            return (
-              <DropdownMenuItem
-                key={kind}
-                onSelect={() => onAdd({ kind })}
-                className="flex h-[72px] flex-col items-center justify-center gap-1.5 rounded-md bg-surface-tertiary text-[12px] text-slate-200 focus:bg-surface-border focus:text-white"
-              >
-                <Icon size={22} aria-hidden="true" />
-                {kind === 'image' ? 'Image' : 'Video'}
-              </DropdownMenuItem>
-            )
-          })}
-        </div>
-        <ShapeMenuItems onPick={onAdd} />
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <div
+      role="toolbar"
+      aria-label="Add to slide"
+      className="absolute left-1/2 top-3 flex -translate-x-1/2 items-center gap-0.5 rounded-lg bg-surface-tertiary p-0.5"
+    >
+      <button
+        type="button"
+        className={button}
+        disabled={referenceShown}
+        onClick={onShowReference}
+        aria-label="Show reference"
+        data-tooltip={referenceShown ? 'The reference is already on the slide' : 'Show the reference line'}
+      >
+        <TextT size={17} aria-hidden="true" />
+      </button>
+      {divider}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button type="button" className={button} disabled={full} aria-label="Add a shape" data-tooltip={full ? fullTip : 'Shape'}>
+            <Square size={16} weight="fill" aria-hidden="true" />
+            <ChevronDown size={11} aria-hidden="true" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="center" className="max-h-[70vh] w-[316px] overflow-y-auto p-2">
+          <ShapeMenuItems onPick={onAdd} />
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {divider}
+      <button type="button" className={button} disabled={full} onClick={() => onAdd({ kind: 'image' })} aria-label="Add an image" data-tooltip={full ? fullTip : 'Image'}>
+        <Image size={16} weight="fill" aria-hidden="true" />
+      </button>
+      {divider}
+      <button type="button" className={button} disabled={full} onClick={() => onAdd({ kind: 'video' })} aria-label="Add a video" data-tooltip={full ? fullTip : 'Video'}>
+        <Film size={16} weight="fill" aria-hidden="true" />
+      </button>
+    </div>
   )
 }
 
@@ -887,30 +926,81 @@ function ElementIcon({ element }: { element: OverlayElement }): React.ReactEleme
   )
 }
 
-/** Every element, top of the stack first — the way to reach one hidden under another. */
-function ElementList({ elements, onSelect }: { elements: OverlayElement[]; onSelect: (id: string) => void }): React.ReactElement {
-  const ordered = [...elements.filter((el) => el.aboveText).reverse(), ...elements.filter((el) => !el.aboveText).reverse()]
+/** A small uppercase heading for a sidebar section, with an optional action on the right. */
+function SidebarHeading({ title, children }: { title: string; children?: React.ReactNode }): React.ReactElement {
   return (
-    <div className="space-y-1">
-      <p className="label">Elements</p>
-      {ordered.map((el) => {
-        return (
-          <button
-            key={el.id}
-            type="button"
-            onClick={() => onSelect(el.id)}
-            aria-label={`Edit ${overlayElementLabel(el).toLowerCase()}`}
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] text-slate-300 transition-colors hover:bg-surface-tertiary hover:text-white"
-          >
-            <ElementIcon element={el} />
-            <span className="min-w-0 flex-1 truncate">
-              {el.mediaPath ? el.mediaPath.split(/[\\/]/).pop() : overlayElementLabel(el)}
-            </span>
-            <span className="shrink-0 text-[11px] text-slate-500">Edit</span>
-          </button>
-        )
-      })}
+    <div className="flex h-8 shrink-0 items-center justify-between pl-3 pr-1.5">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{title}</span>
+      {children}
     </div>
+  )
+}
+
+/**
+ * The slide's layers, top of the stack first, like ProPresenter's Objects
+ * list — the way to reach one hidden under another without hunting on the canvas.
+ */
+function LayerList({
+  theme,
+  contentKind,
+  selected,
+  onSelect,
+}: {
+  theme: OverlayTheme
+  contentKind: OverlayContentKind
+  selected: CanvasLayerId | null
+  onSelect: (id: CanvasLayerId) => void
+}): React.ReactElement {
+  const above = theme.elements.filter((el) => el.aboveText).reverse()
+  const below = theme.elements.filter((el) => !el.aboveText).reverse()
+  const text: Array<{ id: 'verse' | 'reference'; label: string }> = [
+    { id: 'reference', label: contentKind === 'lyrics' ? 'Section label' : 'Reference' },
+    { id: 'verse', label: contentKind === 'lyrics' ? 'Lyrics' : 'Verse' },
+  ]
+  const row = (id: CanvasLayerId, icon: React.ReactNode, label: string, hidden = false): React.ReactElement => (
+    <button
+      key={id}
+      type="button"
+      onClick={() => onSelect(id)}
+      aria-pressed={selected === id}
+      className={cn(
+        'flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-[12px] transition-colors',
+        selected === id ? 'row-selected' : 'text-slate-300 hover:bg-surface-tertiary hover:text-white',
+      )}
+    >
+      {icon}
+      <span className={cn('min-w-0 flex-1 truncate', hidden && 'opacity-50')}>{label}</span>
+      {hidden && <span className="shrink-0 text-[10px] text-slate-500">Hidden</span>}
+    </button>
+  )
+  return (
+    <div className="min-h-0 overflow-y-auto px-1.5 pb-2">
+      {above.map((el) => row(el.id, <ElementIcon element={el} />, elementName(el)))}
+      {text.map((layer) => row(layer.id, <TextT size={13} aria-hidden="true" className="shrink-0 text-slate-500" />, layer.label, layer.id === 'reference' && !theme.reference.show))}
+      {below.map((el) => row(el.id, <ElementIcon element={el} />, elementName(el)))}
+    </div>
+  )
+}
+
+const elementName = (el: OverlayElement): string =>
+  el.mediaPath ? el.mediaPath.split(/[\\/]/).pop() ?? overlayElementLabel(el) : overlayElementLabel(el)
+
+/** The selected layer's frame in output pixels (1920×1080), as ProPresenter's status bar shows it. */
+function FrameReadout({ box }: { box: OverlayBox }): React.ReactElement {
+  const values: Array<[string, number]> = [
+    ['X', (box.xPct / 100) * 1920],
+    ['Y', (box.yPct / 100) * 1080],
+    ['W', (box.widthPct / 100) * 1920],
+    ['H', (box.heightPct / 100) * 1080],
+  ]
+  return (
+    <span className="flex shrink-0 items-center gap-3 text-[11px] tabular-nums text-slate-400">
+      {values.map(([label, value]) => (
+        <span key={label}>
+          <span className="text-slate-500">{label}</span> {Math.round(value)}
+        </span>
+      ))}
+    </span>
   )
 }
 
@@ -958,8 +1048,13 @@ function NewThemeMenu({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button type="button" className="btn-secondary flex w-full items-center justify-center gap-1.5 text-[12px]">
-          <Plus size={13} aria-hidden="true" /> New theme
+        <button
+          type="button"
+          aria-label="New theme"
+          data-tooltip="New theme"
+          className="grid size-6 place-items-center rounded-md text-slate-400 transition-colors hover:bg-surface-tertiary hover:text-white data-[state=open]:bg-surface-tertiary"
+        >
+          <Plus size={14} aria-hidden="true" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-48">
@@ -987,7 +1082,7 @@ function BackgroundFields({
   const bg = theme.background
   return (
     <div className="space-y-4">
-      <LabeledSegmented
+      <SelectField
         label="Type"
         value={bg.type}
         options={[
@@ -1046,21 +1141,25 @@ const TileSlide = memo(function TileSlide({ html, autoFit }: { html: string; aut
 })
 
 function ThemeTile({
+  index,
   name,
   theme,
   kind,
   selected,
   isDefault = false,
   onClick,
+  onMakeDefault,
   onDuplicate,
   onDelete,
 }: {
+  index: number
   name: string
   theme: OverlayTheme
   kind: OverlayContentKind
   selected: boolean
   isDefault?: boolean
   onClick: () => void
+  onMakeDefault: () => void
   onDuplicate: () => void
   onDelete: () => void
 }): React.ReactElement {
@@ -1071,13 +1170,15 @@ function ThemeTile({
     [previewTheme, sample.reference, sample.short],
   )
   return (
-    <div className={cn('group relative rounded-lg p-1.5 transition-colors', selected ? 'bg-surface-elevated' : 'hover:bg-surface-tertiary')}>
+    <div className={cn('group relative rounded-md p-1.5 transition-colors', selected ? 'row-selected' : 'hover:bg-surface-tertiary')}>
       <button type="button" onClick={onClick} aria-pressed={selected} className="w-full text-left">
-        <div className="overflow-hidden rounded-md">
+        <div className={cn('overflow-hidden rounded-sm ring-1', selected ? 'ring-teal-500' : 'ring-black/30')}>
           <TileSlide html={html} autoFit={previewTheme.layout.autoFitText} />
         </div>
-        <span className="flex items-center gap-1.5 px-0.5 pt-1.5">
-          <span className={cn('min-w-0 truncate text-[12px]', selected ? 'text-white' : 'text-slate-400')}>{name}</span>
+        <span className="flex items-center gap-1.5 px-0.5 pt-1">
+          <span className={cn('min-w-0 truncate text-[12px]', selected ? 'text-white' : 'text-slate-300')}>
+            <span className="tabular-nums text-slate-500">{index}.</span> {name}
+          </span>
           {isDefault && (
             <span className="shrink-0 rounded bg-surface-tertiary px-1.5 py-px text-[10px] font-medium text-slate-300">Default</span>
           )}
@@ -1093,7 +1194,10 @@ function ThemeTile({
             <MoreHorizontal size={14} aria-hidden="true" />
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-36">
+        <DropdownMenuContent align="end" className="w-52">
+          <DropdownMenuItem onSelect={onMakeDefault} disabled={isDefault}>
+            <Star size={13} /> {isDefault ? 'Default theme' : 'Make default'}
+          </DropdownMenuItem>
           <DropdownMenuItem onSelect={onDuplicate}>
             <Copy size={13} /> Duplicate
           </DropdownMenuItem>

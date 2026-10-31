@@ -141,12 +141,14 @@ export function LibraryRail({
   const rowClass = (selected: boolean): string =>
     cn(
       'group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] transition-colors',
-      selected ? 'row-selected' : 'text-zinc-400 hover:bg-surface-tertiary hover:text-zinc-200',
+      selected ? 'row-context' : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200',
     )
 
   return (
-    <nav aria-label="Song sources" className="shrink-0 space-y-3">
+    <nav aria-label="Song sources" className="shrink-0 space-y-1">
       <LibrarySection
+        banded
+        contextSelection
         kind="songs"
         activeLibraryId={activeSetlistId ? '' : activeLibraryId}
         counts={libraryCounts}
@@ -171,7 +173,7 @@ export function LibraryRail({
       <div
         // The whole section is a drop target: a row takes it into that list,
         // anywhere else goes to the active setlist (or starts one).
-        className={cn('hairline-t -mx-1 px-1 pb-1 pt-3 transition-colors', sectionDrop && 'rounded-lg bg-surface-tertiary')}
+        className={cn('transition-colors', sectionDrop && 'rounded-lg bg-white/5')}
         onDragOver={(event) => {
           if (!event.dataTransfer.types.includes(SONG_DRAG_TYPE)) return
           event.preventDefault()
@@ -186,8 +188,8 @@ export function LibraryRail({
           if (songId) dropOnSection(songId, event.dataTransfer.getData('text/plain') || 'Song')
         }}
       >
-        <div className="flex items-center gap-1 px-2 pb-1">
-          <p className="flex-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-600">Playlists</p>
+        <div className="sidebar-heading -mx-1">
+          <p className="flex-1">Playlists</p>
           {sectionDrop && !dropListId && (
             <span className="text-[10px] text-zinc-300">
               {activeList ? `Add to ${activeList.name}` : 'Start a playlist'}

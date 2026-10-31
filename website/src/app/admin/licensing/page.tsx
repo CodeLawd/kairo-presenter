@@ -97,8 +97,13 @@ const SECRET_FIELDS = {
   googleTranslate: "googleTranslateApiKey",
 } as const;
 type Provider = keyof typeof PROVIDERS;
-const PROVIDER_META: Record<Provider, { icon: LucideIcon; use: string }> = {
-  deepgram: { icon: AudioLines, use: "Live transcription" },
+const PROVIDER_META: Record<Provider, { icon: LucideIcon; use: string; keyNote?: string }> = {
+  deepgram: {
+    icon: AudioLines,
+    use: "Live transcription",
+    // Kairo hands churches 30-second Deepgram tokens, which only Member-role keys can create.
+    keyNote: "Use a key with the Member role or higher. Lower roles can't issue the short-lived tokens Kairo gives each church.",
+  },
   bible: { icon: BookOpen, use: "Scripture text and search" },
   anthropic: { icon: Sparkles, use: "Scripture detection and translation" },
   deepseek: { icon: BrainCircuit, use: "Scripture detection and translation" },
@@ -121,7 +126,7 @@ function ProviderRow({
   const [draft, setDraft] = useState("");
   const [reveal, setReveal] = useState(false);
   const [busy, setBusy] = useState(false);
-  const { icon: Icon, use } = PROVIDER_META[id];
+  const { icon: Icon, use, keyNote } = PROVIDER_META[id];
   const name = PROVIDERS[id];
   const close = () => {
     setMode("view");
@@ -237,6 +242,9 @@ function ProviderRow({
             Cancel
           </Button>
         </form>
+      )}
+      {mode === "edit" && keyNote && (
+        <p className="mt-2 pl-12 text-xs text-muted-foreground">{keyNote}</p>
       )}
       {mode === "remove" && (
         <div className="mt-3 flex flex-wrap items-center gap-2 pl-12">

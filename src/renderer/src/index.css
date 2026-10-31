@@ -6,42 +6,55 @@
 
 @layer base {
   :root {
-    /* Cool near-black, the website's palette (#111319 workspace, #181B23
-       panels): a faint blue bias so the app and the site read as one product.
+    /* Neutral graphite, as in ProPresenter: pure grey with no blue cast
+       (#1E1E1E workspace, #2C2C2C panels, #151515 frame, #121212 hairlines).
        Panels sit one step above the workspace and controls remain distinct.
-       Colour belongs to actions, live state, tool icons and status. */
-    --surface: 17 19 25;
-    --surface-secondary: 24 27 35;
-    --surface-tertiary: 33 37 48;
-    --surface-elevated: 42 46 59;
-    --surface-rail: 28 31 40;
+       Colour belongs to actions (macOS system blue), live state, tool icons
+       and status. */
+    --surface: 30 30 30;
+    --surface-secondary: 44 44 44;
+    --surface-tertiary: 58 58 58;
+    --surface-elevated: 72 72 72;
+    --surface-rail: 21 21 21;
     --surface-header: var(--surface-rail);
-    --surface-border: 56 61 76;
+    --surface-border: 72 72 72;
     /* Dropdown menus: a step lighter than anything under them, split by a line. */
-    --surface-menu: 50 55 69;
-    --surface-menu-hover: 62 67 83;
-    --surface-menu-line: 70 75 92;
+    --surface-menu: 52 52 52;
+    --surface-menu-hover: 66 66 66;
+    --surface-menu-line: 78 78 78;
     /* Hairline between regions (sidebar | workspace, header | body), on top of the tone step. */
-    --surface-line: 38 42 54;
+    --surface-line: 18 18 18;
     --panel-border-width: 0.5px;
     --panel-border-color: rgb(var(--surface-border) / 0.75);
     /* The black band behind a screen canvas, and the grey of a display on it. */
-    --surface-stage: 10 11 16;
-    --surface-display: 76 81 98;
+    --surface-stage: 12 12 12;
+    --surface-display: 84 84 84;
+    /* The editor's pasteboard behind a slide being designed: a mid grey, as
+       in ProPresenter, so both dark and light slides show their edges. */
+    --surface-canvas: 98 98 98;
+    /* Page sidebars, measured from ProPresenter's library sidebar. */
+    --sidebar-sources: 70 70 70;   /* #464646 library + playlists block */
+    --sidebar-list: 47 47 47;      /* #2F2F2F the open list */
+    --sidebar-band: 35 35 35;      /* #232323 the strip between them */
+    --sidebar-pick-sources: 88 88 88;        /* #585858 */
+    --sidebar-pick-sources-line: 129 129 129; /* #818181 */
+    --sidebar-pick-list: 68 68 68;           /* #444444 */
+    --sidebar-pick-list-line: 114 114 114;   /* #727272 */
+    --sidebar-field: 26 26 26;     /* #1A1A1A the filter pill */
     /* Accent is the website's stage blue (#3B6BFF) for what is picked and the primary action; red
        (broadcast tally) marks only what is live on screen. */
-    --control-accent: 59 107 255;
-    --accent-50: 236 242 255;
-    --accent-100: 214 227 255;
-    --accent-200: 176 202 255;
-    --accent-300: 138 180 255;
-    --accent-400: 104 146 255;
-    --accent-500: 59 107 255;
-    --accent-600: 47 91 224;
-    --accent-700: 38 74 190;
-    --accent-800: 32 54 128;
-    --accent-900: 27 38 82;
-    --accent-950: 22 28 52;
+    --control-accent: 10 132 255;
+    --accent-50: 235 244 255;
+    --accent-100: 214 234 255;
+    --accent-200: 173 214 255;
+    --accent-300: 128 190 255;
+    --accent-400: 64 156 255;
+    --accent-500: 10 132 255;
+    --accent-600: 0 112 232;
+    --accent-700: 0 92 196;
+    --accent-800: 0 66 140;
+    --accent-900: 0 44 92;
+    --accent-950: 0 28 58;
     --on-accent: 255 255 255;
     --live: 240 68 56;
     /* Icon hues, one per tool so a colour means the same thing everywhere.
@@ -57,67 +70,76 @@
     --hue-amber: 240 190 84;
     --hue-indigo: 138 146 245;
     /* Solid red wash for a live row, readable on surface and secondary. */
-    --tint-live: 74 40 44;
-    --tint-teal: 33 37 48;
-    --tint-red: 52 26 28;
-    --tint-amber: 33 37 48;
-    --tint-yellow: 33 37 48;
-    --tint-rose: 54 26 30;
-    --range-track: 50 55 69;
-    --text-primary: 238 238 242;
+    --tint-live: 74 38 38;
+    --tint-teal: 58 58 58;
+    --tint-red: 52 26 26;
+    --tint-amber: 58 58 58;
+    --tint-yellow: 58 58 58;
+    --tint-rose: 54 26 28;
+    --range-track: 64 64 64;
+    --text-primary: 236 236 236;
     /* Grey text, a step brighter than the neutral scale so labels read on
        charcoal. slate/zinc text-* map here (tailwind.config.js); bg/border don't. */
-    --fg-200: 246 243 235;
-    --fg-300: 214 217 226;
-    --fg-400: 186 190 204;
-    --fg-500: 157 163 182;
-    --fg-600: 125 131 153;
-    --neutral-50: 250 250 252;
-    --neutral-100: 240 241 245;
-    --neutral-200: 222 224 231;
-    --neutral-300: 200 203 213;
-    --neutral-400: 148 153 170;
-    --neutral-500: 109 114 132;
-    --neutral-600: 76 81 98;
-    --neutral-700: 56 61 76;
-    --neutral-800: 33 37 48;
-    --neutral-900: 24 27 35;
-    --neutral-950: 17 19 25;
+    --fg-200: 244 244 244;
+    --fg-300: 214 214 214;
+    --fg-400: 184 184 184;
+    --fg-500: 166 166 166;
+    --fg-600: 150 150 150;
+    --neutral-50: 250 250 250;
+    --neutral-100: 240 240 240;
+    --neutral-200: 224 224 224;
+    --neutral-300: 202 202 202;
+    --neutral-400: 150 150 150;
+    --neutral-500: 128 128 128;
+    --neutral-600: 84 84 84;
+    --neutral-700: 72 72 72;
+    --neutral-800: 58 58 58;
+    --neutral-900: 44 44 44;
+    --neutral-950: 30 30 30;
     /* Frosted glass (as in ProPresenter's windows): the tone a modal's
        sidebar, title bar or whole small dialog is tinted with. */
-    --glass: 22 24 31;
+    --glass: 30 30 30;
     --radius: 0.375rem;
     --radius-md: 0.5rem;
     --radius-sm: 0.25rem;
   }
 
   [data-theme='light'] {
-    --glass: 236 238 243;
-    --surface: 248 249 251;
-    --surface-secondary: 236 238 243;
-    --surface-tertiary: 225 228 235;
+    --glass: 236 236 236;
+    --surface: 246 246 246;
+    --surface-secondary: 236 236 236;
+    --surface-tertiary: 225 225 225;
     --surface-elevated: 255 255 255;
-    --surface-border: 205 209 219;
+    --surface-border: 206 206 206;
     --surface-menu: 255 255 255;
-    --surface-menu-hover: 236 238 243;
-    --surface-menu-line: 225 228 235;
-    --surface-line: 217 220 228;
-    --surface-rail: 221 224 231;
-    --surface-header: 221 224 231;
-    --surface-stage: 203 207 217;
+    --surface-menu-hover: 236 236 236;
+    --surface-menu-line: 225 225 225;
+    --surface-line: 216 216 216;
+    --surface-rail: 222 222 222;
+    --surface-header: 222 222 222;
+    --surface-stage: 204 204 204;
     --surface-display: 250 250 250;
-    --control-accent: 47 91 224;
-    --accent-50: 16 88 196;
-    --accent-100: 16 88 196;
-    --accent-200: 16 88 196;
-    --accent-300: 16 88 196;
-    --accent-400: 52 98 236;
-    --accent-500: 47 91 224;
-    --accent-600: 38 78 200;
-    --accent-700: 16 78 170;
-    --accent-800: 64 100 160;
-    --accent-900: 190 212 245;
-    --accent-950: 224 235 252;
+    --surface-canvas: 188 188 188;
+    --sidebar-sources: 232 232 232;
+    --sidebar-list: 244 244 244;
+    --sidebar-band: 220 220 220;
+    --sidebar-pick-sources: 214 214 214;
+    --sidebar-pick-sources-line: 176 176 176;
+    --sidebar-pick-list: 226 226 226;
+    --sidebar-pick-list-line: 188 188 188;
+    --sidebar-field: 255 255 255;
+    --control-accent: 0 122 255;
+    --accent-50: 0 96 206;
+    --accent-100: 0 96 206;
+    --accent-200: 0 96 206;
+    --accent-300: 0 96 206;
+    --accent-400: 26 136 255;
+    --accent-500: 0 122 255;
+    --accent-600: 0 104 222;
+    --accent-700: 0 86 186;
+    --accent-800: 48 98 158;
+    --accent-900: 188 216 250;
+    --accent-950: 224 238 255;
     --on-accent: 255 255 255;
     --live: 220 48 38;
     --hue-green: 22 128 70;
@@ -131,29 +153,29 @@
     --hue-amber: 156 100 10;
     --hue-indigo: 72 64 196;
     --tint-live: 253 224 221;
-    --tint-teal: 225 228 235;
+    --tint-teal: 225 225 225;
     --tint-red: 253 227 221;
-    --tint-amber: 225 228 235;
-    --tint-yellow: 225 228 235;
+    --tint-amber: 225 225 225;
+    --tint-yellow: 225 225 225;
     --tint-rose: 254 227 225;
-    --range-track: 205 209 219;
-    --text-primary: 10 11 16;
-    --fg-200: 22 24 31;
-    --fg-300: 38 41 52;
-    --fg-400: 54 58 72;
-    --fg-500: 82 87 104;
-    --fg-600: 62 66 80;
+    --range-track: 206 206 206;
+    --text-primary: 10 10 10;
+    --fg-200: 22 22 22;
+    --fg-300: 38 38 38;
+    --fg-400: 54 54 54;
+    --fg-500: 84 84 84;
+    --fg-600: 64 64 64;
     --neutral-50: 23 23 23;
     --neutral-100: 28 28 28;
     --neutral-200: 34 34 34;
     --neutral-300: 50 50 50;
     --neutral-400: 64 64 64;
     --neutral-500: 102 102 102;
-    --neutral-600: 144 148 160;
-    --neutral-700: 200 204 214;
-    --neutral-800: 221 224 231;
-    --neutral-900: 238 240 244;
-    --neutral-950: 247 248 251;
+    --neutral-600: 146 146 146;
+    --neutral-700: 204 204 204;
+    --neutral-800: 222 222 222;
+    --neutral-900: 238 238 238;
+    --neutral-950: 247 247 247;
   }
 
   html,
@@ -252,9 +274,6 @@
   }
 }
 
-/* Transcript start countdown: the ring drains, each number lands. */
-@keyframes countdown-drain { from { stroke-dashoffset: 0; } to { stroke-dashoffset: var(--circ); } }
-@keyframes countdown-tick { from { opacity: 0; transform: scale(1.35); } }
 /* Operator: a detected verse drops into place; its state swaps in softly. */
 @keyframes detect-card-in { from { opacity: 0; transform: translateY(-8px) scale(.97); } }
 @keyframes detect-state-in { from { opacity: 0; transform: translateY(2px); } }
@@ -328,6 +347,44 @@
   /* On a darker group (bg-surface) the line drops a step so it stays faint. */
   .pref-group-dim {
     --pref-line: var(--surface-tertiary);
+  }
+
+  /* Sidebars, as ProPresenter draws them: the sources (library, playlists)
+     on a lighter block, the open list on a darker one, and one darker strip
+     where they meet. Headings in the light block are plain bold text.
+     Exact shades are the --sidebar-* tokens. */
+  .sidebar-list {
+    background-color: rgb(var(--sidebar-list));
+  }
+  .sidebar-sources {
+    background-color: rgb(var(--sidebar-sources));
+  }
+  .sidebar-heading {
+    @apply flex h-7 shrink-0 items-center gap-1 pl-3 pr-2 text-[11px] font-bold uppercase tracking-[0.04em] text-zinc-400;
+  }
+  .sidebar-band {
+    @apply flex h-7 shrink-0 items-center gap-1 pl-3 pr-2 text-[11px] font-medium uppercase tracking-[0.04em] text-zinc-300;
+    background-color: rgb(var(--sidebar-band));
+  }
+  .sidebar-field {
+    background-color: rgb(var(--sidebar-field));
+  }
+
+  /* ProPresenter's sidebar selection: a soft lift with a thin light outline,
+     no colour. One shade for the sources block, one for the list. */
+  .row-context {
+    background-color: rgb(var(--sidebar-pick-sources));
+    box-shadow: inset 0 0 0 1px rgb(var(--sidebar-pick-sources-line));
+    color: rgb(var(--text-primary));
+  }
+  .row-focused {
+    background-color: rgb(var(--sidebar-pick-list));
+    box-shadow: inset 0 0 0 1px rgb(var(--sidebar-pick-list-line));
+    color: rgb(var(--text-primary));
+  }
+  .row-focused *,
+  .row-context * {
+    color: inherit !important;
   }
 
   /* Selection is quieter than an action: a blue tint with readable text. */
@@ -556,9 +613,41 @@
   grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--lyrics-card-min, 180px)), 1fr));
 }
 
-/* The shell chrome is opaque, backed by the window's solid backgroundColor.
-   macOS vibrancy was removed because the native blur follows the system
-   appearance and washed the header and rail out to white in light mode. */
+/* The native material supplies desktop blur. Keep every ancestor transparent
+   so it reaches the chrome, with opaque page surfaces masking the workspace.
+   Main pins the blur to Kairo's theme, so light-mode Macs don't wash it white. */
+html[data-window-material='vibrancy'],
+html[data-window-material='vibrancy'] body,
+html[data-window-material='vibrancy'] #root,
+html[data-window-material='vibrancy'] .app-frame {
+  background: transparent;
+}
+
+html[data-window-material='vibrancy'] .app-header,
+html[data-window-material='vibrancy'] .workspace-rail,
+html[data-window-material='vibrancy'] .app-workspace-frame {
+  background: rgb(var(--surface-rail) / 0.62);
+}
+
+html[data-window-material='vibrancy'] .app-header,
+html[data-window-material='vibrancy'] .workspace-rail {
+  -webkit-backdrop-filter: blur(24px) saturate(125%);
+  backdrop-filter: blur(24px) saturate(125%);
+}
+
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  html[data-window-material='vibrancy'] .app-header,
+  html[data-window-material='vibrancy'] .workspace-rail,
+  html[data-window-material='vibrancy'] .app-workspace-frame {
+    background: rgb(var(--surface-header));
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  html[data-window-material='vibrancy'] .workspace-rail,
+  html[data-window-material='vibrancy'] .app-workspace-frame {
+    background: rgb(var(--surface-rail));
+  }
+}
 
 /* A faint wash of the website's stage blue in the top bar, behind the Screens,
    Live and Clear controls. Kept to the frame; the workspace stays flat. */

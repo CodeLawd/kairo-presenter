@@ -37,6 +37,8 @@ export function LibrarySection({
   onSelect,
   extraRows,
   addItems,
+  banded = false,
+  contextSelection = false,
 }: {
   kind: LibraryKind
   activeLibraryId: string
@@ -49,6 +51,10 @@ export function LibrarySection({
    * menu (New library first), the way ProPresenter's library + does.
    */
   addItems?: Array<{ label: string; icon?: React.ReactNode; onSelect: () => void }>
+  /** Draw the heading in the sidebar's bold heading style (the parent pads by px-1). */
+  banded?: boolean
+  /** The chosen library is context for a list below it: mark it in grey, not the accent. */
+  contextSelection?: boolean
 }): React.ReactElement {
   const library = useLibrary(kind)
   const [renamingId, setRenamingId] = useState<string | null>(null)
@@ -98,7 +104,7 @@ export function LibrarySection({
         ? 'bg-surface-border text-white'
         : landed
           ? 'bg-surface-elevated text-white'
-          : selected ? 'row-selected' : 'text-zinc-400 hover:bg-surface-tertiary hover:text-zinc-200',
+          : selected ? (contextSelection ? 'row-context' : 'row-selected') : cn('text-zinc-400 hover:text-zinc-200', banded ? 'hover:bg-white/5' : 'hover:bg-surface-tertiary'),
     )
 
   const kindIcon = <LibraryIcon size={13} weight="fill" style={hueStyle(KIND_HUE[kind])} className={cn('shrink-0', HUE_TEXT)} aria-hidden />
@@ -154,8 +160,8 @@ export function LibrarySection({
 
   return (
     <div>
-      <div className="flex items-center gap-1 px-2 pb-1">
-        <p className="flex-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-600">Library</p>
+      <div className={banded ? 'sidebar-heading -mx-1' : 'flex items-center gap-1 px-2 pb-1'}>
+        <p className={banded ? 'flex-1' : 'flex-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-600'}>Library</p>
         {addItems?.length ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

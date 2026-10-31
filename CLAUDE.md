@@ -76,11 +76,11 @@ Services are not imported by the renderer directly — expose their output throu
 ## Tailwind palette
 
 Brand palette: onyx `#0C111D` (`ink`), off-white `#F9FAFB` (`paper`), slate `#374151` (`stone`) — brand marks only.
-App chrome is grey with only a faint cool bias (blue +3–4 over red — grey, never navy), so colour comes only from the accent, live, tool hues and status.
+App chrome is pure neutral grey, matched to ProPresenter (#1E1E1E workspace, #2C2C2C panels, #151515 frame, no blue cast), so colour comes only from the accent, live, tool hues and status.
 Every UI color is a token in `src/renderer/src/index.css` (dark + light) — don't add raw hex for chrome.
 - `surface-rail` / `surface-header` (darkest frame) → `surface` (workspace) → `surface-secondary` (sidebars, docks, cards) → `surface-tertiary` (controls, hover) → `surface-elevated` (lifted). Neighbouring regions always differ by a visible step. The page area is one rounded panel (`rounded-xl bg-surface`) inset by a gap on the chrome (header + rail) — no line between chrome and page. Inside the panel, columns split with a `--surface-line` hairline (`.hairline-r/-l/-t/-b`, inset so nothing shifts)
 - `surface-stage` / `surface-display` — the band behind a screen canvas and the displays drawn on it
-- `teal-{50-950}` — legacy name for the accent, now **blue** (`--accent-*`): what is picked (`.row-selected` pill, selected tabs/rows) and primary actions. CTAs are `bg-teal-500 text-on-accent hover:bg-teal-600`
+- `teal-{50-950}` — legacy name for the accent, now macOS system **blue** (`--accent-*`, #0A84FF): what is picked (`.row-selected` pill, selected tabs/rows) and primary actions. CTAs are `bg-teal-500 text-on-accent hover:bg-teal-600`
 - `live` / `bg-tint-live` — **red** (broadcast tally), used ONLY for what is on screen (live slide/media/page outline, live row). Blue picked and red live never look alike
 - Tool hues `--hue-*` via `src/renderer/src/lib/hue.ts`: Operator green, Scripture blue (light sky, lighter than the accent), Lyrics violet, Documents cyan, Theme pink, Media orange. Used on icons and small marks only — never row backgrounds or body text. Coloured icons use Phosphor `weight="fill"` so the colour carries; neutral icons stay outlined. Rail icons are grey until active
 - `amber-*` / `yellow-*` are remapped to neutral; `tint-amber` / `tint-yellow` are neutral washes. Red (errors) and green (ok) stay semantic

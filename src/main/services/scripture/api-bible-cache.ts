@@ -1,3 +1,4 @@
+import type { CacheQuoteSource, GlobalQuoteCandidate } from './global-quote'
 import fs from 'fs'
 import path from 'path'
 import Database from 'better-sqlite3'
@@ -12,6 +13,10 @@ import { ApiCacheCrypto, type EncryptedValue } from './api-cache-crypto'
 import { API_CACHE_MAX_AGE_MS, getApiCacheFreshness } from './api-cache-policy'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+export interface CachedQuoteVerse extends GlobalQuoteCandidate { cacheSource: CacheQuoteSource }
+export interface CachedQuoteBatch { rows: CachedQuoteVerse[]; nextCursor: number; complete: boolean }
+export type QuoteCorpusChange = 'added' | 'removed'
 
 export type ApiBibleCacheState = Omit<ApiBibleOfflineTranslation, 'offlineDownloadEnabled'>
 
@@ -124,7 +129,57 @@ export class ApiBibleCache {
   }
 
   close(): void {
+    this.quoteClosed = true
+    this.notifyQuoteChange('removed')
+    this.quoteListeners.clear()
     this.db.close()
+  }
+
+  private quoteListeners = new Set<(change: QuoteCorpusChange) => void>()
+  private quoteClosed = false
+
+  /** 'added' text only extends recognition; 'removed' text must stop being offered at once. */
+  onQuoteCorpusChange(listener: (change: QuoteCorpusChange) => void): () => void {
+    this.quoteListeners.add(listener)
+    return () => { this.quoteListeners.delete(listener) }
+  }
+
+  private notifyQuoteChange(change: QuoteCorpusChange): void {
+    for (const listener of this.quoteListeners) {
+      try { listener(change) } catch { /* Recognition cannot interrupt cache writes or revocation. */ }
+    }
+  }
+
+  /** Bounded main-process decryption. The key never leaves this process. */
+  readQuoteBatch(afterRowId = 0, limit = 128, now = Date.now()): CachedQuoteBatch {
+    if (this.quoteClosed) return { rows: [], nextCursor: afterRowId, complete: true }
+    const boundedLimit = Math.max(1, Math.min(128, Math.floor(limit)))
+    const rows = this.db.prepare(`SELECT v.rowid AS cursor, v.*, t.translation_id
+      FROM api_verses v JOIN api_translations t ON t.bible_id=v.bible_id
+      WHERE v.rowid > ? AND t.status <> 'unavailable' AND v.fetched_at > ?
+      ORDER BY v.rowid LIMIT ?`).all(afterRowId, now - API_CACHE_MAX_AGE_MS, boundedLimit) as Array<VerseRow & {
+        cursor: number; bible_id: string; book_id: number; chapter: number; translation_id: string
+      }>
+    return {
+      rows: rows.map(row => ({
+        book: row.book_name, chapter: row.chapter, verse: row.verse,
+        translation: row.translation_id, text: this.crypto.decrypt(toEncryptedValue(row)),
+        cacheSource: { bibleId: row.bible_id, bookId: row.book_id, chapter: row.chapter,
+          verse: row.verse, fetchedAt: row.fetched_at, expiresAt: row.fetched_at + API_CACHE_MAX_AGE_MS },
+      })),
+      nextCursor: rows.at(-1)?.cursor ?? afterRowId,
+      complete: rows.length < boundedLimit,
+    }
+  }
+
+  /** Rechecked after worker search and after asynchronous output lookup, without decrypting text. */
+  isQuoteSourceEligible(source: CacheQuoteSource, now = Date.now()): boolean {
+    if (this.quoteClosed || source.expiresAt <= now) return false
+    const row = this.db.prepare(`SELECT v.fetched_at FROM api_verses v
+      JOIN api_translations t ON t.bible_id=v.bible_id
+      WHERE v.bible_id=? AND v.book_id=? AND v.chapter=? AND v.verse=? AND t.status <> 'unavailable'`)
+      .get(source.bibleId, source.bookId, source.chapter, source.verse) as { fetched_at: number } | undefined
+    return row?.fetched_at === source.fetchedAt && getApiCacheFreshness(row.fetched_at, now) === 'fresh'
   }
 
   // ─── Translation metadata ───────────────────────────────────────────────────
@@ -144,6 +199,7 @@ export class ApiBibleCache {
            last_error = NULL`,
       )
       .run({ ...meta, totalChapters: meta.totalChapters ?? 0 })
+    this.notifyQuoteChange('added')
   }
 
   setTotalChapters(bibleId: string, totalChapters: number): void {
@@ -156,6 +212,7 @@ export class ApiBibleCache {
     this.db
       .prepare('UPDATE api_translations SET status = ?, last_error = ? WHERE bible_id = ?')
       .run(status, error, bibleId)
+    this.notifyQuoteChange(status === 'unavailable' ? 'removed' : 'added')
   }
 
   /**
@@ -356,6 +413,7 @@ export class ApiBibleCache {
         })
       }
     })()
+    this.notifyQuoteChange('added')
   }
 
   /**
@@ -394,6 +452,7 @@ export class ApiBibleCache {
       this.purgeContent(bibleId)
       this.db.prepare('DELETE FROM api_translations WHERE bible_id = ?').run(bibleId)
     })()
+    this.notifyQuoteChange('removed')
   }
 
   /** Test-only row census used to prove removal leaves nothing behind. */

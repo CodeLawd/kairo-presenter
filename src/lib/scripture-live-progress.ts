@@ -74,13 +74,24 @@ export function groupScriptureSuggestions(
       suggestions: [suggestion],
     });
   }
-  return [...groups.values()].map((group) => ({
-    ...group,
-    suggestions: [...group.suggestions].sort(
-      (left, right) =>
-        (left.passageIndex ?? 0) - (right.passageIndex ?? 0),
-    ),
-  }));
+  return [...groups.values()].map((group) => {
+    // One verse, one chip: a spoken step can land while the row is still
+    // switching translation, briefly leaving two copies of the same verse.
+    const seen = new Set<string>();
+    const unique = group.suggestions.filter((item) => {
+      const key = `${item.reference}|${item.translation}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    return {
+      ...group,
+      suggestions: unique.sort(
+        (left, right) =>
+          (left.passageIndex ?? 0) - (right.passageIndex ?? 0),
+      ),
+    };
+  });
 }
 
 export function navigateOperatorSuggestionId(

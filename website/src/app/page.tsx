@@ -27,7 +27,7 @@ import { OperatorDemo } from "@/components/landing/OperatorDemo";
 import { RotatingWord } from "@/components/landing/RotatingWord";
 import { ScreenViews } from "@/components/landing/ScreenViews";
 import { StretchyFooter } from "@/components/landing/StretchyFooter";
-import { ThesisDots } from "@/components/landing/ThesisDots";
+import { ThesisLines } from "@/components/landing/ThesisLines";
 import "./landing.css";
 import Image from "next/image";
 
@@ -377,7 +377,7 @@ export default function HomePage(): React.ReactElement {
             aria-label="Why Kairo"
           >
             <div className="pointer-events-none sticky top-0 -mb-[100svh] h-[100svh]">
-              <ThesisDots />
+              <ThesisLines />
             </div>
             <div
               className={`landing-thesis-pin ${container} relative z-1 py-[80px] min-[701px]:py-[140px]`}

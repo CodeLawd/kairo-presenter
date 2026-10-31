@@ -1,6 +1,6 @@
 import { HttpException } from '@nestjs/common'
 import type { Connection } from 'mongoose'
-import { LicensingService } from './licensing.service'
+import { LicensingService, renewalRefusal } from './licensing.service'
 import { testConfig } from '../config/test-config'
 import type { RequestUser } from '../common/decorators/current-user.decorator'
 
@@ -26,5 +26,52 @@ describe('managed Bible provider boundary', () => {
     expect(failure!.getStatus()).toBe(expected)
     expect(JSON.stringify(failure!.getResponse())).not.toContain('private-platform-key')
     expect(JSON.stringify(failure!.getResponse())).not.toContain('confidential')
+  })
+})
+
+describe('transcription grants', () => {
+  afterEach(() => jest.restoreAllMocks())
+  it('gives back the reserved minutes when Deepgram refuses the grant', async () => {
+    const license = { status: 'active', devices: [{ deviceId: 'booth' }], features: ['transcription'] }
+    const updateOne = jest.fn().mockResolvedValue({})
+    const collection = { findOne: jest.fn().mockResolvedValue(license), findOneAndUpdate: jest.fn().mockResolvedValue(license), updateOne }
+    const service = new LicensingService({ collection: () => collection } as unknown as Connection, testConfig())
+    jest.spyOn(service, 'member').mockResolvedValue(undefined as never)
+    jest.spyOn(service, 'config').mockResolvedValue({ secrets: { providers: { deepgramApiKey: 'platform-key' } } } as never)
+    jest.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{"err_msg":"Insufficient permissions."}', { status: 403 }))
+    await expect(service.transcription({ orgId: 'church', deviceId: 'booth' } as RequestUser)).rejects.toThrow('Transcription grant unavailable')
+    expect(updateOne).toHaveBeenCalledWith(expect.objectContaining({ orgId: 'church' }), expect.objectContaining({ $inc: { 'usage.transcriptionMinutes': -2 } }))
+  })
+})
+
+describe('transcription renewal refusals', () => {
+  const base = {
+    status: 'active', expiresAt: null, features: ['transcription'], devices: [{ deviceId: 'booth' }],
+    usage: { period: new Date().toISOString().slice(0, 7), transcriptionMinutes: 10, managedRequests: 0 },
+    transcriptionMinutes: 600, maxTranscriptionSessions: 2,
+    sessions: [{ id: 's1', deviceId: 'booth', until: 2_000, nextRenew: 500 }],
+  }
+  it('names the out-of-minutes case instead of calling it an expiry', () => {
+    const row = { ...base, usage: { ...base.usage, transcriptionMinutes: 600 } }
+    expect(renewalRefusal(row as never, 's1', 'booth', 1_000)).toBe("This month's transcription minutes are used up")
+  })
+  it('names an expired session', () => {
+    expect(renewalRefusal(base as never, 's1', 'booth', 5_000)).toBe('The transcription session expired')
+  })
+})
+
+describe('transcription sessions per computer', () => {
+  afterEach(() => jest.restoreAllMocks())
+  it("replaces this computer's lingering session instead of counting it against the limit", async () => {
+    const license = { status: 'active', devices: [{ deviceId: 'booth' }], features: ['transcription'] }
+    const findOneAndUpdate = jest.fn().mockResolvedValue(license)
+    const collection = { findOne: jest.fn().mockResolvedValue(license), findOneAndUpdate, updateOne: jest.fn().mockResolvedValue({}) }
+    const service = new LicensingService({ collection: () => collection } as unknown as Connection, testConfig())
+    jest.spyOn(service, 'member').mockResolvedValue(undefined as never)
+    jest.spyOn(service, 'config').mockResolvedValue({ secrets: { providers: { deepgramApiKey: 'platform-key' } } } as never)
+    jest.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ access_token: 'token', expires_in: 30 })))
+    await service.transcription({ orgId: 'church', deviceId: 'booth' } as RequestUser)
+    const [, update] = findOneAndUpdate.mock.calls[0]
+    expect(JSON.stringify(update)).toContain('"$ne":["$$s.deviceId","booth"]')
   })
 })

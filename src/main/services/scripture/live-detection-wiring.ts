@@ -1,3 +1,5 @@
+import { createTranscriptRecorder, transcriptEvidenceKey } from "./transcript-recording";
+import { soundsLikeScripture } from "./scripture-signal";
 import type { InterimResult, TranscriptResult } from "@shared/ipc";
 import { hasCorruptedScriptureCitation, type ScriptureDetector } from "./detector";
 
@@ -11,7 +13,9 @@ interface LiveTranscriptSource {
 export function subscribeExplicitScriptureDetection(
   source: LiveTranscriptSource,
   detector: ScriptureDetector,
+  onCommand?: (result: TranscriptResult) => boolean,
 ): () => void {
+  const recorder = createTranscriptRecorder(process.env.KAIRO_STT_REPLAY_PATH);
   let recoveryText = "";
   let recoveryStartedAt = 0;
   let recentFinalText = "";
@@ -19,10 +23,50 @@ export function subscribeExplicitScriptureDetection(
   // Every local resolution consumes the speech behind it, so neither the
   // window pass nor the model re-reads a verse the operator already has.
   const settle = (): void => {
+    detector.retractProvisionalQuotes();
     recoveryText = "";
     recentFinalText = "";
   };
+  let audioEpoch: number | undefined;
+  const adoptAudioEpoch = (epoch: number | undefined): void => {
+    if (epoch === audioEpoch) return;
+    audioEpoch = epoch;
+    recoveryText = '';
+    recentFinalText = '';
+    recentFinalAt = 0;
+    lastInterim = '';
+    cancelInterim();
+    detector.resetGeneralQuoteEvidence();
+  };
+  let active = true;
+  // Finals only: a partial that arrives while a final is being searched must not drop its AI fallback.
+  let revision = 0;
+  let interimTimer: ReturnType<typeof setTimeout> | null = null;
+  let lastInterim = '';
+  let pendingInterim: { text: string; evidence: string; fresh: string } | null = null;
+  const cancelInterim = (): void => {
+    if (interimTimer) clearTimeout(interimTimer);
+    interimTimer = null;
+    pendingInterim = null;
+  };
+  // Local Bibles first. The AI only hears what they couldn't place and that
+  // still sounds like scripture — unless `alwaysAsk` (a damaged citation).
+  const localBeforeAI = (text: string, result: TranscriptResult, alwaysAsk = false): void => {
+    const current = revision;
+    const pending = detector.analyzeGeneralQuote(text, false, transcriptEvidenceKey(result, result.id), result.text);
+    if (!pending) { detector.analyze(text); return; }
+    void pending.then(claimed => {
+      if (active && current === revision && !claimed && (alwaysAsk || soundsLikeScripture(text))) detector.analyze(text);
+    });
+  };
   const analyzeFinal = (result: TranscriptResult): void => {
+    recorder?.record("final", result);
+    adoptAudioEpoch(result.audioEpoch);
+    revision++;
+    cancelInterim();
+    lastInterim = '';
+    detector.invalidateGeneralQuote();
+    if (onCommand?.(result)) return;
     // Stamped here, at the edge, because this is the first moment Kairo holds
     // the transcript. Anything measured from later would flatter the parser.
     detector.beginTranscript({ sttReceivedAt: Date.now(), source: "final" }, result.text);
@@ -75,7 +119,7 @@ export function subscribeExplicitScriptureDetection(
       return;
     }
     if (recoveryText) {
-      detector.analyze(recoveryText);
+      localBeforeAI(recoveryText, result, true);
       return;
     }
 
@@ -87,15 +131,38 @@ export function subscribeExplicitScriptureDetection(
     // Feed every final segment into the detector immediately. The detector
     // coalesces rapid updates and enforces its own short request interval, so
     // quote/paraphrase detection no longer waits for the buffer's 8-second tick.
-    detector.analyze(recentFinalText);
+    localBeforeAI(recentFinalText, result);
   };
   const analyzeInterim = (result: InterimResult): void => {
+    recorder?.record("interim", result);
+    adoptAudioEpoch(result.audioEpoch);
     detector.beginTranscript({ sttReceivedAt: Date.now(), source: "interim" }, result.text);
-    detector.analyzeExplicit(result.text, true, true);
+    if (result.text === lastInterim) return;
+    lastInterim = result.text;
+    detector.invalidateProvisionalQuote();
+    if (detector.analyzeExplicit(result.text, true, true)) {
+      cancelInterim();
+      detector.retractProvisionalQuotes();
+      return;
+    }
+    // The current partial replaces its predecessor; only committed finals are prepended.
+    const text = `${recentFinalText} ${result.text}`.trim().slice(-1200);
+    pendingInterim = { text, evidence: transcriptEvidenceKey(result, recentFinalAt), fresh: result.text };
+    if (!interimTimer) interimTimer = setTimeout(() => {
+      interimTimer = null;
+      const pending = pendingInterim;
+      pendingInterim = null;
+      if (active && pending) void detector.analyzeGeneralQuote(pending.text, true, pending.evidence, pending.fresh);
+    }, 250);
   };
   source.onTranscript(analyzeFinal);
   source.onInterim(analyzeInterim);
   return () => {
+    active = false;
+    void recorder?.close();
+    revision++;
+    detector.invalidateGeneralQuote();
+    cancelInterim();
     source.offTranscript(analyzeFinal);
     source.offInterim(analyzeInterim);
   };

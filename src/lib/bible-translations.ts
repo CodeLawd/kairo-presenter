@@ -13,11 +13,9 @@
 // - `preferredBibleId` ...... official English text id when abbreviations lie
 // - `downloadablePack` ...... makes Settings offer a one-click offline download
 //
-// Validation always enforces the canonical Protestant versification shared by
-// every pack (see BIBLE_VERSE_COUNTS): 66 books, complete chapters, verses
-// 1..N with no gaps. A translation that omits verses (e.g. without Matt 17:21)
-// cannot be distributed as a pack — that is a structural limitation, not a
-// registry setting, which is why packs carry no per-translation verse totals.
+// Pack validation enforces the complete 66-book Protestant canon. Verified
+// numbering differences live in bible-pack-versification.ts (AMPC omits Mark
+// 9:44/46 and has 3 John 1:15); all other gaps or extra verses are rejected.
 //
 // Everything else derives from this file:
 // - ScriptureService catalog + availability (src/main/services/scripture/index.ts)
@@ -131,6 +129,11 @@ export const BIBLE_TRANSLATIONS: readonly BibleTranslationDefinition[] = [
     access: 'api',
     aliases: ['AMP', 'AMPLIFIED', 'AMPLIFIEDCLASSIC', 'AMPLIFIED CLASSIC'],
     namePatterns: ['amplified bible,?\\s*classic', '\\bamplified\\b'],
+    downloadablePack: {
+      url: 'https://github.com/CodeLawd/kairo-bible-packs/releases/download/bible-packs-v1/ampc-pack.db.gz',
+      sha256: 'd4a6d9a3faef85daea7f3b26c8f99dacb6e8ebdc4f859c10791d87e65c242f51',
+      approxLabel: 'about 6 MB',
+    },
   },
   {
     id: 'TPT',

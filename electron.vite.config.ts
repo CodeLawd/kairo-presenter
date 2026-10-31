@@ -16,6 +16,8 @@ export default defineConfig({
         // The DeckLink playback worker runs as its own entry, next to index.js.
         input: {
           index: resolve('src/main/index.ts'),
+          'scripture-audio-replay': resolve('src/main/tools/replay-audio.ts'),
+          'scripture-quote-worker': resolve('src/main/services/scripture/quote-worker.ts'),
           'decklink-playback-worker': resolve('src/main/services/video-devices/providers/decklink/playback-worker.ts'),
         },
       },

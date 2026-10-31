@@ -1,0 +1,380 @@
+[
+  {
+    "text": "Welcome to Kairo.",
+    "startMs": 1200,
+    "endMs": 2514,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "Let's walk through one Sunday,",
+    "startMs": 2836,
+    "endMs": 4689,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "from setup to benediction.",
+    "startMs": 4689,
+    "endMs": 6172,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "First, connect your screens.",
+    "startMs": 7960,
+    "endMs": 10028,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "Kairo shows each one on a canvas.",
+    "startMs": 10188,
+    "endMs": 12404,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "Add an NDI feed if your",
+    "startMs": 14720,
+    "endMs": 16422,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "switcher or stream takes one.",
+    "startMs": 16422,
+    "endMs": 17840,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "Pick your translation.",
+    "startMs": 21480,
+    "endMs": 22882,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "KJV, BSB and BBE are built in.",
+    "startMs": 23116,
+    "endMs": 26179,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "Others come through your church's license.",
+    "startMs": 28240,
+    "endMs": 30568,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "Most of the work",
+    "startMs": 36200,
+    "endMs": 37323,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "happens the day before.",
+    "startMs": 37323,
+    "endMs": 38445,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "Import your sermon notes.",
+    "startMs": 43960,
+    "endMs": 45559,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "Kairo reads every reference it finds.",
+    "startMs": 46024,
+    "endMs": 48332,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "Review them, and they become",
+    "startMs": 51720,
+    "endMs": 53317,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "a playlist of verses.",
+    "startMs": 53317,
+    "endMs": 54595,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "Now open the Theme Editor",
+    "startMs": 59480,
+    "endMs": 60923,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "and design the slide once.",
+    "startMs": 60923,
+    "endMs": 62366,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "The preview is exactly what",
+    "startMs": 67240,
+    "endMs": 68788,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "goes out on Sunday.",
+    "startMs": 68788,
+    "endMs": 70027,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "Open Lyrics and import a song.",
+    "startMs": 76200,
+    "endMs": 78190,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "Kairo keeps its sections: verse, chorus, bridge.",
+    "startMs": 85800,
+    "endMs": 89525,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "Add songs to the set,",
+    "startMs": 95400,
+    "endMs": 96803,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "and present them in order.",
+    "startMs": 96803,
+    "endMs": 98206,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "When the sermon starts, open",
+    "startMs": 106200,
+    "endMs": 108136,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "Operator and press Start.",
+    "startMs": 108136,
+    "endMs": 109685,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "Kairo listens to the feed",
+    "startMs": 111580,
+    "endMs": 113056,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "from your sound desk.",
+    "startMs": 113056,
+    "endMs": 114237,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "The meter shows it's hearing, and the",
+    "startMs": 116960,
+    "endMs": 119342,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "transcript scrolls as the pastor speaks.",
+    "startMs": 119342,
+    "endMs": 121384,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "When a passage comes up, Kairo",
+    "startMs": 122340,
+    "endMs": 124190,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "stages it in your queue.",
+    "startMs": 124190,
+    "endMs": 125732,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "It works from meaning, so a",
+    "startMs": 127720,
+    "endMs": 129662,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "paraphrase still finds the verse.",
+    "startMs": 129662,
+    "endMs": 131281,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "A range comes through",
+    "startMs": 133100,
+    "endMs": 134352,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "as slides, in order.",
+    "startMs": 134352,
+    "endMs": 135604,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "Live output is on top.",
+    "startMs": 138480,
+    "endMs": 140028,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "Your queue is below.",
+    "startMs": 140973,
+    "endMs": 142243,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "Stage the next verse while",
+    "startMs": 143860,
+    "endMs": 145162,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "this one is still live.",
+    "startMs": 145162,
+    "endMs": 146463,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "Arm a passage, and Kairo follows",
+    "startMs": 149240,
+    "endMs": 151296,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "the reading verse by verse.",
+    "startMs": 151296,
+    "endMs": 153009,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "Nothing goes on screen",
+    "startMs": 154620,
+    "endMs": 155779,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "until you send it.",
+    "startMs": 155779,
+    "endMs": 156937,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "Need something nobody said?",
+    "startMs": 161200,
+    "endMs": 162844,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "Search by reference, or by a phrase.",
+    "startMs": 163264,
+    "endMs": 165821,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "Put a document or a",
+    "startMs": 169650,
+    "endMs": 171029,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "web page on screen.",
+    "startMs": 171029,
+    "endMs": 172133,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "Drop in backgrounds from your media folder.",
+    "startMs": 178100,
+    "endMs": 180542,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "On a Mac, record any",
+    "startMs": 186550,
+    "endMs": 188092,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "output to a movie file.",
+    "startMs": 188092,
+    "endMs": 189633,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "That's one Sunday with Kairo.",
+    "startMs": 196200,
+    "endMs": 197998,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "It's free during early access, at kairopresenter.com.",
+    "startMs": 200800,
+    "endMs": 204524,
+    "timestampMs": null,
+    "confidence": null
+  },
+  {
+    "text": "Because every moment matters.",
+    "startMs": 205400,
+    "endMs": 207135,
+    "timestampMs": null,
+    "confidence": null
+  }
+]

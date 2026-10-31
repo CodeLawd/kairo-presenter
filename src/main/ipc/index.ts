@@ -309,10 +309,9 @@ function registerScriptureHandlers(): void {
     },
   );
 
-  // ── Optional local Bible packs (any single-translation SQLite pack) ────
-  // Filesystem and database access stay here in the main process. The
-  // renderer never sees the pack path: with no argument the native picker
-  // runs here and only the typed install result crosses the bridge.
+  // ── Downloadable local Bible packs ────────────────────────────────────
+  // Downloads are verified and installed in main; filesystem paths never
+  // cross the renderer bridge.
 
   ipcMain.handle(IPC.SCRIPTURE.GET_LOCAL_BIBLE_PACK_STATUS, (_event, translation: string) => {
     if (typeof translation !== "string" || !translation.trim()) {
@@ -321,26 +320,16 @@ function registerScriptureHandlers(): void {
     return scriptureService.getLocalBiblePackStatus(translation.trim());
   });
 
-  ipcMain.handle(IPC.SCRIPTURE.INSTALL_LOCAL_BIBLE_PACK, async () => {
-    const win = dialogParentWindow();
-    const options: OpenDialogOptions = {
-      title: "Install local Bible pack",
-      properties: ["openFile"],
-      filters: [{ name: "Bible packs", extensions: ["db", "sqlite", "sqlite3"] }],
-    };
-    const result = win
-      ? await dialog.showOpenDialog(win, options)
-      : await dialog.showOpenDialog(options);
-    if (result.canceled || !result.filePaths[0]) return null;
-    return scriptureService.installLocalBiblePack(result.filePaths[0]);
-  });
-
   ipcMain.handle(IPC.SCRIPTURE.DOWNLOAD_LOCAL_BIBLE_TRANSLATION, async (_event, translation: string) => {
     usageService.track('bible_download');
     if (typeof translation !== "string" || !translation.trim()) {
       throw new Error("A translation id is required.");
     }
     return scriptureService.downloadLocalBibleTranslation(translation.trim());
+  });
+
+  scriptureService.onLocalBibleInstallProgress(progress => {
+    broadcast(IPC.SCRIPTURE.LOCAL_BIBLE_INSTALL_PROGRESS, progress);
   });
 
   ipcMain.handle(IPC.SCRIPTURE.REMOVE_LOCAL_BIBLE_TRANSLATION, (_event, translation: string) => {
@@ -1241,6 +1230,10 @@ function wireEventBroadcasting(): void {
   scriptureService.onSuggestion((suggestion) => {
     serviceRecords.scripture(suggestion);
     broadcast(IPC.SCRIPTURE.SUGGESTION, suggestion);
+  });
+
+  scriptureService.onRowTranslation((request) => {
+    broadcast(IPC.SCRIPTURE.RETRANSLATE_ROW, request);
   });
 
   if (hasDownloadManager()) {

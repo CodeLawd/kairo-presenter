@@ -144,7 +144,7 @@ function initialTabTranslation(defaultTranslation: ScriptureTranslation): Script
  */
 export default function Scripture({ active = true }: { active?: boolean }): React.ReactElement {
   const liveRail = useLiveRailWidth();
-  const sidebar = useSidebarWidth('kairo.scripture-sidebar-width', 288);
+  const sidebar = useSidebarWidth();
   const [query, setQuery] = useState("");
   const [recentLookups, setRecentLookups] = useState<string[]>(readRecentLookups);
   const [rows, setRows] = useState<ResultRow[]>([]);
@@ -1455,49 +1455,53 @@ export default function Scripture({ active = true }: { active?: boolean }): Reac
             toolbarSlot,
           )}
 
-        {/* The Bible bar: pick the translation, then one field that takes a
-            reference ("jn 3 16") or remembered words ("love is patient"), with
-            live suggestions for both. */}
-        <div className="grid shrink-0 grid-cols-[minmax(0,14rem)_minmax(0,1fr)_auto] gap-2 px-5 pb-1 pt-3 lg:px-6">
-          <ScriptureTranslationSelect
-            translation={translation}
-            translations={translations}
-            disabled={loading}
-            onChange={(value) => void handleTranslationChange(value)}
-          />
-          <ScriptureSearchBar
-            query={query}
-            loading={loading}
-            recentLookups={recentLookups}
-            onPickRecent={(reference) => {
-              setQuery(reference);
-              void handleSearch(reference);
-            }}
-            bookCompletions={bookCompletions}
-            searchSuggestions={searchSuggestions}
-            suggestionsOpen={suggestionsOpen}
-            inputRef={inputRef}
-            onQueryChange={(value) => {
-              if (value !== query) suppressSuggestionsQueryRef.current = null;
-              setQuery(value);
-              if (shouldLiveSuggestScriptureQuery(value)) setSuggestionsOpen(true);
-            }}
-            onClearQuery={() => {
-              setQuery("");
-              inputRef.current?.focus();
-            }}
-            onBookComplete={(value) => {
-              setQuery(value);
-              inputRef.current?.focus();
-            }}
-            onKeyDown={handleKeyDown}
-            onFocus={() => {
-              if (suppressSuggestionsQueryRef.current === query.trim()) return;
-              if (searchSuggestions.length > 0) setSuggestionsOpen(true);
-            }}
-            onPreviewSuggestion={previewSuggestion}
-            onOpenChapter={(result) => void openChapter(result)}
-          />
+        {/* The Bible bar, compact like ProPresenter's rather than row-wide: pick
+            the translation, then one field that takes a reference ("jn 3 16") or
+            remembered words ("love is patient"), with live suggestions for both. */}
+        <div className="flex shrink-0 items-center gap-1.5 px-5 pb-1 pt-3 lg:px-6">
+          <div className="flex w-52 min-w-0 shrink">
+            <ScriptureTranslationSelect
+              translation={translation}
+              translations={translations}
+              disabled={loading}
+              onChange={(value) => void handleTranslationChange(value)}
+            />
+          </div>
+          <div className="w-80 min-w-0 shrink">
+            <ScriptureSearchBar
+              query={query}
+              loading={loading}
+              recentLookups={recentLookups}
+              onPickRecent={(reference) => {
+                setQuery(reference);
+                void handleSearch(reference);
+              }}
+              bookCompletions={bookCompletions}
+              searchSuggestions={searchSuggestions}
+              suggestionsOpen={suggestionsOpen}
+              inputRef={inputRef}
+              onQueryChange={(value) => {
+                if (value !== query) suppressSuggestionsQueryRef.current = null;
+                setQuery(value);
+                if (shouldLiveSuggestScriptureQuery(value)) setSuggestionsOpen(true);
+              }}
+              onClearQuery={() => {
+                setQuery("");
+                inputRef.current?.focus();
+              }}
+              onBookComplete={(value) => {
+                setQuery(value);
+                inputRef.current?.focus();
+              }}
+              onKeyDown={handleKeyDown}
+              onFocus={() => {
+                if (suppressSuggestionsQueryRef.current === query.trim()) return;
+                if (searchSuggestions.length > 0) setSuggestionsOpen(true);
+              }}
+              onPreviewSuggestion={previewSuggestion}
+              onOpenChapter={(result) => void openChapter(result)}
+            />
+          </div>
           <ScriptureOptions />
         </div>
 

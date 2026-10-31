@@ -220,15 +220,13 @@ export async function hydrateIntegrations(): Promise<void> {
   const bibleConfigured = useBootstrapStore.getState().settings.secretsConfigured.bible
 
   const validateApiBible = async (): Promise<void> => {
-    if (!bibleConfigured) {
-      setApiBibleAuth('unauthorized')
-      return
-    }
-    setApiBibleAuth('checking')
+    // Always refresh the list: the licence, not a church key, decides access now,
+    // and its status can lag at startup. Without access main still returns the
+    // Bibles installed on this machine.
+    setApiBibleAuth(bibleConfigured ? 'checking' : 'unauthorized')
     try {
-      // No key in the renderer — main uses the stored value.
       setTranslations(await window.api.scripture.getTranslations())
-      setApiBibleAuth('authorized')
+      if (bibleConfigured) setApiBibleAuth('authorized')
     } catch (error) {
       // A refusal is definitive; anything else (no network, DNS) is not.
       setApiBibleAuth(isAuthorizationFailure(error) ? 'unauthorized' : 'offline')

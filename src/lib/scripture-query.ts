@@ -1,4 +1,5 @@
 import type { ScriptureResult, ScriptureTranslation } from './ipc'
+import { getVerseNumberingOverride } from './bible-versification'
 
 export interface BookCompletion {
   value: string
@@ -68,6 +69,9 @@ function resolveBookName(input: string): string | null {
   )
   return candidates.length === 1 ? candidates[0][0] : null
 }
+
+/** Every book's full name, in canonical order. */
+export const BIBLE_BOOK_NAMES: readonly string[] = BOOKS.map(([name]) => name)
 
 export function getBookCompletions(input: string): BookCompletion[] {
   const { typedBook, suffix } = splitBookAndNumbers(input)
@@ -184,13 +188,19 @@ export function getAdjacentVerseQueries(
 ): string[] {
   const edgeResult = direction === 'next' ? loaded.at(-1) : loaded[0]
   const edgeVerse = direction === 'next' ? edgeResult?.verses.at(-1) : edgeResult?.verses[0]
-  if (!edgeVerse) return []
+  if (!edgeResult || !edgeVerse) return []
 
   const { book, chapter, verse } = edgeVerse
+  const canonicalBook = resolveBookName(book)
+  const bookId = BOOKS.findIndex(([name]) => name === canonicalBook) + 1
+  const omitted = getVerseNumberingOverride(edgeResult.translation, bookId, chapter)?.omitted
+  const step = direction === 'next' ? 1 : -1
+  let adjacent = verse + step
+  while (omitted?.includes(adjacent)) adjacent += step
   if (direction === 'next') {
-    return [`${book} ${chapter}:${verse + 1}`, `${book} ${chapter + 1}:1`]
+    return [`${book} ${chapter}:${adjacent}`, `${book} ${chapter + 1}:1`]
   }
-  if (verse > 1) return [`${book} ${chapter}:${verse - 1}`]
+  if (adjacent > 0) return [`${book} ${chapter}:${adjacent}`]
   if (chapter <= 1) return []
   // Cap at Psalm 119 length — avoids a 1–999 API.Bible range blow-up.
   return [`${book} ${chapter - 1}:1–176`]

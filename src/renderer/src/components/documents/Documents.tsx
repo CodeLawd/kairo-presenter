@@ -54,7 +54,7 @@ class ImportCanceled extends Error {}
 
 export default function Documents({ active = true }: { active?: boolean }): React.ReactElement {
   const toolbarSlot = useHeaderToolbarSlot()
-  const sidebar = useSidebarWidth('kairo.documents-sidebar-width', 240)
+  const sidebar = useSidebarWidth()
   const liveRail = useLiveRailWidth()
   const [documents, setDocuments] = useState<ProjectionDocument[]>([])
   const [selected, setSelected] = useState<string | null>(null)

@@ -7,10 +7,12 @@ import type {
   TracksLibrary,
   AppBootstrapSnapshot,
   ApiBibleDownloadProgress,
+  LocalBibleInstallProgress,
   BootstrapProgress,
   KairoAPI,
   AudioLevel,
   AudioError,
+  ScriptureRowTranslation,
   ScriptureSuggestion,
   ScriptureResult,
   ScriptureTranslation,
@@ -99,6 +101,10 @@ const appApi: KairoAPI['app'] = {
 const scripture: KairoAPI['scripture'] = {
   onSuggestion(callback: (suggestion: ScriptureSuggestion) => void): Unsubscribe {
     return subscribe<ScriptureSuggestion>(IPC.SCRIPTURE.SUGGESTION, callback)
+  },
+
+  onRetranslateRow(callback: (request: ScriptureRowTranslation) => void): Unsubscribe {
+    return subscribe<ScriptureRowTranslation>(IPC.SCRIPTURE.RETRANSLATE_ROW, callback)
   },
 
   approve(suggestionId: string): Promise<void> {
@@ -201,12 +207,12 @@ const scripture: KairoAPI['scripture'] = {
     return subscribe<ApiBibleDownloadProgress>(IPC.SCRIPTURE.OFFLINE_DOWNLOAD_PROGRESS, callback)
   },
 
-  installLocalBiblePack() {
-    return ipcRenderer.invoke(IPC.SCRIPTURE.INSTALL_LOCAL_BIBLE_PACK)
-  },
-
   downloadLocalBibleTranslation(translation: string) {
     return ipcRenderer.invoke(IPC.SCRIPTURE.DOWNLOAD_LOCAL_BIBLE_TRANSLATION, translation)
+  },
+
+  onLocalBibleInstallProgress(callback) {
+    return subscribe<LocalBibleInstallProgress>(IPC.SCRIPTURE.LOCAL_BIBLE_INSTALL_PROGRESS, callback)
   },
 
   getLocalBiblePackStatus(translation: string) {

@@ -1,3 +1,4 @@
+import { freshSpeechSupports, type CacheQuoteSource, type GlobalQuoteMatch } from './global-quote';
 import { MANAGED, managedFetch } from "../cloud/managed";
 /* eslint-disable @typescript-eslint/no-unsafe-declaration-merging -- typed EventEmitter idiom: `declare interface` refines the inherited emitter surface. */
 import {
@@ -14,6 +15,7 @@ import OpenAI from "openai";
 import log from "electron-log/main";
 import {
   matchPlanQuote,
+  verseKey,
   type SermonPlanIndex,
 } from "@shared/sermon-plan-match";
 import type { ScriptureResolver } from "@shared/scripture-trace";
@@ -45,6 +47,14 @@ export interface ScriptureReference {
    * still shown for review but are too late to put on screen automatically.
    */
   superseded?: boolean;
+  /** General corpus quotations require operator approval, regardless of Auto mode. */
+  suggestionOnly?: boolean;
+  ambiguous?: boolean;
+  provisional?: boolean;
+  quoteEvidence?: string;
+  quoteRevision?: number;
+  quoteCorpusVersion?: number;
+  cacheSource?: CacheQuoteSource;
   /**
    * Translations the preacher named with this reference ("John 3:16 in the
    * NLT and the NIV"), in spoken order. Absent: none was named, so the live
@@ -70,6 +80,7 @@ export function canAutoPresentScriptureReference(
   return (
     ref.detectionType !== "partial" &&
     !ref.superseded &&
+    !ref.suggestionOnly &&
     isValidScriptureReference(ref)
   );
 }
@@ -114,8 +125,12 @@ interface RawRef {
 
 // ─── Typed event emitter ──────────────────────────────────────────────────────
 
+/** `possible`: also offer paraphrase candidates (finished speech only, never mid-sentence). */
+type GeneralQuoteProvider = (text: string, possible?: boolean) => Promise<GlobalQuoteMatch[]>;
+
 interface DetectorEvents {
   detection: [refs: ScriptureReference[]];
+  quoteRetracted: [evidence: string];
   planProgress: [reference: string, itemId: string];
   processing: [text: string];
   error: [err: Error];
@@ -822,6 +837,109 @@ export class ScriptureDetector extends EventEmitter {
     this.emit("detection", refs);
   }
 
+  private generalQuoteProvider: GeneralQuoteProvider | null = null;
+  private generalQuoteRevision = 0;
+  /** Bumped only by finalized speech: a newer partial must not discard a final's search. */
+  private finalQuoteRevision = 0;
+  private generalQuoteEligibility: ((ref: ScriptureReference) => boolean) | null = null;
+  private quoteCorpusCleanup: (() => void) | null = null;
+  private quoteEvidenceVersions = new Map<string, number>();
+  private quoteEvidencePublished = new Map<string, string>();
+  private provisionalEvidence = new Set<string>();
+  private provisionalQuote: { evidence: string; text: string; key: string } | null = null;
+  setGeneralQuoteProvider(provider: GeneralQuoteProvider | null): void {
+    this.generalQuoteProvider = provider;
+    this.invalidateGeneralQuote();
+  }
+  setGeneralQuoteEligibilityProvider(
+    provider: (ref: ScriptureReference) => boolean,
+    subscribe?: (invalidate: () => void) => () => void,
+  ): void {
+    this.quoteCorpusCleanup?.();
+    this.generalQuoteEligibility = provider;
+    this.quoteCorpusCleanup = subscribe?.(() => this.resetGeneralQuoteEvidence()) ?? null;
+  }
+  /** The corpus or the audio stream changed: every quote card shown so far is withdrawn. */
+  resetGeneralQuoteEvidence(): void {
+    this.invalidateGeneralQuote();
+    for (const evidence of this.quoteEvidencePublished.keys()) this.emit('quoteRetracted', evidence);
+    this.quoteEvidencePublished.clear();
+    this.quoteEvidenceVersions.clear();
+    this.provisionalEvidence.clear();
+    this.provisionalQuote = null;
+  }
+  invalidateGeneralQuote(): void { this.generalQuoteRevision++; this.finalQuoteRevision++; }
+  /** A changed partial supersedes earlier partial searches only. */
+  invalidateProvisionalQuote(): void { this.generalQuoteRevision++; }
+  retractProvisionalQuotes(): void {
+    for (const evidence of this.provisionalEvidence) this.emit('quoteRetracted', evidence);
+    this.provisionalEvidence.clear();
+  }
+  isGeneralQuoteCurrent(ref: ScriptureReference): boolean {
+    if (!ref.quoteEvidence) return true;
+    // Current while its verse is still what this speech resolves to. More words
+    // confirming the same quotation keep it; a different match or a retraction
+    // replaces the published entry and ends it.
+    const published = this.quoteEvidencePublished.get(ref.quoteEvidence);
+    if (this.lifetime.signal.aborted || !published ||
+      !published.split(',').includes(verseKey(ref.book, ref.chapter, ref.verseStart))) return false;
+    try { return this.generalQuoteEligibility?.(ref) ?? true; } catch { return false; }
+  }
+  /** Null preserves the synchronous legacy path when no local corpus is attached. */
+  analyzeGeneralQuote(text: string, provisional = false, evidence = "", freshText = text): Promise<boolean> | null {
+    if (!this.generalQuoteProvider || this.lifetime.signal.aborted) return null;
+    const revision = ++this.generalQuoteRevision;
+    const finalRevision = this.finalQuoteRevision;
+    evidence ||= `text:${text}`;
+    this.quoteEvidenceVersions.set(evidence, revision);
+    if (this.quoteEvidenceVersions.size > 200) {
+      const oldest = this.quoteEvidenceVersions.keys().next().value;
+      if (oldest) { this.quoteEvidenceVersions.delete(oldest); this.quoteEvidencePublished.delete(oldest); }
+    }
+    const generation = this.resolutionGeneration;
+    const origin = this.transcriptOrigin ? { ...this.transcriptOrigin, detectionStartedAt: this.detectionStartedAt ?? Date.now() } : null;
+    return this.generalQuoteProvider(text, !provisional).then(matches => {
+      const stale = provisional ? revision !== this.generalQuoteRevision : finalRevision !== this.finalQuoteRevision;
+      if (this.lifetime.signal.aborted || stale || generation !== this.resolutionGeneration) return true;
+      // Retrieval may use committed context; publication must also be supported by new speech.
+      // Otherwise old words in the rolling window could resurrect an operator-dismissed card.
+      if (freshText !== text && matches.length) {
+        matches = matches.filter((match) => freshSpeechSupports(freshText, match.text));
+      }
+      if (!matches.length) {
+        this.provisionalQuote = null;
+        if (this.provisionalEvidence.delete(evidence)) this.emit('quoteRetracted', evidence);
+        return false;
+      }
+      const matchKey = matches.map(m => verseKey(m.book, m.chapter, m.verse)).join(',');
+      const published = this.quoteEvidencePublished.get(evidence);
+      if (published === matchKey && !provisional && !this.provisionalEvidence.has(evidence)) return true;
+      if (published && (published !== matchKey || !provisional)) this.emit('quoteRetracted', evidence);
+      if (published === matchKey && provisional) return true;
+      if (provisional) {
+        const previous = this.provisionalQuote;
+        this.provisionalQuote = { evidence, text, key: matchKey };
+        if (!previous || previous.evidence !== evidence || previous.text === text || previous.key !== matchKey) return true;
+      } else this.provisionalQuote = null;
+      const translations = findSpokenTranslations(text);
+      const refs: ScriptureReference[] = matches.map(match => ({
+        book: match.book, chapter: match.chapter, verseStart: match.verse,
+        confidence: 0.7, detectionType: 'quote', sourceText: text.slice(-150),
+        resolver: 'quotation-local', suggestionOnly: true, ambiguous: match.ambiguous, provisional,
+        quoteEvidence: evidence, quoteRevision: revision,
+        quoteCorpusVersion: match.quoteCorpusVersion, cacheSource: match.cacheSource,
+        ...(translations.length ? { translations } : {}),
+      }));
+      this.quoteEvidencePublished.set(evidence, matchKey);
+      if (provisional) this.provisionalEvidence.add(evidence);
+      else this.provisionalEvidence.delete(evidence);
+      // Provisional and ambiguous matches must not claim authoritative dedup slots or lastPublished.
+      if (provisional || refs.some(ref => ref.ambiguous)) this.emitDetection(refs, origin);
+      else this.publish(refs, origin);
+      return true;
+    }).catch(() => false);
+  }
+
   setQuoteSearchProvider(provider: (phrase: string) => QuoteCandidate[]): void {
     this.quoteSearchProvider = provider;
   }
@@ -997,6 +1115,9 @@ export class ScriptureDetector extends EventEmitter {
   }
 
   destroy(): void {
+    this.quoteCorpusCleanup?.();
+    this.quoteCorpusCleanup = null;
+    this.retractProvisionalQuotes();
     this.lifetime.abort();
     if (this.flushTimer) {
       clearTimeout(this.flushTimer);

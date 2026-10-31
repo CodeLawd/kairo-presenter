@@ -2,18 +2,29 @@ import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } fr
 
 const MIN = 200
 const MAX = 480
+/** Every page's library sidebar shares one width, so switching pages never jumps. */
+const STORAGE_KEY = 'kairo.page-sidebar-width'
+/** The widths each page kept before they were shared — the first found seeds the shared one. */
+const LEGACY_KEYS = ['kairo.scripture-sidebar-width', 'kairo.lyrics-library-width', 'kairo.documents-sidebar-width', 'kairo.web-sidebar-width']
+const DEFAULT_WIDTH = 280
+const CHANGE_EVENT = 'kairo:page-sidebar-width'
 
-export function useSidebarWidth(storageKey: string, initialWidth: number) {
+function savedWidth(): number {
+  try {
+    for (const key of [STORAGE_KEY, ...LEGACY_KEYS]) {
+      const saved = Number(localStorage.getItem(key))
+      if (localStorage.getItem(key) !== null && Number.isFinite(saved) && saved >= MIN) return Math.min(MAX, saved)
+    }
+  } catch { /* Fall back to the default. */ }
+  return DEFAULT_WIDTH
+}
+
+/** The page sidebar's width: one value for Scripture, Lyrics, Documents and Web, kept in step live. */
+export function useSidebarWidth() {
+  const initialWidth = DEFAULT_WIDTH
   const containerRef = useRef<HTMLDivElement>(null)
   const drag = useRef<{ x: number; width: number } | null>(null)
-  const [preferred, setPreferred] = useState(() => {
-    try {
-      const saved = Number(localStorage.getItem(storageKey))
-      return Number.isFinite(saved) && saved >= MIN ? Math.min(MAX, saved) : initialWidth
-    } catch {
-      return initialWidth
-    }
-  })
+  const [preferred, setPreferred] = useState(savedWidth)
   const [maximum, setMaximum] = useState(MAX)
 
   useEffect(() => {
@@ -26,12 +37,23 @@ export function useSidebarWidth(storageKey: string, initialWidth: number) {
     return () => observer.disconnect()
   }, [])
 
+  // Pages stay mounted while hidden, so tell the others when this one is resized.
   useEffect(() => {
-    try { localStorage.setItem(storageKey, String(preferred)) } catch { /* Resizing still works. */ }
-  }, [preferred, storageKey])
+    const follow = (event: Event): void => setPreferred((event as CustomEvent<number>).detail)
+    window.addEventListener(CHANGE_EVENT, follow)
+    return () => window.removeEventListener(CHANGE_EVENT, follow)
+  }, [])
+
+  useEffect(() => {
+    try { localStorage.setItem(STORAGE_KEY, String(preferred)) } catch { /* Resizing still works. */ }
+  }, [preferred])
 
   const width = Math.min(preferred, maximum)
-  const change = (next: number): void => setPreferred(Math.max(MIN, Math.min(maximum, next)))
+  const change = (next: number): void => {
+    const clamped = Math.max(MIN, Math.min(maximum, next))
+    setPreferred(clamped)
+    window.dispatchEvent(new CustomEvent(CHANGE_EVENT, { detail: clamped }))
+  }
   const separatorProps = {
     role: 'separator' as const,
     'aria-orientation': 'vertical' as const,

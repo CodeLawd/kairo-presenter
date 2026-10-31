@@ -10,12 +10,11 @@ import { startLibraryItemDrag, useLibrary } from '@/stores/useLibraries'
 import { DEFAULT_LIBRARY_ID, itemsInLibrary, libraryCounts as countByLibrary } from '@shared/libraries'
 import { deleteLyricSlides, labelLyricSlides, lyricSlideLines, moveLyricSlide, replaceLyricSlide } from '@shared/lyrics-reorder'
 import { autoAssignHotkeys, hotkeyFromEvent, normalizeHotkey, sectionForHotkey, setSectionHotkey } from '@shared/lyrics-hotkeys'
-import { useLibraryWidth } from './useLibraryWidth'
+import { useSidebarWidth } from '@/components/layout/useSidebarWidth'
 import { SlideContextMenu, type SlideMenuTarget } from './SlideContextMenu'
 import { QuickEditCard } from './QuickEditCard'
 import { useImportRequest } from '@/hooks/useImportRequest'
 import { useState, useEffect, useRef, useCallback, useMemo, type CSSProperties } from 'react'
-import { BAR_FIELD } from '@/components/scripture/ScriptureSearchBar'
 import { SongReflowEditor } from './SongReflowEditor'
 import {
   Search,
@@ -685,7 +684,7 @@ function SongListItem({
       className={cn(
         // One line per song so a setlist or library shows many at once.
         'group relative flex h-8 items-center gap-2 rounded-md px-2 cursor-pointer select-none',
-        picked ? PICKED_ROW : isSelected ? 'row-selected' : 'hover:bg-surface-tertiary',
+        picked ? PICKED_ROW : isSelected ? 'row-focused' : 'hover:bg-white/5',
       )}
       style={dropping ? {
         boxShadow: dropping === 'before' ? 'inset 0 2px 0 rgb(255 255 255 / 0.85)' : 'inset 0 -2px 0 rgb(255 255 255 / 0.85)',
@@ -2399,7 +2398,7 @@ export default function Lyrics(): React.ReactElement {
   const webPreviewSeqRef = useRef(0)
   const webPreviewCacheRef = useRef(new Map<string, LyricsOnlinePreview>())
   const [sortOpen, setSortOpen] = useState(false)
-  const libraryWidth = useLibraryWidth()
+  const libraryWidth = useSidebarWidth()
   const [reorderBusy, setReorderBusy] = useState(false)
   const reorderLock = useRef(false)
   const sortRef = useRef<HTMLDivElement>(null)
@@ -3364,9 +3363,12 @@ export default function Lyrics(): React.ReactElement {
         <div
           style={{ width: libraryWidth.width }}
           className={cn(
-            "hairline-r flex shrink-0 flex-col gap-2.5 min-h-0 min-w-0 bg-surface-secondary px-4 pt-3 pb-5",
+            // ProPresenter's sidebar: sources on the lighter block, the song
+            // list on the darker one, a strip between (the --sidebar-* shades).
+            "hairline-r sidebar-list flex shrink-0 flex-col min-h-0 min-w-0",
           )}
         >
+          <div className="sidebar-sources shrink-0 px-1 pb-2 pt-2">
           <LibraryRail
             source={filter}
             activeLibraryId={activeLibraryId}
@@ -3390,11 +3392,12 @@ export default function Lyrics(): React.ReactElement {
               if (list?.songIds[0] && !(selectedId && list.songIds.includes(selectedId))) handleSelect(list.songIds[0])
             }}
           />
+          </div>
 
           {/* The list's header, as in ProPresenter: what's here, then one menu
               for everything you do to the list, and + for a new song. */}
-          <div className="flex items-center gap-0.5">
-            <p className="min-w-0 flex-1 whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-zinc-600">
+          <div className="sidebar-band pr-1">
+            <p className="min-w-0 flex-1 whitespace-nowrap tabular-nums">
               {loading ? 'Songs' : `${filteredSongs.length} ${filteredSongs.length === 1 ? 'song' : 'songs'}`}
             </p>
             <DropdownMenu>
@@ -3458,7 +3461,7 @@ export default function Lyrics(): React.ReactElement {
           </div>
 
           {viewingSetlist && setlistSelect.selected.size > 0 && (
-            <div className="flex shrink-0 items-center gap-2 rounded-lg bg-surface-elevated px-2.5 py-1.5 text-[11px]">
+            <div className="mx-1.5 mt-1.5 flex shrink-0 items-center gap-2 rounded-lg bg-surface-elevated px-2.5 py-1.5 text-[11px]">
               <span className="min-w-0 flex-1 truncate text-zinc-300">
                 {setlistSelect.selected.size} song{setlistSelect.selected.size === 1 ? '' : 's'} selected
               </span>
@@ -3473,7 +3476,7 @@ export default function Lyrics(): React.ReactElement {
           {/* Song list. In a setlist, the whole area takes a drop: anywhere
               below the last song adds to the end. */}
           <div
-            className={cn('flex-1 overflow-y-auto space-y-px min-h-0 rounded-md transition-colors', setlistDropEnd && 'bg-surface-tertiary')}
+            className={cn('flex-1 overflow-y-auto space-y-px min-h-0 px-1.5 py-1 transition-colors', setlistDropEnd && 'bg-white/5')}
             onDragOver={(event) => {
               if (!viewingSetlist || !event.dataTransfer.types.includes(SONG_DRAG_TYPE)) return
               event.preventDefault()
@@ -3623,8 +3626,9 @@ export default function Lyrics(): React.ReactElement {
 
           {/* Filter, under the list it narrows — where ProPresenter keeps it.
               Same field as Scripture's Bible bar, a step darker than this panel. */}
-          <div className={cn(BAR_FIELD, 'shrink-0 bg-surface')}>
-            <Search size={13} className="ml-2.5 shrink-0 text-slate-500" aria-hidden="true" />
+          <div className="shrink-0 p-2">
+          <div className="sidebar-field relative flex h-7 min-w-0 items-center rounded-full">
+            <Search size={12} className="ml-2.5 shrink-0 text-slate-500" aria-hidden="true" />
             <input
               type="text"
               className="h-full min-w-0 flex-1 bg-transparent px-2 text-[13px] text-slate-100 outline-none placeholder:text-slate-500"
@@ -3647,12 +3651,14 @@ export default function Lyrics(): React.ReactElement {
               </Button>
             )}
           </div>
+          </div>
         </div>
 
         {/* ── Right panel: Editor (70%) ─────────────────────────────────────── */}
         <button
           type="button"
           {...libraryWidth.separatorProps}
+          aria-label="Resize song library"
           title="Drag to resize library · double-click to reset"
           className="group flex w-2 shrink-0 cursor-col-resize touch-none items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50"
         ><span className="h-12 w-px bg-surface-elevated transition-colors group-hover:bg-teal-400 group-active:bg-teal-400" /></button>

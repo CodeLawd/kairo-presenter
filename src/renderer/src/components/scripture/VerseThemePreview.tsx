@@ -170,7 +170,7 @@ export function VerseThemePreview({
                   ? "border-white"
                   : footer
                     // Same quiet frame as a lyric card.
-                    ? "border-surface-border hover:border-stone focus-visible:border-slate-400"
+                    ? "border-surface-border hover:border-white/40 focus-visible:border-white/60"
                     : "border-transparent hover:border-slate-500 focus-visible:border-slate-400",
             )
           : "rounded-none border-0 shadow-none",
@@ -212,10 +212,10 @@ export function VerseThemePreview({
       {chrome && footer && (
         // References are labels; selection and live state belong to the frame.
         <div
-          className="flex h-[22px] w-full shrink-0 items-center gap-2 self-stretch bg-surface-tertiary px-2 text-[12px] text-slate-300"
+          className="flex h-6 w-full shrink-0 items-center gap-2 self-stretch bg-surface-tertiary px-2 text-[12px] text-slate-200"
         >
           <span className="min-w-0 flex-1 truncate font-medium">{formatCardReference(result.reference)}</span>
-          <span className="shrink-0 tabular-nums opacity-80">{footer.number}</span>
+          <span className="shrink-0 tabular-nums text-slate-500">{footer.number}</span>
         </div>
       )}
 

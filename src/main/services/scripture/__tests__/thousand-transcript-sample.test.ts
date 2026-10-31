@@ -7,6 +7,7 @@ import type { TranscriptResult } from '../../../../lib/ipc';
 import { ScriptureDetector, type ScriptureReference } from '../detector';
 import { subscribeExplicitScriptureDetection } from '../live-detection-wiring';
 import type { QuoteCandidate } from '../quote-recovery';
+import { spokenVerseText } from '../../../../lib/verse-text';
 
 type Passage = QuoteCandidate;
 type Case = { category: string; variant: string; label: string; segments: string[]; expected: string | null; quote?: boolean; chapter?: QuoteCandidate[] };
@@ -74,7 +75,8 @@ test('1000 transcript cases across 50 Bible books', () => {
       add('control', 'ordinary words', ['The volunteers prepared the room before the service.'], null);
       add('control', 'numeric announcement', [`We need ${verse} chairs for the next gathering.`], null);
 
-      const words = verseText.replace(/<[^>]+>|\{[^}]+\}/g, ' ').match(/[A-Za-z]+/g)!;
+      // Read aloud as a preacher would: supplied {words} spoken, marginal {notes: Heb. …} not.
+      const words = spokenVerseText(verseText.replace(/<[^>]+>/g, ' ')).match(/[A-Za-z]+/g)!;
       const quote = (label: string, speech: string, wanted: string | null) =>
         add('quotation', label, [`In ${name} chapter ${chapterNumber}.`, speech], wanted, true);
       quote('exact', words.join(' '), expected);

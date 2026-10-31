@@ -1,13 +1,15 @@
-import { useId, useState } from 'react'
+import { useId } from 'react'
+import { Popover } from 'radix-ui'
 import {
   AlignCenter,
   AlignJustify,
   AlignLeft,
   AlignRight,
   ChevronDown,
-  Eye,
-  EyeOff,
-  Minus,
+  ObjectAlignBottom,
+  ObjectAlignMiddle,
+  ObjectAlignTop,
+  Settings,
 } from '@/icons'
 import { cn } from '@/lib/utils'
 import type {
@@ -96,6 +98,7 @@ function CompactSelect({
   onChange,
   disabled = false,
   describedBy,
+  hideLabel = false,
 }: {
   label: string
   value: string
@@ -103,10 +106,12 @@ function CompactSelect({
   onChange: (value: string) => void
   disabled?: boolean
   describedBy?: string
+  /** The field explains itself (a font name, a weight) — keep the label for screen readers only. */
+  hideLabel?: boolean
 }): React.ReactElement {
   return (
     <div className="min-w-0">
-      <FieldLabel>{label}</FieldLabel>
+      {!hideLabel && <FieldLabel>{label}</FieldLabel>}
       <FieldShell className="relative pr-8">
         <select
           className="h-full w-full appearance-none bg-transparent text-sm outline-none disabled:cursor-not-allowed disabled:opacity-50"
@@ -134,18 +139,20 @@ export function ColorOpacityField({
   opacity,
   onColorChange,
   onOpacityChange,
+  hideLabel = false,
 }: {
   label: string
   color: string
   opacity: number
   onColorChange: (color: string) => void
   onOpacityChange: (opacity: number) => void
+  hideLabel?: boolean
 }): React.ReactElement {
   const swatch = expandHex(color) ?? '#000000'
   const hexDisplay = (expandHex(color) ?? color.replace(/^#/, '')).replace(/^#/, '').toUpperCase()
   return (
     <div className="min-w-0">
-      <FieldLabel>{label}</FieldLabel>
+      {!hideLabel && <FieldLabel>{label}</FieldLabel>}
       <FieldShell className="gap-2">
         <input
           type="color"
@@ -205,11 +212,7 @@ function IconToggleGroup<T extends string>({
   ariaLabel: string
 }): React.ReactElement {
   return (
-    <div
-      role="group"
-      aria-label={ariaLabel}
-      className="flex h-8 gap-0.5 rounded-lg bg-surface p-0.5"
-    >
+    <div role="group" aria-label={ariaLabel} className="flex h-7 gap-0.5 rounded-md bg-surface-tertiary p-0.5">
       {options.map((opt) => {
         const active = opt.value === value
         return (
@@ -221,8 +224,8 @@ function IconToggleGroup<T extends string>({
             aria-pressed={active}
             onClick={() => onChange(opt.value)}
             className={cn(
-              'flex flex-1 items-center justify-center rounded-md text-zinc-500 transition-colors',
-              active ? 'bg-surface-elevated text-white' : 'hover:text-zinc-300'
+              'flex flex-1 items-center justify-center rounded text-zinc-400 transition-colors',
+              active ? 'bg-teal-500 text-on-accent' : 'hover:text-zinc-100',
             )}
           >
             {opt.node}
@@ -233,323 +236,130 @@ function IconToggleGroup<T extends string>({
   )
 }
 
-function SectionHeader({
-  title,
-  open,
-  onOpenChange,
-  trailing,
-}: {
-  title: string
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  trailing?: React.ReactNode
-}): React.ReactElement {
+/** One section of the inspector, split from the next by a full-width line — as ProPresenter does. */
+function Section({ children }: { children: React.ReactNode }): React.ReactElement {
+  return <section className="hairline-t -mx-4 space-y-2.5 px-4 py-3.5 first:pt-0 first:shadow-none">{children}</section>
+}
+
+/** A label on the left and its control on the right. */
+function Row({ label, children, title }: { label: string; children: React.ReactNode; title?: string }): React.ReactElement {
   return (
-    <div className="flex items-center gap-2">
-      <button
-        type="button"
-        className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
-        onClick={() => onOpenChange(!open)}
-        aria-expanded={open}
-      >
-        <ChevronDown
-          size={13}
-          className={cn('shrink-0 text-zinc-600 transition-transform', open ? 'rotate-0' : '-rotate-90')}
-        />
-        <span className="truncate text-[12px] font-semibold tracking-wide text-zinc-300">{title}</span>
-      </button>
-      {trailing}
+    <div className="grid grid-cols-[88px_minmax(0,1fr)] items-center gap-2">
+      <span className="truncate text-[12px] text-zinc-400" title={title}>{label}</span>
+      {children}
     </div>
   )
 }
 
-function CollapsibleSection({
-  title,
-  open,
-  onOpenChange,
-  trailing,
+/** A checkbox that turns an effect on and, while on, shows its settings — ProPresenter's Stroke and Shadow rows. */
+function EffectToggle({
+  label,
+  enabled,
+  onToggle,
   children,
 }: {
-  title: string
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  trailing?: React.ReactNode
+  label: string
+  enabled: boolean
+  onToggle: (enabled: boolean) => void
   children: React.ReactNode
 }): React.ReactElement {
   return (
-    <section className="space-y-3">
-      <SectionHeader title={title} open={open} onOpenChange={onOpenChange} trailing={trailing} />
-      {open && <div className="space-y-3">{children}</div>}
-    </section>
+    <Section>
+      <label className="flex cursor-pointer items-center gap-2.5 text-[13px] text-zinc-200">
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(event) => onToggle(event.target.checked)}
+          className="size-4 cursor-pointer rounded accent-[rgb(var(--control-accent))]"
+        />
+        {label}
+      </label>
+      {enabled && <div className="space-y-2.5 pt-1">{children}</div>}
+    </Section>
   )
 }
 
-function TextFormatFields({
+/** Line height and letter spacing: set once and rarely touched, so they live behind the gear. */
+function SpacingPopover({
   style,
-  automaticSize,
   onChange,
 }: {
   style: OverlayTextStyle
-  automaticSize: boolean
   onChange: (partial: Partial<OverlayTextStyle>) => void
 }): React.ReactElement {
-  const sizeHintId = useId()
-  const weight = nearestWeight(style.fontWeight)
-  const sizeValue = String(style.fontSizePx)
-  const sizeOptions = [
-    ...SIZE_PRESETS.map((px) => ({ label: `${px}`, value: String(px) })),
-    ...(!SIZE_PRESETS.includes(style.fontSizePx)
-      ? [{ label: `${style.fontSizePx}`, value: String(style.fontSizePx) }]
-      : []),
-  ]
-
   return (
-    <div className="space-y-3">
-      <CompactSelect
-        label="Font"
-        value={style.fontFamily}
-        options={FONT_STACKS}
-        onChange={(fontFamily) => onChange({ fontFamily })}
-      />
-
-      <div className="grid grid-cols-2 gap-2">
-        <CompactSelect
-          label="Weight"
-          value={String(weight)}
-          options={WEIGHTS.map((item) => ({ label: item.label, value: String(item.value) }))}
-          onChange={(next) => onChange({ fontWeight: Number(next) })}
-        />
-        <CompactSelect
-          label="Size"
-          disabled={automaticSize}
-          describedBy={automaticSize ? sizeHintId : undefined}
-          value={sizeValue}
-          options={sizeOptions}
-          onChange={(next) => onChange({ fontSizePx: Number(next) })}
-        />
-      </div>
-      {automaticSize && (
-        <p id={sizeHintId} className="text-[11px] text-zinc-400">
-          Size is automatic while Fit to box is on. Turn it off to set the text size.
-        </p>
-      )}
-
-      <div className="grid grid-cols-2 gap-2">
-        <NumberField
-          label="Line height"
-          value={Number(style.lineHeight.toFixed(2))}
-          step={0.05}
-          min={0.9}
-          max={2.5}
-          onChange={(lineHeight) => onChange({ lineHeight })}
-          icon={<span className="text-[10px] font-bold text-zinc-500">↕</span>}
-        />
-        <NumberField
-          label="Letter spacing"
-          value={Number(style.letterSpacingPx.toFixed(1))}
-          step={0.5}
-          min={-4}
-          max={20}
-          suffix="px"
-          onChange={(letterSpacingPx) => onChange({ letterSpacingPx })}
-          icon={<span className="text-[10px] font-bold tracking-widest text-zinc-500">VA</span>}
-        />
-      </div>
-
-      <ColorOpacityField
-        label="Color"
-        color={style.color}
-        opacity={style.colorOpacity}
-        onColorChange={(color) => onChange({ color })}
-        onOpacityChange={(colorOpacity) => onChange({ colorOpacity })}
-      />
-
-      <div className="grid grid-cols-[1.2fr_1fr] gap-2">
-        <div>
-          <FieldLabel>Alignment</FieldLabel>
-          <IconToggleGroup<OverlayTextAlign>
-            ariaLabel="Horizontal alignment"
-            value={style.align}
-            onChange={(align) => onChange({ align })}
-            options={[
-              { value: 'left', label: 'Left', node: <AlignLeft size={14} /> },
-              { value: 'center', label: 'Center', node: <AlignCenter size={14} /> },
-              { value: 'right', label: 'Right', node: <AlignRight size={14} /> },
-              { value: 'justify', label: 'Justify', node: <AlignJustify size={14} /> },
-            ]}
+    <Popover.Root>
+      <Popover.Trigger
+        className="flex h-7 w-11 shrink-0 items-center justify-center gap-0.5 rounded-md bg-surface-tertiary text-zinc-300 transition-colors hover:text-white data-[state=open]:bg-surface-elevated"
+        aria-label="Spacing"
+        title="Line height and letter spacing"
+      >
+        <Settings size={14} aria-hidden="true" />
+        <ChevronDown size={10} aria-hidden="true" />
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content
+          align="end"
+          sideOffset={6}
+          collisionPadding={12}
+          className="z-50 grid w-60 grid-cols-2 gap-2 rounded-lg bg-surface-tertiary p-3 text-zinc-200 animate-spring-in"
+        >
+          <NumberField
+            label="Line height"
+            value={Number(style.lineHeight.toFixed(2))}
+            step={0.05}
+            min={0.9}
+            max={2.5}
+            onChange={(lineHeight) => onChange({ lineHeight })}
           />
-        </div>
-        <div>
-          <FieldLabel>Vertical</FieldLabel>
-          <IconToggleGroup<OverlayVerticalAlign>
-            ariaLabel="Vertical alignment"
-            value={style.verticalAlign}
-            onChange={(verticalAlign) => onChange({ verticalAlign })}
-            options={[
-              { value: 'top', label: 'Top', node: <span className="text-[11px] font-bold">T</span> },
-              { value: 'middle', label: 'Middle', node: <span className="text-[11px] font-bold">M</span> },
-              { value: 'bottom', label: 'Bottom', node: <span className="text-[11px] font-bold">B</span> },
-            ]}
+          <NumberField
+            label="Letter spacing"
+            value={Number(style.letterSpacingPx.toFixed(1))}
+            step={0.5}
+            min={-4}
+            max={20}
+            suffix="px"
+            onChange={(letterSpacingPx) => onChange({ letterSpacingPx })}
           />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-2">
-        <div>
-          <FieldLabel>Decoration</FieldLabel>
-          <IconToggleGroup<OverlayTextDecoration>
-            ariaLabel="Text decoration"
-            value={style.textDecoration}
-            onChange={(textDecoration) => onChange({ textDecoration })}
-            options={[
-              { value: 'none', label: 'None', node: <Minus size={14} /> },
-              { value: 'underline', label: 'Underline', node: <span className="text-[11px] font-semibold underline">U</span> },
-              {
-                value: 'line-through',
-                label: 'Strikethrough',
-                node: <span className="text-[11px] font-semibold line-through">S</span>,
-              },
-            ]}
-          />
-        </div>
-        <div>
-          <FieldLabel>Case</FieldLabel>
-          <IconToggleGroup<OverlayTextTransform>
-            ariaLabel="Text case"
-            value={style.textTransform}
-            onChange={(textTransform) => onChange({ textTransform })}
-            options={[
-              { value: 'none', label: 'As typed', node: <Minus size={14} /> },
-              { value: 'uppercase', label: 'Uppercase', node: <span className="text-[10px] font-bold">PB</span> },
-              { value: 'capitalize', label: 'Capitalize', node: <span className="text-[10px] font-bold">Pb</span> },
-              { value: 'lowercase', label: 'Lowercase', node: <span className="text-[10px] font-bold">pb</span> },
-            ]}
-          />
-        </div>
-      </div>
-    </div>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
   )
 }
 
-function EffectsFields({
-  shadow,
-  outline,
-  onShadowChange,
-  onOutlineChange,
+/** Underline and strikethrough as two toggles; pressing the lit one turns it off. */
+function DecorationToggles({
+  value,
+  onChange,
 }: {
-  shadow: OverlayTextShadow
-  outline: OverlayTextOutline
-  onShadowChange: (partial: Partial<OverlayTextShadow>) => void
-  onOutlineChange: (partial: Partial<OverlayTextOutline>) => void
+  value: OverlayTextDecoration
+  onChange: (value: OverlayTextDecoration) => void
 }): React.ReactElement {
-  const [shadowOpen, setShadowOpen] = useState(true)
-  const [outlineOpen, setOutlineOpen] = useState(true)
-
+  const options: Array<{ value: OverlayTextDecoration; label: string; node: React.ReactNode }> = [
+    { value: 'underline', label: 'Underline', node: <span className="text-[12px] font-semibold underline">U</span> },
+    { value: 'line-through', label: 'Strikethrough', node: <span className="text-[12px] font-semibold line-through">S</span> },
+  ]
   return (
-    <div className="space-y-5">
-      <CollapsibleSection
-        title="Drop Shadow"
-        open={shadowOpen}
-        onOpenChange={setShadowOpen}
-        trailing={
+    <div role="group" aria-label="Text decoration" className="flex h-7 gap-0.5 rounded-md bg-surface-tertiary p-0.5">
+      {options.map((opt) => {
+        const active = value === opt.value
+        return (
           <button
+            key={opt.value}
             type="button"
-            className="rounded p-1 text-zinc-500 hover:text-zinc-200"
-            aria-label={shadow.enabled ? 'Hide drop shadow' : 'Show drop shadow'}
-            onClick={() => onShadowChange({ enabled: !shadow.enabled })}
+            title={opt.label}
+            aria-label={opt.label}
+            aria-pressed={active}
+            onClick={() => onChange(active ? 'none' : opt.value)}
+            className={cn(
+              'w-8 rounded transition-colors',
+              active ? 'bg-teal-500 text-on-accent' : 'text-zinc-400 hover:text-zinc-100',
+            )}
           >
-            {shadow.enabled ? <Eye size={14} /> : <EyeOff size={14} />}
+            {opt.node}
           </button>
-        }
-      >
-        <div className={cn('space-y-3', !shadow.enabled && 'pointer-events-none opacity-40')}>
-          <div className="grid grid-cols-2 gap-2">
-            <NumberField label="X" value={shadow.xPx} min={-40} max={40} onChange={(xPx) => onShadowChange({ xPx })} />
-            <NumberField label="Y" value={shadow.yPx} min={-40} max={40} onChange={(yPx) => onShadowChange({ yPx })} />
-          </div>
-          <div>
-            <div className="mb-1 flex items-center justify-between">
-              <p className="text-[11px] font-medium text-zinc-500">Blur</p>
-              <span className="text-[11px] tabular-nums text-zinc-500">{shadow.blurPx}px</span>
-            </div>
-            <input
-              type="range"
-              min={0}
-              max={80}
-              step={1}
-              value={shadow.blurPx}
-              onChange={(event) => onShadowChange({ blurPx: Number(event.target.value) })}
-              className="h-1 w-full cursor-pointer appearance-none rounded-full bg-surface-elevated [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
-              aria-label="Shadow blur"
-            />
-          </div>
-          <ColorOpacityField
-            label="Color"
-            color={shadow.color}
-            opacity={shadow.opacity}
-            onColorChange={(color) => onShadowChange({ color })}
-            onOpacityChange={(opacity) => onShadowChange({ opacity })}
-          />
-        </div>
-      </CollapsibleSection>
-
-      <CollapsibleSection
-        title="Outline"
-        open={outlineOpen}
-        onOpenChange={setOutlineOpen}
-        trailing={
-          <button
-            type="button"
-            className="rounded p-1 text-zinc-500 hover:text-zinc-200"
-            aria-label={outline.enabled ? 'Hide outline' : 'Show outline'}
-            onClick={() => onOutlineChange({ enabled: !outline.enabled })}
-          >
-            {outline.enabled ? <Eye size={14} /> : <EyeOff size={14} />}
-          </button>
-        }
-      >
-        <div className={cn('space-y-3', !outline.enabled && 'pointer-events-none opacity-40')}>
-          <div className="grid grid-cols-2 gap-2">
-            <CompactSelect
-              label="Position"
-              value={outline.position}
-              options={[
-                { label: 'Outside', value: 'outside' },
-                { label: 'Center', value: 'center' },
-                { label: 'Inside', value: 'inside' },
-              ]}
-              onChange={(position) =>
-                onOutlineChange({ position: position as OverlayTextOutline['position'] })
-              }
-            />
-            <NumberField
-              label="Width"
-              value={outline.widthPx}
-              min={0}
-              max={24}
-              suffix="px"
-              onChange={(widthPx) => onOutlineChange({ widthPx, enabled: widthPx > 0 ? true : outline.enabled })}
-            />
-          </div>
-          <CompactSelect
-            label="Style"
-            value={outline.style}
-            options={[
-              { label: 'Solid', value: 'solid' },
-              { label: 'Dashed', value: 'dashed' },
-              { label: 'Dotted', value: 'dotted' },
-            ]}
-            onChange={(style) => onOutlineChange({ style: style as OverlayTextOutline['style'] })}
-          />
-          <ColorOpacityField
-            label="Color"
-            color={outline.color}
-            opacity={outline.opacity}
-            onColorChange={(color) => onOutlineChange({ color })}
-            onOpacityChange={(opacity) => onOutlineChange({ opacity })}
-          />
-        </div>
-      </CollapsibleSection>
+        )
+      })}
     </div>
   )
 }
@@ -565,130 +375,251 @@ interface ThemeTypePanelProps {
   onAutoFitChange: (autoFitText: boolean) => void
 }
 
+/**
+ * The selected text layer's look, laid out like ProPresenter's Text inspector:
+ * font, weight and size up top, then colour, sizing, alignment, and effects as
+ * checkbox rows that open only when on. The layer itself is picked on the
+ * slide or in the Layers list.
+ */
 export function ThemeTypePanel({
   theme,
   contentKind,
   selectedLayer,
-  onSelectLayer,
   onUpdateLayer,
   onUpdateReferenceMeta,
   onAutoFitChange,
 }: ThemeTypePanelProps): React.ReactElement {
-  const [scriptureOpen, setScriptureOpen] = useState(true)
-  const [effectsOpen, setEffectsOpen] = useState(true)
-  const layer = selectedLayer === 'reference' ? theme.reference : theme.verse
-  const title = overlayLayerLabel(contentKind, selectedLayer === 'reference' ? 'reference' : 'verse')
+  const sizeHintId = useId()
+  const isReference = selectedLayer === 'reference'
+  const style = isReference ? theme.reference : theme.verse
   const referenceLabel = overlayLayerLabel(contentKind, 'reference')
+  const automaticSize = !isReference && theme.layout.autoFitText
+  const update = (partial: Partial<OverlayTextStyle>): void => onUpdateLayer(selectedLayer, partial)
+  const weight = nearestWeight(style.fontWeight)
+  const sizeOptions = [
+    ...SIZE_PRESETS.map((px) => ({ label: `${px}`, value: String(px) })),
+    ...(!SIZE_PRESETS.includes(style.fontSizePx) ? [{ label: `${style.fontSizePx}`, value: String(style.fontSizePx) }] : []),
+  ]
 
   return (
-    <div className="space-y-5">
-      <div className="flex gap-1 rounded-lg bg-surface p-0.5">
-        {([
-          { id: 'verse' as const, label: overlayLayerLabel(contentKind, 'verse') },
-          { id: 'reference' as const, label: referenceLabel },
-        ]).map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            onClick={() => onSelectLayer(item.id)}
-            className={cn(
-              'flex-1 rounded-md px-2 py-1 text-[12px] font-medium transition-colors',
-              selectedLayer === item.id
-                ? 'bg-surface-elevated text-white'
-                : 'text-zinc-500 hover:text-zinc-300'
-            )}
-          >
-            {item.label}
-            {item.id === 'reference' && !theme.reference.show && (
-              <span className="ml-1 text-[10px] text-zinc-500">off</span>
-            )}
-          </button>
-        ))}
-      </div>
-
-      {/* Visible on both layer tabs — hiding this line is the most common edit
-          and burying it under the layer it removes made it unfindable. */}
-      {(
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-[12px] text-zinc-300">Show {referenceLabel.toLowerCase()}</p>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={theme.reference.show}
-            aria-label={`Show ${referenceLabel.toLowerCase()}`}
-            onClick={() => onUpdateReferenceMeta({ show: !theme.reference.show })}
-            className={cn(
-              'relative h-5 w-9 shrink-0 rounded-full transition-colors',
-              theme.reference.show ? 'bg-slate-400' : 'bg-surface-elevated'
-            )}
-          >
-            <span
-              className={cn(
-                'absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white transition-transform',
-                theme.reference.show && 'translate-x-4'
-              )}
+    <div>
+      <Section>
+        <p className="text-[13px] font-semibold text-zinc-100">{overlayLayerLabel(contentKind, isReference ? 'reference' : 'verse')}</p>
+        {isReference && (
+          <label className="flex cursor-pointer items-center gap-2.5 text-[13px] text-zinc-200">
+            <input
+              type="checkbox"
+              checked={theme.reference.show}
+              onChange={(event) => onUpdateReferenceMeta({ show: event.target.checked })}
+              className="size-4 cursor-pointer rounded accent-[rgb(var(--control-accent))]"
             />
-          </button>
-        </div>
-      )}
-
-      <CollapsibleSection title={title} open={scriptureOpen} onOpenChange={setScriptureOpen}>
-        {selectedLayer === 'verse' && (
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-[12px] text-zinc-300" title="Automatically sizes text to fit its box.">Fit to box</p>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={theme.layout.autoFitText}
-              aria-label="Fit to box"
-              onClick={() => onAutoFitChange(!theme.layout.autoFitText)}
-              className={cn(
-                'relative h-5 w-9 shrink-0 rounded-full transition-colors',
-                theme.layout.autoFitText ? 'bg-slate-400' : 'bg-surface-elevated'
-              )}
-            >
-              <span
-                className={cn(
-                  'absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white transition-transform',
-                  theme.layout.autoFitText && 'translate-x-4'
-                )}
-              />
-            </button>
-          </div>
+            Show {referenceLabel.toLowerCase()}
+          </label>
         )}
-        <TextFormatFields
-          style={layer}
-          automaticSize={selectedLayer === 'verse' && theme.layout.autoFitText}
-          onChange={(partial) => onUpdateLayer(selectedLayer, partial)}
-        />
-        {selectedLayer === 'reference' && theme.reference.show && (
+      </Section>
+
+      <Section>
+        <CompactSelect hideLabel label="Font" value={style.fontFamily} options={FONT_STACKS} onChange={(fontFamily) => update({ fontFamily })} />
+        <div className="grid grid-cols-[minmax(0,1fr)_88px] gap-2">
           <CompactSelect
-            label="Snap to verse"
-            value={theme.reference.position}
-            options={[
-              { label: 'Above verse', value: 'above' },
-              { label: 'Below verse', value: 'below' },
-            ]}
-            onChange={(position) =>
-              onUpdateReferenceMeta({ position: position as 'above' | 'below' })
-            }
+            hideLabel
+            label="Weight"
+            value={String(weight)}
+            options={WEIGHTS.map((item) => ({ label: item.label, value: String(item.value) }))}
+            onChange={(next) => update({ fontWeight: Number(next) })}
           />
+          <CompactSelect
+            hideLabel
+            label="Size"
+            disabled={automaticSize}
+            describedBy={automaticSize ? sizeHintId : undefined}
+            value={String(style.fontSizePx)}
+            options={sizeOptions}
+            onChange={(next) => update({ fontSizePx: Number(next) })}
+          />
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          <DecorationToggles value={style.textDecoration} onChange={(textDecoration) => update({ textDecoration })} />
+          <SpacingPopover style={style} onChange={update} />
+        </div>
+        <Row label="Capitalization">
+          <CompactSelect
+            hideLabel
+            label="Capitalization"
+            value={style.textTransform}
+            options={[
+              { label: 'None', value: 'none' },
+              { label: 'UPPERCASE', value: 'uppercase' },
+              { label: 'Title Case', value: 'capitalize' },
+              { label: 'lowercase', value: 'lowercase' },
+            ]}
+            onChange={(textTransform) => update({ textTransform: textTransform as OverlayTextTransform })}
+          />
+        </Row>
+      </Section>
+
+      <Section>
+        <Row label="Text color">
+          <ColorOpacityField
+            hideLabel
+            label="Text color"
+            color={style.color}
+            opacity={style.colorOpacity}
+            onColorChange={(color) => update({ color })}
+            onOpacityChange={(colorOpacity) => update({ colorOpacity })}
+          />
+        </Row>
+      </Section>
+
+      <Section>
+        {isReference ? (
+          <Row label="Position">
+            <CompactSelect
+              hideLabel
+              label="Position"
+              value={theme.reference.position}
+              options={[
+                { label: 'Above verse', value: 'above' },
+                { label: 'Below verse', value: 'below' },
+              ]}
+              onChange={(position) => onUpdateReferenceMeta({ position: position as 'above' | 'below' })}
+            />
+          </Row>
+        ) : (
+          <Row label="Scaling" title="Fit to box sizes the text automatically to fill its box">
+            <CompactSelect
+              hideLabel
+              label="Scaling"
+              value={theme.layout.autoFitText ? 'fit' : 'none'}
+              options={[
+                { label: 'None', value: 'none' },
+                { label: 'Fit to box', value: 'fit' },
+              ]}
+              onChange={(next) => onAutoFitChange(next === 'fit')}
+            />
+          </Row>
         )}
-      </CollapsibleSection>
+        {automaticSize && (
+          <p id={sizeHintId} className="text-[11px] text-zinc-400">
+            Size follows the box while Fit to box is on.
+          </p>
+        )}
+      </Section>
 
-
-      <CollapsibleSection title="Effects" open={effectsOpen} onOpenChange={setEffectsOpen}>
-        <EffectsFields
-          shadow={layer.shadow}
-          outline={layer.outline}
-          onShadowChange={(partial) =>
-            onUpdateLayer(selectedLayer, { shadow: { ...layer.shadow, ...partial } })
-          }
-          onOutlineChange={(partial) =>
-            onUpdateLayer(selectedLayer, { outline: { ...layer.outline, ...partial } })
-          }
+      <Section>
+        <IconToggleGroup<OverlayTextAlign>
+          ariaLabel="Horizontal alignment"
+          value={style.align}
+          onChange={(align) => update({ align })}
+          options={[
+            { value: 'left', label: 'Left', node: <AlignLeft size={14} /> },
+            { value: 'center', label: 'Center', node: <AlignCenter size={14} /> },
+            { value: 'right', label: 'Right', node: <AlignRight size={14} /> },
+            { value: 'justify', label: 'Justify', node: <AlignJustify size={14} /> },
+          ]}
         />
-      </CollapsibleSection>
+        <IconToggleGroup<OverlayVerticalAlign>
+          ariaLabel="Vertical alignment"
+          value={style.verticalAlign}
+          onChange={(verticalAlign) => update({ verticalAlign })}
+          options={[
+            { value: 'top', label: 'Top', node: <ObjectAlignTop size={14} /> },
+            { value: 'middle', label: 'Middle', node: <ObjectAlignMiddle size={14} /> },
+            { value: 'bottom', label: 'Bottom', node: <ObjectAlignBottom size={14} /> },
+          ]}
+        />
+      </Section>
+
+      <EffectToggle label="Shadow" enabled={style.shadow.enabled} onToggle={(enabled) => update({ shadow: { ...style.shadow, enabled } })}>
+        <ShadowFields shadow={style.shadow} onChange={(partial) => update({ shadow: { ...style.shadow, ...partial } })} />
+      </EffectToggle>
+
+      <EffectToggle
+        label="Stroke"
+        enabled={style.outline.enabled}
+        onToggle={(enabled) =>
+          update({ outline: { ...style.outline, enabled, widthPx: enabled && style.outline.widthPx === 0 ? 2 : style.outline.widthPx } })
+        }
+      >
+        <OutlineFields outline={style.outline} onChange={(partial) => update({ outline: { ...style.outline, ...partial } })} />
+      </EffectToggle>
     </div>
+  )
+}
+
+function ShadowFields({
+  shadow,
+  onChange,
+}: {
+  shadow: OverlayTextShadow
+  onChange: (partial: Partial<OverlayTextShadow>) => void
+}): React.ReactElement {
+  return (
+    <>
+      <div className="grid grid-cols-3 gap-2">
+        <NumberField label="X" value={shadow.xPx} min={-40} max={40} onChange={(xPx) => onChange({ xPx })} />
+        <NumberField label="Y" value={shadow.yPx} min={-40} max={40} onChange={(yPx) => onChange({ yPx })} />
+        <NumberField label="Blur" value={shadow.blurPx} min={0} max={80} onChange={(blurPx) => onChange({ blurPx })} />
+      </div>
+      <Row label="Color">
+        <ColorOpacityField
+          hideLabel
+          label="Shadow color"
+          color={shadow.color}
+          opacity={shadow.opacity}
+          onColorChange={(color) => onChange({ color })}
+          onOpacityChange={(opacity) => onChange({ opacity })}
+        />
+      </Row>
+    </>
+  )
+}
+
+function OutlineFields({
+  outline,
+  onChange,
+}: {
+  outline: OverlayTextOutline
+  onChange: (partial: Partial<OverlayTextOutline>) => void
+}): React.ReactElement {
+  return (
+    <>
+      <div className="grid grid-cols-[minmax(0,1fr)_88px] gap-2">
+        <CompactSelect
+          label="Position"
+          value={outline.position}
+          options={[
+            { label: 'Outside', value: 'outside' },
+            { label: 'Center', value: 'center' },
+            { label: 'Inside', value: 'inside' },
+          ]}
+          onChange={(position) => onChange({ position: position as OverlayTextOutline['position'] })}
+        />
+        <NumberField label="Width" value={outline.widthPx} min={0} max={24} suffix="px" onChange={(widthPx) => onChange({ widthPx })} />
+      </div>
+      <Row label="Style">
+        <CompactSelect
+          hideLabel
+          label="Stroke style"
+          value={outline.style}
+          options={[
+            { label: 'Solid', value: 'solid' },
+            { label: 'Dashed', value: 'dashed' },
+            { label: 'Dotted', value: 'dotted' },
+          ]}
+          onChange={(style) => onChange({ style: style as OverlayTextOutline['style'] })}
+        />
+      </Row>
+      <Row label="Color">
+        <ColorOpacityField
+          hideLabel
+          label="Stroke color"
+          color={outline.color}
+          opacity={outline.opacity}
+          onColorChange={(color) => onChange({ color })}
+          onOpacityChange={(opacity) => onChange({ opacity })}
+        />
+      </Row>
+    </>
   )
 }

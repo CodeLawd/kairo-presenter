@@ -112,3 +112,53 @@ test('an activation or quota denial does not open a provider socket', async () =
   assert.equal(service.isConnected(), false)
   service.disconnect()
 })
+
+const flush = async (): Promise<void> => { for (let i = 0; i < 5; i++) await new Promise(resolve => setImmediate(resolve)) }
+test('a failed licence renewal is retried before transcription stops', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  let renewals = 0
+  const errors: Error[] = []
+  const service = new DeepgramSTTService({
+    ...fakeTranscriptionAccess,
+    renewTranscription: async () => { renewals++; if (renewals < 3) throw { status: 503, message: 'Kairo is busy' }; return fakeTranscriptionAccess.renewTranscription('session') },
+  }, () => ({ listen: { v1: { connect: async () => new Socket() } } }) as unknown as DeepgramClient)
+  service.configure('')
+  service.on('error', (error: Error) => errors.push(error))
+  await service.connect()
+  for (const seconds of [60, 5, 15]) { t.mock.timers.tick(seconds * 1000); await flush() }
+  assert.equal(renewals, 3)
+  assert.deepEqual(errors, [])
+  service.disconnect()
+})
+test('transcription stops with the server reason once renewal keeps failing', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const errors: Error[] = []
+  const service = new DeepgramSTTService({
+    ...fakeTranscriptionAccess,
+    renewTranscription: async () => { throw { status: 403, message: "This month's transcription minutes are used up" } },
+  }, () => ({ listen: { v1: { connect: async () => new Socket() } } }) as unknown as DeepgramClient)
+  service.configure('')
+  service.on('error', (error: Error) => errors.push(error))
+  await service.connect()
+  for (const seconds of [60, 5, 15, 30]) { t.mock.timers.tick(seconds * 1000); await flush() }
+  assert.equal(errors.length, 1)
+  assert.match(errors[0].message, /transcription minutes are used up/)
+  service.disconnect()
+})
+test('an unreachable licence server reconnects with a fresh session instead of stopping', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] })
+  let grants = 0
+  const errors: Error[] = []
+  const service = new DeepgramSTTService({
+    ...fakeTranscriptionAccess,
+    transcription: async () => { grants++; return fakeTranscriptionAccess.transcription() },
+    renewTranscription: async () => { throw { status: null, message: 'Could not reach Kairo. Check your internet connection.' } },
+  }, () => ({ listen: { v1: { connect: async () => new Socket() } } }) as unknown as DeepgramClient)
+  service.configure('')
+  service.on('error', (error: Error) => errors.push(error))
+  await service.connect()
+  for (const seconds of [60, 5, 15, 30, 2]) { t.mock.timers.tick(seconds * 1000); await flush() }
+  assert.equal(grants, 2)
+  assert.deepEqual(errors, [])
+  service.disconnect()
+})

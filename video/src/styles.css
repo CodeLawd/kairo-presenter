@@ -1,0 +1,2 @@
+/* Keep fixed-size design surfaces correct when padding is applied. */
+*, *::before, *::after { box-sizing: border-box; }

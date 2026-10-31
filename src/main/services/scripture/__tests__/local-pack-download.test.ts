@@ -77,6 +77,40 @@ test('matching bytes gunzip to the SQLite payload', async () => {
   assert.deepEqual(result, sqlite)
 })
 
+test('streamed downloads report measured bytes, then verification', async () => {
+  const sqlite = Buffer.from('Synthetic SQLite pack')
+  const compressed = gzipSync(sqlite)
+  const events: Array<{ phase: string; receivedBytes: number; totalBytes?: number }> = []
+  const fetcher = (async () => new Response(new ReadableStream({
+    start(controller) {
+      controller.enqueue(compressed.subarray(0, 8))
+      controller.enqueue(compressed.subarray(8))
+      controller.close()
+    },
+  }), { headers: { 'content-length': String(compressed.length) } })) as typeof fetch
+  assert.deepEqual(await downloadBiblePack('NKJV', fetcher, sha256Hex(compressed), p => events.push(p)), sqlite)
+  assert.ok(events.some(e => e.phase === 'downloading' && e.receivedBytes === 8))
+  assert.equal(events.at(-1)?.phase, 'verifying')
+  assert.equal(events.at(-1)?.receivedBytes, compressed.length)
+  assert.equal(events.at(-1)?.totalBytes, compressed.length)
+})
+
+test('unknown content length stays indeterminate and oversized streams stop early', async () => {
+  const compressed = gzipSync(Buffer.from('Synthetic payload'))
+  const events: Array<{ totalBytes?: number }> = []
+  const fetcher = (async () => new Response(compressed)) as typeof fetch
+  await downloadBiblePack('NKJV', fetcher, sha256Hex(compressed), p => events.push(p))
+  assert.ok(events.length > 0)
+  assert.ok(events.every(e => e.totalBytes === undefined))
+  let canceled = false
+  const oversized = (async () => new Response(new ReadableStream({
+    pull(controller) { controller.enqueue(new Uint8Array(6 * 1024 * 1024)) },
+    cancel() { canceled = true },
+  }))) as typeof fetch
+  await assert.rejects(downloadBiblePack('NKJV', oversized), /invalid size/)
+  assert.equal(canceled, true)
+})
+
 // ─── Temporary files ──────────────────────────────────────────────────────────
 
 test('temporary pack paths are unique, kindsafe and confined to the temp dir', () => {

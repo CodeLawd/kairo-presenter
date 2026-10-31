@@ -683,7 +683,21 @@ export interface ScriptureVerse {
   text: string
 }
 
+export interface ScriptureRowTranslation {
+  passageId: string
+  translation: ScriptureTranslation
+}
+
 export interface ScriptureSuggestion {
+  /** Recognition provenance, revalidated by main before licensed cached text can be used. */
+  cacheSource?: { bibleId: string; bookId: number; chapter: number; verse: number; fetchedAt: number; expiresAt: number }
+  quoteCorpusVersion?: number
+  quoteEvidence?: string
+  quoteRevision?: number
+  retracted?: boolean
+  provisional?: boolean
+  suggestionOnly?: boolean
+  ambiguous?: boolean
   id: string
   reference: string
   verses: ScriptureVerse[]
@@ -783,6 +797,16 @@ export interface LocalBiblePackStatus {
   chapterCount: number
   /** True once the full expected verse set for this translation is installed. */
   installed: boolean
+  installation?: LocalBibleInstallProgress
+}
+
+export interface LocalBibleInstallProgress {
+  translation: string
+  phase: 'downloading' | 'verifying' | 'installing' | 'ready' | 'failed'
+  receivedBytes: number
+  totalBytes?: number
+  revision: number
+  error?: string
 }
 
 /** A non-bundled translation present in the local bible.db (pack or download). */
@@ -1010,6 +1034,10 @@ export interface TranscriptWord {
 }
 
 export interface TranscriptResult {
+  /** Provider connection generation; audio offsets restart on reconnect. */
+  audioEpoch?: number
+  audioStart?: number
+  audioDuration?: number
   id: string
   text: string
   words: TranscriptWord[]
@@ -1019,6 +1047,9 @@ export interface TranscriptResult {
 }
 
 export interface InterimResult {
+  audioEpoch?: number
+  audioStart?: number
+  audioDuration?: number
   text: string
   stability: number
   timestamp: number
@@ -1171,6 +1202,8 @@ export interface ScriptureAPI {
   markRendered: (correlationId: string) => void
   /** Returns cleanup fn. Fires when auto-detection finds a scripture reference. */
   onSuggestion: (callback: (suggestion: ScriptureSuggestion) => void) => Unsubscribe
+  /** A spoken "switch to KJV": show this detected row in another translation. */
+  onRetranslateRow: (callback: (request: ScriptureRowTranslation) => void) => Unsubscribe
   approve: (suggestionId: string) => Promise<void>
   dismiss: (suggestionId: string) => Promise<void>
   /** Register a manually-built suggestion so orchestrator.approveSuggestion can present it. */
@@ -1203,14 +1236,9 @@ export interface ScriptureAPI {
   removeOfflineTranslation: (bibleId: string) => Promise<void>
   /** Returns cleanup fn. Fires as chapters are downloaded or refreshed. */
   onOfflineDownloadProgress: (callback: (value: ApiBibleDownloadProgress) => void) => Unsubscribe
-  /**
-   * Installs a user-supplied local Bible pack (any single-translation SQLite
-   * pack) into the userData bible.db. With no argument the main process shows
-   * a native file picker; the chosen path is never exposed to the renderer.
-   */
-  installLocalBiblePack: () => Promise<LocalBiblePackInstallResult | null>
   /** Downloads, verifies, and installs the registry pack for `translation`. */
   downloadLocalBibleTranslation: (translation: string) => Promise<LocalBiblePackInstallResult>
+  onLocalBibleInstallProgress: (callback: (progress: LocalBibleInstallProgress) => void) => Unsubscribe
   /** Whether a local copy of `translation` (e.g. 'NKJV') is installed. */
   getLocalBiblePackStatus: (translation: string) => Promise<LocalBiblePackStatus>
   /** Removes only the local `translation` rows and their FTS entries. */
@@ -1705,14 +1733,15 @@ export const IPC = {
     REFRESH_OFFLINE_TRANSLATION: 'scripture:refreshOfflineTranslation',  // invoke
     REMOVE_OFFLINE_TRANSLATION:  'scripture:removeOfflineTranslation',   // invoke
     OFFLINE_DOWNLOAD_PROGRESS:   'scripture:offlineDownloadProgress',    // push
-    INSTALL_LOCAL_BIBLE_PACK:    'scripture:installLocalBiblePack',      // invoke
     DOWNLOAD_LOCAL_BIBLE_TRANSLATION: 'scripture:downloadLocalBibleTranslation', // invoke
+    LOCAL_BIBLE_INSTALL_PROGRESS: 'scripture:localBibleInstallProgress', // push
     GET_LOCAL_BIBLE_PACK_STATUS: 'scripture:getLocalBiblePackStatus',    // invoke
     REMOVE_LOCAL_BIBLE_TRANSLATION: 'scripture:removeLocalBibleTranslation', // invoke
     LIST_INSTALLED_LOCAL_BIBLE_PACKS: 'scripture:listInstalledLocalBiblePacks', // invoke
     SET_AUTO_MODE:          'scripture:setAutoMode',             // invoke
     SET_CONFIDENCE:         'scripture:setConfidenceThreshold',  // invoke
     SUGGESTION:             'scripture:suggestion',              // push
+    RETRANSLATE_ROW:        'scripture:retranslateRow',          // push
   },
   TRANSCRIPTION: {
     GET_HISTORY:    'transcription:getHistory',     // invoke

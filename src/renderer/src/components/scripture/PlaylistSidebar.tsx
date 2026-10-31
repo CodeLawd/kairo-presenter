@@ -166,14 +166,14 @@ export function PlaylistSidebar({
   return (
     <aside
       data-playlist-sidebar=""
-      className="hairline-r flex h-full min-h-0 shrink-0 flex-col overflow-hidden bg-surface-secondary"
+      className="hairline-r sidebar-list flex h-full min-h-0 shrink-0 flex-col overflow-hidden"
       style={{ width }}
     >
       {/* The main way a playlist starts, so it comes first: one card, plain to see, one line of formats. */}
-      <div className="shrink-0 px-3 pt-3">
+      <div className="sidebar-sources shrink-0 px-3 pt-3">
         <button
           type="button"
-          className="flex w-full items-center gap-3 rounded-lg bg-surface-tertiary px-3 py-2.5 text-left transition-colors hover:bg-surface-elevated disabled:opacity-70"
+          className="flex w-full items-center gap-3 rounded-lg bg-black/15 px-3 py-2.5 text-left transition-colors hover:bg-black/25 disabled:opacity-70"
           onClick={onImportNotes}
           disabled={importingNotes}
           aria-busy={importingNotes}
@@ -196,8 +196,10 @@ export function PlaylistSidebar({
       {/* Then library, playlists under it — the same two-section rail the
           Lyrics page uses, so "where does this list come from" reads the same
           on both pages. A library owns kept passages; a playlist orders them. */}
-      <div className="shrink-0 px-1 pb-1.5 pt-2">
+      <div className="sidebar-sources shrink-0 px-1 pb-1 pt-2">
         <LibrarySection
+          banded
+          contextSelection
           kind="scripture"
           // One thing lit at a time: while search results fill the page, the
           // library filter is not what is on screen.
@@ -213,8 +215,8 @@ export function PlaylistSidebar({
               className={cn(
                 "group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] transition-colors disabled:opacity-40",
                 viewingSearch
-                  ? "row-selected"
-                  : "text-zinc-400 hover:bg-surface-tertiary hover:text-zinc-200",
+                  ? "row-context"
+                  : "text-zinc-400 hover:bg-white/5 hover:text-zinc-200",
               )}
             >
               <Search size={13} className="shrink-0" aria-hidden />
@@ -281,8 +283,13 @@ export function PlaylistSidebar({
         )}
       </div>
 
-      <div className="flex shrink-0 items-center gap-0.5 px-3 pb-1 pt-3">
-        <h2 className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">
+      {/* Three regions — library and playlists on the lighter block, the open
+          playlist's items below on the darker one, with a strip between:
+          library, playlists, and the open playlist's items. Playlists and
+          items scroll on their own, so an item never slides under the
+          Playlists heading. */}
+      <div className="sidebar-sources sidebar-heading">
+        <h2 className="flex-1">
           Playlists
         </h2>
         {/* Both ways a playlist arrives: from sermon notes, or a shared .kairo file. */}
@@ -321,11 +328,11 @@ export function PlaylistSidebar({
         </button>
       </div>
 
-      <div
-        className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
-        style={{ scrollbarGutter: "stable" }}
-      >
-        <div className="py-1">
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div
+          className={cn("sidebar-sources overflow-y-auto overscroll-contain pb-2", showItems ? "max-h-[35%] shrink-0" : "min-h-0 flex-1")}
+          style={{ scrollbarGutter: "stable" }}
+        >
           {plans.length === 0 && (
             <p className="px-3 pb-6 pt-4 text-center text-[11px] leading-relaxed text-slate-600">
               No playlists yet. Upload sermon notes above, or create one with ＋.
@@ -337,7 +344,7 @@ export function PlaylistSidebar({
               key={plan.id}
               className={cn(
                 "group/plan mx-1 rounded-md",
-                selectedPlanId === plan.id ? "row-selected" : "hover:bg-surface-tertiary",
+                selectedPlanId === plan.id ? "row-context" : "hover:bg-white/5",
               )}
             >
               {renamingPlanId === plan.id ? (
@@ -459,34 +466,16 @@ export function PlaylistSidebar({
         </div>
 
         {showItems && (
-          <div className="mt-2">
-            <div className="flex items-center justify-between px-3 pb-1 pt-2">
-              <h3 className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Items</h3>
-              <span className="text-[10px] tabular-nums text-zinc-500">
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="sidebar-band">
+              <h3 className="flex-1 tabular-nums">
                 {filteredItems.length === openPlanItems.length
                   ? openPlanItems.length
-                  : `${filteredItems.length}/${openPlanItems.length}`}
-              </span>
+                  : `${filteredItems.length} of ${openPlanItems.length}`}{" "}
+                {openPlanItems.length === 1 ? "item" : "items"}
+              </h3>
             </div>
-
-            {openPlanItems.length > 8 && (
-              <div className="px-2 pb-1.5">
-                <label className="relative block">
-                  <Search
-                    size={12}
-                    className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-slate-500"
-                    aria-hidden="true"
-                  />
-                  <Input
-                    value={itemQuery}
-                    onChange={(event) => setItemQuery(event.target.value)}
-                    placeholder="Filter items…"
-                    className="h-8 pl-7 text-xs"
-                    aria-label="Filter playlist items"
-                  />
-                </label>
-              </div>
-            )}
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain" style={{ scrollbarGutter: "stable" }}>
 
             {openPlanItems.length === 0 ? (
               <div className="px-3 pb-4 pt-1 text-center">
@@ -526,7 +515,7 @@ export function PlaylistSidebar({
                       itemSelect.isSelected(item.id)
                         ? PICKED_ROW
                         : activeItemId === item.id
-                          ? "row-selected"
+                          ? "row-focused"
                           : "text-slate-300 hover:bg-surface-tertiary",
                       draggingItemId === item.id && "opacity-40",
                       dragOverItemId === item.id &&
@@ -612,9 +601,31 @@ export function PlaylistSidebar({
                 onClear={itemSelect.clear}
               />
             )}
+            </div>
           </div>
         )}
       </div>
+
+      {/* Pinned under the list, like the Lyrics filter, so it stays put while
+          the items scroll. */}
+      {showItems && openPlanItems.length > 8 && (
+        <div className="shrink-0 p-2">
+          <label className="relative block">
+            <Search
+              size={12}
+              className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-slate-500"
+              aria-hidden="true"
+            />
+            <Input
+              value={itemQuery}
+              onChange={(event) => setItemQuery(event.target.value)}
+              placeholder="Filter"
+              className="h-7 rounded-full border-0 bg-[rgb(var(--sidebar-field))] pl-7 text-xs dark:bg-[rgb(var(--sidebar-field))]"
+              aria-label="Filter playlist items"
+            />
+          </label>
+        </div>
+      )}
 
       {showAddTarget && plans.length > 0 && (
         <div className="shrink-0 px-3 py-3">

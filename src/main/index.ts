@@ -6,6 +6,7 @@ import {
   crashReporter,
   Menu,
   nativeImage,
+  nativeTheme,
   shell,
   protocol,
   ipcMain,
@@ -302,6 +303,15 @@ function setupApplicationMenu(): void {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
+/**
+ * macOS draws the window's native blur in the system appearance unless told
+ * otherwise; a light-mode Mac washed Kairo's dark header and rail out to white.
+ * Pin the appearance to Kairo's own theme so the blur matches the app.
+ */
+function syncNativeAppearance(): void {
+  nativeTheme.themeSource = store.get("display").theme === "light" ? "light" : "dark";
+}
+
 function createWindow(): void {
   const icon = nativeImage.createFromPath(
     join(__dirname, "../../resources/icon.png"),
@@ -322,11 +332,13 @@ function createWindow(): void {
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
     // Centred in the 60px header (.app-header), beside the page title.
     trafficLightPosition: { x: 18, y: 24 },
-    // Opaque dark shell. macOS used to use a transparent window plus native
-    // vibrancy, but the `under-window` blur tracks the *system* appearance, so a
-    // Mac in light mode washed the header and rail out to white. A solid surface
-    // keeps the chrome dark regardless of the desktop theme.
-    backgroundColor: "#111319",
+    // Native blur shows through the shell chrome (header and rail); workspaces
+    // stay opaque. The blur follows Kairo's own light/dark theme, not the Mac's
+    // — see syncNativeAppearance — so a light-mode Mac no longer washes it white.
+    backgroundColor: process.platform === "darwin" ? "#00000000" : "#111319",
+    ...(process.platform === "darwin"
+      ? { vibrancy: "under-window" as const, visualEffectState: "followWindow" as const }
+      : {}),
     webPreferences: {
       preload: join(__dirname, "../preload/index.js"),
       sandbox: false,
@@ -538,6 +550,8 @@ app.whenReady().then(async () => {
   // without the operator asking for it.
   updaterService.init();
 
+  syncNativeAppearance();
+  store.onDidChange("display", syncNativeAppearance);
   createWindow();
 
   // After the main window exists, so the manager can tell which display holds
@@ -609,6 +623,7 @@ app.on("before-quit", (event) => {
     return;
   }
   if (!ndiStopped) {
+    scriptureService.closeQuoteWorker();
     ndiStopped = true;
     ndiService.stop().catch((err) => {
       log.error("[NDI] stop() failed during quit:", (err as Error).message);

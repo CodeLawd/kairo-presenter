@@ -1,4 +1,4 @@
-import { Plus } from '@/icons'
+import { ChevronDown, Plus } from '@/icons'
 import { SegmentedControl } from '@/components/shared/SegmentedControl'
 import { Slider as SliderPrimitive } from '@/components/ui/slider'
 import { overlayMediaUrl } from '@shared/overlay-template'
@@ -70,6 +70,40 @@ export function LabeledSegmented<T extends string>({
         fit
         itemClassName={options.length > 4 ? 'px-1.5 text-[11px]' : undefined}
       />
+    </div>
+  )
+}
+
+/** A choice of several as one compact dropdown — for lists too long for a segmented control. */
+export function SelectField<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string
+  value: T
+  options: { value: T; label: string }[]
+  onChange: (v: T) => void
+}): React.ReactElement {
+  return (
+    <div>
+      <p className="label">{label}</p>
+      <div className="relative flex h-8 items-center rounded-md bg-surface-tertiary pl-2.5 pr-8 text-[13px] text-slate-200">
+        <select
+          className="h-full w-full appearance-none bg-transparent outline-none"
+          value={value}
+          onChange={(event) => onChange(event.target.value as T)}
+          aria-label={label}
+        >
+          {options.map((opt) => (
+            <option key={opt.value} value={opt.value} className="bg-surface-secondary text-slate-200">
+              {opt.label}
+            </option>
+          ))}
+        </select>
+        <ChevronDown size={14} className="pointer-events-none absolute right-2.5 text-slate-500" aria-hidden="true" />
+      </div>
     </div>
   )
 }

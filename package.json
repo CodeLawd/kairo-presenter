@@ -54,7 +54,9 @@
     "test:syphon": "node --test native/syphon/tests/*.test.mjs",
     "test:recorder": "node --test native/recorder/tests/*.test.mjs",
     "test:capture": "bun run build:recorder && electron tests/capture.integration.cjs",
-    "test:decklink": "node --test native/decklink/tests/*.test.mjs && node --import tsx --test native/decklink/tests/client.test.ts"
+    "test:decklink": "node --test native/decklink/tests/*.test.mjs && node --import tsx --test native/decklink/tests/client.test.ts",
+    "replay:scripture": "cross-env ELECTRON_RUN_AS_NODE=1 electron --import tsx scripts/replay-scripture.ts",
+    "replay:audio": "electron out/main/scripture-audio-replay.js"
   },
   "dependencies": {
     "@deepgram/sdk": "^5.3.0",
