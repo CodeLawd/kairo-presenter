@@ -14,6 +14,15 @@ export type ChangelogEntry = {
 
 export const changelog: ChangelogEntry[] = [
   {
+    version: '1.0.24',
+    date: '2026-11-01',
+    title: 'Engage loads reliably when the connection changes',
+    notes: [
+      'Engage uses a backup connection when the usual Kairo address cannot be reached, and shows an offline message instead of loading forever.',
+      'Kairo opens without a Bible translation warning when its cloud connection is unavailable; installed translations remain ready.',
+    ],
+  },
+  {
     version: '1.0.23',
     date: '2026-11-01',
     title: 'Questions and polls for your congregation',

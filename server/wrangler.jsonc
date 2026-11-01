@@ -2,6 +2,8 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "kairo-api",
   "main": "cloudflare/index.ts",
+  "workers_dev": true,
+  "preview_urls": false,
   "compatibility_date": "2026-10-24",
   "observability": { "enabled": true },
   "routes": [{ "pattern": "api.kairopresenter.com", "custom_domain": true }],

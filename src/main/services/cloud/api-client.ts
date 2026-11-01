@@ -11,13 +11,18 @@ export interface ApiError {
 
 export class CloudApiClient {
   private http: AxiosInstance;
+  private baseUrl: string;
+  private selectedBaseUrl: string | null = null;
+  private selecting: Promise<string> | null = null;
   private accessToken: string | null = null;
   private refreshing: Promise<boolean> | null = null;
 
   constructor(
     baseUrl: string,
     private readonly onRefresh: () => Promise<string | null>,
+    private readonly fallbackBaseUrl?: string,
   ) {
+    this.baseUrl = baseUrl;
     this.http = axios.create({
       baseURL: baseUrl,
       timeout: REQUEST_TIMEOUT_MS,
@@ -26,6 +31,8 @@ export class CloudApiClient {
   }
 
   setBaseUrl(baseUrl: string): void {
+    this.baseUrl = baseUrl;
+    this.selectedBaseUrl = null;
     this.http.defaults.baseURL = baseUrl;
   }
 
@@ -44,19 +51,31 @@ export class CloudApiClient {
       timeoutMs?: number;
     } = {},
   ): Promise<T> {
+    const endpoint = await this.endpoint();
     const authenticated = options.authenticated ?? true;
     if (authenticated && !this.accessToken && options.allowRefresh !== false) {
       await this.refreshOnce();
     }
     try {
-      return await this.send<T>(method, path, body, authenticated, options.timeoutMs);
+      return await this.send<T>(method, path, body, authenticated, options.timeoutMs, endpoint);
     } catch (error) {
+      if (this.fallbackBaseUrl && !(error as AxiosError).response) {
+        this.selectedBaseUrl = null;
+        // A timed-out write may have reached the server. Only reads are safe
+        // to repeat against the other address automatically.
+        if (method === "get") {
+          const retryEndpoint = await this.endpoint();
+          if (retryEndpoint !== endpoint) {
+            return this.send<T>(method, path, body, authenticated, options.timeoutMs, retryEndpoint);
+          }
+        }
+      }
       const status = (error as AxiosError).response?.status ?? null;
       const refreshable =
         authenticated && status === 401 && options.allowRefresh !== false;
 
       if (refreshable && (await this.refreshOnce())) {
-        return this.send<T>(method, path, body, authenticated, options.timeoutMs);
+        return this.send<T>(method, path, body, authenticated, options.timeoutMs, endpoint);
       }
       throw toApiError(error);
     }
@@ -68,6 +87,7 @@ export class CloudApiClient {
     body: unknown,
     authenticated: boolean,
     timeoutMs?: number,
+    endpoint = this.baseUrl,
   ): Promise<T> {
     const headers =
       authenticated && this.accessToken
@@ -75,12 +95,36 @@ export class CloudApiClient {
         : undefined;
     const response = await this.http.request<T>({
       method,
-      url: path,
+      url: path.startsWith(`${this.baseUrl}/`) && endpoint !== this.baseUrl
+        ? `${endpoint}${path.slice(this.baseUrl.length)}`
+        : path,
+      baseURL: endpoint,
       data: body,
       headers,
       timeout: timeoutMs,
     });
     return response.data;
+  }
+
+  /** Pick a reachable API address before a write, so failover cannot duplicate it. */
+  private async endpoint(): Promise<string> {
+    if (!this.fallbackBaseUrl) return this.baseUrl;
+    if (this.selectedBaseUrl) return this.selectedBaseUrl;
+    if (!this.selecting) {
+      this.selecting = (async () => {
+        for (const candidate of [this.baseUrl, this.fallbackBaseUrl!]) {
+          try {
+            await this.http.get(`${candidate}/v1/health`, { timeout: 3_000 });
+            this.selectedBaseUrl = candidate;
+            if (candidate === this.fallbackBaseUrl) log.info('[Cloud] Using backup API route');
+            return candidate;
+          } catch { /* Try the next address. */ }
+        }
+        // Preserve the normal API error when neither address is reachable.
+        return this.baseUrl;
+      })().finally(() => { this.selecting = null; });
+    }
+    return this.selecting;
   }
 
   /** Collapses concurrent refreshes into one — see the class comment. */

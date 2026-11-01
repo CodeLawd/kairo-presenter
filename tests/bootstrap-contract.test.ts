@@ -38,8 +38,9 @@ test('bootstrap loads local resources only', () => {
   ]) {
     assert.ok(!block.includes(forbidden), `bootstrap must not call ${forbidden}`)
   }
-  // Translation availability is read without a key so it cannot hit the network.
-  assert.match(block, /scriptureService\.getTranslationOptions\(\)/)
+  // The service defaults to managed API access, so startup must explicitly
+  // request local translation availability without a network key.
+  assert.match(block, /scriptureService\.getTranslationOptions\(['"]['"]\)/)
 })
 
 test('the app shell does not mount until bootstrap is ready', () => {

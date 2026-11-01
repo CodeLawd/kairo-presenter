@@ -35,6 +35,9 @@ import { SecureStore, createSecureStore } from './secure-store'
  */
 const API_BASE_URL = import.meta.env.MAIN_VITE_API_URL || 'http://localhost:3000'
 export const AUDIENCE_API_BASE_URL = audienceApiBaseUrl(API_BASE_URL, import.meta.env.MAIN_VITE_AUDIENCE_API_URL)
+const API_FALLBACK_URL = API_BASE_URL === 'https://api.kairopresenter.com'
+  ? 'https://kairo-api.alexander-joshua2018.workers.dev'
+  : undefined
 
 const REFRESH_TOKEN_NAME = 'refresh-token'
 /** Quiet background refresh — the operator never sees this happen. */
@@ -101,7 +104,7 @@ export class CloudSessionService {
       // `credentialsPersisted` from the snapshot to say so in the UI.
       log.warn('[Session] OS keychain unavailable — sign-in will not persist between launches')
     }
-    this.api = new CloudApiClient(API_BASE_URL, () => this.refreshAccessToken())
+    this.api = new CloudApiClient(API_BASE_URL, () => this.refreshAccessToken(), API_FALLBACK_URL)
   }
 
   getSession(): SessionSnapshot {
@@ -433,7 +436,7 @@ export class CloudSessionService {
 
   async engageRequest<T>(method: 'get' | 'post', path = '', body?: unknown): Promise<T> {
     if (this.snapshot.state === 'stale') this.nextRefreshAllowedAt = 0
-    try { return await this.api.request<T>(method, `${AUDIENCE_API_BASE_URL}/v1/engage${path}`, body, {timeoutMs:90000}) }
+    try { return await this.api.request<T>(method, `${AUDIENCE_API_BASE_URL}/v1/engage${path}`, body, {timeoutMs: method === 'get' ? 10_000 : 90_000}) }
     catch(error) { throw new Error(audienceRoomError(error, ['localhost','127.0.0.1'].includes(new URL(AUDIENCE_API_BASE_URL).hostname))) }
   }
 

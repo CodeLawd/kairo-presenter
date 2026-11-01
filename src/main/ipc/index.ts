@@ -1432,8 +1432,8 @@ function registerAppHandlers(): void {
         settings: async () => settingsForRenderer(),
         orchestrator: async () => orchestrator.getStatus(),
         transcription: async () => sttService.getHistory(),
-        // Cached/local availability only: passing no key keeps this off the network.
-        translations: () => scriptureService.getTranslationOptions(),
+        // An explicit empty key avoids the managed API default during startup.
+        translations: () => scriptureService.getTranslationOptions(''),
         sermonPlans: async () => sermonPlanStore.list(),
         livePlan: async () => livePlanService.getState(),
         lyrics: async () => lyricsService.getLibrary(),

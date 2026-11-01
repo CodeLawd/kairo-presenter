@@ -88,11 +88,12 @@ export function Engagements({
   const refresh = (): void => {
     if (!signedIn) return
     if (!online) {
-      setLoading(true)
-      void window.api.account.syncOrgSecrets().catch(() => setLoading(false))
+      setLoading(false)
+      setError('Kairo is offline. Your engagements will load when the connection returns.')
       return
     }
     setLoading(true)
+    setError('')
     void window.api.audience
       .listEngagements()
       .then((next) => {
@@ -102,11 +103,7 @@ export function Engagements({
       })
       .catch((e) => {
         const msg = cleanIpcError(e)
-        if (/sign in/i.test(msg)) {
-          void window.api.account.syncOrgSecrets().catch(() => undefined)
-        } else {
-          setError(msg)
-        }
+        setError(msg)
       })
       .finally(() => setLoading(false))
   }
