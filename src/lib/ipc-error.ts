@@ -22,7 +22,7 @@ export function cleanIpcError(error: unknown): string {
         ? error
         : String((error as { message?: unknown } | null)?.message ?? error ?? '')
 
-  let message = raw.replace(REMOTE_WRAPPER, '').trim()
+  let message = raw.replace(REMOTE_WRAPPER, '').replace(/\n\s*at\s+[\s\S]*$/, '').trim()
   // A handler that rethrows can nest the prefix more than once.
   while (LEADING_ERROR.test(message)) {
     message = message.replace(LEADING_ERROR, '').trim()

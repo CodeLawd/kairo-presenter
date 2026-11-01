@@ -343,7 +343,7 @@ it('a live web page reaches the screen once, reloads on request, and leaves with
   try {
     await surface.restore()
     const win = WindowDouble.windows.at(-1)!
-    const layers = { message: '', props: '', logo: '', camera: null, info: null }
+    const layers = { poll: '', question: '', message: '', props: '', logo: '', camera: null, info: null }
     const sent = (): string[] => win.commands.filter((command) => command.includes('__setWeb'))
 
     await surface.setLayers({ ...layers, web: { url: 'https://example.com/', reload: 0 } })
@@ -377,7 +377,7 @@ it('the live web page scrolls with the preview, and only while one is live', asy
   try {
     await surface.restore()
     const win = WindowDouble.windows.at(-1)!
-    const layers = { message: '', props: '', logo: '', camera: null, info: null }
+    const layers = { poll: '', question: '', message: '', props: '', logo: '', camera: null, info: null }
     surface.scrollWeb(0, 400)
     assert.deepEqual(win.webScripts, [], 'nothing to scroll without a page')
     await surface.setLayers({ ...layers, web: { url: 'https://example.com/', reload: 0 } })

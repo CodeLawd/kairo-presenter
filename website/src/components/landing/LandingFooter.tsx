@@ -10,6 +10,7 @@ import Link from "next/link";
 const LINKS = [
   ["Product", "/#product"],
   ["Screens", "/#screens"],
+  ["Engage", "/#engage"],
   ["Questions", "/#questions"],
   ["Download", "/#get"],
   ["Changelog", "/changelog"],

@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common'
+import { Inject, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common'
 import { render } from '@react-email/render'
 import { APP_CONFIG } from '../config/config.module'
 import type { AppConfig } from '../config/env'
@@ -9,6 +9,7 @@ import {
   AccountDeletionEmail,
   accountDeletionEmailText,
 } from './templates/account-deletion.email'
+import { EngageInviteEmail, engageInviteEmailText } from './templates/engage-invite.email'
 
 /**
  * Renders the React Email templates and hands them to Brevo.
@@ -16,7 +17,8 @@ import {
  * With no BREVO_API_KEY the message is logged instead of sent, including the
  * link it carries. That is what lets a developer run signup and verification
  * end to end with no third-party account — and it means a missing key degrades
- * to "no email" rather than to a failed request.
+ * to "no email" rather than to a failed request. Engage capability invitations
+ * deliberately bypass that fallback: they must be delivered or explicitly fail.
  */
 @Injectable()
 export class MailService {
@@ -29,6 +31,19 @@ export class MailService {
 
   get enabled(): boolean {
     return this.transport !== null
+  }
+
+  /** Capability links must never use the development message logger. */
+  async sendEngageInvite(to: string, engagementName: string, link: string, orgName?: string): Promise<void> {
+    if (!this.transport) throw new ServiceUnavailableException('Engage invitation email is unavailable')
+    const props = { engagementName, orgName, link, baseUrl: this.config.publicWebUrl }
+    const sent = await this.transport.send({
+      to,
+      subject: `You've been invited to collaborate on ${engagementName}`,
+      html: await render(EngageInviteEmail(props)),
+      text: engageInviteEmailText(props),
+    }, true)
+    if (!sent) throw new ServiceUnavailableException('Engage invitation email could not be sent')
   }
 
   async sendWelcome(

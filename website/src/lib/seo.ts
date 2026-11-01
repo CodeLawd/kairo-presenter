@@ -9,7 +9,7 @@ export const isIndexable = process.env.SITE_INDEXING !== 'false' &&
 export const siteName = 'Kairo Presenter'
 export const siteTitle = 'Kairo Presenter — Church Presentation & Service Planning'
 export const siteDescription =
-  'Plan church services, present lyrics, Scripture, slides and media, manage stage and NDI screens, and create sermon recaps with Kairo Presenter.'
+  'Plan church services, present lyrics, Scripture, slides and media, manage stage and NDI screens, run live audience Q&A and polls, and create sermon recaps with Kairo Presenter.'
 export const socialImage = {
   url: '/brand/kairo-og.jpg',
   width: 1200,

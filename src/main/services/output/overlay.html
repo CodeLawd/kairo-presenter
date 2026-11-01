@@ -122,6 +122,8 @@
         <div class="pa-slot" id="pa-elements-above-layer"></div>
         <div class="pa-slot" id="pa-props-layer"></div>
         <div class="pa-slot" id="pa-message-layer"></div>
+        <div class="pa-slot" id="pa-poll-layer"></div>
+        <div class="pa-slot" id="pa-question-layer"></div>
         <div class="pa-slot" id="pa-info-layer">
           <div id="pa-info-bar"><span id="pa-info-clock"></span><span id="pa-info-timer"></span></div>
           <div id="pa-info-message"></div>
@@ -159,6 +161,8 @@
         text: document.getElementById('pa-text-layer'),
         elementsAbove: document.getElementById('pa-elements-above-layer'),
         props: document.getElementById('pa-props-layer'),
+        poll: document.getElementById('pa-poll-layer'),
+        question: document.getElementById('pa-question-layer'),
         message: document.getElementById('pa-message-layer'),
         logo: document.getElementById('pa-logo-layer'),
       };
@@ -724,6 +728,8 @@
 
       // ─── Program layers (markup from src/lib/program.ts, already escaped) ──
 
+      window.__setPoll = function (html) { swapLayer(layers.poll, html || '', config.transitionMs); };
+      window.__setQuestion = function (html) { swapLayer(layers.question, html || '', config.transitionMs); };
       window.__setMessage = function (html) {
         swapLayer(layers.message, html || '', config.transitionMs);
       };

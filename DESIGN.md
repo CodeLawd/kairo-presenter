@@ -178,3 +178,9 @@ previews, deduplicated across searches, and never holds up the results list.
 Candidate lyric pages load concurrently in a bounded batch, retaining search
 order. Selection/import reuses cached or in-flight preparation; review remains
 required before a preview can be labelled reviewed.
+
+Audience uses the coral tool hue and the existing surface, input and button tokens.
+Keep the moderation queue on the left and the red-outlined live question preview
+and join card on the right. Approve and Show are separate actions; answering or
+hiding a live question removes it from screens. The audience phone page follows
+system light/dark appearance, has 48px touch controls and retains unsent drafts.

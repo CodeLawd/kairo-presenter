@@ -26,6 +26,7 @@ import { LandingFooter } from "@/components/landing/LandingFooter";
 import { OperatorDemo } from "@/components/landing/OperatorDemo";
 import { RotatingWord } from "@/components/landing/RotatingWord";
 import { ScreenViews } from "@/components/landing/ScreenViews";
+import { EngageStory } from "@/components/landing/EngageStory";
 import { StretchyFooter } from "@/components/landing/StretchyFooter";
 import { ThesisLines } from "@/components/landing/ThesisLines";
 import "./landing.css";
@@ -139,6 +140,7 @@ const features = [
   },
 ];
 
+
 const questions = [
   {
     question: "Does Kairo run my screens directly?",
@@ -155,6 +157,11 @@ const questions = [
       "What if the pastor paraphrases instead of reading the reference?",
     answer:
       "It can suggest a passage from the words being spoken, even without a book and chapter. Check the suggestion before sending it live.",
+  },
+  {
+    question: "Can the congregation send questions during the service?",
+    answer:
+      "Yes. With Engage, people join from a short code or QR on the audience page to ask questions, vote and answer polls, with no app or account. Moderators can approve and reply from the website, and only you put anything on screen.",
   },
   {
     question: "Does it need the internet?",
@@ -245,6 +252,8 @@ export default function HomePage(): React.ReactElement {
                     "Sermon transcription and recaps",
                     "PowerPoint and PDF import",
                     "CCLI song reporting",
+                    "Live audience Q&A and polls",
+                    "Question moderation by email invite",
                   ],
                 },
                 {
@@ -277,6 +286,7 @@ export default function HomePage(): React.ReactElement {
             {[
               ["Product", "#product"],
               ["Screens", "#screens"],
+              ["Engage", "#engage"],
               ["Questions", "#questions"],
             ].map(([text, href]) => (
               <a
@@ -429,6 +439,28 @@ export default function HomePage(): React.ReactElement {
                     Every screen, its own job.
                   </h2>
                 </ScreenViews>
+              </div>
+            </div>
+          </section>
+
+          <section
+            className="landing-engage relative isolate overflow-clip bg-[#0A0B10]"
+            id="engage"
+            aria-labelledby="engage-title"
+          >
+            <div className="landing-engage-pin relative py-[80px]">
+              <div
+                className="pointer-events-none absolute inset-0 -z-1 bg-[radial-gradient(ellipse_55%_60%_at_12%_15%,rgba(255,122,92,.16),transparent_70%),radial-gradient(ellipse_45%_50%_at_90%_90%,rgba(123,92,255,.14),transparent_70%)]"
+                aria-hidden="true"
+              />
+              <div className={`${container} w-full`}>
+                <EngageStory>
+                  <p className={label}>ENGAGE</p>
+                  <h2 className={`${heading} mt-6`} id="engage-title" data-reveal="">
+                    The room asks.{" "}
+                    <span className="text-[#7D8399]">You choose what&apos;s shown.</span>
+                  </h2>
+                </EngageStory>
               </div>
             </div>
           </section>

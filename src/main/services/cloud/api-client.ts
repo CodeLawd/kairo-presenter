@@ -45,6 +45,9 @@ export class CloudApiClient {
     } = {},
   ): Promise<T> {
     const authenticated = options.authenticated ?? true;
+    if (authenticated && !this.accessToken && options.allowRefresh !== false) {
+      await this.refreshOnce();
+    }
     try {
       return await this.send<T>(method, path, body, authenticated, options.timeoutMs);
     } catch (error) {

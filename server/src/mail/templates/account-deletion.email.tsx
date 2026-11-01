@@ -1,5 +1,5 @@
 import { Heading, Section, Text } from 'react-email'
-import { EmailLayout, PRODUCT_NAME } from './layout'
+import { BRAND_INK, EmailLayout, PRODUCT_NAME } from './layout'
 
 export interface AccountDeletionEmailProps {
   firstName: string
@@ -16,18 +16,62 @@ export interface AccountDeletionEmailProps {
 export function AccountDeletionEmail({ firstName, code }: AccountDeletionEmailProps): React.ReactElement {
   return (
     <EmailLayout preview={`${code} is your code to delete your ${PRODUCT_NAME} account`}>
-      <Section className="rounded-lg bg-background-muted px-6 py-8 text-center">
-        <Heading className="m-0 text-2xl font-bold text-foreground">Delete your account</Heading>
-        <Text className="mt-3 text-base text-foreground-muted">
-          Hi {firstName}, enter this code in the {PRODUCT_NAME} dashboard to confirm you want to
-          delete your account.
-        </Text>
-        <Text className="my-6 text-4xl font-bold tracking-[0.3em] text-foreground">{code}</Text>
-        <Text className="mt-2 text-sm text-foreground-muted">Expires in 15 minutes.</Text>
-      </Section>
+      <Section>
+        <Heading
+          style={{
+            color: BRAND_INK,
+            fontSize: '24px',
+            fontWeight: 700,
+            letterSpacing: '-0.02em',
+            lineHeight: '32px',
+            margin: '0 0 16px',
+          }}
+        >
+          Delete your {PRODUCT_NAME} account
+        </Heading>
 
-      <Section className="py-4">
-        <Text className="text-sm text-foreground-muted">
+        <Text
+          style={{
+            color: BRAND_INK,
+            fontSize: '16px',
+            lineHeight: '26px',
+            margin: '0 0 20px',
+          }}
+        >
+          Hi <strong>{firstName}</strong>, enter this code in the {PRODUCT_NAME} dashboard to
+          confirm you want to delete your account. The code is <strong>valid for 15 minutes</strong>.
+        </Text>
+
+        <Section
+          style={{
+            backgroundColor: '#E8EAF0',
+            borderRadius: '10px',
+            marginBottom: '20px',
+            padding: '20px 24px',
+            textAlign: 'center',
+          }}
+        >
+          <Text
+            style={{
+              color: BRAND_INK,
+              fontSize: '32px',
+              fontWeight: 700,
+              letterSpacing: '0.28em',
+              margin: 0,
+            }}
+          >
+            {code}
+          </Text>
+        </Section>
+
+        <Text
+          style={{
+            color: '#666B7E',
+            fontSize: '14px',
+            lineHeight: '22px',
+            margin: 0,
+          }}
+        >
           If you did not ask for this, nothing has been deleted. Someone may be signed in to your
           account — sign out your devices from the dashboard.
         </Text>
@@ -46,5 +90,8 @@ export function accountDeletionEmailText({ firstName, code }: AccountDeletionEma
     '',
     'If you did not ask for this, nothing has been deleted. Someone may be signed in to your',
     'account — sign out your devices from the dashboard.',
+    '',
+    'Best,',
+    `Your ${PRODUCT_NAME} team`,
   ].join('\n')
 }

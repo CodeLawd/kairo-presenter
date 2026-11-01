@@ -91,6 +91,8 @@ export interface CameraLayer {
 
 /** The program layers above the slide. Markup comes from `src/lib/program.ts`. */
 export interface SurfaceLayers {
+  poll: string
+  question: string
   message: string
   props: string
   logo: string
@@ -114,7 +116,7 @@ export interface FrameTap {
   pixels(bgra: Buffer, width: number, height: number): void
 }
 
-const EMPTY_LAYERS: SurfaceLayers = { message: '', props: '', logo: '', camera: null, web: null, info: null }
+const EMPTY_LAYERS: SurfaceLayers = { poll: '', question: '', message: '', props: '', logo: '', camera: null, web: null, info: null }
 
 interface RenderState {
   reference: string
@@ -493,6 +495,8 @@ export class ProgramSurface extends ManagedWindow {
     if (win.isDestroyed()) return
     const next = this.layers
     const calls: string[] = []
+    if (next.poll !== previous.poll) calls.push(`window.__setPoll(${JSON.stringify(next.poll)})`)
+    if (next.question !== previous.question) calls.push(`window.__setQuestion(${JSON.stringify(next.question)})`)
     if (next.message !== previous.message) calls.push(`window.__setMessage(${JSON.stringify(next.message)})`)
     if (next.props !== previous.props) calls.push(`window.__setProps(${JSON.stringify(next.props)})`)
     if (next.logo !== previous.logo) calls.push(`window.__setLogo(${JSON.stringify(next.logo)})`)
@@ -842,5 +846,5 @@ function sameCamera(a: CameraLayer | null, b: CameraLayer | null): boolean {
 }
 
 function hasAnyLayer(layers: SurfaceLayers): boolean {
-  return !!(layers.message || layers.props || layers.logo || layers.camera || layers.web || layers.info)
+  return !!(layers.poll || layers.question || layers.message || layers.props || layers.logo || layers.camera || layers.web || layers.info)
 }

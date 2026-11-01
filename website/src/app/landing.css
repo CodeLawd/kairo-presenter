@@ -193,6 +193,17 @@ html:has([data-stretchy-page]) { overscroll-behavior-y: none; }
   }
 }
 
+/* Engage: same pinned track, a full-viewport stage while its four beats play. */
+.landing-engage-pin { min-height: 100svh; display: flex; align-items: center; }
+@media (min-width: 1001px) and (min-height: 700px) {
+  .landing-engage { height: 450svh; }
+  .landing-engage-pin { position: sticky; top: 0; height: 100svh; padding-block: 0; }
+}
+@keyframes engage-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .landing-engage * { animation: none !important; transition: none !important; }
+}
+
 /* Legal pages: long-form prose in the site's dark palette. */
 .landing-prose h2 { font-size: clamp(22px, 2.2vw, 28px); line-height: 1.2; font-weight: 500; letter-spacing: -.03em; color: #F2F3F7; }
 .landing-prose h3 { margin-top: 1.75rem; font-size: 17px; font-weight: 600; color: #F2F3F7; }

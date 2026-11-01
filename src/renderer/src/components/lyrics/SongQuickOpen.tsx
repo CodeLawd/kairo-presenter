@@ -1,6 +1,7 @@
 import { LyricsReviewNotice } from './LyricsReviewNotice'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Download, Globe, ListMusic, Loader2, Music2, Search, X } from '@/icons'
+import { MovableDialog } from '@/components/shared/MovableDialog'
 import { cn } from '@/lib/utils'
 import { activeSetlist, runSetlistCommand, startSongDrag, useSetlistStore } from '@/stores/useSetlist'
 import { startLibraryItemDrag } from '@/stores/useLibraries'
@@ -243,10 +244,11 @@ export function SongQuickOpen({ songs, onClose, onOpen }: SongQuickOpenProps): R
         dragging && 'pointer-events-none bg-transparent [&_section]:opacity-60 [&_aside]:opacity-0',
       )}
       role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
+      <MovableDialog className="flex w-full max-w-5xl items-start justify-center">
       <div className="flex w-full max-w-5xl items-start justify-center gap-3" onKeyDown={handleKeyDown}>
       <section role="dialog" aria-modal="true" aria-label="Search song library"
         className="flex w-[30rem] shrink-0 flex-col overflow-hidden rounded-xl modal-glass animate-spring-in motion-reduce:animate-none">
-        <div className="flex h-12 shrink-0 items-center gap-2.5 px-3.5">
+        <div data-modal-drag className="flex h-12 shrink-0 items-center gap-2.5 px-3.5">
           <Search size={17} className="shrink-0 text-zinc-500" aria-hidden="true" />
           <input ref={inputRef} value={query} onChange={(event) => setQuery(event.target.value)}
             placeholder="Search titles, artists or lyrics" aria-label="Search songs and lyrics"
@@ -481,6 +483,7 @@ export function SongQuickOpen({ songs, onClose, onOpen }: SongQuickOpenProps): R
         </aside>
       )}
       </div>
+      </MovableDialog>
     </div>
   )
 }

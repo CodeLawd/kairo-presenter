@@ -110,7 +110,7 @@ test('screens publish their mutations back to the shared snapshot', () => {
   assert.match(read('src/renderer/src/components/scripture/Scripture.tsx'), /setSermonPlans\(plans\)/)
   assert.match(read('src/renderer/src/components/lyrics/Lyrics.tsx'), /setLyrics\(songs\)/)
   assert.match(read('src/renderer/src/components/theme/ThemeEditor.tsx'), /patchSettings\('themeLibrary', next\)/)
-  assert.match(read('src/renderer/src/components/settings/Settings.tsx'), /publish\('scripture', settings\.scripture\)/)
+  assert.match(read('src/renderer/src/components/settings/Settings.tsx'), /publish\(['"]scripture['"], settings\.scripture\)/)
 })
 
 test('integration hydration starts behind the splash without gating it', () => {

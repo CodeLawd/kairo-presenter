@@ -4,6 +4,7 @@ import Highlight from "@tiptap/extension-highlight";
 import { EditorContent, useEditor, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { ArrowDown, ArrowUp, Loader, ScanSearch, Search, X } from '@/icons';
+import { MovableDialog } from "@/components/shared/MovableDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -273,14 +274,16 @@ export function SermonNotesReviewModal({
     <Dialog.Root open onOpenChange={(open) => { if (!open && !confirming) onCancel() }}>
       <Dialog.Portal>
       <Dialog.Overlay className="fixed inset-0 z-[80] bg-black/45" />
+      <div className="fixed inset-0 z-[81] flex items-center justify-center p-5 pointer-events-none">
+        <MovableDialog className="pointer-events-auto">
       <Dialog.Content
         onOpenAutoFocus={(event) => { event.preventDefault(); titleRef.current?.focus() }}
         onInteractOutside={(event) => event.preventDefault()}
         onEscapeKeyDown={(event) => { if (confirming) event.preventDefault() }}
         data-theme="light"
-        className="fixed left-1/2 top-1/2 z-[81] flex -translate-x-1/2 -translate-y-1/2 outline-none h-[min(860px,calc(100vh-40px))] w-[min(1180px,calc(100vw-40px))] flex-col overflow-hidden rounded-2xl border-[0.5px] border-zinc-500 bg-surface text-foreground [color-scheme:light] shadow-2xl shadow-black/50"
+        className="flex outline-none h-[min(860px,calc(100vh-40px))] w-[min(1180px,calc(100vw-40px))] flex-col overflow-hidden rounded-2xl border-[0.5px] border-zinc-500 bg-surface text-foreground [color-scheme:light] shadow-2xl shadow-black/50"
       >
-        <header className="flex shrink-0 items-start justify-between gap-5 border-b-[0.5px] border-surface-border bg-surface-elevated px-6 py-5">
+        <header data-modal-drag className="flex shrink-0 items-start justify-between gap-5 border-b-[0.5px] border-surface-border bg-surface-elevated px-6 py-5">
           <div className="flex min-w-0 items-center gap-3">
             <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-surface-secondary"><ScanSearch size={19} className="text-slate-400" aria-hidden="true" /></span>
             <div className="min-w-0">
@@ -462,6 +465,8 @@ export function SermonNotesReviewModal({
           </div>
         </footer>
       </Dialog.Content>
+        </MovableDialog>
+      </div>
       </Dialog.Portal>
     </Dialog.Root>
   )

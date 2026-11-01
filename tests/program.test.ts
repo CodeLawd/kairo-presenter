@@ -223,6 +223,8 @@ test('show filters default room layers on, confidence layers off', () => {
     lyrics: true,
     documents: true,
     backgrounds: true,
+    poll: true,
+    question: true,
     messages: true,
     overlays: true,
     countdown: false,

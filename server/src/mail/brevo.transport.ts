@@ -31,7 +31,7 @@ export class BrevoTransport {
   constructor(private readonly config: BrevoConfig) {}
 
   /** Resolves false on failure — the caller decides whether that matters. */
-  async send(message: OutboundEmail): Promise<boolean> {
+  async send(message: OutboundEmail, sensitive = false): Promise<boolean> {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
 
@@ -57,13 +57,13 @@ export class BrevoTransport {
 
       // Brevo puts the reason in the body — a bare status hides "sender not
       // verified", which is the failure everyone hits first.
-      const detail = await response.text().catch(() => '')
+      const detail = sensitive ? '' : await response.text().catch(() => '')
       this.logger.error(
         `Brevo rejected "${message.subject}" for ${message.to}: ${response.status} ${detail.slice(0, 300)}`,
       )
       return false
     } catch (error) {
-      const reason = (error as Error).name === 'AbortError' ? 'timed out' : (error as Error).message
+      const reason = sensitive ? 'delivery failed' : (error as Error).name === 'AbortError' ? 'timed out' : (error as Error).message
       this.logger.error(`Brevo request failed for ${message.to}: ${reason}`)
       return false
     } finally {

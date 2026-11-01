@@ -1,3 +1,4 @@
+import type { PollView } from './engage'
 // ─── Program layers, stage displays and show controls (standalone phases 2–3) ──
 // Pure — no Node/DOM APIs — importable from main, preload, and renderer alike.
 //
@@ -22,6 +23,33 @@ export interface ProgramTransition {
   kind: TransitionKind
   /** Fade length. Ignored for `cut`. 50–3000. */
   durationMs: number
+}
+
+export type ProgramQuestion = { text: string; author: string | null } | { kind: 'join'; code: string; url: string; qrDataUrl: string }
+
+export type ProgramQuestionFont = 'sans' | 'serif' | 'mono'
+
+export interface ProgramQuestionStyle {
+  position: 'top' | 'center' | 'bottom'
+  align: 'left' | 'center'
+  fontFamily: ProgramQuestionFont
+  fontSizePx: number
+  color: string
+  background: string
+  /** Card background opacity, 0–100. */
+  backgroundOpacity: number
+  /** Card corner radius, 0–48 px. */
+  borderRadiusPx: number
+  /** Card width as percentage of the 1600px container, 50–100. */
+  widthPct: number
+  /** Whether to show the question author name on screen. */
+  showAuthor: boolean
+  /** Join screen prompt headline ("Ask a question"). */
+  joinHeadline: string
+  /** QR code size on screen, 160–400 px. */
+  qrSizePx: number
+  /** Whether to show the join URL under the code on screen. */
+  showJoinUrl: boolean
 }
 
 export interface ProgramMessageStyle {
@@ -173,6 +201,7 @@ export const MAX_PROGRAM_TIMERS = 20
 
 export interface PresentationSettings {
   transition: ProgramTransition
+  question: ProgramQuestionStyle
   message: ProgramMessageStyle
   /** Messages the operator keeps for reuse ("Parents of child…", "Cars in the red zone…"). */
   messages: ProgramSavedMessage[]
@@ -196,6 +225,21 @@ export const DEFAULT_TIMER: ProgramTimerDef = {
 
 export const DEFAULT_PRESENTATION_SETTINGS: PresentationSettings = {
   transition: { kind: 'cut', durationMs: 400 },
+  question: {
+    position: 'center',
+    align: 'left',
+    fontFamily: 'sans',
+    fontSizePx: 64,
+    color: '#ffffff',
+    background: '#18212d',
+    backgroundOpacity: 95,
+    borderRadiusPx: 24,
+    widthPct: 85,
+    showAuthor: true,
+    joinHeadline: 'Ask a question',
+    qrSizePx: 280,
+    showJoinUrl: true,
+  },
   message: {
     position: 'bottom',
     fontSizePx: 44,
@@ -406,6 +450,7 @@ export function normalizePresentationSettings(raw: unknown): PresentationSetting
   const d = DEFAULT_PRESENTATION_SETTINGS
   const r = asObject(raw)
   const t = asObject(r.transition)
+  const q = asObject(r.question)
   const m = asObject(r.message)
   const l = asObject(r.logo)
   const a = asObject(r.audio)
@@ -414,6 +459,21 @@ export function normalizePresentationSettings(raw: unknown): PresentationSetting
     transition: {
       kind: safeEnum(t.kind, ['cut', 'fade'] as const, d.transition.kind),
       durationMs: Math.round(clampNum(t.durationMs, 50, 3000, d.transition.durationMs)),
+    },
+    question: {
+      position: safeEnum(q.position, ['top', 'center', 'bottom'] as const, d.question.position),
+      align: safeEnum(q.align, ['left', 'center'] as const, d.question.align),
+      fontFamily: safeEnum(q.fontFamily, ['sans', 'serif', 'mono'] as const, d.question.fontFamily),
+      fontSizePx: Math.round(clampNum(q.fontSizePx, 24, 100, d.question.fontSizePx)),
+      color: safeColor(q.color, d.question.color),
+      background: safeColor(q.background, d.question.background),
+      backgroundOpacity: Math.round(clampNum(q.backgroundOpacity, 0, 100, d.question.backgroundOpacity)),
+      borderRadiusPx: Math.round(clampNum(q.borderRadiusPx, 0, 48, d.question.borderRadiusPx)),
+      widthPct: Math.round(clampNum(q.widthPct, 50, 100, d.question.widthPct)),
+      showAuthor: safeBool(q.showAuthor, d.question.showAuthor),
+      joinHeadline: safeString(q.joinHeadline, d.question.joinHeadline).slice(0, 80),
+      qrSizePx: Math.round(clampNum(q.qrSizePx, 160, 400, d.question.qrSizePx)),
+      showJoinUrl: safeBool(q.showJoinUrl, d.question.showJoinUrl),
     },
     message: {
       position: safeEnum(m.position, ['bottom', 'top'] as const, d.message.position),
@@ -484,6 +544,8 @@ export interface ProgramWeb {
 }
 
 export interface ProgramState {
+  poll: PollView | null
+  question: ProgramQuestion | null
   /** Audience message on the program screens, or null. */
   message: string | null
   /** Message for stage displays and screens showing the stage-message layer. */
@@ -511,6 +573,8 @@ export interface ProgramState {
 }
 
 export const EMPTY_PROGRAM_STATE: ProgramState = {
+  poll: null,
+  question: null,
   message: null,
   stageMessage: null,
   activePropIds: [],
@@ -712,6 +776,8 @@ export interface OutputShowFilter {
   lyrics: boolean
   documents: boolean
   backgrounds: boolean
+  poll: boolean
+  question: boolean
   messages: boolean
   /** Logo and props. */
   overlays: boolean
@@ -747,6 +813,8 @@ export const DEFAULT_SHOW_FILTER: OutputShowFilter = {
   lyrics: true,
   documents: true,
   backgrounds: true,
+  poll: true,
+  question: true,
   messages: true,
   overlays: true,
   countdown: false,
@@ -756,6 +824,8 @@ export const DEFAULT_SHOW_FILTER: OutputShowFilter = {
 
 /** Layers a playlist (lobby) screen can still show on top of its playlist. */
 export const PLAYLIST_SHOW_KEYS: readonly (keyof OutputShowFilter)[] = [
+  'poll',
+  'question',
   'messages',
   'overlays',
   'countdown',
@@ -769,6 +839,8 @@ export function outputShowLabel(key: keyof OutputShowFilter): string {
     case 'lyrics': return 'Lyrics'
     case 'documents': return 'Documents'
     case 'backgrounds': return 'Backgrounds'
+    case 'poll': return 'Poll results'
+    case 'question': return 'Audience questions'
     case 'messages': return 'Messages'
     case 'overlays': return 'Logo & props'
     case 'countdown': return 'Countdown'
@@ -784,6 +856,8 @@ export function normalizeShowFilter(raw: unknown): OutputShowFilter {
     lyrics: safeBool(r.lyrics, true),
     documents: safeBool(r.documents, true),
     backgrounds: safeBool(r.backgrounds, true),
+    poll: safeBool(r.poll, true),
+    question: safeBool(r.question, true),
     messages: safeBool(r.messages, true),
     overlays: safeBool(r.overlays, true),
     countdown: safeBool(r.countdown, false),
@@ -800,8 +874,10 @@ export function programLayersFor(
   output: Pick<import('./ipc').OverlayOutput, 'show'>,
   state: ProgramState,
   presentation: PresentationSettings,
-): { props: string; message: string; logo: string } {
+): { props: string; message: string; question: string; poll: string; logo: string } {
   return {
+    poll: output.show.poll ? renderPollHTML(state.poll, presentation.question) : '',
+    question: output.show.question ? renderQuestionHTML(state.question, presentation.question) : '',
     props: output.show.overlays ? renderPropsHTML(presentation.props, state.activePropIds) : '',
     message: output.show.messages ? renderMessageHTML(state.message, presentation.message) : '',
     logo: output.show.overlays ? renderLogoHTML(presentation.logo, state.logo) : '',
@@ -919,4 +995,69 @@ export interface ProgramAPI {
   onStageStatus: (callback: (status: StageDisplayStatus[]) => void) => Unsubscribe
   /** Whether NDI feeds can carry sound here (the NDI 6 binding is loaded). */
   ndiAudioSupported: () => Promise<boolean>
+}
+
+function questionFontStack(font: ProgramQuestionFont | undefined): string {
+  if (font === 'serif') return "Georgia,'Times New Roman',serif"
+  if (font === 'mono') return "'SF Mono',Menlo,Consolas,monospace"
+  return "'Source Sans 3','Helvetica Neue',Arial,sans-serif"
+}
+
+function colorWithOpacity(color: string, opacityPct: number | undefined): string {
+  const pct = opacityPct ?? 100
+  if (pct >= 100) return color
+  if (pct <= 0) return 'transparent'
+  const hex = color.trim()
+  const m6 = /^#([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$/.exec(hex)
+  if (m6) {
+    return `rgba(${parseInt(m6[1], 16)},${parseInt(m6[2], 16)},${parseInt(m6[3], 16)},${Math.round(pct) / 100})`
+  }
+  const m3 = /^#([0-9a-fA-F])([0-9a-fA-F])([0-9a-fA-F])$/.exec(hex)
+  if (m3) {
+    return `rgba(${parseInt(m3[1] + m3[1], 16)},${parseInt(m3[2] + m3[2], 16)},${parseInt(m3[3] + m3[3], 16)},${Math.round(pct) / 100})`
+  }
+  return color
+}
+
+/** A separate, escaped question/join layer; never changes slide or message markup. */
+export function renderQuestionHTML(question: ProgramQuestion | null, style: ProgramQuestionStyle): string {
+  if (!question) return ''
+  const align = style.position === 'top' ? 'flex-start' : style.position === 'bottom' ? 'flex-end' : 'center'
+  const textAlign = style.align ?? 'left'
+  const font = questionFontStack(style.fontFamily)
+  const bg = colorWithOpacity(style.background, style.backgroundOpacity)
+  const radius = style.borderRadiusPx ?? 24
+  const maxWidth = Math.round(1760 * ((style.widthPct ?? 85) / 100))
+  let content: string
+  if ('kind' in question) {
+    const qrSize = style.qrSizePx ?? 280
+    // Only locally generated PNG QR images; never embed a remote URL or active SVG.
+    const qr = /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(question.qrDataUrl)
+      ? `<img alt="Scan to join" src="${question.qrDataUrl}" style="width:${qrSize}px;height:${qrSize}px;background:white;padding:16px;border-radius:${Math.min(16, radius)}px;flex-shrink:0;" />` : ''
+    const headline = (style.joinHeadline ?? 'Ask a question').trim()
+    const headlineHtml = headline ? `<div style="font-size:32px;opacity:.85;margin-bottom:4px;">${escapeHtml(headline)}</div>` : ''
+    const urlHtml = (style.showJoinUrl ?? true)
+      ? `<div style="font-size:32px;opacity:.75;margin-top:8px;overflow-wrap:anywhere;">${escapeHtml(question.url)}</div>` : ''
+    content = `<div style="display:flex;align-items:center;justify-content:center;gap:64px;text-align:left;">${qr}<div>${headlineHtml}<div style="font-size:96px;font-weight:700;letter-spacing:12px;line-height:1.1;">${escapeHtml(question.code)}</div>${urlHtml}</div></div>`
+  } else {
+    const showAuthor = style.showAuthor ?? true
+    const authorHtml = showAuthor
+      ? `<div style="font-size:${Math.max(22, Math.round(style.fontSizePx * 0.45))}px;margin-bottom:20px;opacity:.7;font-weight:600;">${escapeHtml(question.author || 'Anonymous')}</div>` : ''
+    content = `<div style="text-align:${textAlign};">${authorHtml}<div style="white-space:pre-wrap;overflow-wrap:anywhere;">${escapeHtml(question.text)}</div></div>`
+  }
+  return `<div style="position:absolute;inset:0;display:flex;align-items:${align};justify-content:center;padding:72px;box-sizing:border-box;"><div style="box-sizing:border-box;width:100%;max-width:${maxWidth}px;max-height:100%;overflow:hidden;border-radius:${radius}px;padding:48px 64px;color:${style.color};background:${bg};font-family:${font};font-size:${style.fontSizePx}px;line-height:1.25;">${content}</div></div>`
+}
+
+/** Independent poll layer. Totals are supplied by the engagement, never recalculated by outputs. */
+export function renderPollHTML(poll: PollView | null, style: ProgramQuestionStyle): string {
+  if (!poll) return ''
+  const font = questionFontStack(style.fontFamily)
+  const bg = colorWithOpacity(style.background, style.backgroundOpacity)
+  const radius = style.borderRadiusPx ?? 24
+  const maxWidth = Math.round(1760 * ((style.widthPct ?? 85) / 100))
+  const options=poll.options.map(o=>{
+    const count=Math.max(0,poll.totals[o.id]??0), percent=poll.voters?Math.min(100,Math.round(100*count/poll.voters)):0
+    return `<div style="margin-top:24px;"><div style="display:flex;justify-content:space-between;gap:24px;"><span>${escapeHtml(o.text)}</span><span>${percent}% · ${count}</span></div><div style="height:16px;background:#ffffff20;border-radius:999px;overflow:hidden;margin-top:10px;"><div style="height:100%;width:${percent}%;background:currentColor;border-radius:999px;"></div></div></div>`
+  }).join('')
+  return `<div style="position:absolute;inset:8%;display:flex;align-items:center;justify-content:center;pointer-events:none;"><div style="width:100%;max-width:${maxWidth}px;padding:48px;border-radius:${radius}px;background:${bg};color:${style.color};font-family:${font};font-size:${Math.round(style.fontSizePx*.55)}px;"><div style="font-size:${style.fontSizePx}px;font-weight:700;overflow-wrap:anywhere;">${escapeHtml(poll.title)}</div>${options}<div style="margin-top:24px;opacity:.7;font-size:24px;">${poll.voters} voted</div></div></div>`
 }

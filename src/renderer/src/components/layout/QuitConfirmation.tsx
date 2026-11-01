@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { AlertDialog } from 'radix-ui'
 import { KairoMark } from '@/components/brand/KairoMark'
+import { MovableDialog } from '@/components/shared/MovableDialog'
 import { useCaptureStore } from '@/stores/useCaptureStore'
 
 /** Always mounted, including during startup and account setup. */
@@ -44,31 +45,35 @@ export function QuitConfirmation(): React.ReactElement {
     <AlertDialog.Root open={open}>
       <AlertDialog.Portal>
         <AlertDialog.Overlay className="quit-confirmation-overlay fixed inset-0 bg-black/35" />
-        <AlertDialog.Content
-          className="quit-confirmation-panel fixed left-1/2 top-1/2 w-[calc(100%-2rem)] max-w-[420px] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-2xl modal-glass text-white outline-none"
-          onOpenAutoFocus={(event) => { event.preventDefault(); cancelRef.current?.focus() }}
-          onCloseAutoFocus={(event) => { event.preventDefault(); previousFocus.current?.focus() }}
-          onEscapeKeyDown={(event) => { event.preventDefault(); void respond(false) }}
-        >
-          <div className="px-7 pb-7 pt-8">
-            <KairoMark size="lg" />
-            <AlertDialog.Title className="mt-6 text-[24px] font-semibold leading-tight tracking-tight">
-              Quit Kairo?
-            </AlertDialog.Title>
-            <AlertDialog.Description className="mt-3 text-[14px] leading-relaxed text-zinc-400">
-              Your screens will go offline and live transcription will stop.{recording ? ' The recording will be stopped and saved.' : ''} Ready to close Kairo?
-            </AlertDialog.Description>
-            {error && <p role="alert" className="mt-3 text-sm text-red-400">{error}</p>}
-          </div>
-          <div className="flex flex-wrap justify-end gap-2 bg-surface-tertiary px-7 py-5">
-            <button ref={cancelRef} type="button" className="btn-secondary min-h-10" disabled={busy} onClick={() => { void respond(false) }}>
-              Keep Kairo open
-            </button>
-            <button type="button" className="btn-primary min-h-10 min-w-24" disabled={busy} onClick={() => { void respond(true) }}>
-              {busy ? 'Closing…' : 'Quit Kairo'}
-            </button>
-          </div>
-        </AlertDialog.Content>
+        <div className="quit-confirmation-panel fixed inset-0 flex items-center justify-center p-4 pointer-events-none">
+          <MovableDialog className="w-full max-w-[420px] pointer-events-auto">
+            <AlertDialog.Content
+              className="w-full overflow-hidden rounded-2xl modal-glass text-white outline-none"
+              onOpenAutoFocus={(event) => { event.preventDefault(); cancelRef.current?.focus() }}
+              onCloseAutoFocus={(event) => { event.preventDefault(); previousFocus.current?.focus() }}
+              onEscapeKeyDown={(event) => { event.preventDefault(); void respond(false) }}
+            >
+              <div data-modal-drag className="px-7 pb-7 pt-8">
+                <KairoMark size="lg" />
+                <AlertDialog.Title className="mt-6 text-[24px] font-semibold leading-tight tracking-tight">
+                  Quit Kairo?
+                </AlertDialog.Title>
+                <AlertDialog.Description className="mt-3 text-[14px] leading-relaxed text-zinc-400">
+                  Your screens will go offline and live transcription will stop.{recording ? ' The recording will be stopped and saved.' : ''} Ready to close Kairo?
+                </AlertDialog.Description>
+                {error && <p role="alert" className="mt-3 text-sm text-red-400">{error}</p>}
+              </div>
+              <div className="flex flex-wrap justify-end gap-2 bg-surface-tertiary px-7 py-5">
+                <button ref={cancelRef} type="button" className="btn-secondary min-h-10" disabled={busy} onClick={() => { void respond(false) }}>
+                  Keep Kairo open
+                </button>
+                <button type="button" className="btn-primary min-h-10 min-w-24" disabled={busy} onClick={() => { void respond(true) }}>
+                  {busy ? 'Closing…' : 'Quit Kairo'}
+                </button>
+              </div>
+            </AlertDialog.Content>
+          </MovableDialog>
+        </div>
       </AlertDialog.Portal>
     </AlertDialog.Root>
   )

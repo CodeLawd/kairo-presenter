@@ -30,6 +30,8 @@ of a universal Electron application.
 | 006 | Qualify updates and physical-machine acceptance | P1 | M | 005 | TODO (docs/release-checklist.md created; blocked on signed builds + physical machines) |
 | 007 | Hardware video outputs (DeckLink first, vendor-neutral) | P2 | L | 002, 003 | IN PROGRESS (provider/loader/service, device routing + surfaces, IPC + Outputs UI implemented with fake-device tests; native binding, hardware acceptance and packaging await Step 0 qualification) |
 | 008 | GPU shared-texture frame capture for offscreen outputs | P3 | L | 007, 003 | IN PROGRESS (Step 0 gate waived by owner; Metal addon, shm ring + helper `--play-shm`, NDI UYVA, per-surface CPU fallback and mac packaging implemented; byte-exact golden tests pass; Step 6 hardware/ProPresenter qualification outstanding — docs/decisions/008-gpu-frame-capture.md) |
+| 009 | Audience Q&A and audience sources | P2 | L | — | TODO |
+| 010 | Engage: engagements, moderators, replies and polls | P2 | L | 009 | TODO |
 
 Status values: `TODO`, `IN PROGRESS`, `DONE`, `BLOCKED (<reason>)`, or
 `REJECTED (<reason>)`.

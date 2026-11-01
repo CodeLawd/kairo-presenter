@@ -35,6 +35,8 @@ export interface AppConfig {
    * (DOWNLOAD_INGEST_KEY). Unset = download tracking is off.
    */
   downloadIngestKey: string | null;
+  /** Worker-to-Nest Engage authentication. Unset disables internal endpoints. */
+  engageInternalSecret?: string | null;
   sermons: SermonConfig;
 }
 
@@ -168,6 +170,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       .map((email) => email.trim().toLowerCase())
       .filter(Boolean),
     downloadIngestKey: env.DOWNLOAD_INGEST_KEY?.trim() || null,
+    engageInternalSecret: env.ENGAGE_INTERNAL_SECRET?.trim() || null,
     sermons: {
       // The recap is the whole point of the feature and it is read by people
       // who were not there, so quality wins over a few cents a service. The

@@ -1,3 +1,11 @@
+import type { EngagementInput, EngageCommand, EngagementIndex } from '@shared/engage';
+import type { AudienceRoomCreated } from '@shared/audience-protocol';
+import { AUDIENCE, parseSlidoEvent, type AudienceQuestionState, type AudienceSourceOptions } from "@shared/audience";
+import { normalizeAudienceRoomSettings } from "@shared/audience-protocol";
+import { audienceService } from "../services/audience";
+import { KairoAudienceSource } from "../services/audience/sources/kairo";
+import { SampleAudienceSource } from "../services/audience/sources/sample";
+import { SlidoAudienceSource } from "../services/audience/sources/slido";
 import { DOCUMENTS } from "@shared/documents";
 import { writeFile } from "fs/promises";
 import { existsSync, mkdirSync } from "fs";
@@ -12,7 +20,7 @@ import { songUsageService } from "../services/song-usage";
 import { TRANSFER, type TransferCommitRequest, type TransferExportRequest } from "@shared/kairo-bundle";
 import { transferService } from "../services/transfer";
 import { documentsService } from "../services/documents";
-import { ipcMain, BrowserWindow, clipboard, dialog, powerMonitor, shell } from "electron";
+import { app, ipcMain, BrowserWindow, clipboard, dialog, powerMonitor, shell } from "electron";
 import type { OpenDialogOptions } from "electron";
 import type { TestPatternInput } from "@shared/ipc";
 import log from "electron-log/main";
@@ -77,7 +85,7 @@ import { runBootstrap } from "../bootstrap";
 import { onboardingService } from "../services/cloud/onboarding";
 import { licensing } from "../services/cloud/licensing";
 import { MANAGED } from "../services/cloud/managed";
-import { cloudSession } from "../services/cloud/session";
+import { cloudSession, AUDIENCE_API_BASE_URL } from "../services/cloud/session";
 import { usageService } from "../services/usage";
 import { startCrashReports } from "../services/crash-reports";
 
@@ -882,6 +890,55 @@ function registerTracksHandlers(): void {
 }
 
 function registerProgramHandlers(): void {
+  audienceService.onChanged(state => broadcast(AUDIENCE.CHANGED, state));
+  handle(AUDIENCE.ENGAGEMENTS, () => cloudSession.engageRequest<EngagementIndex[]>('get'));
+  handle(AUDIENCE.CREATE_ENGAGEMENT, async (_event, input: EngagementInput) => { await cloudSession.engageRequest('post','',input); });
+  handle(AUDIENCE.RESUME, async (_event, code: string, reopen?: boolean) => {
+    if(!/^[A-HJ-NP-Z2-9]{6}$/.test(code))throw new Error('Choose a valid engagement.');
+    const room=await cloudSession.engageRequest<AudienceRoomCreated>('post',`/${code}/resume`,{});
+    if (reopen === true || room.engagement?.status === 'draft') {
+      const response=await fetch(new URL(`/v1/engage/${code}/open`,AUDIENCE_API_BASE_URL),{method:'POST',headers:{Authorization:`Bearer ${room.operatorToken}`,'Content-Type':'application/json'},body:'{}',signal:AbortSignal.timeout(90000)});
+      if(!response.ok)throw new Error((await response.text()).slice(0,300));
+    }
+    audienceService.detachEngagement();
+    return audienceService.start(new KairoAudienceSource(AUDIENCE_API_BASE_URL,async()=>room));
+  });
+  handle(AUDIENCE.REOPEN_ENGAGEMENT, (_event) => audienceService.manage('open', {}));
+  handle(AUDIENCE.DELETE_ENGAGEMENT, async (_event, code: string) => {
+    if(!/^[A-HJ-NP-Z2-9]{6}$/.test(code))throw new Error('Choose a valid engagement.');
+    const room=await cloudSession.engageRequest<AudienceRoomCreated>('post',`/${code}/resume`,{});
+    const response=await fetch(new URL(`/v1/engage/${code}/delete`,AUDIENCE_API_BASE_URL),{method:'POST',headers:{Authorization:`Bearer ${room.operatorToken}`,'Content-Type':'application/json'},body:'{}',signal:AbortSignal.timeout(90000)});
+    if(!response.ok)throw new Error('Could not delete the engagement.');
+    if(audienceService.getState().session?.code===code)audienceService.detachEngagement();
+  });
+  handle(AUDIENCE.INVITE, (_event,email:string,name:string)=>audienceService.manage('moderators',{email,name}));
+  handle(AUDIENCE.REVOKE, (_event,id:string)=>audienceService.manage(`revoke/${id}`,{}));
+  handle(AUDIENCE.COMMAND, (_event,command:EngageCommand)=>audienceService.command(command));
+  handle(AUDIENCE.SHOW_POLL, (_event,id:string)=>audienceService.showPoll(id));
+  handle(AUDIENCE.CLEAR_POLL, ()=>audienceService.clearPoll());
+  handle(AUDIENCE.GET, () => audienceService.getState());
+  handle(AUDIENCE.START, async (_event, kind: string, options: AudienceSourceOptions) => {
+    if (kind === 'kairo') {
+      const title = (typeof options?.title === 'string' && options.title.trim().slice(0, 100)) || 'Questions from the room';
+      const settings = normalizeAudienceRoomSettings(options?.settings);
+      return audienceService.start(new KairoAudienceSource(AUDIENCE_API_BASE_URL, () => cloudSession.engageRequest<AudienceRoomCreated>('post', '', {title,settings,startsAt:options?.startsAt,endsAt:options?.endsAt})));
+    }
+    if (kind === 'slido') {
+      const event = parseSlidoEvent(typeof options?.code === 'string' ? options.code : '');
+      if (!event) throw new Error('That doesn’t look like a Slido code or link.');
+      return audienceService.start(new SlidoAudienceSource(event, { moderator: options?.moderator === true, skipReview: options?.skipReview === true }));
+    }
+    if (kind === 'sample' && !app.isPackaged && process.env.KAIRO_AUDIENCE_SAMPLE === '1') return audienceService.start(new SampleAudienceSource());
+    throw new Error(kind === 'sample' ? 'Sample questions require KAIRO_AUDIENCE_SAMPLE=1 in development.' : 'That audience source is not available.');
+  });
+  handle(AUDIENCE.OPEN, (_event, id: string) => audienceService.open(String(id)));
+  handle(AUDIENCE.STOP, (_event, id: string) => audienceService.stop(String(id)));
+  handle(AUDIENCE.ROOM_SETTINGS, (_event, settings: unknown) => audienceService.setRoomSettings(normalizeAudienceRoomSettings(settings)));
+  handle(AUDIENCE.PAGE, async () => { await shell.openExternal(audienceService.audiencePageUrl()); });
+  handle(AUDIENCE.MODERATE, (_event, id: string, state: AudienceQuestionState) => audienceService.moderate(String(id), state));
+  handle(AUDIENCE.SHOW, (_event, id: string) => audienceService.show(String(id)));
+  handle(AUDIENCE.CLEAR, () => audienceService.clear());
+  handle(AUDIENCE.JOIN, () => audienceService.showJoinCode());
   programService.onChange((state) => broadcast(PROGRAM.STATE, state));
 
   handle(PROGRAM.GET_STATE, () => programService.getState());

@@ -1,5 +1,5 @@
-import { Button, Heading, Section, Text } from 'react-email'
-import { EmailLayout, PRODUCT_NAME } from './layout'
+import { Button, Heading, Link, Section, Text } from 'react-email'
+import { BRAND_COLOR, BRAND_INK, BRAND_LINK, EmailLayout, PRODUCT_NAME } from './layout'
 
 export interface WelcomeEmailProps {
   firstName: string
@@ -19,26 +19,102 @@ export interface WelcomeEmailProps {
 export function WelcomeEmail({ firstName, code, url }: WelcomeEmailProps): React.ReactElement {
   return (
     <EmailLayout preview={`${code} is your ${PRODUCT_NAME} confirmation code`}>
-      <Section className="rounded-lg bg-background-muted px-6 py-8 text-center">
-        <Heading className="m-0 text-3xl font-bold text-foreground">Welcome, {firstName}</Heading>
-        <Text className="mt-3 text-base text-foreground-muted">
-          Enter this code in {PRODUCT_NAME} to confirm your email address.
+      <Section>
+        <Heading
+          style={{
+            color: BRAND_INK,
+            fontSize: '24px',
+            fontWeight: 700,
+            letterSpacing: '-0.02em',
+            lineHeight: '32px',
+            margin: '0 0 16px',
+          }}
+        >
+          Welcome to {PRODUCT_NAME}, {firstName}
+        </Heading>
+
+        <Text
+          style={{
+            color: BRAND_INK,
+            fontSize: '16px',
+            lineHeight: '26px',
+            margin: '0 0 20px',
+          }}
+        >
+          Enter this confirmation code in <strong>{PRODUCT_NAME}</strong> to verify your email
+          address, or click the button below. The code is <strong>valid for 24 hours</strong>.
         </Text>
 
-        <Text className="my-6 text-4xl font-bold tracking-[0.3em] text-foreground">{code}</Text>
-        <Text className="mt-2 text-sm text-foreground-muted">
-          Expires in 24 hours. Only ever type it into Kairo.
-        </Text>
+        <Section
+          style={{
+            backgroundColor: '#E8EAF0',
+            borderRadius: '10px',
+            marginBottom: '24px',
+            padding: '20px 24px',
+            textAlign: 'center',
+          }}
+        >
+          <Text
+            style={{
+              color: BRAND_INK,
+              fontSize: '32px',
+              fontWeight: 700,
+              letterSpacing: '0.28em',
+              margin: 0,
+            }}
+          >
+            {code}
+          </Text>
+        </Section>
+
         <Button
           href={url}
-          className="mt-4 rounded-lg bg-primary px-6 py-3 text-base font-semibold text-white"
+          style={{
+            backgroundColor: BRAND_COLOR,
+            borderRadius: '8px',
+            color: '#FFFFFF',
+            display: 'inline-block',
+            fontSize: '16px',
+            fontWeight: 600,
+            lineHeight: '20px',
+            padding: '14px 28px',
+            textDecoration: 'none',
+          }}
         >
           Confirm email address
         </Button>
-      </Section>
 
-      <Section className="py-4">
-        <Text className="text-sm text-foreground-muted">
+        <Text
+          style={{
+            color: '#565B6E',
+            fontSize: '13px',
+            lineHeight: '20px',
+            margin: '16px 0 4px',
+          }}
+        >
+          Or open this link in your browser:
+        </Text>
+        <Text
+          style={{
+            fontSize: '13px',
+            lineHeight: '20px',
+            margin: '0 0 20px',
+            wordBreak: 'break-all',
+          }}
+        >
+          <Link href={url} style={{ color: BRAND_LINK, textDecoration: 'underline' }}>
+            {url}
+          </Link>
+        </Text>
+
+        <Text
+          style={{
+            color: '#666B7E',
+            fontSize: '14px',
+            lineHeight: '22px',
+            margin: 0,
+          }}
+        >
           Did not create this account? Ignore this email and nothing happens.
         </Text>
       </Section>
@@ -59,5 +135,8 @@ export function welcomeEmailText({ firstName, code, url }: WelcomeEmailProps): s
     'Both expire in 24 hours. Only ever type this code into Kairo.',
     '',
     'If you did not create this account, you can ignore this message.',
+    '',
+    'Best,',
+    `Your ${PRODUCT_NAME} team`,
   ].join('\n')
 }

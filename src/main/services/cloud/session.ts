@@ -1,3 +1,4 @@
+import { audienceApiBaseUrl, audienceRoomError } from '@shared/audience-connection'
 import { randomUUID } from 'crypto'
 import type { UsageReport, UsageReportResult } from '@shared/cloud/usage'
 import type { CrashUpload, CrashUploadResult } from '@shared/cloud/crashes'
@@ -33,6 +34,7 @@ import { SecureStore, createSecureStore } from './secure-store'
  * `MAIN_VITE_*` is substituted into the bundle when it is built.
  */
 const API_BASE_URL = import.meta.env.MAIN_VITE_API_URL || 'http://localhost:3000'
+export const AUDIENCE_API_BASE_URL = audienceApiBaseUrl(API_BASE_URL, import.meta.env.MAIN_VITE_AUDIENCE_API_URL)
 
 const REFRESH_TOKEN_NAME = 'refresh-token'
 /** Quiet background refresh — the operator never sees this happen. */
@@ -416,6 +418,24 @@ export class CloudSessionService {
   async pullOrgSecrets(_options: { throttle?: boolean } = {}): Promise<void> {}
 
   async pushOrgSecrets(_clearLocalKeys: readonly string[] = []): Promise<void> {}
+
+  /** Room creation uses the existing authenticated device session once. */
+  async createAudienceRoom(title: string, settings: import('../../../lib/audience-protocol').AudienceRoomSettings): Promise<import('../../../lib/audience-protocol').AudienceRoomCreated> {
+    try {
+      // Generous: a cold server start can take most of a minute.
+      return await this.api.request('post', `${AUDIENCE_API_BASE_URL}/v1/audience/rooms`, { title, settings }, { timeoutMs: 90_000 })
+    } catch (error) {
+      const local = ['localhost', '127.0.0.1', '[::1]'].includes(new URL(AUDIENCE_API_BASE_URL).hostname)
+      // Electron drops the message on a thrown plain ApiError object.
+      throw new Error(audienceRoomError(error, local))
+    }
+  }
+
+  async engageRequest<T>(method: 'get' | 'post', path = '', body?: unknown): Promise<T> {
+    if (this.snapshot.state === 'stale') this.nextRefreshAllowedAt = 0
+    try { return await this.api.request<T>(method, `${AUDIENCE_API_BASE_URL}/v1/engage${path}`, body, {timeoutMs:90000}) }
+    catch(error) { throw new Error(audienceRoomError(error, ['localhost','127.0.0.1'].includes(new URL(AUDIENCE_API_BASE_URL).hostname))) }
+  }
 
   /** Authenticated main-process requests; never exposed by preload. */
   managedRequest<T>(method: 'get' | 'post' | 'delete', pathname: string, body?: unknown): Promise<T> {

@@ -130,7 +130,7 @@ export function FieldRow({
 export const LOOK_GROUPS: Array<{ title: string; keys: Array<keyof OutputShowFilter> }> = [
   { title: 'Slides', keys: ['scripture', 'lyrics', 'documents'] },
   { title: 'Media', keys: ['backgrounds'] },
-  { title: 'Layers', keys: ['messages', 'overlays'] },
+  { title: 'Layers', keys: ['poll', 'question', 'messages', 'overlays'] },
   { title: 'Confidence', keys: ['countdown', 'clock', 'stageMessage'] },
 ]
 

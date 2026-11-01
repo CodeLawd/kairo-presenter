@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { MovableDialog } from '@/components/shared/MovableDialog'
 import { Download, X } from '@/icons'
 import { isoDate, summarizeSongUsage, type SongUsageEntry } from '@shared/song-usage'
 
@@ -58,14 +59,14 @@ export function SongUsageModal({ onClose }: { onClose: () => void }): React.Reac
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/35 p-4 animate-fade-in" onClick={onClose}>
+      <MovableDialog className="w-full max-w-lg">
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="song-usage-title"
-        className="flex max-h-[min(640px,90vh)] w-full max-w-lg flex-col overflow-hidden rounded-2xl modal-glass shadow-2xl"
-        onClick={(event) => event.stopPropagation()}
+        className="flex max-h-[min(640px,90vh)] w-full flex-col overflow-hidden rounded-2xl modal-glass shadow-2xl"
       >
-        <header className="flex items-start gap-3 px-5 py-4">
+        <header data-modal-drag className="flex items-start gap-3 px-5 py-4">
           <div className="min-w-0 flex-1">
             <h2 id="song-usage-title" className="text-sm font-semibold text-white">Song usage</h2>
             <p className="mt-0.5 text-[11px] text-white/40">
@@ -137,6 +138,7 @@ export function SongUsageModal({ onClose }: { onClose: () => void }): React.Reac
           </button>
         </footer>
       </div>
+      </MovableDialog>
     </div>
   )
 }

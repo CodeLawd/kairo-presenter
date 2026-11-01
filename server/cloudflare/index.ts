@@ -1,8 +1,13 @@
 import { Container, getContainer } from '@cloudflare/containers'
 import { containerEnvironment } from './environment'
+import { audienceRoutes } from './audience-routes'
+import { AudienceRoom } from './audience-room'
+
+export { AudienceRoom }
 
 interface Env {
   KAIRO_API: DurableObjectNamespace<KairoAPI>
+  AUDIENCE_ROOM: DurableObjectNamespace<AudienceRoom>
   [key: string]: unknown
 }
 
@@ -20,8 +25,14 @@ export default {
     const path = new URL(request.url).pathname
     if (!path.startsWith('/v1/')) return new Response('Not found', { status: 404 })
     try {
+      const audience = await audienceRoutes(request, env, async authRequest => {
+        const api = getContainer(env.KAIRO_API, 'api-v2')
+        await api.startAndWaitForPorts({ ports: 3000, cancellationOptions: { portReadyTimeoutMS: 90_000 } })
+        return api.fetch(authRequest)
+      })
+      if (audience) return audience
       // One instance preserves the current in-memory rate limiting and queue.
-      const container = getContainer(env.KAIRO_API, 'api')
+      const container = getContainer(env.KAIRO_API, 'api-v2')
       await container.startAndWaitForPorts({ ports: 3000, cancellationOptions: { portReadyTimeoutMS: 90_000 } })
       const response = await container.fetch(request)
       const headers = new Headers(response.headers)

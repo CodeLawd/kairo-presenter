@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { MovableDialog } from '@/components/shared/MovableDialog'
 import { BookOpen, ListMusic, Loader, Music2, X } from '@/icons'
 import { cn } from '@/lib/utils'
 import { describeDuplicate } from '@shared/lyrics-duplicate'
@@ -157,14 +158,14 @@ export function ImportReviewModal({ preview }: { preview: TransferPreview }): Re
       className="fixed inset-0 z-[60] flex items-center justify-center bg-black/35 p-4 animate-fade-in"
       onClick={close}
     >
+      <MovableDialog className="w-full max-w-lg">
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="kairo-import-title"
-        className="flex max-h-[min(640px,90vh)] w-full max-w-lg flex-col overflow-hidden rounded-2xl modal-glass shadow-2xl"
-        onClick={(event) => event.stopPropagation()}
+        className="flex max-h-[min(640px,90vh)] w-full flex-col overflow-hidden rounded-2xl modal-glass shadow-2xl"
       >
-        <header className="flex items-start gap-3 px-5 py-4">
+        <header data-modal-drag className="flex items-start gap-3 px-5 py-4">
           <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-tint-teal text-teal-300">
             <KindIcon size={16} aria-hidden="true" />
           </span>
@@ -336,6 +337,7 @@ export function ImportReviewModal({ preview }: { preview: TransferPreview }): Re
           </button>
         </footer>
       </div>
+      </MovableDialog>
     </div>
   )
 }

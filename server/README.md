@@ -99,3 +99,17 @@ provider was slow would tell the caller nothing happened when everything did.
 Jest runs with `--experimental-vm-modules` because `@react-email/render`
 dynamically imports `react-dom/server`, which the CJS test runtime cannot
 otherwise load.
+
+## Local Audience Q&A
+
+`bun run start:dev` starts Nest and its local Audience Worker together. Ctrl+C
+stops both, and a failure in either stops the other. `start:debug` does the same
+with the Nest debugger enabled. No separate Audience terminal is required.
+
+The Worker listens on `http://localhost:8787`, checks the desktop device's licence
+against Nest only when creating a room, and handles sockets directly. It needs
+no Docker or cloud deployment. With `MAIN_VITE_API_URL` on localhost port 3000, the desktop
+uses this Worker automatically; `MAIN_VITE_AUDIENCE_API_URL` can override it.
+Phone pages opened on localhost automatically use the local Worker.
+`NEXT_PUBLIC_AUDIENCE_API_URL` can override that address. A real phone needs reachable
+LAN addresses for the Worker and website instead of localhost.

@@ -4,6 +4,7 @@ import { AlertTriangle, Check, Download, Loader, MoreHorizontal, Trash2 } from '
 import type { InstalledLocalBiblePack, LocalBiblePackStatus } from '@shared/ipc'
 import { isBundledTranslation } from '@shared/bible-translations'
 import { useBootstrapStore } from '@/bootstrap/useBootstrapStore'
+import { MovableDialog } from '@/components/shared/MovableDialog'
 import { cn } from '@/lib/utils'
 
 /**
@@ -339,26 +340,32 @@ function LocalBiblePackRow({
       </BibleRowShell>
       <AlertDialog.Portal>
         <AlertDialog.Overlay className="fixed inset-0 z-[80] bg-black/50" />
-        <AlertDialog.Content className="fixed left-1/2 top-1/2 z-[81] w-[calc(100%-2rem)] max-w-[420px] -translate-x-1/2 -translate-y-1/2 rounded-xl bg-surface-secondary p-6 text-white shadow-xl outline-none"
-          onOpenAutoFocus={(event) => { event.preventDefault(); cancelRef.current?.focus() }}
-          onCloseAutoFocus={(event) => { event.preventDefault(); actionsRef.current?.focus() }}
-          onEscapeKeyDown={(event) => { event.preventDefault(); if (busy !== 'remove') setRemoveDialogOpen(false) }}>
-          <AlertDialog.Title className="text-[18px] font-semibold leading-snug">Remove {translationId} download?</AlertDialog.Title>
-          <AlertDialog.Description className="mt-2 text-[14px] leading-relaxed text-white/70">
-            {translationName} will be removed from this computer.
-            {downloadable ? ' You can download it again whenever you need it.' : ' This Bible is no longer available for download in Kairo.'}
-          </AlertDialog.Description>
-          {error && <p role="alert" className="mt-3 text-[13px] text-red-400">{error}</p>}
-          <div className="mt-6 flex justify-end gap-2">
-            <AlertDialog.Cancel asChild>
-              <button ref={cancelRef} type="button" className="btn-secondary" disabled={busy === 'remove'}>Cancel</button>
-            </AlertDialog.Cancel>
-            <button type="button" className="rounded-md bg-red-600 px-3 py-2 text-[13px] font-medium text-white hover:bg-red-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 disabled:opacity-50"
-              disabled={busy === 'remove'} onClick={() => { void remove() }}>
-              {busy === 'remove' ? 'Removing…' : 'Remove download'}
-            </button>
-          </div>
-        </AlertDialog.Content>
+        <div className="fixed inset-0 z-[81] flex items-center justify-center p-4 pointer-events-none">
+          <MovableDialog className="w-full max-w-[420px] pointer-events-auto">
+            <AlertDialog.Content className="w-full rounded-xl bg-surface-secondary p-6 text-white shadow-xl outline-none"
+              onOpenAutoFocus={(event) => { event.preventDefault(); cancelRef.current?.focus() }}
+              onCloseAutoFocus={(event) => { event.preventDefault(); actionsRef.current?.focus() }}
+              onEscapeKeyDown={(event) => { event.preventDefault(); if (busy !== 'remove') setRemoveDialogOpen(false) }}>
+              <div data-modal-drag>
+                <AlertDialog.Title className="text-[18px] font-semibold leading-snug">Remove {translationId} download?</AlertDialog.Title>
+                <AlertDialog.Description className="mt-2 text-[14px] leading-relaxed text-white/70">
+                  {translationName} will be removed from this computer.
+                  {downloadable ? ' You can download it again whenever you need it.' : ' This Bible is no longer available for download in Kairo.'}
+                </AlertDialog.Description>
+              </div>
+              {error && <p role="alert" className="mt-3 text-[13px] text-red-400">{error}</p>}
+              <div className="mt-6 flex justify-end gap-2">
+                <AlertDialog.Cancel asChild>
+                  <button ref={cancelRef} type="button" className="btn-secondary" disabled={busy === 'remove'}>Cancel</button>
+                </AlertDialog.Cancel>
+                <button type="button" className="rounded-md bg-red-600 px-3 py-2 text-[13px] font-medium text-white hover:bg-red-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 disabled:opacity-50"
+                  disabled={busy === 'remove'} onClick={() => { void remove() }}>
+                  {busy === 'remove' ? 'Removing…' : 'Remove download'}
+                </button>
+              </div>
+            </AlertDialog.Content>
+          </MovableDialog>
+        </div>
       </AlertDialog.Portal>
     </AlertDialog.Root>
   )

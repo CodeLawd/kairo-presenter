@@ -3,6 +3,7 @@ import { create } from 'zustand'
 import { Dialog } from 'radix-ui'
 import { Square, X } from '@/icons'
 import { useBootstrapStore } from '@/bootstrap/useBootstrapStore'
+import { MovableDialog } from '@/components/shared/MovableDialog'
 import { cn, downloadFile } from '@/lib/utils'
 import { serviceTalkTimeMs, serviceTextExport, type ServiceRecord, type ServiceSnapshot } from '@shared/service-records'
 
@@ -160,44 +161,50 @@ export function ServicePanel(): React.ReactElement {
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/35" />
         {active && (
-          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl modal-glass p-5 text-white shadow-2xl">
-            <Dialog.Title className="text-base font-semibold tracking-tight text-zinc-50">Save service</Dialog.Title>
-            <Dialog.Description className="mt-1.5 text-[13px] leading-relaxed text-zinc-400">
-              Transcription stops and this message is saved. Name it now — leave the name blank and it is filed by date.
-            </Dialog.Description>
-            <form
-              className="mt-5 grid gap-4"
-              onSubmit={event => {
-                event.preventDefault()
-                void run(async () => {
-                  const value = await window.api.services.command({ action: 'end', title, speaker, planId: planId || null })
-                  useServiceRecords.getState().set(value)
-                  setConfirmEnd(false)
-                })
-              }}
-            >
-              <fieldset disabled={busy} className="grid gap-4">
-                <label className="text-xs text-zinc-400">Service name<input maxLength={200} className="input mt-1" placeholder="Sunday morning service" value={title} onChange={e => setTitle(e.target.value)} /></label>
-                <label className="text-xs text-zinc-400">Speaker (optional)<input maxLength={200} className="input mt-1" value={speaker} onChange={e => setSpeaker(e.target.value)} /></label>
-                <label className="text-xs text-zinc-400">Sermon notes<select className="input mt-1" value={planId} onChange={e => setPlanId(e.target.value)}><option value="">No notes</option>{plans.map(plan => <option value={plan.id} key={plan.id}>{plan.title}</option>)}</select></label>
-              </fieldset>
-              {error && <p role="alert" className="text-[11px] text-red-400">{error}</p>}
-              <div className="flex items-center justify-between gap-2">
-                <button
-                  type="button"
-                  disabled={busy}
-                  className="text-[11px] text-zinc-600 transition-colors hover:text-rose-400 disabled:opacity-40"
-                  onClick={() => { setConfirmEnd(false); setConfirmDiscard(true) }}
-                >
-                  Discard service
-                </button>
-                <div className="flex gap-2">
-                  <Dialog.Close type="button" disabled={busy} className="btn-secondary text-xs">Keep recording</Dialog.Close>
-                  <button type="submit" disabled={busy} className="btn-primary text-xs">{busy ? 'Saving…' : 'End and save'}</button>
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+            <MovableDialog className="w-full max-w-md pointer-events-auto">
+              <Dialog.Content className="w-full rounded-xl modal-glass p-5 text-white shadow-2xl">
+                <div data-modal-drag>
+                  <Dialog.Title className="text-base font-semibold tracking-tight text-zinc-50">Save service</Dialog.Title>
+                  <Dialog.Description className="mt-1.5 text-[13px] leading-relaxed text-zinc-400">
+                    Transcription stops and this message is saved. Name it now — leave the name blank and it is filed by date.
+                  </Dialog.Description>
                 </div>
-              </div>
-            </form>
-          </Dialog.Content>
+                <form
+                  className="mt-5 grid gap-4"
+                  onSubmit={event => {
+                    event.preventDefault()
+                    void run(async () => {
+                      const value = await window.api.services.command({ action: 'end', title, speaker, planId: planId || null })
+                      useServiceRecords.getState().set(value)
+                      setConfirmEnd(false)
+                    })
+                  }}
+                >
+                  <fieldset disabled={busy} className="grid gap-4">
+                    <label className="text-xs text-zinc-400">Service name<input maxLength={200} className="input mt-1" placeholder="Sunday morning service" value={title} onChange={e => setTitle(e.target.value)} /></label>
+                    <label className="text-xs text-zinc-400">Speaker (optional)<input maxLength={200} className="input mt-1" value={speaker} onChange={e => setSpeaker(e.target.value)} /></label>
+                    <label className="text-xs text-zinc-400">Sermon notes<select className="input mt-1" value={planId} onChange={e => setPlanId(e.target.value)}><option value="">No notes</option>{plans.map(plan => <option value={plan.id} key={plan.id}>{plan.title}</option>)}</select></label>
+                  </fieldset>
+                  {error && <p role="alert" className="text-[11px] text-red-400">{error}</p>}
+                  <div className="flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      disabled={busy}
+                      className="text-[11px] text-zinc-600 transition-colors hover:text-rose-400 disabled:opacity-40"
+                      onClick={() => { setConfirmEnd(false); setConfirmDiscard(true) }}
+                    >
+                      Discard service
+                    </button>
+                    <div className="flex gap-2">
+                      <Dialog.Close type="button" disabled={busy} className="btn-secondary text-xs">Keep recording</Dialog.Close>
+                      <button type="submit" disabled={busy} className="btn-primary text-xs">{busy ? 'Saving…' : 'End and save'}</button>
+                    </div>
+                  </div>
+                </form>
+              </Dialog.Content>
+            </MovableDialog>
+          </div>
         )}
       </Dialog.Portal>
     </Dialog.Root>
@@ -205,28 +212,34 @@ export function ServicePanel(): React.ReactElement {
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/35" />
         {active && (
-          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-xl modal-glass p-5 text-white shadow-2xl">
-            <Dialog.Title className="text-base font-semibold tracking-tight text-zinc-50">Discard this service?</Dialog.Title>
-            <Dialog.Description className="mt-1.5 text-[13px] leading-relaxed text-zinc-400">
-              The transcript, nuggets and detected scriptures from this service are deleted. This cannot be undone.
-            </Dialog.Description>
-            {error && <p role="alert" className="mt-3 text-[11px] text-red-400">{error}</p>}
-            <div className="mt-5 flex justify-end gap-2">
-              <Dialog.Close type="button" disabled={busy} className="btn-secondary text-xs">Cancel</Dialog.Close>
-              <button
-                type="button"
-                disabled={busy}
-                className="btn-primary text-xs !bg-rose-500 hover:!bg-rose-400"
-                onClick={() => void run(async () => {
-                  const value = await window.api.services.command({ action: 'discard' })
-                  useServiceRecords.getState().set(value)
-                  setConfirmDiscard(false)
-                })}
-              >
-                {busy ? 'Discarding…' : 'Discard'}
-              </button>
-            </div>
-          </Dialog.Content>
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+            <MovableDialog className="w-full max-w-sm pointer-events-auto">
+              <Dialog.Content className="w-full rounded-xl modal-glass p-5 text-white shadow-2xl">
+                <div data-modal-drag>
+                  <Dialog.Title className="text-base font-semibold tracking-tight text-zinc-50">Discard this service?</Dialog.Title>
+                  <Dialog.Description className="mt-1.5 text-[13px] leading-relaxed text-zinc-400">
+                    The transcript, nuggets and detected scriptures from this service are deleted. This cannot be undone.
+                  </Dialog.Description>
+                </div>
+                {error && <p role="alert" className="mt-3 text-[11px] text-red-400">{error}</p>}
+                <div className="mt-5 flex justify-end gap-2">
+                  <Dialog.Close type="button" disabled={busy} className="btn-secondary text-xs">Cancel</Dialog.Close>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    className="btn-primary text-xs !bg-rose-500 hover:!bg-rose-400"
+                    onClick={() => void run(async () => {
+                      const value = await window.api.services.command({ action: 'discard' })
+                      useServiceRecords.getState().set(value)
+                      setConfirmDiscard(false)
+                    })}
+                  >
+                    {busy ? 'Discarding…' : 'Discard'}
+                  </button>
+                </div>
+              </Dialog.Content>
+            </MovableDialog>
+          </div>
         )}
       </Dialog.Portal>
     </Dialog.Root>
@@ -234,11 +247,13 @@ export function ServicePanel(): React.ReactElement {
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/35" />
         {record && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+            <MovableDialog className="w-full max-w-2xl pointer-events-auto">
           <Dialog.Content
             aria-describedby={undefined}
-            className="fixed left-1/2 top-1/2 z-50 flex max-h-[min(85vh,720px)] w-[calc(100%-2rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl modal-glass text-white shadow-2xl"
+            className="flex max-h-[min(85vh,720px)] w-full flex-col overflow-hidden rounded-xl modal-glass text-white shadow-2xl"
           >
-            <header className="shrink-0 px-5 pb-4 pt-5">
+            <header data-modal-drag className="shrink-0 px-5 pb-4 pt-5">
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
                   <Dialog.Title className="truncate text-base font-semibold tracking-tight text-zinc-50">{record.title || 'Unnamed service'}</Dialog.Title>
@@ -406,6 +421,8 @@ export function ServicePanel(): React.ReactElement {
               )}
             </div>
           </Dialog.Content>
+            </MovableDialog>
+          </div>
         )}
       </Dialog.Portal>
     </Dialog.Root>

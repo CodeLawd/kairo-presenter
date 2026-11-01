@@ -11,10 +11,10 @@
     "image": "./Dockerfile",
     "image_build_context": "..",
     "instance_type": "basic",
-    "max_instances": 1
+    "max_instances": 2
   }],
-  "durable_objects": { "bindings": [{ "name": "KAIRO_API", "class_name": "KairoAPI" }] },
-  "exports": { "KairoAPI": { "type": "durable-object", "storage": "sqlite", "container": "kairo-api" } },
+  "durable_objects": { "bindings": [{ "name": "KAIRO_API", "class_name": "KairoAPI" }, { "name": "AUDIENCE_ROOM", "class_name": "AudienceRoom" }] },
+  "exports": { "AudienceRoom": { "type": "durable-object", "storage": "sqlite" }, "KairoAPI": { "type": "durable-object", "storage": "sqlite", "container": "kairo-api" } },
   "vars": {
     "PUBLIC_WEB_URL": "https://kairopresenter.com",
     "WEB_ORIGIN": "https://kairopresenter.com",

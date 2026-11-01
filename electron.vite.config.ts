@@ -36,6 +36,7 @@ export default defineConfig({
         input: {
           index: resolve('src/preload/index.ts'),
           program: resolve('src/preload/program.ts'),
+          'audience-slido': resolve('src/preload/audience-slido.ts'),
         },
       },
     },

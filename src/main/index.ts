@@ -1,3 +1,4 @@
+import { audienceService } from "./services/audience";
 import { IMPORT_OPTIONS, type ImportKind } from "@shared/import-menu";
 import { IPC } from "@shared/ipc";
 import {
@@ -622,6 +623,7 @@ app.on("before-quit", (event) => {
     void captureService.stop().finally(() => app.quit());
     return;
   }
+  audienceService.shutdown();
   if (!ndiStopped) {
     scriptureService.closeQuoteWorker();
     ndiStopped = true;

@@ -1,5 +1,6 @@
 import { LyricsReviewNotice } from './LyricsReviewNotice'
 import { LibraryRail } from '@/components/lyrics/LibraryRail'
+import { MovableDialog } from '@/components/shared/MovableDialog'
 import { ZoomControl } from '@/components/shared/ZoomControl'
 import { leavesTarget } from '@/lib/drag'
 import { PICKED_ROW, listShortcuts, selectGesture, useMultiSelect, type SelectGesture } from '@/hooks/useMultiSelect'
@@ -1908,11 +1909,9 @@ function ImportModal({
         onClose()
       }}
     >
+      <MovableDialog className={cn('w-full', wideLayout ? 'max-w-5xl' : 'max-w-xl')}>
       <div
-        className={cn(
-          'w-full modal-glass rounded-2xl shadow-2xl flex flex-col overflow-hidden',
-          wideLayout ? 'max-w-5xl' : 'max-w-xl'
-        )}
+        className="w-full modal-glass rounded-2xl shadow-2xl flex flex-col overflow-hidden"
         style={{
           maxHeight: 'calc(100vh - 4rem)',
           ...(wideLayout ? { height: 'min(720px, calc(100vh - 4rem))' } : {}),
@@ -1920,7 +1919,7 @@ function ImportModal({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 shrink-0">
+        <div data-modal-drag className="flex items-center justify-between px-5 py-4 shrink-0">
           <div>
             <h2 className="text-base font-semibold text-white">Import Song</h2>
             <p className="text-xs text-zinc-400 mt-0.5">Search online, upload song files, or paste a song from your clipboard</p>
@@ -2221,6 +2220,7 @@ function ImportModal({
           )}
         </div>
       </div>
+      </MovableDialog>
     </div>
   )
 }
@@ -2247,11 +2247,12 @@ function DeleteConfirmModal({
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 animate-fade-in p-4"
       onClick={onCancel}
     >
+      <MovableDialog className="w-full max-w-sm">
       <div
-        className="w-full max-w-sm modal-glass rounded-2xl shadow-2xl p-5"
+        className="w-full modal-glass rounded-2xl shadow-2xl p-5"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start gap-3 mb-4">
+        <div data-modal-drag className="flex items-start gap-3 mb-4">
           <div className="w-9 h-9 rounded-xl bg-tint-red flex items-center justify-center shrink-0">
             <Trash2 size={15} className="text-red-400" />
           </div>
@@ -2273,6 +2274,7 @@ function DeleteConfirmModal({
           </button>
         </div>
       </div>
+      </MovableDialog>
     </div>
   )
 }

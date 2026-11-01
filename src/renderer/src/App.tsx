@@ -1,3 +1,4 @@
+import Audience from '@/components/audience/Audience'
 import { createAudioCapture } from '@/audio/capture'
 import { IMPORT_OPTIONS, isImportKind } from '@shared/import-menu'
 import { requestImport } from '@/hooks/useImportRequest'
@@ -47,6 +48,7 @@ export type NavRoute =
   | 'theme'
   | 'documents'
   | 'web'
+  | 'audience'
 
 /**
  * Keeps account state current from the main process. Its own component so the
@@ -124,6 +126,7 @@ function AudioPipeline(): null {
 }
 
 const views: Record<Exclude<NavRoute, 'operator' | 'theme' | 'documents' | 'web'>, React.ReactNode> = {
+  audience: <Audience />,
   scripture: <Scripture />,
   lyrics: <Lyrics />,
 }
@@ -660,10 +663,10 @@ export default function App(): React.ReactElement {
 
       {/* Screens — screen configuration, apart from themes */}
       {screensWindow && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 animate-fade-in">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 animate-fade-in">
           <div className="absolute inset-0" onClick={() => useAppStore.getState().closeScreens()} />
           <DraggableFrame frame={SCREENS_FRAME} min={SCREENS_MIN} storageKey="kairo.frame.screens.v4"
-            className="overflow-hidden rounded-xl ring-1 ring-surface-border animate-spring-in">
+            className="overflow-hidden rounded-2xl shadow-2xl animate-spring-in">
             <ScreenConfiguration
               initialSelect={screensWindow.select}
               onClose={() => useAppStore.getState().closeScreens()}
@@ -677,10 +680,10 @@ export default function App(): React.ReactElement {
 
       {/* Props editor — build the props the Show tab puts on screen */}
       {propsWindow && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 animate-fade-in">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 animate-fade-in">
           <div className="absolute inset-0" onClick={() => useAppStore.getState().closeProps()} />
           <DraggableFrame frame={PROPS_FRAME} min={PROPS_MIN} storageKey="kairo.frame.props"
-            className="overflow-hidden rounded-xl ring-1 ring-surface-border animate-spring-in">
+            className="overflow-hidden rounded-2xl shadow-2xl animate-spring-in">
             <PropsEditor
               initialSelect={propsWindow.select}
               onClose={() => useAppStore.getState().closeProps()}
@@ -691,13 +694,13 @@ export default function App(): React.ReactElement {
 
       {/* Settings Modal Overlay */}
       {settingsOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 animate-fade-in">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 animate-fade-in">
           <div
             className="absolute inset-0"
             onClick={() => setSettingsOpen(false)}
           />
           <DraggableFrame frame={SETTINGS_FRAME} min={SETTINGS_MIN} storageKey="kairo.frame.settings.v2"
-            className="overflow-hidden rounded-xl ring-1 ring-surface-border animate-spring-in">
+            className="overflow-hidden rounded-2xl shadow-2xl animate-spring-in">
             <Settings onClose={() => setSettingsOpen(false)} initialSection={settingsSection} />
           </DraggableFrame>
         </div>

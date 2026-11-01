@@ -35,6 +35,15 @@
         ],
         "createdAt": "2026-10-20T10:18:19.072Z",
         "reason": "Codex reviewed: dark slate text is intentional high-contrast ink on the light paper document; reference marks use pale blue backgrounds and near-black text."
+      },
+      {
+        "rule": "broken-image",
+        "value": "*",
+        "files": [
+          "tests/audience.test.ts"
+        ],
+        "createdAt": "2026-11-01T12:20:17.011Z",
+        "reason": "Agent triage: intentional security fixture at line 65 uses author <img>; assertions verify it renders as escaped text, never as an image."
       }
     ]
   }

@@ -1,0 +1,28 @@
+.wide { max-width: 900px; }
+.intro { margin-bottom: 18px; color: var(--muted); font-size: 14px; line-height: 1.6; }
+.filters { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; }
+.filters button { display: flex; align-items: center; gap: 8px; flex-shrink: 0; min-height: 44px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); cursor: pointer; }
+.filters button[aria-pressed='true'] { color: var(--accent); background: var(--tint); border-color: var(--accent); }
+.filters button span { font-size: 12px; font-variant-numeric: tabular-nums; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.actions button { min-height: 40px; padding: 8px 12px; border: 1px solid var(--line); background: var(--field); border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.actions button:disabled { opacity: .45; cursor: default; }
+.editor { display: grid; gap: 14px; margin-top: 20px; }
+.editor h2 { font-size: 20px; font-weight: 600; }
+.editor p { color: var(--muted); font-size: 13px; line-height: 1.5; }
+.editor label { display: grid; gap: 7px; font-size: 14px; font-weight: 500; }
+.editor input:not([type='checkbox']), .editor textarea, .editor select { display: block; width: 100%; min-height: 44px; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; background: var(--field); color: var(--ink); font: inherit; }
+.editor textarea { resize: vertical; min-height: 90px; }
+.editor > button { justify-self: start; }
+.editor .check { display: flex; align-items: center; gap: 10px; min-height: 40px; }
+.check input { width: 18px; height: 18px; accent-color: var(--accent-solid); }
+.original { margin-top: 12px; font-size: 12px; color: var(--muted); }
+.original summary { cursor: pointer; }
+.original p { margin-top: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.tag { display: inline-flex; padding: 4px 8px; border-radius: 6px; color: var(--accent); background: var(--tint); font-size: 12px; }
+.pollHeading { display: flex; align-items: center; justify-content: space-between; margin: 20px 0 16px; gap: 16px; }
+.pollHeading h2 { font-size: 20px; font-weight: 600; }
+.results { display: grid; gap: 14px; margin: 16px 0; }
+.resultLabel { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 6px; font-size: 14px; }
+.resultLabel span { overflow-wrap: anywhere; min-width: 0; }
+.resultLabel strong { flex-shrink: 0; font-size: 12px; font-variant-numeric: tabular-nums; }

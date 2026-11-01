@@ -1574,6 +1574,7 @@ export interface UpdatesAPI {
 }
 
 export interface KairoAPI {
+  audience: import('./audience').AudienceAPI
   services: import('./service-records').ServicesAPI
   app: AppAPI
   audio: AudioAPI

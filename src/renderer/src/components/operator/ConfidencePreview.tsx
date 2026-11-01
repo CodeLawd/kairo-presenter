@@ -7,7 +7,7 @@ import { formatClock, formatTimer, timerReadout, timerRunning, type ConfidenceIn
 // screen windows get (programLayersFor / confidenceFor in src/lib/program.ts),
 // at the screen's 1920×1080 metrics scaled to the preview.
 
-type Layers = { props: string; message: string; logo: string }
+type Layers = { poll: string; question: string; props: string; message: string; logo: string }
 
 /** Props, message, countdown/clock/stage message, then the logo on top — the screen's stacking order. */
 export function ProgramLayersPreview({
@@ -29,6 +29,8 @@ export function ProgramLayersPreview({
       >
         {slot(layers.props)}
         {slot(layers.message)}
+        {slot(layers.poll)}
+        {slot(layers.question)}
         {info && <InfoLayer info={info} />}
         {slot(layers.logo)}
       </div>

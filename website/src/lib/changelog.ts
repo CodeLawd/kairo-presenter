@@ -14,6 +14,17 @@ export type ChangelogEntry = {
 
 export const changelog: ChangelogEntry[] = [
   {
+    version: '1.0.23',
+    date: '2026-11-01',
+    title: 'Questions and polls for your congregation',
+    notes: [
+      'Create an Engage event ahead of a service and share a join code so people can ask questions and vote in polls.',
+      'Review, answer, and show audience questions or poll results on your presentation screens.',
+      'Invite moderators to help manage questions, and return to an event later with the same join code.',
+      'Screen and settings controls are clearer, with improved confirmation when closing Kairo.',
+    ],
+  },
+  {
     version: '1.0.22',
     date: '2026-11-01',
     title: 'Softer sidebars and clearer passages',

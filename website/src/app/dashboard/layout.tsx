@@ -23,6 +23,7 @@ import {
 const TITLES: Record<string, string> = {
   '/dashboard': 'Dashboard',
   '/dashboard/sermons': 'Sermons',
+  '/dashboard/engage': 'Engage',
   '/dashboard/devices': 'Devices',
   '/dashboard/members': 'Members',
   '/dashboard/billing': 'Plans & Billing',
@@ -105,9 +106,9 @@ function DashboardChrome({ children }: { children: React.ReactNode }): React.Rea
   // than scanning or sorting the map.
   const section = pathname.split('/').slice(0, 3).join('/')
   const title = TITLES[pathname] ?? TITLES[section] ?? 'Dashboard'
-  // Recap reader is a two-pane split: drop page padding so the list rule
-  // can run from the header to the bottom of the viewport.
-  const sermonOpen = /^\/dashboard\/sermons\/[^/]+$/.test(pathname)
+  // Recap reader and Engage detail are edge-to-edge workspaces: drop page
+  // padding so they can use their own custom layout and split panes.
+  const fullBleed = /^\/dashboard\/(sermons|engage)\/[^/]+$/.test(pathname)
 
   return (
     <div className="flex h-dvh overflow-hidden bg-sidebar text-foreground">
@@ -126,7 +127,7 @@ function DashboardChrome({ children }: { children: React.ReactNode }): React.Rea
         <main
           className={cn(
             'relative min-h-0 flex-1',
-            sermonOpen ? 'overflow-hidden' : 'overflow-y-auto p-4 md:p-6 lg:p-8',
+            fullBleed ? 'overflow-hidden' : 'overflow-y-auto p-4 md:p-6 lg:p-8',
           )}
         >
           {children}

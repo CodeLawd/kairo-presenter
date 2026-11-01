@@ -18,6 +18,15 @@ exports.default = async function afterPack(context) {
     throw new Error(`Cannot prune NDI prebuilds for ${platform ?? 'unknown'}/${context.arch}`)
   }
 
+  // macOS uses en.lproj; Windows/Linux use en-US.pak. A bare "en" language
+  // filter removes every .pak, causing Blink's Windows locale lookup to crash.
+  if (platform === 'win32' || platform === 'linux') {
+    const locale = path.join(context.appOutDir, 'locales', 'en-US.pak')
+    if (!fs.existsSync(locale) || !fs.statSync(locale).isFile() || fs.statSync(locale).size === 0) {
+      throw new Error(`Required Electron locale is missing or empty: ${locale}. Keep en-US in electronLanguages.`)
+    }
+  }
+
   const resources = platform === 'darwin'
     ? path.join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`, 'Contents', 'Resources')
     : path.join(context.appOutDir, 'resources')

@@ -11,7 +11,7 @@ import path from 'node:path'
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'kairo-pairing-test-'))
 const output = buildSync({
   entryPoints: ['src/main/services/cloud/session.ts'], bundle: true, platform: 'node', format: 'cjs', write: false,
-  define: { 'import.meta.env.MAIN_VITE_API_URL': '"http://localhost:3000"' },
+  define: { 'import.meta.env.MAIN_VITE_API_URL': '"http://localhost:3000"', 'import.meta.env.MAIN_VITE_AUDIENCE_API_URL': 'undefined' },
   external: ['electron', 'electron-log/main', '@main/db', './secure-store', './api-client'],
 }).outputFiles[0].text
 const OriginalLoad = (Module as unknown as { _load: (...args: unknown[]) => unknown })._load
@@ -84,5 +84,16 @@ test('a cancelled in-flight approval cannot sign in over a newer request', async
   assert.equal(service.getSession().state, 'signed-out')
   assert.equal(service.getPairing().userCode, 'PROA-2')
   assert.equal(service.getPairing().status, 'waiting')
+  service.stop()
+})
+
+
+test('audience creation targets the Worker and throws a serializable Error with the API message', async () => {
+  const service = new CloudSessionService(availableStore)
+  requestHandler = async url => {
+    assert.equal(url, 'http://localhost:8787/v1/audience/rooms')
+    throw { status: 403, message: 'Activate this computer first.' }
+  }
+  await assert.rejects(service.createAudienceRoom('Test room'), error => error instanceof Error && error.message === 'Activate this computer first.')
   service.stop()
 })

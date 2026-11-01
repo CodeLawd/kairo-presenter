@@ -12,6 +12,7 @@ const HEIGHT = 557;
 export function Logo({
   height = 22,
   href = "/",
+  tone = "auto",
   className,
   priority,
 }: {
@@ -19,9 +20,25 @@ export function Logo({
   height?: number;
   /** `null` renders the logo without a link. */
   href?: string | null;
+  /**
+   * - `auto` (default): follows the marketing/dashboard theme (`brand-logo`).
+   * - `adaptive`: drawn in Kairo ink on light surfaces and off-white in `.dark`.
+   * - `light`: always off-white (for dark headers).
+   * - `dark`: always Kairo ink (for light surfaces).
+   */
+  tone?: "auto" | "adaptive" | "light" | "dark";
   className?: string;
   priority?: boolean;
 }): React.ReactElement {
+  const toneClass =
+    tone === "adaptive"
+      ? "brightness-0 opacity-93 dark:brightness-100 dark:opacity-100"
+      : tone === "dark"
+        ? "brightness-0 opacity-93"
+        : tone === "light"
+          ? ""
+          : "brand-logo";
+
   const image = (
     <Image
       src="/brand/logo-white.png"
@@ -29,8 +46,7 @@ export function Logo({
       width={WIDTH}
       height={HEIGHT}
       priority={priority}
-      // `brand-logo`: drawn dark in the app's light theme (globals.css).
-      className="brand-logo block w-auto"
+      className={`block w-auto ${toneClass}`}
       style={{ height }}
     />
   );

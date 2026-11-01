@@ -1,3 +1,4 @@
+import type { PollView } from '@shared/engage'
 import type { LiveScriptureContext } from '../scripture/voice-navigation'
 import log from 'electron-log/main'
 import {
@@ -12,6 +13,7 @@ import {
   type ProgramTimerState,
   type ProgramSlideInfo,
   type ProgramState,
+  type ProgramQuestion,
 } from '@shared/program'
 import { webAddress } from '@shared/web'
 import { store } from '../../db'
@@ -66,6 +68,17 @@ class ProgramService {
   showMessage(text: string): ProgramState {
     const message = text.trim().slice(0, 1000)
     return this.set({ message: message || null })
+  }
+
+  showPoll(poll: PollView): ProgramState { return this.set({poll}) }
+  clearPoll(): ProgramState { return this.set({poll:null}) }
+
+  showQuestion(question: ProgramQuestion): ProgramState {
+    return this.set({ question })
+  }
+
+  clearQuestion(): ProgramState {
+    return this.set({ question: null })
   }
 
   clearMessage(): ProgramState {
@@ -199,7 +212,7 @@ class ProgramService {
   clearProgram(): void {
     this.scripture = null
     this.scriptureRevision++
-    this.set({ message: null, activePropIds: [], logo: false, camera: null, cameraAudio: null, web: null, current: null, next: null })
+    this.set({ poll: null, question: null, message: null, activePropIds: [], logo: false, camera: null, cameraAudio: null, web: null, current: null, next: null })
   }
 }
 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import {
   BookOpen,
+  MessageSquare,
   FileText,
   Globe,
   CircleGauge,
@@ -58,6 +59,7 @@ const workspaces: Array<{ id: NavRoute; label: string; icon: typeof CircleGauge;
   { id: 'scripture', label: 'Scripture', icon: BookOpen, hue: 'blue' },
   { id: 'lyrics', label: 'Lyrics', icon: Music2, hue: 'violet' },
   { id: 'documents', label: 'Documents', icon: FileText, hue: 'cyan' },
+  { id: 'audience', label: 'Engage', icon: MessageSquare, hue: 'coral' },
   { id: 'web', label: 'Web', icon: Globe, hue: 'indigo' },
   { id: 'theme', label: 'Theme Editor', icon: Palette, hue: 'pink' },
 ]

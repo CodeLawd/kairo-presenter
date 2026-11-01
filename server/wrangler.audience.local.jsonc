@@ -1,0 +1,14 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "kairo-audience-local",
+  "main": "cloudflare/audience-local.ts",
+  "compatibility_date": "2026-10-24",
+  "durable_objects": { "bindings": [{ "name": "AUDIENCE_ROOM", "class_name": "AudienceRoom" }] },
+  "exports": { "AudienceRoom": { "type": "durable-object", "storage": "sqlite" } },
+  "vars": {
+    "LOCAL_API_URL": "http://127.0.0.1:3000",
+    "WEB_ORIGIN": "http://localhost:3001",
+    "PUBLIC_WEB_URL": "http://localhost:3001"
+  },
+  "dev": { "ip": "127.0.0.1", "port": 8787 }
+}

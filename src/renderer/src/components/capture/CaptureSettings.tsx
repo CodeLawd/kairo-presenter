@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { MovableDialog } from '@/components/shared/MovableDialog'
 import { X } from '@/icons'
 import { useBootstrapStore } from '@/bootstrap/useBootstrapStore'
 import { useCaptureStore } from '@/stores/useCaptureStore'
@@ -94,14 +95,14 @@ export function CaptureSettings({ onClose }: { onClose: () => void }): React.Rea
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/35 p-4 animate-fade-in" onClick={onClose}>
+      <MovableDialog className="w-full max-w-[520px]">
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="capture-settings-title"
-        className="flex max-h-[min(720px,92vh)] w-full max-w-[520px] flex-col overflow-hidden rounded-2xl modal-glass shadow-2xl animate-spring-in"
-        onClick={(event) => event.stopPropagation()}
+        className="flex max-h-[min(720px,92vh)] w-full flex-col overflow-hidden rounded-2xl modal-glass shadow-2xl animate-spring-in"
       >
-        <header className="flex items-center gap-3 px-5 pb-2 pt-4">
+        <header data-modal-drag className="flex items-center gap-3 px-5 pb-2 pt-4">
           <h2 id="capture-settings-title" className="min-w-0 flex-1 text-[15px] font-semibold tracking-tight text-white">Capture Settings</h2>
           <button type="button" onClick={onClose} aria-label="Close" className="grid size-7 place-items-center rounded-md text-white/40 hover:bg-surface-tertiary hover:text-white">
             <X size={14} aria-hidden="true" />
@@ -211,6 +212,7 @@ export function CaptureSettings({ onClose }: { onClose: () => void }): React.Rea
           </button>
         </footer>
       </div>
+      </MovableDialog>
     </div>
   )
 }

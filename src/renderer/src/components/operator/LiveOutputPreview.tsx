@@ -122,7 +122,7 @@ export function LiveOutputPreview({
     () => (rendered ? confidenceFor(view, program, presentation) : null),
     [rendered, view, program, presentation],
   );
-  const drawn = !!info || !!(layers && (layers.props || layers.message || layers.logo));
+  const drawn = !!info || !!(layers && (layers.poll || layers.question || layers.props || layers.message || layers.logo));
   // The live web page, where this screen shows it: under the words, over the background.
   const web = rendered && view.show.backgrounds && followsProgram(view) ? program.web : null;
   // Every page keeps its own live panel mounted; only the one on show runs the web page.

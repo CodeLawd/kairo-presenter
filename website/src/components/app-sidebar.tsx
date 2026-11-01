@@ -11,6 +11,7 @@ import {
   LayoutDashboardIcon,
   LogOutIcon,
   MenuIcon,
+  MessageCircleIcon,
   MonitorSmartphoneIcon,
   ShieldIcon,
   UserRoundIcon,
@@ -42,6 +43,7 @@ const NAV_GROUPS = [
     items: [
       { title: 'Dashboard', href: '/dashboard', icon: LayoutDashboardIcon },
       { title: 'Sermons', href: '/dashboard/sermons', icon: BookOpenTextIcon },
+      { title: 'Engage', href: '/dashboard/engage', icon: MessageCircleIcon },
     ],
   },
   {

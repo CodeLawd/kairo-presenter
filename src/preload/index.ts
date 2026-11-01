@@ -1,3 +1,4 @@
+import { AUDIENCE } from '../lib/audience'
 import { DOCUMENTS } from '@shared/documents'
 import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
@@ -757,7 +758,30 @@ const videoDevices: KairoAPI['videoDevices'] = {
   status: () => ipcRenderer.invoke(IPC.VIDEO_DEVICES.STATUS),
   onChanged: (callback) => subscribe(IPC.VIDEO_DEVICES.CHANGED, callback),
 }
-const api: KairoAPI = { transfer, passages, libraries, setlist, services, documents, app: appApi, audio, scripture, transcription, workspace, lyrics, settings, orchestrator, resilience, ndi, capture, displays, videoDevices, output, program, songUsage, media, tracks, onboarding, account, updates }
+const audience: KairoAPI['audience'] = {
+  listEngagements: () => ipcRenderer.invoke(AUDIENCE.ENGAGEMENTS),
+  createEngagement: input => ipcRenderer.invoke(AUDIENCE.CREATE_ENGAGEMENT,input),
+  resumeEngagement: (code, reopen) => ipcRenderer.invoke(AUDIENCE.RESUME, code, reopen),
+  reopenEngagement: () => ipcRenderer.invoke(AUDIENCE.REOPEN_ENGAGEMENT),
+  deleteEngagement: code => ipcRenderer.invoke(AUDIENCE.DELETE_ENGAGEMENT,code),
+  inviteModerator: (email,name) => ipcRenderer.invoke(AUDIENCE.INVITE,email,name),
+  revokeModerator: id => ipcRenderer.invoke(AUDIENCE.REVOKE,id),
+  command: command => ipcRenderer.invoke(AUDIENCE.COMMAND,command),
+  showPoll: id => ipcRenderer.invoke(AUDIENCE.SHOW_POLL,id),
+  clearPoll: () => ipcRenderer.invoke(AUDIENCE.CLEAR_POLL),
+  getState: () => ipcRenderer.invoke(AUDIENCE.GET),
+  startSource: (kind, options) => ipcRenderer.invoke(AUDIENCE.START, kind, options),
+  openSource: id => ipcRenderer.invoke(AUDIENCE.OPEN, id),
+  stopSource: id => ipcRenderer.invoke(AUDIENCE.STOP, id),
+  setRoomSettings: settings => ipcRenderer.invoke(AUDIENCE.ROOM_SETTINGS, settings),
+  openAudiencePage: () => ipcRenderer.invoke(AUDIENCE.PAGE),
+  setQuestionState: (id, state) => ipcRenderer.invoke(AUDIENCE.MODERATE, id, state),
+  show: id => ipcRenderer.invoke(AUDIENCE.SHOW, id),
+  clear: () => ipcRenderer.invoke(AUDIENCE.CLEAR),
+  showJoinCode: () => ipcRenderer.invoke(AUDIENCE.JOIN),
+  onChanged: callback => subscribe(AUDIENCE.CHANGED, callback),
+}
+const api: KairoAPI = { audience, transfer, passages, libraries, setlist, services, documents, app: appApi, audio, scripture, transcription, workspace, lyrics, settings, orchestrator, resilience, ndi, capture, displays, videoDevices, output, program, songUsage, media, tracks, onboarding, account, updates }
 
 if (process.contextIsolated) {
   try {
