@@ -82,7 +82,7 @@ export function VerseCardGrid({
     >
     <div
       ref={gridRef as React.Ref<HTMLDivElement>}
-      className="flex w-full flex-col gap-3"
+      className="flex w-full flex-col"
     >
       {rows.map((row) => {
         const rowStart = flatIndex;
@@ -137,23 +137,25 @@ export function VerseCardGrid({
               else rowRefs.current.delete(rowKey);
             }}
             data-plan-item={row.planItemId ?? undefined}
-            className={cn(
-              "min-w-0 scroll-mt-3 space-y-2.5",
-              // Each passage sits in its own panel so where one reference ends
-              // and the next begins is plain at a glance.
-              rows.length > 1 && "rounded-lg bg-surface-secondary p-3",
-            )}
+            className={cn("min-w-0 scroll-mt-3", rows.length > 1 && "pb-7")}
           >
-            {/* A lone passage needs no heading — its slide already shows the reference. */}
+            {/* A lone passage needs no heading — its slide already shows the reference.
+                Otherwise each passage opens with a header bar that pins to the
+                top while its cards scroll, as macOS list sections do: you always
+                know which passage you are in, and the next one's bar marks where
+                it starts. */}
             {(rows.length > 1 || row.note) && (
-              <div className="flex min-h-6 flex-wrap items-center gap-2">
+              <div className="sticky top-0 z-10 -mx-5 mb-3 flex min-h-9 flex-wrap items-center gap-2 bg-[rgb(var(--surface-tertiary)/0.72)] px-5 py-2 backdrop-blur-md lg:-mx-6 lg:px-6">
                 <BookOpen size={13} weight="fill" className={cn("shrink-0", rowIsLive ? "text-live" : "text-slate-500")} aria-hidden="true" />
-                <p className={cn("min-w-0 truncate text-[13px] font-semibold", rowIsLive ? "text-live" : "text-slate-200")}>
+                <p className={cn("min-w-0 truncate text-[13px] font-semibold", rowIsLive ? "text-live" : "text-slate-100")}>
                   {row.reference}
                 </p>
                 {row.note && (
                   <span className="text-[10px] text-yellow-500/90">{row.note}</span>
                 )}
+                <span className="ml-auto shrink-0 text-[11px] tabular-nums text-slate-500">
+                  {row.cards.length} {row.cards.length === 1 ? "verse" : "verses"}
+                </span>
               </div>
             )}
             <div

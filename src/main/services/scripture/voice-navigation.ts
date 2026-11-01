@@ -155,3 +155,28 @@ export function pickCommandContext(
   if (live && followUp) return followUp.at > live.at ? followUp.context : live.context
   return live?.context ?? followUp?.context ?? null
 }
+
+/**
+ * The translation the preacher is reading from, for a detected verse that
+ * names none: the passage on screen (or just detected), when the verse is in
+ * the same book and the same or a neighbouring chapter. Reading John 5 in the
+ * AMPC, John 5:30 should arrive in the AMPC, not the default translation.
+ */
+export function readingTranslation(
+  context: LiveScriptureContext | null,
+  ref: { book: string; chapter: number },
+): ScriptureTranslation | null {
+  if (!context || context.book !== ref.book) return null
+  return Math.abs(context.chapter - ref.chapter) <= 1 ? context.translation : null
+}
+
+/** The detected verse is exactly what is already on screen — same verse, same translation. */
+export function isOnScreen(
+  live: LiveScriptureContext | null,
+  ref: { book: string; chapter: number; verseStart: number; verseEnd?: number | null },
+  translation: string,
+): boolean {
+  if (!live) return false
+  return live.book === ref.book && live.chapter === ref.chapter && live.translation === translation
+    && live.verseStart === ref.verseStart && live.verseEnd === (ref.verseEnd ?? ref.verseStart)
+}

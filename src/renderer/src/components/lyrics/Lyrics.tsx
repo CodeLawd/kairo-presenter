@@ -3352,9 +3352,9 @@ export default function Lyrics(): React.ReactElement {
         />
       }
     >
-      <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-surface">
+      <div className="page-with-sidebar flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-surface">
       {/* Main split layout */}
-      <div ref={libraryWidth.containerRef} className="flex-1 flex min-h-0 min-w-0 overflow-hidden">
+      <div ref={libraryWidth.containerRef} className="page-with-sidebar flex-1 flex min-h-0 min-w-0 overflow-hidden">
 
         {/* ── Left panel: the library, on its own surface ───────────────────── */}
         {/* A sidebar rather than a card: it runs the full height of the page, so
@@ -3365,7 +3365,7 @@ export default function Lyrics(): React.ReactElement {
           className={cn(
             // ProPresenter's sidebar: sources on the lighter block, the song
             // list on the darker one, a strip between (the --sidebar-* shades).
-            "hairline-r sidebar-list flex shrink-0 flex-col min-h-0 min-w-0",
+            "page-sidebar hairline-r sidebar-list flex shrink-0 flex-col min-h-0 min-w-0",
           )}
         >
           <div className="sidebar-sources shrink-0 px-1 pb-2 pt-2">
@@ -3660,7 +3660,7 @@ export default function Lyrics(): React.ReactElement {
           {...libraryWidth.separatorProps}
           aria-label="Resize song library"
           title="Drag to resize library · double-click to reset"
-          className="group flex w-2 shrink-0 cursor-col-resize touch-none items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50"
+          className="page-sidebar-handle group flex w-2 shrink-0 cursor-col-resize touch-none items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50"
         ><span className="h-12 w-px bg-surface-elevated transition-colors group-hover:bg-teal-400 group-active:bg-teal-400" /></button>
         <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
           {webPreviewResult && !editMode ? (

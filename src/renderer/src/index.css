@@ -6,41 +6,43 @@
 
 @layer base {
   :root {
-    /* Neutral graphite, as in ProPresenter: pure grey with no blue cast
-       (#1E1E1E workspace, #2C2C2C panels, #151515 frame, #121212 hairlines).
-       Panels sit one step above the workspace and controls remain distinct.
+    /* Neutral graphite in Codex's order: the workspace is darkest (#181818),
+       sidebars and docks sit one quiet step above it (#1D1D1D), cards and
+       controls above that (#2D2D2D), and the frame — header and rail — is the
+       lightest band (#272727). Pure grey, no blue cast.
        Colour belongs to actions (macOS system blue), live state, tool icons
        and status. */
-    --surface: 30 30 30;
-    --surface-secondary: 44 44 44;
-    --surface-tertiary: 58 58 58;
-    --surface-elevated: 72 72 72;
-    --surface-rail: 21 21 21;
+    --surface: 24 24 24;
+    --surface-secondary: 29 29 29;
+    --surface-tertiary: 45 45 45;
+    --surface-elevated: 56 56 56;
+    --surface-rail: 39 39 39;
     --surface-header: var(--surface-rail);
-    --surface-border: 72 72 72;
+    --surface-border: 64 64 64;
     /* Dropdown menus: a step lighter than anything under them, split by a line. */
-    --surface-menu: 52 52 52;
-    --surface-menu-hover: 66 66 66;
-    --surface-menu-line: 78 78 78;
+    --surface-menu: 45 45 45;
+    --surface-menu-hover: 58 58 58;
+    --surface-menu-line: 66 66 66;
     /* Hairline between regions (sidebar | workspace, header | body), on top of the tone step. */
-    --surface-line: 18 18 18;
+    --surface-line: 14 14 14;
     --panel-border-width: 0.5px;
     --panel-border-color: rgb(var(--surface-border) / 0.75);
     /* The black band behind a screen canvas, and the grey of a display on it. */
-    --surface-stage: 12 12 12;
+    --surface-stage: 10 10 10;
     --surface-display: 84 84 84;
     /* The editor's pasteboard behind a slide being designed: a mid grey, as
        in ProPresenter, so both dark and light slides show their edges. */
     --surface-canvas: 98 98 98;
-    /* Page sidebars, measured from ProPresenter's library sidebar. */
-    --sidebar-sources: 70 70 70;   /* #464646 library + playlists block */
-    --sidebar-list: 47 47 47;      /* #2F2F2F the open list */
-    --sidebar-band: 35 35 35;      /* #232323 the strip between them */
-    --sidebar-pick-sources: 88 88 88;        /* #585858 */
-    --sidebar-pick-sources-line: 129 129 129; /* #818181 */
-    --sidebar-pick-list: 68 68 68;           /* #444444 */
-    --sidebar-pick-list-line: 114 114 114;   /* #727272 */
-    --sidebar-field: 26 26 26;     /* #1A1A1A the filter pill */
+    /* Page sidebars, as in Codex: one even tone a step above the workspace,
+       plain headings, and a soft fill (no outline) for the selected row. */
+    --sidebar-sources: 29 29 29;
+    --sidebar-list: 29 29 29;
+    --sidebar-band: 29 29 29;
+    --sidebar-pick-sources: 47 47 47;
+    --sidebar-pick-sources-line: 47 47 47;
+    --sidebar-pick-list: 47 47 47;
+    --sidebar-pick-list-line: 47 47 47;
+    --sidebar-field: 40 40 40;
     /* Accent is the website's stage blue (#3B6BFF) for what is picked and the primary action; red
        (broadcast tally) marks only what is live on screen. */
     --control-accent: 10 132 255;
@@ -71,12 +73,12 @@
     --hue-indigo: 138 146 245;
     /* Solid red wash for a live row, readable on surface and secondary. */
     --tint-live: 74 38 38;
-    --tint-teal: 58 58 58;
+    --tint-teal: 45 45 45;
     --tint-red: 52 26 26;
-    --tint-amber: 58 58 58;
-    --tint-yellow: 58 58 58;
+    --tint-amber: 45 45 45;
+    --tint-yellow: 45 45 45;
     --tint-rose: 54 26 28;
-    --range-track: 64 64 64;
+    --range-track: 58 58 58;
     --text-primary: 236 236 236;
     /* Grey text, a step brighter than the neutral scale so labels read on
        charcoal. slate/zinc text-* map here (tailwind.config.js); bg/border don't. */
@@ -92,13 +94,13 @@
     --neutral-400: 150 150 150;
     --neutral-500: 128 128 128;
     --neutral-600: 84 84 84;
-    --neutral-700: 72 72 72;
-    --neutral-800: 58 58 58;
-    --neutral-900: 44 44 44;
-    --neutral-950: 30 30 30;
+    --neutral-700: 64 64 64;
+    --neutral-800: 45 45 45;
+    --neutral-900: 29 29 29;
+    --neutral-950: 24 24 24;
     /* Frosted glass (as in ProPresenter's windows): the tone a modal's
        sidebar, title bar or whole small dialog is tinted with. */
-    --glass: 30 30 30;
+    --glass: 29 29 29;
     --radius: 0.375rem;
     --radius-md: 0.5rem;
     --radius-sm: 0.25rem;
@@ -635,7 +637,28 @@ html[data-window-material='vibrancy'] .workspace-rail {
   backdrop-filter: blur(24px) saturate(125%);
 }
 
+/* Page sidebars sit on the window material too, as in Codex: the workspace
+   behind them turns see-through, the sidebar takes a translucent wash, and
+   the page's other columns stay solid. */
+html[data-window-material='vibrancy'] .app-workspace:has(> div:not(.hidden) .page-sidebar),
+html[data-window-material='vibrancy'] .booth-workspace:has(.page-sidebar),
+html[data-window-material='vibrancy'] .page-with-sidebar {
+  background: transparent;
+}
+html[data-window-material='vibrancy'] .page-with-sidebar > :not(.page-sidebar):not(.page-sidebar-handle):not(.page-with-sidebar) {
+  background: rgb(var(--surface));
+}
+html[data-window-material='vibrancy'] .page-sidebar {
+  background: rgb(var(--sidebar-list) / 0.55);
+}
+html[data-window-material='vibrancy'] .page-sidebar-handle {
+  background: transparent;
+}
+
 @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  html[data-window-material='vibrancy'] .page-sidebar {
+    background: rgb(var(--sidebar-list));
+  }
   html[data-window-material='vibrancy'] .app-header,
   html[data-window-material='vibrancy'] .workspace-rail,
   html[data-window-material='vibrancy'] .app-workspace-frame {

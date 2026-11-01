@@ -14,6 +14,16 @@ export type ChangelogEntry = {
 
 export const changelog: ChangelogEntry[] = [
   {
+    version: '1.0.22',
+    date: '2026-11-01',
+    title: 'Softer sidebars and clearer passages',
+    notes: [
+      'Reading a passage in one translation keeps the verses that follow in that translation, and the verse already on screen is no longer suggested again.',
+      'Scripture, Lyrics, Documents and Web sidebars now sit on a soft, see-through panel that sets them apart from the page.',
+      'Each passage in a scripture playlist opens with a header bar that stays in view while you scroll, and the verse cards are lighter and easier to scan.',
+    ],
+  },
+  {
     version: '1.0.21',
     date: '2026-10-31',
     title: 'A calmer, clearer Kairo',

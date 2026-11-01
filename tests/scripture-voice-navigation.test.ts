@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { followUpContext, parseScriptureVoiceCommand, ScriptureVoiceNavigation, type LiveScriptureContext } from '../src/main/services/scripture/voice-navigation'
+import { followUpContext, isOnScreen, parseScriptureVoiceCommand, readingTranslation, ScriptureVoiceNavigation, type LiveScriptureContext } from '../src/main/services/scripture/voice-navigation'
 import type { ScriptureSuggestion, ScriptureVerse, TranscriptResult } from '../src/lib/ipc'
 const final = (text: string, id = text): TranscriptResult => ({ text, id, words: [], timestamp: 0, duration: 1, isFinal: true })
 for (const text of ['do not go to the next verse', 'next verse is what he said', 'next verse no stay here', 'switch to KJV but not yet']) {
@@ -86,3 +86,21 @@ for (const [text, direction] of [
 for (const text of ['Next week we will look at Romans.', 'Go on and tell your neighbour.', 'Continue to pray for the family.', 'Back in the day.']) {
   test(`does not treat narration as a command: ${text}`, () => assert.equal(parseScriptureVoiceCommand(text), null))
 }
+
+const johnFiveAmpc: LiveScriptureContext = { book: 'John', chapter: 5, verseStart: 30, verseEnd: 30, translation: 'AMPC', revision: 1 }
+test('a detected verse follows the translation being read in the same passage', () => {
+  assert.equal(readingTranslation(johnFiveAmpc, { book: 'John', chapter: 5 }), 'AMPC')
+  // Reading on into the next chapter keeps the translation.
+  assert.equal(readingTranslation(johnFiveAmpc, { book: 'John', chapter: 6 }), 'AMPC')
+})
+test('a verse elsewhere takes the default translation, not the one on screen', () => {
+  assert.equal(readingTranslation(johnFiveAmpc, { book: 'Romans', chapter: 5 }), null)
+  assert.equal(readingTranslation(johnFiveAmpc, { book: 'John', chapter: 14 }), null)
+  assert.equal(readingTranslation(null, { book: 'John', chapter: 5 }), null)
+})
+test('the verse already on screen in the same translation is not suggested again', () => {
+  assert.equal(isOnScreen(johnFiveAmpc, { book: 'John', chapter: 5, verseStart: 30 }, 'AMPC'), true)
+  assert.equal(isOnScreen(johnFiveAmpc, { book: 'John', chapter: 5, verseStart: 30 }, 'NKJV'), false)
+  assert.equal(isOnScreen(johnFiveAmpc, { book: 'John', chapter: 5, verseStart: 31 }, 'AMPC'), false)
+  assert.equal(isOnScreen(null, { book: 'John', chapter: 5, verseStart: 30 }, 'AMPC'), false)
+})

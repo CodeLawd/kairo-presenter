@@ -166,14 +166,14 @@ export function PlaylistSidebar({
   return (
     <aside
       data-playlist-sidebar=""
-      className="hairline-r sidebar-list flex h-full min-h-0 shrink-0 flex-col overflow-hidden"
+      className="page-sidebar hairline-r sidebar-list flex h-full min-h-0 shrink-0 flex-col overflow-hidden"
       style={{ width }}
     >
       {/* The main way a playlist starts, so it comes first: one card, plain to see, one line of formats. */}
       <div className="sidebar-sources shrink-0 px-3 pt-3">
         <button
           type="button"
-          className="flex w-full items-center gap-3 rounded-lg bg-black/15 px-3 py-2.5 text-left transition-colors hover:bg-black/25 disabled:opacity-70"
+          className="flex w-full items-center gap-3 rounded-lg bg-surface-tertiary px-3 py-2.5 text-left transition-colors hover:bg-surface-elevated disabled:opacity-70"
           onClick={onImportNotes}
           disabled={importingNotes}
           aria-busy={importingNotes}

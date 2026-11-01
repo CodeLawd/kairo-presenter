@@ -1,4 +1,4 @@
-import { followUpContext, pickCommandContext, ScriptureVoiceNavigation, type LiveScriptureContext } from './services/scripture/voice-navigation';
+import { followUpContext, isOnScreen, pickCommandContext, readingTranslation, ScriptureVoiceNavigation, type LiveScriptureContext } from './services/scripture/voice-navigation';
 import { MANAGED } from "./services/cloud/managed";
 import { dispatchToOutputs } from './services/output/dispatch';
 import { dispatchHealth } from '@shared/output-health';
@@ -541,7 +541,14 @@ class Orchestrator {
       // translation the playlist doesn't hold.
       const progressEntry = planEntry ?? (requested ? matchPlanReference(livePlanService.getIndex(), ref)[0] ?? null : null);
       if (progressEntry) livePlanService.observe(progressEntry.reference, progressEntry.planItemId);
-      let translation = requested ?? (planEntry ? planEntry.translation : this.cfg.scriptureTranslation);
+      // With no translation named and no playlist copy, follow the translation
+      // the preacher is reading from — the passage on screen or just detected.
+      const live = programService.getScripture();
+      const reading = readingTranslation(
+        pickCommandContext(live ? { context: live, at: programService.getScriptureSince() } : null, this.recentFollowUp()),
+        ref,
+      );
+      let translation = requested ?? (planEntry ? planEntry.translation : reading ?? this.cfg.scriptureTranslation);
       let requestedTranslation: string | undefined;
       scriptureTrace.annotate(correlationId, { translation });
       let verses: ScriptureVerse[] = planEntries.map((entry) => entry.verse);
@@ -566,12 +573,14 @@ class Orchestrator {
             }
           },
           translation,
-          requested,
+          // A translation followed from the screen falls back like a named one,
+          // but quietly: the preacher never asked for it.
+          requested ?? (!planEntry && reading ? reading : null),
           this.cfg.scriptureTranslation,
         );
         verses = found.verses;
         translation = found.translation;
-        requestedTranslation = found.requestedTranslation;
+        requestedTranslation = requested ? found.requestedTranslation : undefined;
         scriptureTrace.annotate(correlationId, { translation });
       }
 
@@ -585,6 +594,13 @@ class Orchestrator {
 
       if (ref.suggestionOnly && !this.detector?.isGeneralQuoteCurrent(ref)) {
         scriptureTrace.complete(correlationId, { status: "superseded" });
+        continue;
+      }
+
+      // Already showing, word for word: another card would only repeat it.
+      if (verses.length === 1 && isOnScreen(programService.getScripture(), ref, translation)) {
+        scriptureTrace.complete(correlationId, { status: "superseded" });
+        this.detector?.release(ref);
         continue;
       }
 

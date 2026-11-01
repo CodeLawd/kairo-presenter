@@ -484,7 +484,7 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
         />
       }
     >
-    <section className="flex h-full min-h-0 w-full flex-col bg-surface">
+    <section className="page-with-sidebar flex h-full min-h-0 w-full flex-col bg-surface">
       {/* Lives in the app header's toolbar row, only while this tab is showing
           (the page stays mounted when hidden). */}
       {active && toolbarSlot && createPortal(
@@ -529,9 +529,9 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
         </p>
       )}
 
-      <div ref={sidebar.containerRef} className="flex min-h-0 flex-1">
+      <div ref={sidebar.containerRef} className="page-with-sidebar flex min-h-0 flex-1">
         <aside
-          className="hairline-r flex min-h-0 shrink-0 flex-col bg-surface-secondary"
+          className="page-sidebar hairline-r flex min-h-0 shrink-0 flex-col bg-surface-secondary"
           style={{ width: sidebar.width }}
           aria-label="Imported documents"
         >
@@ -559,6 +559,8 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
           </div>
           <div className="shrink-0 p-1.5">
             <LibrarySection
+              banded
+              contextSelection
               kind="documents"
               activeLibraryId={activeLibraryId}
               counts={libraryCounts(documentLibrary, documents)}
@@ -583,8 +585,8 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
                     className={[
                       'mb-0.5 rounded px-1 py-1 transition-colors',
                       active
-                        ? 'bg-zinc-800 text-zinc-100'
-                        : 'text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200',
+                        ? 'row-focused'
+                        : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200',
                     ].join(' ')}
                   >
                     {renaming ? (
@@ -648,7 +650,7 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
           {...sidebar.separatorProps}
           aria-label="Resize document library"
           title="Drag to resize document library · double-click to reset"
-          className="z-10 w-1.5 shrink-0 cursor-col-resize bg-surface-secondary hover:bg-surface-elevated focus-visible:bg-surface-elevated focus-visible:outline-none"
+          className="page-sidebar-handle z-10 w-1.5 shrink-0 cursor-col-resize bg-surface-secondary hover:bg-surface-elevated focus-visible:bg-surface-elevated focus-visible:outline-none"
         />
 
         <div className="flex min-w-0 flex-1 flex-col">

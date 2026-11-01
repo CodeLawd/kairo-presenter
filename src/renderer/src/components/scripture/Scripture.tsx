@@ -1388,7 +1388,7 @@ export default function Scripture({ active = true }: { active?: boolean }): Reac
         />
       }
     >
-    <div ref={sidebar.containerRef} className="flex h-full min-h-0 w-full flex-1 overflow-hidden bg-surface">
+    <div ref={sidebar.containerRef} className="page-with-sidebar flex h-full min-h-0 w-full flex-1 overflow-hidden bg-surface">
       <PlaylistSidebar
         width={sidebar.width}
         plans={plans}
@@ -1432,7 +1432,7 @@ export default function Scripture({ active = true }: { active?: boolean }): Reac
         {...sidebar.separatorProps}
         aria-label="Resize scripture library"
         title="Drag to resize scripture library · double-click to reset"
-        className="z-10 w-1.5 shrink-0 cursor-col-resize bg-surface-secondary hover:bg-surface-elevated focus-visible:bg-surface-elevated focus-visible:outline-none"
+        className="page-sidebar-handle z-10 w-1.5 shrink-0 cursor-col-resize bg-surface-secondary hover:bg-surface-elevated focus-visible:bg-surface-elevated focus-visible:outline-none"
       />
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">

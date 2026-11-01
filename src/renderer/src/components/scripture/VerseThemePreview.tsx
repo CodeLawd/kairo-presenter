@@ -159,21 +159,28 @@ export function VerseThemePreview({
       type="button"
       className={cn(
         "group relative flex shrink-0 flex-col overflow-hidden text-left transition-[border-color,transform] duration-300 focus-visible:outline-none active:scale-[0.98]",
-        chrome
+        chrome && footer
           ? cn(
-              // Blue is only for what is on screen; white marks the current
+              // A grid card: a hairline frame and a quiet label, so the slides
+              // carry the page. Red rings what is on screen; white the current
               // (or picked) card, so "being read" never looks like "live".
-              "rounded-md border-2",
+              "rounded-lg border bg-white/[0.03]",
               isLive
-                ? "border-live"
+                ? "border-live ring-1 ring-live"
                 : isPicked || isActive
-                  ? "border-white"
-                  : footer
-                    // Same quiet frame as a lyric card.
-                    ? "border-surface-border hover:border-white/40 focus-visible:border-white/60"
-                    : "border-transparent hover:border-slate-500 focus-visible:border-slate-400",
+                  ? "border-white ring-1 ring-white"
+                  : "border-white/10 hover:border-white/30 focus-visible:border-white/50",
             )
-          : "rounded-none border-0 shadow-none",
+          : chrome
+            ? cn(
+                "rounded-md border-2",
+                isLive
+                  ? "border-live"
+                  : isPicked || isActive
+                    ? "border-white"
+                    : "border-transparent hover:border-slate-500 focus-visible:border-slate-400",
+              )
+            : "rounded-none border-0 shadow-none",
       )}
       style={{ width: responsive ? "100%" : width }}
       data-select-id={selectId}
@@ -212,7 +219,7 @@ export function VerseThemePreview({
       {chrome && footer && (
         // References are labels; selection and live state belong to the frame.
         <div
-          className="flex h-6 w-full shrink-0 items-center gap-2 self-stretch bg-surface-tertiary px-2 text-[12px] text-slate-200"
+          className="flex h-7 w-full shrink-0 items-center gap-2 self-stretch px-2.5 text-[12px] text-slate-300"
         >
           <span className="min-w-0 flex-1 truncate font-medium">{formatCardReference(result.reference)}</span>
           <span className="shrink-0 tabular-nums text-slate-500">{footer.number}</span>

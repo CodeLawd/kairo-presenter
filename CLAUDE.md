@@ -76,7 +76,7 @@ Services are not imported by the renderer directly — expose their output throu
 ## Tailwind palette
 
 Brand palette: onyx `#0C111D` (`ink`), off-white `#F9FAFB` (`paper`), slate `#374151` (`stone`) — brand marks only.
-App chrome is pure neutral grey, matched to ProPresenter (#1E1E1E workspace, #2C2C2C panels, #151515 frame, no blue cast), so colour comes only from the accent, live, tool hues and status.
+App chrome is pure neutral grey in Codex's order (#181818 workspace darkest, #1D1D1D sidebars and docks, #2D2D2D cards, #272727 frame lightest; no blue cast), so colour comes only from the accent, live, tool hues and status.
 Every UI color is a token in `src/renderer/src/index.css` (dark + light) — don't add raw hex for chrome.
 - `surface-rail` / `surface-header` (darkest frame) → `surface` (workspace) → `surface-secondary` (sidebars, docks, cards) → `surface-tertiary` (controls, hover) → `surface-elevated` (lifted). Neighbouring regions always differ by a visible step. The page area is one rounded panel (`rounded-xl bg-surface`) inset by a gap on the chrome (header + rail) — no line between chrome and page. Inside the panel, columns split with a `--surface-line` hairline (`.hairline-r/-l/-t/-b`, inset so nothing shifts)
 - `surface-stage` / `surface-display` — the band behind a screen canvas and the displays drawn on it

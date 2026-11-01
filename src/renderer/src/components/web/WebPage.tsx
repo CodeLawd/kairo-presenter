@@ -163,10 +163,10 @@ export default function WebPage(_props: { active?: boolean }): React.ReactElemen
     <BoothWorkspace
       rail={<LiveOutputRail width={liveRail.width} onResizeStart={liveRail.onResizeStart} onResizeKeyDown={liveRail.onResizeKeyDown} />}
     >
-      <section className="flex h-full min-h-0 w-full flex-col bg-surface">
-        <div ref={sidebar.containerRef} className="flex min-h-0 flex-1">
+      <section className="page-with-sidebar flex h-full min-h-0 w-full flex-col bg-surface">
+        <div ref={sidebar.containerRef} className="page-with-sidebar flex min-h-0 flex-1">
           <aside
-            className="hairline-r flex min-h-0 shrink-0 flex-col bg-surface-secondary"
+            className="page-sidebar hairline-r flex min-h-0 shrink-0 flex-col bg-surface-secondary"
             style={{ width: sidebar.width }}
             aria-label="Bookmarks"
           >
@@ -204,7 +204,7 @@ export default function WebPage(_props: { active?: boolean }): React.ReactElemen
                     key={bookmark.id}
                     className={cn(
                       'group flex items-center rounded-md',
-                      bookmark.url === current ? 'row-selected' : 'hover:bg-surface-tertiary',
+                      bookmark.url === current ? 'row-focused' : 'hover:bg-white/5',
                     )}
                   >
                     <button
@@ -238,7 +238,7 @@ export default function WebPage(_props: { active?: boolean }): React.ReactElemen
             {...sidebar.separatorProps}
             aria-label="Resize bookmarks"
             title="Drag to resize bookmarks · double-click to reset"
-            className="z-10 w-1.5 shrink-0 cursor-col-resize bg-surface-secondary hover:bg-surface-elevated focus-visible:bg-surface-elevated focus-visible:outline-none"
+            className="page-sidebar-handle z-10 w-1.5 shrink-0 cursor-col-resize bg-surface-secondary hover:bg-surface-elevated focus-visible:bg-surface-elevated focus-visible:outline-none"
           />
 
           <div className="flex min-w-0 flex-1 flex-col">
