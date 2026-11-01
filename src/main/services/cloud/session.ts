@@ -93,6 +93,7 @@ export class CloudSessionService {
   /** Failed refreshes in a row, for the retry schedule; reset on success. */
   private offlineAttempts = 0
   private offlineRetry: ReturnType<typeof setTimeout> | null = null
+  private refreshInFlight: Promise<string | null> | null = null
   private deviceId = ''
 
   constructor(store?: SecureStore) {
@@ -331,6 +332,15 @@ export class CloudSessionService {
 
   /** Exchanges the stored refresh token. Never throws — returns null instead. */
   private async refreshAccessToken(): Promise<string | null> {
+    if (!this.refreshInFlight) {
+      this.refreshInFlight = this.doRefreshAccessToken().finally(() => {
+        this.refreshInFlight = null
+      })
+    }
+    return this.refreshInFlight
+  }
+
+  private async doRefreshAccessToken(): Promise<string | null> {
     const refreshToken = this.store.read(REFRESH_TOKEN_NAME)
     if (!refreshToken) return null
     if (Date.now() < this.nextRefreshAllowedAt) return null
@@ -340,7 +350,10 @@ export class CloudSessionService {
         'post',
         '/v1/auth/refresh',
         { refreshToken, ...this.devicePayload() },
-        { authenticated: false },
+        // Container startup can take longer than an interactive request. This
+        // runs in the background and must be allowed to finish before the
+        // session is declared offline.
+        { authenticated: false, timeoutMs: 90_000 },
       )
       this.store.write(REFRESH_TOKEN_NAME, result.refreshToken)
       this.api.setAccessToken(result.accessToken)

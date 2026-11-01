@@ -151,6 +151,14 @@ export class CloudApiClient {
 
 /** Turns an axios failure into something an operator can read. */
 export function toApiError(error: unknown): ApiError {
+  // request() already converts Axios errors. Session callers may convert that
+  // result again; keep its status and message instead of calling it offline.
+  if (error && typeof error === 'object' && 'status' in error && 'message' in error) {
+    const apiError = error as ApiError;
+    if ((typeof apiError.status === 'number' || apiError.status === null) && typeof apiError.message === 'string') {
+      return apiError;
+    }
+  }
   const axiosError = error as AxiosError<{ message?: string | string[] }>;
   const status = axiosError.response?.status ?? null;
 

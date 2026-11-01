@@ -14,6 +14,15 @@ export type ChangelogEntry = {
 
 export const changelog: ChangelogEntry[] = [
   {
+    version: '1.0.25',
+    date: '2026-11-01',
+    title: 'Clearer account recovery',
+    notes: [
+      'If a saved sign-in expires or is rejected, Kairo now asks you to sign in again instead of incorrectly saying you are offline.',
+      'Kairo gives its cloud connection more time to start after an update and avoids overlapping sign-in checks.',
+    ],
+  },
+  {
     version: '1.0.24',
     date: '2026-11-01',
     title: 'Engage loads reliably when the connection changes',

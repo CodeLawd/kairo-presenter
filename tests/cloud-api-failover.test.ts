@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { AxiosError, type AxiosInstance, type InternalAxiosRequestConfig } from 'axios'
-import { CloudApiClient } from '../src/main/services/cloud/api-client'
+import { CloudApiClient, toApiError } from '../src/main/services/cloud/api-client'
 
 const primary = 'https://primary.example'
 const fallback = 'https://fallback.example'
@@ -50,4 +50,9 @@ test('a timed-out write is not repeated at the fallback address', async () => {
 
   await assert.rejects(api.request('post', '/v1/engage', {}, { authenticated: false }))
   assert.deepEqual(calls, [`get ${primary}/v1/health`, `post ${primary}/v1/engage`])
+})
+
+test('an API error retains its status when a session converts it again', () => {
+  const error = { status: 401, message: 'Refresh token is not valid' }
+  assert.deepEqual(toApiError(error), error)
 })
