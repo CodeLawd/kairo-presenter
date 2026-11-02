@@ -1,20 +1,15 @@
 import { useEffect, useState } from "react";
 import {
   Bible,
-  ChatsCircle,
-  FileText,
-  Globe,
-  CircleGauge,
   Eraser,
   MonitorPlay,
   MediaLibrary,
-  Music2,
-  Palette,
   Pause,
   Play,
   Radio,
   Settings,
 } from "@/icons";
+import { ChatsCircle, FileText, Globe, Gauge as CircleGauge, MusicNotes as Music2, Palette } from "@phosphor-icons/react";
 import type { NavRoute } from "@/App";
 import { AccountRailButton, AudioRailButton } from "./RailPopovers";
 import { useAppStore } from "@/stores/useAppStore";
@@ -71,7 +66,7 @@ const workspaces: Array<{
   rail?: string;
   /** What the rail's shortened name stands for, on hover. */
   hint?: string;
-  icon: typeof CircleGauge;
+  icon: typeof CircleGauge | typeof Bible;
   hue: Hue;
 }> = [
   { id: "operator", label: "Operator", icon: CircleGauge, hue: "green" },
@@ -475,31 +470,6 @@ export default function AppShell({
       >
         {showLogo && <KairoMark size="sm" />}
       </div>
-      {/* The page you're on: its icon in its tool colour, then its name. */}
-      <div className="header-context flex min-w-0 items-center gap-2">
-        {(() => {
-          const page = workspaces.find(
-            (workspace) => workspace.id === currentRoute,
-          );
-          if (!page) return null;
-          const Icon = page.icon;
-          return (
-            <>
-              <Icon
-                size={17}
-                weight="fill"
-                style={hueStyle(page.hue)}
-                className="shrink-0 text-[rgb(var(--hue))]"
-                aria-hidden="true"
-              />
-              <span className="truncate text-[15px] font-semibold tracking-tight text-white">
-                {page.label}
-              </span>
-            </>
-          );
-        })()}
-      </div>
-
       <div id={HEADER_TOOLBAR_SLOT_ID} className="header-toolbar min-w-0">
         {toolbar}
       </div>

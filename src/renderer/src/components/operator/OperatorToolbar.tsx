@@ -1,18 +1,18 @@
-import { Fragment, useEffect } from 'react'
-import { Keyboard } from '@/icons'
-import { useBootstrapStore } from '@/bootstrap/useBootstrapStore'
+import { Fragment, useEffect } from "react";
+import { Keyboard } from "@/icons";
+import { useBootstrapStore } from "@/bootstrap/useBootstrapStore";
 
 const SHORTCUT_LEGEND: Array<[string, string]> = [
-  ['Space', 'Send focused verse'],
-  ['Esc', 'Dismiss'],
-  ['Backspace', 'Clear text'],
-  ['Ctrl+F', 'Search'],
-  ['Ctrl+A', 'Toggle automation'],
-]
+  ["Space", "Send focused verse"],
+  ["Esc", "Dismiss"],
+  ["Backspace", "Clear text"],
+  ["Ctrl+F", "Search"],
+  ["Ctrl+A", "Toggle automation"],
+];
 
 /** Sermon plans are named after the imported file, so titles arrive snake_cased. */
 export function displayPlanTitle(title: string): string {
-  return title.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim()
+  return title.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
 }
 
 /**
@@ -22,20 +22,15 @@ export function displayPlanTitle(title: string): string {
  * here so that choice is reflected wherever the Operator reads it.
  */
 export default function OperatorToolbar(): React.ReactElement {
-  const setLivePlan = useBootstrapStore((s) => s.setLivePlan)
-  useEffect(() => window.api.scripture.onLivePlanChange(setLivePlan), [setLivePlan])
+  const setLivePlan = useBootstrapStore((s) => s.setLivePlan);
+  useEffect(
+    () => window.api.scripture.onLivePlanChange(setLivePlan),
+    [setLivePlan],
+  );
 
   return (
     <div className="operator-toolbar flex h-7 min-w-0 items-center gap-2">
-
       <div className="group relative shrink-0">
-        <button
-          type="button"
-          className="flex size-7 items-center justify-center rounded text-zinc-600 transition-colors hover:bg-surface-elevated hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/30"
-          aria-label="Keyboard shortcuts"
-        >
-          <Keyboard size={14} />
-        </button>
         <div className="pointer-events-none absolute left-0 top-full z-30 mt-1 hidden w-max rounded-lg bg-surface p-2.5 shadow-xl group-hover:block group-focus-within:block">
           <dl className="grid grid-cols-[auto_auto] items-center gap-x-3 gap-y-1.5 text-[10px]">
             {SHORTCUT_LEGEND.map(([keys, action]) => (
@@ -52,5 +47,5 @@ export default function OperatorToolbar(): React.ReactElement {
         </div>
       </div>
     </div>
-  )
+  );
 }

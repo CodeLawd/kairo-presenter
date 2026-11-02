@@ -436,45 +436,46 @@ function ControlsBar({
         {isTranscribing ? 'Stop' : 'Start'}
       </button>
 
-      <select
-        value={captureDeviceId}
-        onChange={(e) => onDeviceChange(e.target.value)}
-        disabled={isTranscribing}
-        className={cn(
-          'input py-2 max-w-[200px] disabled:opacity-40 disabled:cursor-not-allowed',
-          'appearance-none pr-8 bg-[length:16px] bg-no-repeat',
-          '[background-image:url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%2364748b\' stroke-width=\'2\'%3E%3Cpath d=\'m6 9 6 6 6-6\'/%3E%3C/svg%3E")]',
-          '[background-position:right_8px_center]'
-        )}
-        aria-label="Audio device"
-      >
-        {devices.length === 0 && (
-          <option value="">No devices found</option>
-        )}
-        {devices.map((d) => (
-          <option key={d.id} value={d.id}>
-            {d.label}{d.isDefault ? ' (Default)' : ''}
-          </option>
-        ))}
-      </select>
+      <div className="relative">
+        <select
+          value={captureDeviceId}
+          onChange={(e) => onDeviceChange(e.target.value)}
+          disabled={isTranscribing}
+          className={cn(
+            'input py-2 max-w-[200px] disabled:opacity-40 disabled:cursor-not-allowed',
+            'appearance-none pr-8'
+          )}
+          aria-label="Audio device"
+        >
+          {devices.length === 0 && (
+            <option value="">No devices found</option>
+          )}
+          {devices.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.label}{d.isDefault ? ' (Default)' : ''}
+            </option>
+          ))}
+        </select>
+        <ChevronDown size={16} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-500" aria-hidden="true" />
+      </div>
 
-      <select
-        value={selectedLanguage}
-        onChange={(e) => onLanguageChange(e.target.value)}
-        disabled={isTranscribing}
-        className={cn(
-          'input py-2 w-[130px] disabled:opacity-40 disabled:cursor-not-allowed',
-          'appearance-none pr-8',
-          '[background-image:url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2020/svg\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%2364748b\' stroke-width=\'2\'%3E%3Cpath d=\'m6 9 6 6 6-6\'/%3E%3C/svg%3E")]',
-          '[background-position:right_8px_center]',
-          'bg-no-repeat bg-[length:16px]'
-        )}
-        aria-label="Language"
-      >
-        {LANGUAGES.map((l) => (
-          <option key={l.code} value={l.code}>{l.label}</option>
-        ))}
-      </select>
+      <div className="relative">
+        <select
+          value={selectedLanguage}
+          onChange={(e) => onLanguageChange(e.target.value)}
+          disabled={isTranscribing}
+          className={cn(
+            'input py-2 w-[130px] disabled:opacity-40 disabled:cursor-not-allowed',
+            'appearance-none pr-8'
+          )}
+          aria-label="Language"
+        >
+          {LANGUAGES.map((l) => (
+            <option key={l.code} value={l.code}>{l.label}</option>
+          ))}
+        </select>
+        <ChevronDown size={16} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-500" aria-hidden="true" />
+      </div>
 
       <div className="flex-1" />
 

@@ -1,4 +1,6 @@
-import { FolderOpen, MoreHorizontal, Music2, Pause, Pencil, Play, Plus, RefreshCw, Trash2, X } from '@/icons'
+import { FolderOpen, MoreHorizontal, Pause, Pencil, Play, Plus, RefreshCw, Trash2, X } from '@/icons'
+import { MusicNote01Icon } from '@hugeicons/core-free-icons'
+import { HugeiconsIcon } from '@hugeicons/react'
 import { useCallback, useRef, useState } from 'react'
 import { formatMediaClock } from '@shared/media-playback'
 import type { TrackItem } from '@shared/ipc'
@@ -118,7 +120,7 @@ export function TracksPanel(): React.ReactElement {
         {library.items.length === 0 ? (
           <div className="flex flex-col items-center gap-2 px-4 py-6 text-center">
             <span className="grid size-9 place-items-center rounded-full bg-surface-tertiary text-zinc-400">
-              <Music2 size={16} aria-hidden="true" />
+              <HugeiconsIcon icon={MusicNote01Icon} />
             </span>
             <p className="text-[12px] font-medium text-zinc-300">No walk-in tracks yet</p>
             <p className="max-w-[16rem] text-[11px] leading-relaxed text-zinc-500">

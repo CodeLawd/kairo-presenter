@@ -1,145 +1,139 @@
-/**
- * Lucide-compatible icon surface backed by Phosphor.
- *
- * Call sites keep existing names (`Search`, `Loader`, `Trash2`); under the hood
- * every glyph renders with Phosphor `weight="regular"` for a more crafted look.
- */
+/** Shared icon surface backed by Hugeicons free Stroke Rounded. */
+import { forwardRef, type ComponentProps, type ElementRef } from 'react'
+import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react'
+import { FilmStrip as PhFilm, VideoCamera as PhVideo, MonitorPlay as PhMonitorPlay, Play as PhPlay, Pause as PhPause, SkipBack as PhSkipBack, SkipForward as PhSkipForward, type Icon as PhosphorIcon } from '@phosphor-icons/react'
 import {
-  FlipHorizontal as PhFlipHorizontal,
-  FlipVertical as PhFlipVertical,
-  AlignLeftSimple as PhAlignLeftSimple,
-  AlignCenterHorizontalSimple as PhAlignCenterHorizontalSimple,
-  AlignRightSimple as PhAlignRightSimple,
-  AlignTopSimple as PhAlignTopSimple,
-  AlignCenterVerticalSimple as PhAlignCenterVerticalSimple,
-  AlignBottomSimple as PhAlignBottomSimple,
-  type Icon as PhosphorIcon,
-  type IconProps,
-  Pulse as PhPulse,
-  TextT as PhTextT,
-  WarningCircle as PhWarningCircle,
-  Warning as PhWarning,
-  TextAlignCenter as PhTextAlignCenter,
-  TextAlignJustify as PhTextAlignJustify,
-  TextAlignLeft as PhTextAlignLeft,
-  TextAlignRight as PhTextAlignRight,
-  ArrowDown as PhArrowDown,
-  ArrowSquareOut as PhArrowSquareOut,
-  ArrowUp as PhArrowUp,
-  BookOpen as PhBookOpen,
-  BookOpenText as PhBookOpenText,
-  BookmarkSimple as PhBookmarkSimple,
-  ChatsCircle as PhChatsCircle,
-  Cursor as PhCursor,
-  Brain as PhBrain,
-  Check as PhCheck,
-  CheckCircle as PhCheckCircle,
-  CaretDown as PhCaretDown,
-  CaretLeft as PhCaretLeft,
-  CaretRight as PhCaretRight,
-  CaretUp as PhCaretUp,
-  Circle as PhCircle,
-  CircleDashed as PhCircleDashed,
-  Gauge as PhGauge,
-  Prohibit as PhProhibit,
-  UserCircle as PhUserCircle,
-  Clipboard as PhClipboard,
-  Clock as PhClock,
-  Church as PhChurch,
-  Lightbulb as PhLightbulb,
-  Laptop as PhLaptop,
-  Usb as PhUsb,
-  DeviceMobile as PhDeviceMobile,
-  Waveform as PhWaveform,
-  Cloud as PhCloud,
-  Copy as PhCopy,
-  CurrencyDollar as PhCurrencyDollar,
-  DownloadSimple as PhDownloadSimple,
-  PencilSimple as PhPencilSimple,
-  Eraser as PhEraser,
-  Eye as PhEye,
-  EyeSlash as PhEyeSlash,
-  FilePlus as PhFilePlus,
-  FileText as PhFileText,
-  FilmStrip as PhFilmStrip,
-  Folder as PhFolder,
-  FolderOpen as PhFolderOpen,
-  Globe as PhGlobe,
-  DotsSixVertical as PhDotsSixVertical,
-  Image as PhImage,
-  ImagesSquare as PhImagesSquare,
-  Key as PhKey,
-  Keyboard as PhKeyboard,
-  Translate as PhTranslate,
-  Stack as PhStack,
-  Books as PhBooks,
-  Link as PhLink,
-  ListChecks as PhListChecks,
-  MusicNotes as PhMusicNotes,
-  CircleNotch as PhCircleNotch,
-  Lock as PhLock,
-  SignOut as PhSignOut,
-  ChatTeardropText as PhChatTeardropText,
-  Microphone as PhMicrophone,
-  MicrophoneSlash as PhMicrophoneSlash,
-  Minus as PhMinus,
-  Monitor as PhMonitor,
-  Images as PhImages,
-  Queue as PhQueue,
-  MonitorPlay as PhMonitorPlay,
-  Moon as PhMoon,
-  DotsThree as PhDotsThree,
-  DotsThreeVertical as PhDotsThreeVertical,
-  Palette as PhPalette,
-  Pause as PhPause,
-  Play as PhPlay,
-  Plus as PhPlus,
-  Broadcast as PhBroadcast,
-  ArrowsClockwise as PhArrowsClockwise,
-  Repeat as PhRepeat,
-  ArrowCounterClockwise as PhArrowCounterClockwise,
-  ArrowUUpLeft as PhArrowUUpLeft,
-  ArrowUUpRight as PhArrowUUpRight,
-  Path as PhPath,
-  FloppyDisk as PhFloppyDisk,
-  MagnifyingGlass as PhMagnifyingGlass,
-  Scissors as PhScissors,
-  PaperPlaneTilt as PhPaperPlaneTilt,
-  GearSix as PhGearSix,
-  SkipBack as PhSkipBack,
-  SkipForward as PhSkipForward,
-  SlidersHorizontal as PhSlidersHorizontal,
-  Square as PhSquare,
-  Star as PhStar,
-  Sun as PhSun,
-  Trash as PhTrash,
-  TrendUp as PhTrendUp,
-  LockOpen as PhLockOpen,
-  UploadSimple as PhUploadSimple,
-  VideoCamera as PhVideoCamera,
-  SpeakerHigh as PhSpeakerHigh,
-  SpeakerX as PhSpeakerX,
-  WifiHigh as PhWifiHigh,
-  WifiSlash as PhWifiSlash,
-  X as PhX,
-  XCircle as PhXCircle,
-  Lightning as PhLightning,
-  MagnifyingGlassPlus as PhMagnifyingGlassPlus,
-  MagnifyingGlassMinus as PhMagnifyingGlassMinus,
-} from '@phosphor-icons/react'
-import { forwardRef, type ElementRef } from 'react'
+  Activity01Icon,
+  Alert02Icon,
+  AlertCircleIcon,
+  AlignBottomIcon,
+  AlignHorizontalCenterIcon,
+  AlignLeftIcon,
+  AlignRightIcon,
+  AlignTopIcon,
+  AlignVerticalCenterIcon,
+  ArrowDown01Icon,
+  ArrowUp01Icon,
+  AudioWaveformIcon,
+  BookOpen01Icon,
+  BookOpenCheckIcon,
+  BookOpenTextIcon,
+  Bookmark01Icon,
+  Books01Icon,
+  BrainIcon,
+  Cancel01Icon,
+  CancelCircleIcon,
+  Chat01Icon,
+  CheckIcon as HugeCheckIcon,
+  CheckmarkCircle01Icon,
+  ChevronDownIcon as HugeChevronDownIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon as HugeChevronRightIcon,
+  ChevronUpIcon as HugeChevronUpIcon,
+  ChurchIcon,
+  CircleDashedIcon,
+  CircleGaugeIcon,
+  CircleIcon,
+  ClipboardPasteIcon,
+  Clock01Icon,
+  CloudIcon,
+  CopyIcon,
+  Cursor01Icon,
+  DollarSignIcon,
+  Download01Icon,
+  DragDropVerticalIcon,
+  EraserIcon,
+  ExternalLinkIcon,
+  EyeIcon,
+  EyeOffIcon,
+  FileAddIcon,
+  FileTextIcon,
+  FlashIcon,
+  FlipHorizontalIcon,
+  FlipVerticalIcon,
+  Folder01Icon,
+  FolderOpenIcon,
+  GlobeIcon,
+  Image01Icon,
+  ImagesIcon,
+  Key01Icon,
+  KeyboardIcon,
+  LaptopIcon,
+  Layers01Icon,
+  LightbulbIcon,
+  LinkIcon,
+  ListChecksIcon,
+  ListMusicIcon,
+  Loading01Icon,
+  LockIcon,
+  LockOpenIcon,
+  Logout01Icon,
+  MessageSquareTextIcon,
+  Mic01Icon,
+  MicOff01Icon,
+  MinusSignIcon,
+  MonitorIcon,
+  MonitorOffIcon,
+  Moon01Icon,
+  MoreHorizontalIcon,
+  MoreVerticalIcon,
+  MusicNote01Icon,
+  PaletteIcon,
+  PencilEdit01Icon,
+  Playlist01Icon,
+  PlusSignIcon,
+  RadioTowerIcon,
+  RedoIcon,
+  RefreshCwIcon,
+  RepeatIcon,
+  RotateCcwIcon,
+  Route01Icon,
+  SaveIcon,
+  ScissorsIcon,
+  Search01Icon,
+  SendIcon,
+  Settings01Icon,
+  SlidersHorizontalIcon,
+  SmartphoneIcon,
+  Square01Icon,
+  StarIcon,
+  Sun01Icon,
+  TextAlignCenterIcon,
+  TextAlignJustifyIcon,
+  TextAlignLeftIcon,
+  TextAlignRightIcon,
+  TextIcon,
+  TranslateIcon,
+  TrashIcon,
+  TrendingUpIcon,
+  UndoIcon,
+  Upload01Icon,
+  UsbIcon,
+  UserCircleIcon,
+  VolumeHighIcon,
+  VolumeMute01Icon,
+  WifiHighIcon,
+  WifiOff01Icon,
+  ZoomInIcon,
+  ZoomOutIcon,
+} from '@hugeicons/core-free-icons'
 
-type Props = IconProps & { size?: number | string }
+type Props = Omit<ComponentProps<typeof HugeiconsIcon>, 'icon'> & {
+  weight?: 'thin' | 'light' | 'regular' | 'bold' | 'fill' | 'duotone'
+}
 
-function wrap(Ph: PhosphorIcon) {
-  const Icon = forwardRef<ElementRef<'svg'>, Props>(function Icon(
-    { weight = 'regular', size = 16, ...rest },
-    ref,
+function wrap(glyph: IconSvgElement) {
+  return forwardRef<ElementRef<'svg'>, Props>(function Icon(
+    { weight, size = 16, fill: _fill, strokeWidth, ...rest }, ref,
   ) {
-    return <Ph ref={ref} weight={weight} size={size} {...rest} />
+    return <HugeiconsIcon ref={ref} icon={glyph} size={size} strokeWidth={strokeWidth ?? (weight === 'fill' || weight === 'bold' ? 2 : undefined)} {...rest} />
   })
-  Icon.displayName = Ph.displayName ?? 'Icon'
-  return Icon
+}
+
+function wrapPhosphor(Glyph: PhosphorIcon) {
+  return forwardRef<ElementRef<'svg'>, Props>(function Icon({ size = 16, ...rest }, ref) {
+    return <Glyph ref={ref} size={size} {...rest} />
+  })
 }
 
 const BibleIcon = forwardRef<ElementRef<'svg'>, Props>(function BibleIcon(
@@ -179,143 +173,139 @@ const BibleIcon = forwardRef<ElementRef<'svg'>, Props>(function BibleIcon(
 })
 BibleIcon.displayName = 'Bible'
 
-/** An open book with a cross on its cover — Scripture's rail mark. */
-export const Bible = BibleIcon
 
 export type Icon = ReturnType<typeof wrap>
-export const FlipHorizontal = wrap(PhFlipHorizontal)
-export const FlipVertical = wrap(PhFlipVertical)
-export const ObjectAlignLeft = wrap(PhAlignLeftSimple)
-export const ObjectAlignCenter = wrap(PhAlignCenterHorizontalSimple)
-export const ObjectAlignRight = wrap(PhAlignRightSimple)
-export const ObjectAlignTop = wrap(PhAlignTopSimple)
-export const ObjectAlignMiddle = wrap(PhAlignCenterVerticalSimple)
-export const ObjectAlignBottom = wrap(PhAlignBottomSimple)
-/** @deprecated Use `Icon` — kept while call sites migrate off Lucide naming. */
+/** @deprecated Use Icon. */
 export type LucideIcon = Icon
 
-export const Activity = wrap(PhPulse)
-export const AlertCircle = wrap(PhWarningCircle)
-export const AlertTriangle = wrap(PhWarning)
-export const AlignCenter = wrap(PhTextAlignCenter)
-export const AlignJustify = wrap(PhTextAlignJustify)
-export const AlignLeft = wrap(PhTextAlignLeft)
-export const AlignRight = wrap(PhTextAlignRight)
-export const ArrowDown = wrap(PhArrowDown)
-export const ExternalLink = wrap(PhArrowSquareOut)
-export const ArrowUp = wrap(PhArrowUp)
-export const BookOpen = wrap(PhBookOpen)
-export const BookOpenText = wrap(PhBookOpenText)
-export const BookOpenCheck = wrap(PhBookOpenText)
-export const BookmarkSimple = wrap(PhBookmarkSimple)
-export const ChatsCircle = wrap(PhChatsCircle)
-export const MousePointer = wrap(PhCursor)
-export const Brain = wrap(PhBrain)
-export const Check = wrap(PhCheck)
-export const CheckCircle = wrap(PhCheckCircle)
-export const CheckCircle2 = wrap(PhCheckCircle)
-export const ChevronDown = wrap(PhCaretDown)
-export const ChevronLeft = wrap(PhCaretLeft)
-export const ChevronRight = wrap(PhCaretRight)
-export const ChevronUp = wrap(PhCaretUp)
-export const Circle = wrap(PhCircle)
-export const CircleDashed = wrap(PhCircleDashed)
-export const CircleGauge = wrap(PhGauge)
-export const CircleOff = wrap(PhProhibit)
-export const CircleUser = wrap(PhUserCircle)
-export const ClipboardPaste = wrap(PhClipboard)
-export const Clock = wrap(PhClock)
-export const Church = wrap(PhChurch)
-export const Lightbulb = wrap(PhLightbulb)
-export const Laptop = wrap(PhLaptop)
-export const Usb = wrap(PhUsb)
-export const DeviceMobile = wrap(PhDeviceMobile)
-export const Waveform = wrap(PhWaveform)
-export const Cloud = wrap(PhCloud)
-export const Copy = wrap(PhCopy)
-export const DollarSign = wrap(PhCurrencyDollar)
-export const Download = wrap(PhDownloadSimple)
-export const Edit2 = wrap(PhPencilSimple)
-export const Eraser = wrap(PhEraser)
-export const Eye = wrap(PhEye)
-export const EyeOff = wrap(PhEyeSlash)
-export const FilePlus = wrap(PhFilePlus)
-export const FileText = wrap(PhFileText)
-export const Film = wrap(PhFilmStrip)
-export const Folder = wrap(PhFolder)
-export const FolderOpen = wrap(PhFolderOpen)
-export const Globe = wrap(PhGlobe)
-export const GripVertical = wrap(PhDotsSixVertical)
-export const Image = wrap(PhImage)
-export const MediaLibrary = wrap(PhImagesSquare)
-export const Key = wrap(PhKey)
-export const Keyboard = wrap(PhKeyboard)
-export const Languages = wrap(PhTranslate)
-export const Layers = wrap(PhStack)
-export const Library = wrap(PhBooks)
-export const Link2 = wrap(PhLink)
-export const ListChecks = wrap(PhListChecks)
-export const ListMusic = wrap(PhMusicNotes)
-export const Loader = wrap(PhCircleNotch)
-export const Loader2 = wrap(PhCircleNotch)
-export const Lock = wrap(PhLock)
-export const LogOut = wrap(PhSignOut)
-export const MessageSquare = wrap(PhChatTeardropText)
-export const Mic = wrap(PhMicrophone)
-export const MicOff = wrap(PhMicrophoneSlash)
-export const Minus = wrap(PhMinus)
-export const Monitor = wrap(PhMonitor)
-export const MonitorOff = wrap(PhMonitor)
-/** A set of pictures — the whole media library. */
-export const Images = wrap(PhImages)
-/** An ordered run of items — a media playlist (not a music note). */
-export const Queue = wrap(PhQueue)
-export const MonitorPlay = wrap(PhMonitorPlay)
-export const Moon = wrap(PhMoon)
-export const MoreHorizontal = wrap(PhDotsThree)
-export const MoreVertical = wrap(PhDotsThreeVertical)
-export const Music2 = wrap(PhMusicNotes)
-export const Palette = wrap(PhPalette)
-export const Pause = wrap(PhPause)
-export const Pencil = wrap(PhPencilSimple)
-export const Play = wrap(PhPlay)
-export const Plus = wrap(PhPlus)
-export const Radio = wrap(PhBroadcast)
-export const RefreshCw = wrap(PhArrowsClockwise)
-export const Repeat = wrap(PhRepeat)
-export const RotateCcw = wrap(PhArrowCounterClockwise)
-export const Undo = wrap(PhArrowUUpLeft)
-export const Redo = wrap(PhArrowUUpRight)
-export const Route = wrap(PhPath)
-export const Save = wrap(PhFloppyDisk)
-export const ScanSearch = wrap(PhMagnifyingGlass)
-export const Scissors = wrap(PhScissors)
-export const Search = wrap(PhMagnifyingGlass)
-export const Send = wrap(PhPaperPlaneTilt)
-export const Settings = wrap(PhGearSix)
-export const SkipBack = wrap(PhSkipBack)
-export const SkipForward = wrap(PhSkipForward)
-export const SlidersHorizontal = wrap(PhSlidersHorizontal)
-export const TextT = wrap(PhTextT)
-export const Square = wrap(PhSquare)
-export const Star = wrap(PhStar)
-export const Sun = wrap(PhSun)
-export const Trash2 = wrap(PhTrash)
-export const TrendingUp = wrap(PhTrendUp)
-export const Unlock = wrap(PhLockOpen)
-export const Upload = wrap(PhUploadSimple)
-export const Video = wrap(PhVideoCamera)
-export const Volume2 = wrap(PhSpeakerHigh)
-export const VolumeX = wrap(PhSpeakerX)
-export const Wifi = wrap(PhWifiHigh)
-export const WifiOff = wrap(PhWifiSlash)
-export const X = wrap(PhX)
-export const XCircle = wrap(PhXCircle)
-export const Zap = wrap(PhLightning)
-export const ZoomIn = wrap(PhMagnifyingGlassPlus)
-export const ZoomOut = wrap(PhMagnifyingGlassMinus)
+export const FlipHorizontal = wrap(FlipHorizontalIcon)
+export const FlipVertical = wrap(FlipVerticalIcon)
+export const ObjectAlignLeft = wrap(AlignLeftIcon)
+export const ObjectAlignCenter = wrap(AlignHorizontalCenterIcon)
+export const ObjectAlignRight = wrap(AlignRightIcon)
+export const ObjectAlignTop = wrap(AlignTopIcon)
+export const ObjectAlignMiddle = wrap(AlignVerticalCenterIcon)
+export const ObjectAlignBottom = wrap(AlignBottomIcon)
+export const Bible = BibleIcon
+export const Activity = wrap(Activity01Icon)
+export const AlertCircle = wrap(AlertCircleIcon)
+export const AlertTriangle = wrap(Alert02Icon)
+export const AlignCenter = wrap(TextAlignCenterIcon)
+export const AlignJustify = wrap(TextAlignJustifyIcon)
+export const AlignLeft = wrap(TextAlignLeftIcon)
+export const AlignRight = wrap(TextAlignRightIcon)
+export const ArrowDown = wrap(ArrowDown01Icon)
+export const ExternalLink = wrap(ExternalLinkIcon)
+export const ArrowUp = wrap(ArrowUp01Icon)
+export const BookOpen = wrap(BookOpen01Icon)
+export const BookOpenText = wrap(BookOpenTextIcon)
+export const BookOpenCheck = wrap(BookOpenCheckIcon)
+export const BookmarkSimple = wrap(Bookmark01Icon)
+export const ChatsCircle = wrap(Chat01Icon)
+export const MousePointer = wrap(Cursor01Icon)
+export const Brain = wrap(BrainIcon)
+export const Check = wrap(HugeCheckIcon)
+export const CheckCircle = wrap(CheckmarkCircle01Icon)
+export const CheckCircle2 = wrap(CheckmarkCircle01Icon)
+export const ChevronDown = wrap(HugeChevronDownIcon)
+export const ChevronLeft = wrap(ChevronLeftIcon)
+export const ChevronRight = wrap(HugeChevronRightIcon)
+export const ChevronUp = wrap(HugeChevronUpIcon)
+export const Circle = wrap(CircleIcon)
+export const CircleDashed = wrap(CircleDashedIcon)
+export const CircleGauge = wrap(CircleGaugeIcon)
+export const CircleOff = wrap(CancelCircleIcon)
+export const CircleUser = wrap(UserCircleIcon)
+export const ClipboardPaste = wrap(ClipboardPasteIcon)
+export const Clock = wrap(Clock01Icon)
+export const Church = wrap(ChurchIcon)
+export const Lightbulb = wrap(LightbulbIcon)
+export const Laptop = wrap(LaptopIcon)
+export const Usb = wrap(UsbIcon)
+export const DeviceMobile = wrap(SmartphoneIcon)
+export const Waveform = wrap(AudioWaveformIcon)
+export const Cloud = wrap(CloudIcon)
+export const Copy = wrap(CopyIcon)
+export const DollarSign = wrap(DollarSignIcon)
+export const Download = wrap(Download01Icon)
+export const Edit2 = wrap(PencilEdit01Icon)
+export const Eraser = wrap(EraserIcon)
+export const Eye = wrap(EyeIcon)
+export const EyeOff = wrap(EyeOffIcon)
+export const FilePlus = wrap(FileAddIcon)
+export const FileText = wrap(FileTextIcon)
+export const Film = wrapPhosphor(PhFilm)
+export const Folder = wrap(Folder01Icon)
+export const FolderOpen = wrap(FolderOpenIcon)
+export const Globe = wrap(GlobeIcon)
+export const GripVertical = wrap(DragDropVerticalIcon)
+export const Image = wrap(Image01Icon)
+export const MediaLibrary = wrap(ImagesIcon)
+export const Key = wrap(Key01Icon)
+export const Keyboard = wrap(KeyboardIcon)
+export const Languages = wrap(TranslateIcon)
+export const Layers = wrap(Layers01Icon)
+export const Library = wrap(Books01Icon)
+export const Link2 = wrap(LinkIcon)
+export const ListChecks = wrap(ListChecksIcon)
+export const ListMusic = wrap(ListMusicIcon)
+export const Loader = wrap(Loading01Icon)
+export const Loader2 = wrap(Loading01Icon)
+export const Lock = wrap(LockIcon)
+export const LogOut = wrap(Logout01Icon)
+export const MessageSquare = wrap(MessageSquareTextIcon)
+export const Mic = wrap(Mic01Icon)
+export const MicOff = wrap(MicOff01Icon)
+export const Minus = wrap(MinusSignIcon)
+export const Monitor = wrap(MonitorIcon)
+export const MonitorOff = wrap(MonitorOffIcon)
+export const Images = wrap(ImagesIcon)
+export const Queue = wrap(Playlist01Icon)
+export const MonitorPlay = wrapPhosphor(PhMonitorPlay)
+export const Moon = wrap(Moon01Icon)
+export const MoreHorizontal = wrap(MoreHorizontalIcon)
+export const MoreVertical = wrap(MoreVerticalIcon)
+export const Music2 = wrap(MusicNote01Icon)
+export const Palette = wrap(PaletteIcon)
+export const Pause = wrapPhosphor(PhPause)
+export const Pencil = wrap(PencilEdit01Icon)
+export const Play = wrapPhosphor(PhPlay)
+export const Plus = wrap(PlusSignIcon)
+export const Radio = wrap(RadioTowerIcon)
+export const RefreshCw = wrap(RefreshCwIcon)
+export const Repeat = wrap(RepeatIcon)
+export const RotateCcw = wrap(RotateCcwIcon)
+export const Undo = wrap(UndoIcon)
+export const Redo = wrap(RedoIcon)
+export const Route = wrap(Route01Icon)
+export const Save = wrap(SaveIcon)
+export const ScanSearch = wrap(Search01Icon)
+export const Scissors = wrap(ScissorsIcon)
+export const Search = wrap(Search01Icon)
+export const Send = wrap(SendIcon)
+export const Settings = wrap(Settings01Icon)
+export const SkipBack = wrapPhosphor(PhSkipBack)
+export const SkipForward = wrapPhosphor(PhSkipForward)
+export const SlidersHorizontal = wrap(SlidersHorizontalIcon)
+export const TextT = wrap(TextIcon)
+export const Square = wrap(Square01Icon)
+export const Star = wrap(StarIcon)
+export const Sun = wrap(Sun01Icon)
+export const Trash2 = wrap(TrashIcon)
+export const TrendingUp = wrap(TrendingUpIcon)
+export const Unlock = wrap(LockOpenIcon)
+export const Upload = wrap(Upload01Icon)
+export const Video = wrapPhosphor(PhVideo)
+export const Volume2 = wrap(VolumeHighIcon)
+export const VolumeX = wrap(VolumeMute01Icon)
+export const Wifi = wrap(WifiHighIcon)
+export const WifiOff = wrap(WifiOff01Icon)
+export const X = wrap(Cancel01Icon)
+export const XCircle = wrap(CancelCircleIcon)
+export const Zap = wrap(FlashIcon)
+export const ZoomIn = wrap(ZoomInIcon)
+export const ZoomOut = wrap(ZoomOutIcon)
 
-/** shadcn-style aliases used by shared UI primitives */
 export const CheckIcon = Check
 export const ChevronDownIcon = ChevronDown
 export const ChevronUpIcon = ChevronUp

@@ -14,6 +14,16 @@ export type ChangelogEntry = {
 
 export const changelog: ChangelogEntry[] = [
   {
+    version: '1.0.27',
+    date: '2026-11-03',
+    title: 'A simpler workspace',
+    notes: [
+      'The top bar gives your workspace controls more room, while the sidebar continues to show which section is open.',
+      'Refreshed icons throughout Kairo keep familiar navigation and video controls.',
+      'Improved sign-in handling prevents an older account check from clearing a newer sign-in.',
+    ],
+  },
+  {
     version: '1.0.26',
     date: '2026-11-02',
     title: 'More control over your live presentation',

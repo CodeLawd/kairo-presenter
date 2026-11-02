@@ -356,6 +356,9 @@ export class CloudSessionService {
         // session is declared offline.
         { authenticated: false, timeoutMs: 90_000 },
       )
+      // A newer sign-in or sign-out may have changed the credential while this
+      // request was in flight. Never replace that newer session with this one.
+      if (this.store.read(REFRESH_TOKEN_NAME) !== refreshToken) return null
       this.store.write(REFRESH_TOKEN_NAME, result.refreshToken)
       this.api.setAccessToken(result.accessToken)
       this.nextRefreshAllowedAt = 0
@@ -369,6 +372,7 @@ export class CloudSessionService {
       if (reconnecting) void this.loadSession().then(() => this.pullOrgSecrets())
       return result.accessToken
     } catch (error) {
+      if (this.store.read(REFRESH_TOKEN_NAME) !== refreshToken) return null
       const { status, message } = toApiError(error)
       if (status === 401) {
         // The server has revoked this device. Signing out locally is the honest

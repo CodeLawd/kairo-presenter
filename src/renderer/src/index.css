@@ -681,7 +681,6 @@ html[data-window-material='vibrancy'] .page-sidebar-handle {
 .app-header::before { content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none;
   background: radial-gradient(ellipse 38% 160% at 88% 0%, rgb(var(--control-accent) / .12), transparent 70%); }
 [data-theme='light'] .app-header::before { opacity: .6; }
-.header-context { flex: none; }
 .header-toolbar { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; overflow: hidden; }
 .header-statuses { flex: none; }
 .header-live { flex: none; }

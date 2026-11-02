@@ -29,7 +29,7 @@ const mod = new Module(path.join(temp, 'session.cjs')) as Module & { _compile(co
   if (name === 'electron-log/main') return { warn() {}, info() {} }
   if (name === '@main/db') return { store: { get: () => ({ name: 'Church' }), set() {} } }
   if (name === './secure-store') return { createSecureStore: () => availableStore }
-  if (name === './api-client') return { CloudApiClient: FakeApi, toApiError: (error: Error) => ({ message: error.message }) }
+  if (name === './api-client') return { CloudApiClient: FakeApi, toApiError: (error: Error & { status?: number }) => ({ message: error.message, status: error.status }) }
   return OriginalLoad.call(this, name, ...args)
 }
 try { mod._compile(output, path.join(temp, 'session.cjs')) } finally { (Module as unknown as { _load: typeof OriginalLoad })._load = OriginalLoad }
@@ -37,6 +37,49 @@ const { CloudSessionService } = mod.exports
 
 const started = (id: string) => ({ deviceCode: id, userCode: `PROA-${id}`, verificationUri: `https://kairo.test/activate?userCode=PROA-${id}`, interval: 0.005, expiresIn: 600 })
 const pause = () => new Promise((resolve) => setTimeout(resolve, 25))
+
+test('a saved sign-in is restored and its rotated token survives another launch', async () => {
+  let token: string | null = 'saved-refresh'
+  const vault = { available: true, read: () => token, write: (_name: string, value: string) => { token = value; return true }, clear: () => { token = null } }
+  let rotations = 0
+  requestHandler = async (url) => {
+    if (url.endsWith('/refresh')) return { accessToken: 'access', refreshToken: `rotated-${++rotations}` }
+    if (url.endsWith('/session')) return { user: { id: 'user', email: 'user@example.test', name: 'User', emailVerified: false }, orgId: 'church', orgs: [{ id: 'church', name: 'Church', role: 'owner' }] }
+    throw new Error('Unexpected request')
+  }
+  const first = new CloudSessionService(vault)
+  first.start()
+  await pause()
+  assert.equal(first.getSession().state, 'active')
+  assert.equal(token, 'rotated-1')
+  first.stop()
+
+  const second = new CloudSessionService(vault)
+  second.start()
+  await pause()
+  assert.equal(second.getSession().state, 'active')
+  assert.equal(token, 'rotated-2')
+  second.stop()
+})
+
+test('a rejected old refresh cannot erase a newer sign-in', async () => {
+  let token: string | null = 'old-refresh'
+  const vault = { available: true, read: () => token, write: (_name: string, value: string) => { token = value; return true }, clear: () => { token = null } }
+  const service = new CloudSessionService(vault)
+  let rejectRefresh!: (error: Error) => void
+  requestHandler = async (url) => {
+    if (url.endsWith('/refresh')) return new Promise((_resolve, reject) => { rejectRefresh = reject })
+    if (url.endsWith('/login')) return { accessToken: 'new-access', refreshToken: 'new-refresh', user: { id: 'new', email: 'new@example.test', name: 'New', emailVerified: false }, org: { id: 'church', name: 'Church', role: 'owner' } }
+    throw new Error('Unexpected request')
+  }
+  service.start()
+  await service.signIn({ email: 'new@example.test', password: 'password' })
+  rejectRefresh(Object.assign(new Error('Rejected'), { status: 401 }))
+  await pause()
+  assert.equal(token, 'new-refresh')
+  assert.equal(service.getSession().state, 'active')
+  service.stop()
+})
 
 test('cancel then restart never lets the old pairing poll change the new request', async () => {
   const service = new CloudSessionService(availableStore)
