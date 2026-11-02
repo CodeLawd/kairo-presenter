@@ -1,6 +1,11 @@
 import { asObject } from './normalize'
+import { OVERLAY_OUTPUT_KINDS } from './overlay-outputs'
 
-const RENDERED_KINDS = new Set(['screen', 'device', 'ndi'])
+// The canonical list, never a copy: this runs on every launch (see db/index.ts),
+// so a kind missing here is deleted from the operator's saved screens for good.
+// `syphon` was absent from a hand-written copy and every Mac Syphon screen
+// vanished on the next restart.
+const RENDERED_KINDS = new Set<string>(OVERLAY_OUTPUT_KINDS)
 
 /** Sanitize raw settings before normalization, including settings restored by older builds. */
 export function retireProPresenterSettings(raw: unknown): Record<string, unknown> & {

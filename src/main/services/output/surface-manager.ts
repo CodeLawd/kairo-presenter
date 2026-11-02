@@ -658,6 +658,7 @@ class SurfaceManager {
           audio: { enabled: enabled && surface === audioSurface, volume, outputLabel },
           cameraAudible: surface === audioSurface && !!this.program.camera && !!this.program.cameraAudio,
           ndiAudio: ndiAudio.has(surface),
+          video: presentation.video,
         }).catch(() => undefined),
       ),
     )
@@ -753,6 +754,14 @@ class SurfaceManager {
   scrollWeb(x: number, y: number): void {
     for (const output of this.outputs) {
       if (output.enabled && isRenderedKind(output.kind)) this.surfaceOf(output)?.scrollWeb(x, y)
+    }
+  }
+
+  /** The operator's pointer, over the live page on every screen showing it. */
+  webPointer(x: number | null, y: number | null): void {
+    for (const output of this.outputs) {
+      if (!output.enabled || !isRenderedKind(output.kind) || !followsProgram(output)) continue
+      this.surfaceOf(output)?.setWebPointer(x, y)
     }
   }
 

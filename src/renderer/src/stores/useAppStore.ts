@@ -79,6 +79,8 @@ interface AppState {
   /** Last selected theme in the Theme editor — restored when returning to the tab. */
   themeSelectedId: string | null
   themeSelectedName: string
+  /** The operator's pointer over the live web page, in the page's 1920-wide pixels. */
+  webPointer: { x: number; y: number } | null
 
   // ── Session ───────────────────────────────────────────────────────────────
   sessionStartTime: number
@@ -140,6 +142,7 @@ interface AppState {
   clearSettingsRequest: () => void
   openScreens: (select?: string | null) => void
   closeScreens: () => void
+  setWebPointer: (pointer: { x: number; y: number } | null) => void
   openProps: (select?: string | null) => void
   closeProps: () => void
   openCapture: () => void
@@ -189,6 +192,7 @@ export const useAppStore = create<AppState>((set) => ({
   liveRailWidth: readStoredRailWidth(),
   themeSelectedId: null,
   themeSelectedName: '',
+  webPointer: null,
 
   // ── Session ───────────────────────────────────────────────────────────────
   sessionStartTime: Date.now(),
@@ -320,6 +324,7 @@ export const useAppStore = create<AppState>((set) => ({
   clearSettingsRequest: () => set({ settingsRequest: null }),
   openScreens: (select = null) => set({ screensWindow: { select } }),
   closeScreens: () => set({ screensWindow: null }),
+  setWebPointer: (webPointer) => set({ webPointer }),
   openProps: (select = null) => set({ propsWindow: { select } }),
   closeProps: () => set({ propsWindow: null }),
   openCapture: () => set({ captureWindow: true }),

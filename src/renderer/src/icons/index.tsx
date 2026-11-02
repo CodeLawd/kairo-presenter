@@ -29,6 +29,8 @@ import {
   BookOpen as PhBookOpen,
   BookOpenText as PhBookOpenText,
   BookmarkSimple as PhBookmarkSimple,
+  ChatsCircle as PhChatsCircle,
+  Cursor as PhCursor,
   Brain as PhBrain,
   Check as PhCheck,
   CheckCircle as PhCheckCircle,
@@ -140,6 +142,46 @@ function wrap(Ph: PhosphorIcon) {
   return Icon
 }
 
+const BibleIcon = forwardRef<ElementRef<'svg'>, Props>(function BibleIcon(
+  { weight = 'regular', size = 16, ...rest },
+  ref,
+) {
+  const filled = weight === 'fill'
+  return (
+    <svg
+      ref={ref}
+      width={size}
+      height={size}
+      viewBox="0 0 256 256"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={filled ? 0 : 16}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...rest}
+    >
+      {filled ? (
+        <path
+          fill="currentColor"
+          fillRule="evenodd"
+          clipRule="evenodd"
+          d="M64 40h128a24 24 0 0 1 24 24v136a24 24 0 0 1-24 24H64V40Zm8 0v184h8V40Zm72 24h-16v36h-28v16h28v52h16v-52h28v-16h-28V64Z"
+        />
+      ) : (
+        <>
+          <path d="M64 40h128a24 24 0 0 1 24 24v136a24 24 0 0 1-24 24H64V40Z" />
+          <path d="M64 40v184" />
+          <path d="M128 68v96M96 100h64" />
+        </>
+      )}
+    </svg>
+  )
+})
+BibleIcon.displayName = 'Bible'
+
+/** An open book with a cross on its cover — Scripture's rail mark. */
+export const Bible = BibleIcon
+
 export type Icon = ReturnType<typeof wrap>
 export const FlipHorizontal = wrap(PhFlipHorizontal)
 export const FlipVertical = wrap(PhFlipVertical)
@@ -166,6 +208,8 @@ export const BookOpen = wrap(PhBookOpen)
 export const BookOpenText = wrap(PhBookOpenText)
 export const BookOpenCheck = wrap(PhBookOpenText)
 export const BookmarkSimple = wrap(PhBookmarkSimple)
+export const ChatsCircle = wrap(PhChatsCircle)
+export const MousePointer = wrap(PhCursor)
 export const Brain = wrap(PhBrain)
 export const Check = wrap(PhCheck)
 export const CheckCircle = wrap(PhCheckCircle)

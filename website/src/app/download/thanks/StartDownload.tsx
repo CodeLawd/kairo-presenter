@@ -5,7 +5,7 @@ import { useEffect, useRef } from 'react'
 /**
  * Starts the installer download once the thank-you page is on screen. The API
  * route redirects to the release file, which the browser saves without leaving
- * this page; with no file for the platform it lands on /download instead.
+ * this page.
  */
 export function StartDownload({ platform, source }: { platform: string; source: string }): null {
   const started = useRef(false)

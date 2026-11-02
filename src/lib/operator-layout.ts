@@ -1,9 +1,9 @@
 export type OperatorPanelSide = "left" | "right";
 
 /**
- * Startup widths. The live rail opens at its max so the booth preview is
- * readable; the operator can drag it narrower. Transcript gets a bit more
- * room than the old 240px default.
+ * Startup widths. The live rail opens with room for the booth tools and a
+ * readable preview; the operator can drag it wider for the tools or narrower
+ * for the preview. Transcript gets a bit more room than the old 240px default.
  */
 export const OPERATOR_PANEL_DEFAULTS: Record<OperatorPanelSide, number> = {
   left: 280,
@@ -15,8 +15,9 @@ export const OPERATOR_PANEL_BOUNDS: Record<
   { min: number; max: number }
 > = {
   left: { min: 180, max: 420 },
-  // Never narrower than the toolbox needs for every tab's label (Scripture … Web).
-  right: { min: 420, max: 460 },
+  // Never narrower than the toolbox needs for every tab's label (Scripture … Web);
+  // wide enough for a comfortable preview in the layout canvas and props editors.
+  right: { min: 420, max: 680 },
 };
 
 /** Previous defaults — treated as unset so the new startup sizes land once. */

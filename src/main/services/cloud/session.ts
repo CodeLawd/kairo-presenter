@@ -38,6 +38,7 @@ export const AUDIENCE_API_BASE_URL = audienceApiBaseUrl(API_BASE_URL, import.met
 const API_FALLBACK_URL = API_BASE_URL === 'https://api.kairopresenter.com'
   ? 'https://kairo-api.alexander-joshua2018.workers.dev'
   : undefined
+export const AUDIENCE_API_FALLBACK_URL = AUDIENCE_API_BASE_URL === API_BASE_URL ? API_FALLBACK_URL : undefined
 
 const REFRESH_TOKEN_NAME = 'refresh-token'
 /** Quiet background refresh — the operator never sees this happen. */

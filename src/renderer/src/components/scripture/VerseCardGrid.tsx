@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { BookOpen } from "@/icons";
+import { Bible } from "@/icons";
 import { cn } from "@/lib/utils";
 import { VerseThemePreview } from "./VerseThemePreview";
 import { MarqueeSelect } from "@/components/shared/MarqueeSelect";
@@ -146,7 +146,7 @@ export function VerseCardGrid({
                 it starts. */}
             {(rows.length > 1 || row.note) && (
               <div className="sticky top-0 z-10 -mx-5 mb-3 flex min-h-9 flex-wrap items-center gap-2 bg-[rgb(var(--surface-tertiary)/0.72)] px-5 py-2 backdrop-blur-md lg:-mx-6 lg:px-6">
-                <BookOpen size={13} weight="fill" className={cn("shrink-0", rowIsLive ? "text-live" : "text-slate-500")} aria-hidden="true" />
+                <Bible size={13} weight="fill" className={cn("shrink-0", rowIsLive ? "text-live" : "text-slate-500")} aria-hidden="true" />
                 <p className={cn("min-w-0 truncate text-[13px] font-semibold", rowIsLive ? "text-live" : "text-slate-100")}>
                   {row.reference}
                 </p>

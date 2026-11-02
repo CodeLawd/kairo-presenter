@@ -583,7 +583,7 @@ function AudioSection({
             ))}
           </select>
           <p className="text-[11px] leading-snug text-white/40">
-            Routes music, video and camera sound to this device.
+            Routes music, video and live input sound to this device.
           </p>
         </div>
       </section>

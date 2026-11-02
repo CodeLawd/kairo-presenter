@@ -13,6 +13,7 @@ import {
 import { renderOverlayHTML } from "@shared/overlay-template";
 import { ScaledOverlayPreview } from "@/components/overlay/ScaledOverlayPreview";
 import { usePresentation, useProgramState } from "@/hooks/useProgramState";
+import { useBootstrapStore } from "@/bootstrap/useBootstrapStore";
 import { ProgramLayersPreview } from "./ConfidencePreview";
 import { confidenceFor, programLayersFor } from "@shared/program";
 import { themeForPush, withoutBackground } from "@shared/media-playback";
@@ -22,7 +23,7 @@ import {
   outputTemplateFor,
   outputThemeFor,
 } from "@shared/overlay-outputs";
-import { WEB_MIRROR_FRAME } from "@shared/web";
+import { WEB_FRAME_HEIGHT, WEB_FRAME_WIDTH, WEB_MIRROR_FRAME, normalizeWebSettings } from "@shared/web";
 import { ScaledWebFrame } from "./ScaledWebFrame";
 import type {
   AppSettings,
@@ -42,7 +43,7 @@ import { makeProjectorOutput } from "@shared/overlay-defaults";
 const EMPTY_TIME: OverlayVideoTime = { currentTime: 0, duration: 0, ended: false };
 
 interface LiveOutputPreviewProps {
-  /** Enabled outputs, in the order the Outputs panel lists them. */
+  /** Configured outputs, in the order the Outputs panel lists them. */
   outputs: OverlayOutput[];
   selectedOutputId: string | null;
   onSelectOutput: (outputId: string) => void;
@@ -59,6 +60,8 @@ interface LiveOutputPreviewProps {
   height: number;
   /** Actions that belong under the monitor — clear, etc. */
   toolbar?: ReactNode;
+  /** Column beside the frame, matching its height — the clear-layer strip. */
+  side?: ReactNode;
 }
 
 export function LiveOutputPreview({
@@ -73,9 +76,10 @@ export function LiveOutputPreview({
   width,
   height,
   toolbar,
+  side,
 }: LiveOutputPreviewProps): React.ReactElement {
   const outputs = allOutputs;
-  const selected = outputs.find((output) => output.id === selectedOutputId) ?? outputs[0] ?? null;
+  const selected = outputs.find((output) => output.id === selectedOutputId) ?? outputs.find((output) => output.enabled) ?? outputs[0] ?? null;
   // No screen on (a new install, or every screen switched off): the program is
   // still live, so draw it the way the main screen would — its own theme if it
   // exists, the default Projector otherwise. The operator always sees what
@@ -122,40 +126,62 @@ export function LiveOutputPreview({
     () => (rendered ? confidenceFor(view, program, presentation) : null),
     [rendered, view, program, presentation],
   );
-  const drawn = !!info || !!(layers && (layers.poll || layers.question || layers.props || layers.message || layers.logo));
+  const drawn = !!info || !!(layers && (layers.poll || layers.question || layers.props || layers.timer || layers.message || layers.logo));
   // The live web page, where this screen shows it: under the words, over the background.
   const web = rendered && view.show.backgrounds && followsProgram(view) ? program.web : null;
+  const webPointer = useAppStore((state) => state.webPointer);
+  const showWebPointer = normalizeWebSettings(useBootstrapStore((state) => state.settings.web)).showPointer;
+  const pointerSize = Math.max(8, (56 * width) / WEB_FRAME_WIDTH);
+  const pointerLeft = webPointer ? Math.min(width - pointerSize, Math.max(0, (webPointer.x / WEB_FRAME_WIDTH) * width)) : 0;
+  const pointerTop = webPointer ? Math.min(height - pointerSize, Math.max(0, (webPointer.y / WEB_FRAME_HEIGHT) * height)) : 0;
   // Every page keeps its own live panel mounted; only the one on show runs the web page.
   const [frameBox, setFrameBox] = useState<HTMLDivElement | null>(null);
   const shown = useShown(frameBox);
 
   return (
     <div>
-      <div ref={setFrameBox} className="relative" style={{ width, height }}>
-        {web && shown && !showDocument && (
-          <ScaledWebFrame
-            key={`${web.url} ${web.reload}`}
-            url={web.url}
-            name={WEB_MIRROR_FRAME}
-            title="Web page on screens"
-            interactive={false}
-          />
-        )}
-        {showDocument ? <div className="flex h-full w-full flex-col overflow-hidden bg-black"><DocumentSlidePreview doc={documentPreview.doc} page={documentPreview.page} playback={documentPreview.playback} /></div> : <PreviewBody
-          output={view}
-          result={result}
-          content={content}
-          contentKind={contentKind}
-          liveMedia={liveMedia}
-          overlay={overlay}
-          width={width}
-          height={height}
-          seekTo={seekTo}
-          onTime={onTime}
-          blankWhenIdle={drawn}
-          overWeb={!!web}
-        />}
-        {drawn && layers && <ProgramLayersPreview layers={layers} info={info} width={width} />}
+      {/* The monitor and its clear-layer column read as one unit, inset from the
+          panel edge like the output picker beneath them. */}
+      <div className="px-3">
+        <div className="flex overflow-hidden rounded-md">
+          <div ref={setFrameBox} className="relative shrink-0" style={{ width, height }}>
+            {web && shown && !showDocument && (
+              <ScaledWebFrame
+                key={`${web.url} ${web.reload}`}
+                url={web.url}
+                name={WEB_MIRROR_FRAME}
+                title="Web page on screens"
+                interactive={false}
+              />
+            )}
+            {web && shown && !showDocument && showWebPointer && webPointer && (
+              <div
+                className="pointer-events-none absolute"
+                style={{ left: pointerLeft, top: pointerTop }}
+              >
+                <svg width={pointerSize} height={pointerSize} viewBox="0 0 32 32" className="block drop-shadow-[0_1px_2px_rgba(0,0,0,0.7)]" aria-hidden="true">
+                  <path d="M6 3 L26 16.5 L16.8 17.8 L21.6 27.4 L17.6 29.3 L12.8 19.6 L6 26.5 Z" fill="#111111" stroke="#ffffff" strokeWidth={1.6} strokeLinejoin="round" />
+                </svg>
+              </div>
+            )}
+            {showDocument ? <div className="flex h-full w-full flex-col overflow-hidden bg-black"><DocumentSlidePreview doc={documentPreview.doc} page={documentPreview.page} playback={documentPreview.playback} /></div> : <PreviewBody
+              output={view}
+              result={result}
+              content={content}
+              contentKind={contentKind}
+              liveMedia={liveMedia}
+              overlay={overlay}
+              width={width}
+              height={height}
+              seekTo={seekTo}
+              onTime={onTime}
+              blankWhenIdle={drawn}
+              overWeb={!!web}
+            />}
+            {drawn && layers && <ProgramLayersPreview layers={layers} info={info} width={width} />}
+          </div>
+          {side}
+        </div>
       </div>
 
       {!showDocument && showTransport && liveMedia && (
@@ -183,7 +209,7 @@ export function LiveOutputPreview({
       {/* Screen picker sits BELOW the frame, the way ProPresenter's own output
           preview does — the label names what you are looking at, and opening it
           is how you look at something else. */}
-      <div className="flex items-center justify-between gap-3 bg-surface-secondary px-3 py-2">
+      <div className="flex items-center justify-between gap-3 px-3 pb-2 pt-2">
         {previewOnly ? (
           // Nothing is going to a screen yet — say so plainly, and offer the fix.
           <div className="flex min-w-0 items-center gap-2.5">
@@ -206,7 +232,7 @@ export function LiveOutputPreview({
             >
               {outputs.map((output) => (
                 <option key={output.id} value={output.id}>
-                  {output.name}
+                  {output.name}{output.enabled ? '' : ' (off)'}
                 </option>
               ))}
             </select>
@@ -220,6 +246,9 @@ export function LiveOutputPreview({
 
         {toolbar}
       </div>
+      {selected && !selected.enabled && (
+        <p className="px-3 pb-2 text-[11px] text-zinc-400">Preview only — this screen is off.</p>
+      )}
     </div>
   );
 }
@@ -502,14 +531,17 @@ function EmptyFrame({
   title: string;
   children: React.ReactNode;
 }): React.ReactElement {
+  // Drawn on the monitor, so the greys are fixed whites rather than theme
+  // tokens — in light mode the app's quiet greys turn dark and vanished into
+  // the black frame.
   return (
     <div
-      className="flex flex-col items-center justify-center bg-black px-3 text-center text-zinc-600"
+      className="flex flex-col items-center justify-center bg-black px-3 text-center"
       style={{ width, height }}
     >
-      <Icon size={20} className="mb-2 text-slate-600" />
-      <p className="text-xs font-semibold">{title}</p>
-      <p className="mt-0.5 text-[10px] text-slate-600">{children}</p>
+      <Icon size={20} className="mb-2 text-white/35" />
+      <p className="text-xs font-semibold text-white/75">{title}</p>
+      <p className="mt-0.5 text-[10px] text-white/45">{children}</p>
     </div>
   );
 }

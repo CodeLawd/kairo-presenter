@@ -77,11 +77,11 @@ type Item =
 
 /** The page search field — Scripture's Bible bar, and Lyrics' song search. */
 export const BAR_FIELD =
-  "relative flex h-8 min-w-0 items-center rounded-md border border-input bg-surface-secondary transition-colors focus-within:border-slate-400";
+  "relative flex h-8 min-w-0 items-center rounded-md border border-transparent bg-surface-tertiary transition-colors focus-within:ring-2 focus-within:ring-teal-500/40";
 
 /** A button that sits beside BAR_FIELD at the same height — Options, Import. */
 export const BAR_BUTTON =
-  "flex h-8 shrink-0 items-center gap-2 rounded-md border border-input bg-surface-secondary px-3 text-[13px] font-medium text-slate-200 transition-colors hover:bg-surface-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 data-[state=open]:bg-surface-tertiary";
+  "flex h-8 shrink-0 items-center gap-2 rounded-md border border-transparent bg-surface-tertiary px-3 text-[13px] font-medium text-slate-200 transition-colors hover:bg-surface-elevated focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 data-[state=open]:bg-surface-elevated";
 
 /**
  * The one scripture search: a reference ("jos 1 5 9", "John 3:16") or the words
@@ -223,7 +223,7 @@ export function ScriptureSearchBar({
       </div>
       <button
         type="button"
-        className="grid h-8 w-7 shrink-0 place-items-center rounded-md border border-input bg-surface-secondary text-slate-400 transition-colors hover:bg-surface-tertiary hover:text-white disabled:opacity-40"
+        className="grid h-8 w-7 shrink-0 place-items-center rounded-md border border-transparent bg-surface-tertiary text-slate-400 transition-colors hover:bg-surface-elevated hover:text-white disabled:opacity-40"
         disabled={recentLookups.length === 0}
         aria-label="Recent lookups"
         title={recentLookups.length === 0 ? "No recent lookups yet" : "Recent lookups"}
@@ -364,18 +364,19 @@ export function ScriptureTranslationSelect({
   return (
     <Select value={translation} disabled={disabled} onValueChange={(value) => onChange(value as ScriptureTranslation)}>
       <SelectTrigger
-        className="h-8 min-w-0 flex-1 justify-between gap-2 rounded-md border border-input bg-surface-secondary px-2.5 text-[13px] text-slate-200 dark:bg-surface-secondary dark:hover:bg-surface-tertiary"
+        className="h-8 min-w-0 flex-1 justify-between gap-2 rounded-md border border-transparent !bg-surface-tertiary px-2.5 text-[13px] text-slate-200 hover:!bg-surface-elevated dark:!bg-surface-tertiary dark:hover:!bg-surface-elevated"
         aria-label="Scripture translation"
+        title={current?.name ?? "Scripture translation"}
       >
         <SelectValue>
-          <span className="truncate">{current?.name ?? (translation || "NKJV")}</span>
+          <span className="block min-w-0 truncate">{current?.id ?? (translation || "NKJV")}</span>
         </SelectValue>
       </SelectTrigger>
       <SelectContent
         position="popper"
         align="start"
         sideOffset={4}
-        className="max-h-[min(26rem,var(--radix-select-content-available-height))] min-w-0"
+        className="max-h-[min(26rem,var(--radix-select-content-available-height))] w-64 min-w-0"
       >
         <SelectGroup>
           {available.map((option) => (

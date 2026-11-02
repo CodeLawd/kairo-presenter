@@ -10,7 +10,7 @@ import { DOCUMENTS } from "@shared/documents";
 import { writeFile } from "fs/promises";
 import { existsSync, mkdirSync } from "fs";
 import { normalizeCaptureSettings } from "@shared/capture";
-import { normalizeWebSettings, WEB_MIRROR_FRAME } from "@shared/web";
+import { normalizeWebSettings, WEB_FRAME_HEIGHT, WEB_FRAME_WIDTH, WEB_MIRROR_FRAME } from "@shared/web";
 import { rememberWebScroll, scrollWebFrame } from "../services/web";
 import { captureFolder, captureService } from "../services/capture";
 import { normalizePresentationSettings, PROGRAM } from "@shared/program";
@@ -85,7 +85,7 @@ import { runBootstrap } from "../bootstrap";
 import { onboardingService } from "../services/cloud/onboarding";
 import { licensing } from "../services/cloud/licensing";
 import { MANAGED } from "../services/cloud/managed";
-import { cloudSession, AUDIENCE_API_BASE_URL } from "../services/cloud/session";
+import { cloudSession, AUDIENCE_API_BASE_URL, AUDIENCE_API_FALLBACK_URL } from "../services/cloud/session";
 import { usageService } from "../services/usage";
 import { startCrashReports } from "../services/crash-reports";
 
@@ -887,6 +887,9 @@ function registerTracksHandlers(): void {
   handle(IPC.TRACKS.PLAY, (_event, itemId: string) => tracksService.play(itemId));
   handle(IPC.TRACKS.SET_PAUSED, (_event, paused: boolean) => tracksService.setPaused(!!paused));
   handle(IPC.TRACKS.STOP, () => tracksService.stop());
+  handle(IPC.TRACKS.RENAME, (_event, itemId: string, name: string) => tracksService.rename(itemId, name));
+  handle(IPC.TRACKS.REVEAL, (_event, itemId: string) => tracksService.reveal(itemId));
+  handle(IPC.TRACKS.REMOVE, (_event, itemId: string) => tracksService.remove(itemId));
 }
 
 function registerProgramHandlers(): void {
@@ -901,7 +904,7 @@ function registerProgramHandlers(): void {
       if(!response.ok)throw new Error((await response.text()).slice(0,300));
     }
     audienceService.detachEngagement();
-    return audienceService.start(new KairoAudienceSource(AUDIENCE_API_BASE_URL,async()=>room));
+    return audienceService.start(new KairoAudienceSource(AUDIENCE_API_BASE_URL,async()=>room,AUDIENCE_API_FALLBACK_URL,()=>cloudSession.engageRequest<AudienceRoomCreated>('post',`/${code}/resume`,{})));
   });
   handle(AUDIENCE.REOPEN_ENGAGEMENT, (_event) => audienceService.manage('open', {}));
   handle(AUDIENCE.DELETE_ENGAGEMENT, async (_event, code: string) => {
@@ -921,7 +924,13 @@ function registerProgramHandlers(): void {
     if (kind === 'kairo') {
       const title = (typeof options?.title === 'string' && options.title.trim().slice(0, 100)) || 'Questions from the room';
       const settings = normalizeAudienceRoomSettings(options?.settings);
-      return audienceService.start(new KairoAudienceSource(AUDIENCE_API_BASE_URL, () => cloudSession.engageRequest<AudienceRoomCreated>('post', '', {title,settings,startsAt:options?.startsAt,endsAt:options?.endsAt})));
+      let created: AudienceRoomCreated | null = null;
+      return audienceService.start(new KairoAudienceSource(
+        AUDIENCE_API_BASE_URL,
+        async () => { created = await cloudSession.engageRequest<AudienceRoomCreated>('post', '', {title,settings,startsAt:options?.startsAt,endsAt:options?.endsAt}); return created; },
+        AUDIENCE_API_FALLBACK_URL,
+        () => created ? cloudSession.engageRequest<AudienceRoomCreated>('post',`/${created.code}/resume`,{}) : Promise.reject(new Error('No engagement to reconnect.')),
+      ));
     }
     if (kind === 'slido') {
       const event = parseSlidoEvent(typeof options?.code === 'string' ? options.code : '');
@@ -971,6 +980,18 @@ function registerProgramHandlers(): void {
     surfaceManager.scrollWeb(x, y);
     // The main screen preview's copy of the page follows too.
     scrollWebFrame(event.sender, WEB_MIRROR_FRAME, x, y);
+  });
+  // As often as the pointer moves (once a frame at most), so `on`, not `handle`.
+  ipcMain.removeAllListeners(PROGRAM.WEB_POINTER);
+  ipcMain.on(PROGRAM.WEB_POINTER, (_event, x: unknown, y: unknown) => {
+    if (typeof x !== "number" || typeof y !== "number" || !Number.isFinite(x) || !Number.isFinite(y)) {
+      surfaceManager.webPointer(null, null);
+      return;
+    }
+    surfaceManager.webPointer(
+      Math.max(0, Math.min(WEB_FRAME_WIDTH, x)),
+      Math.max(0, Math.min(WEB_FRAME_HEIGHT, y)),
+    );
   });
   // Program sound from an NDI surface's page (src/preload/program.ts). A
   // fire-and-forget stream — ~47 blocks a second per feed — so `on`, not `handle`.

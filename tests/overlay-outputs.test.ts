@@ -471,3 +471,12 @@ test('Syphon outputs are kept when settings load, with at most four switched on'
   assert.equal(normalized.filter((o) => o.enabled).length, 4, 'the fifth and sixth are switched off')
   assert.ok(isRenderedKind('syphon'), 'Kairo renders Syphon outputs itself')
 })
+
+test('preview picker includes configured outputs in order, including screens that are off', async () => {
+  const { previewOutputs } = await import('../src/lib/overlay-outputs');
+  const main = makeOverlayOutput('main', 'screen', { name: 'Main Screen', enabled: false, order: 0 });
+  const lower = makeOverlayOutput('lower', 'device', { name: 'Lower Third', enabled: true, order: 1 });
+  assert.deepEqual(previewOutputs([lower, main]).map(o => [o.name, o.enabled]), [
+    ['Main Screen', false], ['Lower Third', true],
+  ]);
+});

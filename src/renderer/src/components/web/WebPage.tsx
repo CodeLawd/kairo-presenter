@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { BookmarkSimple, ChevronLeft, ChevronRight, Globe, RefreshCw, X } from '@/icons'
+import { BookmarkSimple, ChevronLeft, ChevronRight, Globe, MousePointer, RefreshCw, X } from '@/icons'
 import { cn } from '@/lib/utils'
 import { useBootstrapStore } from '@/bootstrap/useBootstrapStore'
+import { useAppStore } from '@/stores/useAppStore'
 import { useProgramState } from '@/hooks/useProgramState'
 import { useSidebarWidth } from '@/components/layout/useSidebarWidth'
 import { BoothWorkspace } from '@/components/layout/BoothWorkspace'
@@ -10,6 +11,9 @@ import { useLiveRailWidth } from '@/components/operator/useLiveRailWidth'
 import { ScaledWebFrame } from '@/components/operator/ScaledWebFrame'
 import { Switch } from '@/components/ui/switch'
 import {
+  WEB_FRAME_HEIGHT,
+  WEB_FRAME_WIDTH,
+  WEB_POINTER_MESSAGE,
   WEB_PREVIEW_FRAME,
   WEB_SCROLL_MESSAGE,
   displayAddress,
@@ -38,8 +42,7 @@ interface History {
  *
  * Stays mounted while another page shows, so the site keeps its place.
  */
-// `active` is taken for parity with the other kept-mounted pages; nothing here needs it yet.
-export default function WebPage(_props: { active?: boolean }): React.ReactElement {
+export default function WebPage({ active }: { active?: boolean }): React.ReactElement {
   const sidebar = useSidebarWidth()
   const liveRail = useLiveRailWidth()
   const live = useProgramState().web
@@ -58,6 +61,8 @@ export default function WebPage(_props: { active?: boolean }): React.ReactElemen
   const loading = useRef(false)
   const latest = useRef({ current, live: live?.url ?? null, follow })
   latest.current = { current, live: live?.url ?? null, follow }
+  const pointerEnabled = useRef(settings.showPointer)
+  pointerEnabled.current = settings.showPointer
   const frame = useRef<HTMLIFrameElement>(null)
   /**
    * Whether the preview's page lays out by the window's height. Until it says
@@ -66,9 +71,16 @@ export default function WebPage(_props: { active?: boolean }): React.ReactElemen
    */
   const [adaptive, setAdaptive] = useState<boolean | null>(null)
 
+  /** Takes the pointer off screens and out of the local preview. */
+  const hidePointer = (): void => {
+    useAppStore.getState().setWebPointer(null)
+    window.api.program.webPointer(null, null)
+  }
+
   const put = async (url: string | null): Promise<void> => {
     try {
       setError(null)
+      hidePointer()
       await window.api.program.setWeb(url)
     } catch (err) {
       setError((err as Error).message)
@@ -81,6 +93,29 @@ export default function WebPage(_props: { active?: boolean }): React.ReactElemen
     const onMessage = (event: MessageEvent): void => {
       if (!frame.current || event.source !== frame.current.contentWindow) return
       const data = event.data as { type?: unknown; x?: unknown; y?: unknown; adaptive?: unknown } | null
+      if (data?.type === WEB_POINTER_MESSAGE) {
+        const { current: here, live: onScreens, follow: following } = latest.current
+        const x = typeof data.x === 'number' ? data.x : null
+        const y = typeof data.y === 'number' ? data.y : null
+        const show =
+          pointerEnabled.current &&
+          following &&
+          !!onScreens &&
+          onScreens === here &&
+          x !== null &&
+          y !== null &&
+          x >= 0 &&
+          x <= WEB_FRAME_WIDTH &&
+          y >= 0 &&
+          y <= WEB_FRAME_HEIGHT
+        if (!show) {
+          if (useAppStore.getState().webPointer) hidePointer()
+          return
+        }
+        useAppStore.getState().setWebPointer({ x, y })
+        window.api.program.webPointer(x, y)
+        return
+      }
       if (data?.type !== WEB_SCROLL_MESSAGE || typeof data.x !== 'number' || typeof data.y !== 'number') return
       setAdaptive(data.adaptive === true)
       const { current: here, live: onScreens, follow: following } = latest.current
@@ -104,6 +139,7 @@ export default function WebPage(_props: { active?: boolean }): React.ReactElemen
         )
         setAddress(url)
         setAdaptive(null)
+        hidePointer()
         // The page on screens moved on in the preview: take the screens along.
         if (following && onScreens && onScreens === before) void put(url)
       }),
@@ -111,6 +147,7 @@ export default function WebPage(_props: { active?: boolean }): React.ReactElemen
   )
 
   const open = (url: string, push = true): void => {
+    hidePointer()
     loading.current = true
     setSrc((s) => ({ url, key: (s?.key ?? 0) + 1 }))
     setAddress(url)
@@ -133,20 +170,34 @@ export default function WebPage(_props: { active?: boolean }): React.ReactElemen
     open(url, false)
   }
 
-  const saveBookmarks = (next: WebSettings): void => {
-    const normalized = normalizeWebSettings(next)
+  const saveWebSettings = (next: Partial<WebSettings>): void => {
+    const normalized = normalizeWebSettings({ ...useBootstrapStore.getState().settings.web, ...next })
     useBootstrapStore.getState().patchSettings('web', normalized)
     void window.api.settings.set('web', normalized)
+  }
+  const setShowPointer = (showPointer: boolean): void => {
+    saveWebSettings({ showPointer })
+    if (!showPointer) hidePointer()
   }
   const bookmarked = !!current && settings.bookmarks.some((b) => b.url === current)
   const toggleBookmark = (): void => {
     if (!current) return
-    saveBookmarks({
+    saveWebSettings({
       bookmarks: bookmarked
         ? settings.bookmarks.filter((b) => b.url !== current)
         : [...settings.bookmarks, { id: crypto.randomUUID(), name: displayAddress(current), url: current }],
     })
   }
+
+  useEffect(() => {
+    if (!active) hidePointer()
+  }, [active])
+
+  // Without follow the preview and the screens can sit at different places,
+  // so the pointer would point at the wrong thing; take it down.
+  useEffect(() => {
+    if (!follow) hidePointer()
+  }, [follow])
 
   const exact = adaptive === true
   const preview = src ? (
@@ -224,7 +275,7 @@ export default function WebPage(_props: { active?: boolean }): React.ReactElemen
                       type="button"
                       className="mr-1 grid size-6 shrink-0 place-items-center rounded text-zinc-500 opacity-0 hover:text-white group-hover:opacity-100 focus-visible:opacity-100"
                       aria-label={`Remove ${bookmark.name}`}
-                      onClick={() => saveBookmarks({ bookmarks: settings.bookmarks.filter((b) => b.id !== bookmark.id) })}
+                      onClick={() => saveWebSettings({ bookmarks: settings.bookmarks.filter((b) => b.id !== bookmark.id) })}
                     >
                       <X size={12} aria-hidden="true" />
                     </button>
@@ -319,6 +370,10 @@ export default function WebPage(_props: { active?: boolean }): React.ReactElemen
                 <label className="flex items-center gap-2 text-xs text-zinc-400" title="While the page in the preview is on screens">
                   <Switch size="sm" checked={follow} onCheckedChange={setFollow} aria-label="Screens follow links and scrolling" />
                   Screens follow
+                </label>
+                <label className="flex items-center gap-2 text-xs text-zinc-400" title="Draw the pointer on screens while it is over this page">
+                  <Switch size="sm" checked={settings.showPointer} onCheckedChange={setShowPointer} aria-label="Show pointer on screens" />
+                  <MousePointer size={13} aria-hidden="true" /> Pointer
                 </label>
                 {live && (
                   <button type="button" className="btn-secondary h-8 px-3 text-xs" onClick={() => void window.api.program.reloadWeb()}>

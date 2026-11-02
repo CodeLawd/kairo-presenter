@@ -84,7 +84,7 @@ export function LiveLayerStrip({
     },
     {
       id: 'camera',
-      label: 'Camera',
+      label: 'Video',
       icon: Video,
       on: program.camera !== null,
       clear: () => window.api.program.setCamera(null),
@@ -111,29 +111,35 @@ export function LiveLayerStrip({
   }
 
   return (
-    // Absolutely filled, so the column matches the preview's height instead of
-    // stretching the whole live panel (which left a dark band under the picker).
-    <div className="relative w-10 shrink-0 bg-surface-secondary">
-      <div className="absolute inset-0 flex flex-col gap-1 overflow-hidden p-1" aria-label="Clear layers">
+    // A column of its own, set off from the monitor: its own tone, a hairline on
+    // the seam, and buttons that stop at their natural size instead of
+    // stretching to the frame's height (which left the icons scattered down the
+    // side). On a short frame they tighten up rather than clip.
+    <div
+      role="group"
+      aria-label="Clear layers"
+      className="hairline-l flex min-h-0 w-9 shrink-0 flex-col items-center gap-1 overflow-hidden bg-surface-tertiary p-1"
+    >
+      <StripButton
+        label="Clear all"
+        icon={X}
+        on={anything}
+        danger
+        disabled={!anything || busy}
+        onClick={() => void run(clearAll)}
+      />
+      {/* Everything below takes down one layer; above takes down all of them. */}
+      <span className="my-0.5 h-px w-5 shrink-0 bg-surface-border" aria-hidden="true" />
+      {layers.map((layer) => (
         <StripButton
-          label="Clear all"
-          icon={X}
-          on={anything}
-          danger
-          disabled={!anything || busy}
-          onClick={() => void run(clearAll)}
+          key={layer.id}
+          label={layer.on ? `Clear ${layer.label.toLowerCase()}` : layer.label}
+          icon={layer.icon}
+          on={layer.on}
+          disabled={!layer.on || busy}
+          onClick={() => void run(layer.clear)}
         />
-        {layers.map((layer) => (
-          <StripButton
-            key={layer.id}
-            label={layer.on ? `Clear ${layer.label.toLowerCase()}` : layer.label}
-            icon={layer.icon}
-            on={layer.on}
-            disabled={!layer.on || busy}
-            onClick={() => void run(layer.clear)}
-          />
-        ))}
-      </div>
+      ))}
     </div>
   )
 }
@@ -154,7 +160,13 @@ function StripButton({
   onClick: () => void
 }): React.ReactElement {
   return (
-    <div className="max-h-8 min-h-0 flex-1" data-tooltip={label} data-tooltip-side="left">
+    // The tooltip lives on the wrapper: a disabled button never fires the
+    // pointer events that would show it, and a dim icon needs its name most.
+    <div
+      className="flex max-h-9 min-h-[22px] min-w-0 flex-1"
+      data-tooltip={label}
+      data-tooltip-side="left"
+    >
       <button
         type="button"
         onClick={onClick}
@@ -162,16 +174,18 @@ function StripButton({
         aria-label={label}
         className={cn(
           'grid h-full w-full place-items-center rounded-md transition-colors',
-          // Lit = something is on that layer. Clear all is solid red; a layer turns red on hover, because a click takes it down.
+          // Lit = something is on that layer. Clear all is solid red; a layer turns
+          // red on hover, because a click takes it down. Off stays quiet: an icon
+          // you can see but not press.
           on
             ? danger
               ? 'bg-red-900 text-white hover:bg-red-700'
               : 'bg-surface-elevated text-white hover:bg-red-900/60 hover:text-red-200'
             : 'text-zinc-600',
-          'disabled:cursor-default',
+          disabled ? 'cursor-default' : 'cursor-pointer',
         )}
       >
-        <Icon size={13} aria-hidden="true" />
+        <Icon size={14} aria-hidden="true" />
       </button>
     </div>
   )

@@ -17,11 +17,14 @@ test("left resize follows the pointer and stays inside its usable bounds", () =>
 test("right resize moves opposite the pointer and stays inside its usable bounds", () => {
   assert.equal(resizeOperatorPanel("right", 440, -10), 450);
   assert.equal(resizeOperatorPanel("right", 440, 100), 420, "never squeezed below the toolbox's width");
-  assert.equal(resizeOperatorPanel("right", 440, -100), 460);
+  assert.equal(resizeOperatorPanel("right", 600, -200), OPERATOR_PANEL_BOUNDS.right.max);
+  assert.equal(resizeOperatorPanel("right", 440, -100), 540);
 });
 
-test("startup defaults open the live rail at full width and give transcript more room", () => {
-  assert.equal(OPERATOR_PANEL_DEFAULTS.right, OPERATOR_PANEL_BOUNDS.right.max);
+test("startup defaults leave room for the tools and a wider rail is allowed", () => {
+  assert.equal(OPERATOR_PANEL_DEFAULTS.right, 460);
+  assert.ok(OPERATOR_PANEL_DEFAULTS.right < OPERATOR_PANEL_BOUNDS.right.max);
+  assert.ok(OPERATOR_PANEL_BOUNDS.right.max >= 640, "the tools panel opens wide enough for its canvases");
   assert.ok(OPERATOR_PANEL_DEFAULTS.left > 240);
   assert.ok(OPERATOR_PANEL_DEFAULTS.left < OPERATOR_PANEL_BOUNDS.left.max);
 });
@@ -41,4 +44,6 @@ test("legacy default widths migrate to the new startup sizes", () => {
   // A width saved before the minimum went up opens at the minimum.
   assert.equal(normalizeOperatorPanelWidth("right", "300"), 420);
   assert.equal(normalizeOperatorPanelWidth("right", "440"), 440, "a width someone chose stays");
+  assert.equal(normalizeOperatorPanelWidth("right", "680"), 680);
+  assert.equal(normalizeOperatorPanelWidth("right", "900"), OPERATOR_PANEL_BOUNDS.right.max);
 });

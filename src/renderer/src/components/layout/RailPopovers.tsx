@@ -14,7 +14,7 @@ import {
   Waveform,
 } from '@/icons'
 import { cn } from '@/lib/utils'
-import { hueStyle, railHueClass } from '@/lib/hue'
+import { hueStyle, railHueClass, RAIL_LABEL } from '@/lib/hue'
 import { useAccountStore } from '@/stores/useAccountStore'
 import { useAppStore } from '@/stores/useAppStore'
 import { useBootstrapStore } from '@/bootstrap/useBootstrapStore'
@@ -40,7 +40,7 @@ function StatusDot({ tone }: { tone: 'ok' | 'idle' | 'warn' }): React.ReactEleme
     <span
       aria-hidden="true"
       className={cn(
-        'absolute bottom-1.5 right-1.5 size-2 rounded-full ring-2 ring-surface-rail',
+        'absolute bottom-0 right-0 size-2 rounded-full ring-2 ring-surface-rail',
         tone === 'ok' ? 'bg-emerald-500' : tone === 'warn' ? 'bg-amber-400' : 'bg-zinc-600',
       )}
     />
@@ -101,9 +101,12 @@ export function AccountRailButton(): React.ReactElement {
 
   return (
     <Popover.Root>
-      <Popover.Trigger className={railHueClass()} style={hueStyle('amber')} aria-label="Account" data-tooltip="Account" data-tooltip-side="right">
-        <AccountAvatar session={session} size={26} tinted />
-        <StatusDot tone={signedOut ? 'idle' : offline ? 'warn' : 'ok'} />
+      <Popover.Trigger className={railHueClass()} style={hueStyle('amber')}>
+        <span className="relative grid size-5 place-items-center">
+          <AccountAvatar session={session} size={20} tinted />
+          <StatusDot tone={signedOut ? 'idle' : offline ? 'warn' : 'ok'} />
+        </span>
+        <span className={RAIL_LABEL}>Account</span>
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content side="right" align="end" sideOffset={10} collisionPadding={12} className={cn(PANEL, 'w-64')}>
@@ -213,9 +216,12 @@ export function AudioRailButton(): React.ReactElement {
 
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
-      <Popover.Trigger className={railHueClass()} style={hueStyle('lime')} aria-label="Audio input" data-tooltip="Audio input" data-tooltip-side="right">
-        <Mic size={19} aria-hidden="true" />
-        <StatusDot tone={capturing ? 'ok' : 'idle'} />
+      <Popover.Trigger className={railHueClass()} style={hueStyle('lime')}>
+        <span className="relative grid size-5 place-items-center">
+          <Mic size={18} aria-hidden="true" />
+          <StatusDot tone={capturing ? 'ok' : 'idle'} />
+        </span>
+        <span className={RAIL_LABEL}>Audio</span>
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content side="right" align="end" sideOffset={10} collisionPadding={12} className={cn(PANEL, 'w-72')}>

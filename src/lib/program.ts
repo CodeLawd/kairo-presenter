@@ -102,6 +102,22 @@ export interface PropTextObject extends PropObjectCommon {
   align: 'left' | 'center' | 'right'
 }
 
+/**
+ * The live countdown as part of a prop. Its time comes from the timer on
+ * screens; the box, size and colour are the prop's own, so a church can place
+ * and style it anywhere — the Props editor is where it is built.
+ */
+export interface PropTimerObject extends PropObjectCommon {
+  kind: 'timer'
+  /** Pixels on a 1920-wide frame, like every other overlay size. */
+  fontSizePx: number
+  color: string
+  /** Overtime, or 0:00 once time is up without roll over. */
+  overrunColor: string
+  bold: boolean
+  align: 'left' | 'center' | 'right'
+}
+
 export interface PropShapeObject extends PropObjectCommon {
   kind: 'shape'
   shape: 'rectangle' | 'ellipse'
@@ -116,12 +132,12 @@ export interface PropImageObject extends PropObjectCommon {
   fit: 'contain' | 'cover'
 }
 
-export type PropObject = PropTextObject | PropShapeObject | PropImageObject
+export type PropObject = PropTextObject | PropTimerObject | PropShapeObject | PropImageObject
 export type PropObjectKind = PropObject['kind']
 
 /**
  * Something laid over the slide — a logo bug, a "Welcome" card, a lower
- * banner — built like a ProPresenter prop: text, shapes and images, stacked
+ * banner — built like a ProPresenter prop: text, a timer, shapes and images, stacked
  * in order (first is at the back), on a clear or coloured frame.
  */
 export interface ProgramProp {
@@ -170,6 +186,38 @@ export interface ProgramAudioSettings {
   ndi: boolean
 }
 
+/** How a live video input sits with the presentation on screen. */
+export type VideoLayout = 'full' | 'pip' | 'split'
+
+/** The PiP box as shares of the frame (0–100), so it can sit anywhere. */
+export interface VideoBox {
+  xPct: number
+  yPct: number
+  widthPct: number
+  heightPct: number
+}
+
+export interface VideoSettings {
+  /** Full screen behind the words, a picture-in-picture inset, or side by side. */
+  layout: VideoLayout
+  /** PiP: where the video sits and how large it is. */
+  box: VideoBox
+  /** PiP: rounded corners in 1920-frame pixels. */
+  radiusPx: number
+  /** Side by side: which side the video takes. */
+  side: 'left' | 'right'
+  /** Side by side: the video's share of the width, percent. */
+  splitPct: number
+}
+
+export const DEFAULT_VIDEO_SETTINGS: VideoSettings = {
+  layout: 'full',
+  box: { xPct: 68, yPct: 68, widthPct: 30, heightPct: 30 },
+  radiusPx: 12,
+  side: 'right',
+  splitPct: 50,
+}
+
 /** A message kept ready to show, like ProPresenter's Messages list. */
 export interface ProgramSavedMessage {
   id: string
@@ -179,6 +227,27 @@ export interface ProgramSavedMessage {
 /** How many saved messages are kept, and how long one may be. */
 export const MAX_SAVED_MESSAGES = 50
 export const MAX_SAVED_MESSAGE_LENGTH = 500
+
+/** How one timer is drawn on screens: the same object model as a prop. */
+export interface TimerTheme {
+  /** A colour behind the whole frame; null = clear, the slide shows through. */
+  background: string | null
+  /** Text, shapes, images and the readout itself, back to front. */
+  objects: PropObject[]
+}
+
+/** A readout in the top centre, styled like the old on-screen countdown. */
+export function defaultTimerTheme(color = '#5eead4', overrunColor = '#f87171'): TimerTheme {
+  return {
+    background: null,
+    objects: [{
+      id: 'timer-readout',
+      kind: 'timer',
+      x: 0.3, y: 0.05, w: 0.4, h: 0.12, opacity: 1,
+      fontSizePx: 96, color, overrunColor, bold: true, align: 'center',
+    }],
+  }
+}
 
 /**
  * A timer the operator keeps ready, like ProPresenter's Timers list: a
@@ -195,6 +264,8 @@ export interface ProgramTimerDef {
   targetTime: string
   /** Keep counting into overtime (-0:12) after 0:00, rather than stopping. */
   overrun: boolean
+  /** How it renders on screens, designed in the Timers editor. */
+  theme: TimerTheme
 }
 
 export const MAX_PROGRAM_TIMERS = 20
@@ -209,7 +280,8 @@ export interface PresentationSettings {
   logo: ProgramLogo
   stageDisplays: StageDisplayConfig[]
   audio: ProgramAudioSettings
-  timer: ProgramTimerStyle
+  /** Video input layout on screens (full, picture-in-picture, side by side). */
+  video: VideoSettings
   /** The timers, in list order. Never empty: there is always one to show. */
   timers: ProgramTimerDef[]
 }
@@ -221,6 +293,7 @@ export const DEFAULT_TIMER: ProgramTimerDef = {
   durationSec: 300,
   targetTime: '10:00',
   overrun: true,
+  theme: defaultTimerTheme(),
 }
 
 export const DEFAULT_PRESENTATION_SETTINGS: PresentationSettings = {
@@ -254,7 +327,7 @@ export const DEFAULT_PRESENTATION_SETTINGS: PresentationSettings = {
   // Video sound on by default, as in ProPresenter: a countdown or a clip with
   // audio should be heard; silent motion loops are unaffected.
   audio: { enabled: true, volume: 1, outputLabel: '', ndi: false },
-  timer: { rollover: true, color: '#5eead4', overrunColor: '#f87171', backdrop: false },
+  video: DEFAULT_VIDEO_SETTINGS,
   timers: [DEFAULT_TIMER],
 }
 
@@ -289,6 +362,16 @@ function normalizePropObject(raw: unknown, seen: Set<string>): PropObject | null
         text: safeString(r.text, '').slice(0, MAX_PROP_TEXT_LENGTH),
         fontSizePx: Math.round(clampNum(r.fontSizePx, 8, 400, 72)),
         color: safeColor(r.color, '#ffffff'),
+        bold: safeBool(r.bold, true),
+        align: safeEnum(r.align, PROP_ALIGNS, 'center'),
+      }
+    case 'timer':
+      return {
+        ...common,
+        kind: 'timer',
+        fontSizePx: Math.round(clampNum(r.fontSizePx, 8, 400, 96)),
+        color: safeColor(r.color, '#ffffff'),
+        overrunColor: safeColor(r.overrunColor, '#f87171'),
         bold: safeBool(r.bold, true),
         align: safeEnum(r.align, PROP_ALIGNS, 'center'),
       }
@@ -370,7 +453,20 @@ const TIME_OF_DAY = /^([01]\d|2[0-3]):([0-5]\d)$/
  * Saved timers. Settings from before there was a list get one countdown that
  * keeps the old roll-over choice, so nothing changes on screen.
  */
-function normalizeTimers(raw: unknown, rollover: boolean): ProgramTimerDef[] {
+/** A timer's design, made safe; it always keeps one readout to draw. */
+function normalizeTimerTheme(raw: unknown, color: string, overrunColor: string): TimerTheme {
+  const r = asObject(raw)
+  const background = typeof r.background === 'string' ? safeColor(r.background, '') || null : null
+  const seen = new Set<string>()
+  const objects = (Array.isArray(r.objects) ? r.objects : [])
+    .map((object) => normalizePropObject(object, seen))
+    .filter((object): object is PropObject => object !== null)
+    .slice(0, MAX_PROP_OBJECTS)
+  if (!objects.some((object) => object.kind === 'timer')) objects.push(defaultTimerTheme(color, overrunColor).objects[0]!)
+  return { background, objects }
+}
+
+function normalizeTimers(raw: unknown, rollover: boolean, color: string, overrunColor: string): ProgramTimerDef[] {
   const timers: ProgramTimerDef[] = []
   const seen = new Set<string>()
   for (const item of Array.isArray(raw) ? raw : []) {
@@ -386,10 +482,13 @@ function normalizeTimers(raw: unknown, rollover: boolean): ProgramTimerDef[] {
       durationSec: Math.round(clampNum(r.durationSec, 0, 24 * 3600, DEFAULT_TIMER.durationSec)),
       targetTime: TIME_OF_DAY.test(target) ? target : DEFAULT_TIMER.targetTime,
       overrun: safeBool(r.overrun, rollover),
+      theme: normalizeTimerTheme(r.theme, color, overrunColor),
     })
     if (timers.length === MAX_PROGRAM_TIMERS) break
   }
-  return timers.length > 0 ? timers : [{ ...DEFAULT_TIMER, overrun: rollover }]
+  return timers.length > 0
+    ? timers
+    : [{ ...DEFAULT_TIMER, overrun: rollover, theme: defaultTimerTheme(color, overrunColor) }]
 }
 
 function normalizeSavedMessages(raw: unknown): ProgramSavedMessage[] {
@@ -446,6 +545,31 @@ function normalizeStageDisplays(raw: unknown): StageDisplayConfig[] {
   return displays
 }
 
+function normalizeVideoSettings(raw: unknown): VideoSettings {
+  const v = asObject(raw)
+  // Saved before the freeform box: a corner and a width. Keep those readable.
+  const legacyWidth = clampNum(v.sizePct, 10, 60, DEFAULT_VIDEO_SETTINGS.box.widthPct)
+  const legacyMargin = clampNum(v.marginPct, 0, 8, 2)
+  const legacyCorner = safeEnum(v.corner, ['top-left', 'top-right', 'bottom-left', 'bottom-right'] as const, 'bottom-right')
+  const box = asObject(v.box)
+  const widthPct = clampNum(box.widthPct, 10, 90, legacyWidth)
+  const heightPct = clampNum(box.heightPct, 10, 90, legacyWidth)
+  const legacyX = legacyCorner.includes('right') ? 100 - legacyWidth - legacyMargin : legacyMargin
+  const legacyY = legacyCorner.includes('bottom') ? 100 - legacyWidth - legacyMargin : legacyMargin
+  return {
+    layout: safeEnum(v.layout, ['full', 'pip', 'split'] as const, DEFAULT_VIDEO_SETTINGS.layout),
+    box: {
+      xPct: clampNum(box.xPct, 0, 100 - widthPct, legacyX),
+      yPct: clampNum(box.yPct, 0, 100 - heightPct, legacyY),
+      widthPct,
+      heightPct,
+    },
+    radiusPx: Math.round(clampNum(v.radiusPx, 0, 48, DEFAULT_VIDEO_SETTINGS.radiusPx)),
+    side: safeEnum(v.side, ['left', 'right'] as const, DEFAULT_VIDEO_SETTINGS.side),
+    splitPct: Math.round(clampNum(v.splitPct, 20, 80, DEFAULT_VIDEO_SETTINGS.splitPct)),
+  }
+}
+
 export function normalizePresentationSettings(raw: unknown): PresentationSettings {
   const d = DEFAULT_PRESENTATION_SETTINGS
   const r = asObject(raw)
@@ -454,6 +578,8 @@ export function normalizePresentationSettings(raw: unknown): PresentationSetting
   const m = asObject(r.message)
   const l = asObject(r.logo)
   const a = asObject(r.audio)
+  // Saved before this was renamed: read the old key too.
+  const vid = asObject(r.video ?? r.camera)
   const tm = asObject(r.timer)
   return {
     transition: {
@@ -495,13 +621,13 @@ export function normalizePresentationSettings(raw: unknown): PresentationSetting
       outputLabel: safeString(a.outputLabel, '').trim(),
       ndi: safeBool(a.ndi, d.audio.ndi),
     },
-    timer: {
-      rollover: safeBool(tm.rollover, d.timer.rollover),
-      color: safeColor(tm.color, d.timer.color),
-      overrunColor: safeColor(tm.overrunColor, d.timer.overrunColor),
-      backdrop: safeBool(tm.backdrop, d.timer.backdrop),
-    },
-    timers: normalizeTimers(r.timers, safeBool(tm.rollover, d.timer.rollover)),
+    video: normalizeVideoSettings(vid),
+    timers: normalizeTimers(
+      r.timers,
+      safeBool(tm.rollover, true),
+      safeColor(tm.color, '#5eead4'),
+      safeColor(tm.overrunColor, '#f87171'),
+    ),
   }
 }
 
@@ -516,7 +642,10 @@ export function presentationMediaPaths(raw: unknown): string[] {
   const propImages = settings.props.flatMap((p) =>
     p.objects.flatMap((o) => (o.kind === 'image' ? [o.mediaPath] : [])),
   )
-  return [settings.logo.mediaPath, ...propImages].filter((p) => p !== '')
+  const timerImages = settings.timers.flatMap((timer) =>
+    timer.theme.objects.flatMap((o) => (o.kind === 'image' ? [o.mediaPath] : [])),
+  )
+  return [settings.logo.mediaPath, ...propImages, ...timerImages].filter((p) => p !== '')
 }
 
 // ─── Runtime state ─────────────────────────────────────────────────────────────
@@ -686,9 +815,51 @@ export function screenTimerDef(presentation: Pick<PresentationSettings, 'timers'
   return presentation.timers.find((t) => t.id === state.screenTimerId) ?? presentation.timers[0] ?? DEFAULT_TIMER
 }
 
-/** The countdown look, with roll-over taken from the timer on screens. */
+/** The timer's readout object — its colours are the timer's own. */
+export function timerReadoutObject(def: ProgramTimerDef): PropTimerObject | null {
+  return def.theme.objects.find((object): object is PropTimerObject => object.kind === 'timer') ?? null
+}
+
+/** The countdown look for stage displays, taken from the timer's design. */
 export function screenTimerStyle(presentation: PresentationSettings, state: Pick<ProgramState, 'screenTimerId'>): ProgramTimerStyle {
-  return { ...presentation.timer, rollover: screenTimerDef(presentation, state).overrun }
+  const def = screenTimerDef(presentation, state)
+  const readout = timerReadoutObject(def)
+  return {
+    rollover: def.overrun,
+    color: readout?.color ?? '#5eead4',
+    overrunColor: readout?.overrunColor ?? '#f87171',
+    backdrop: false,
+  }
+}
+
+/** One timer's design as markup; its readout ticks from the run. */
+export function renderTimerHTML(def: ProgramTimerDef, timer: PropTimerView): string {
+  return renderPropHTML({ id: `timer-${def.id}`, name: def.name, background: def.theme.background, objects: def.theme.objects }, timer)
+}
+
+/** One timer's run as a drawing view; an untouched timer starts idle. */
+export function timerViewFor(
+  def: ProgramTimerDef,
+  run: ProgramTimerState | null | undefined,
+  now = Date.now(),
+): PropTimerView {
+  const state = run ?? idleTimer(def, now)
+  return {
+    durationSec: state.durationSec,
+    endsAt: state.endsAt,
+    remainingSec: state.remainingSec,
+    rollover: def.overrun,
+    now,
+  }
+}
+
+/** The on-screens timer as a drawing view. */
+export function propTimerViewFor(
+  state: Pick<ProgramState, 'timer' | 'screenTimerId'>,
+  presentation: Pick<PresentationSettings, 'timers'>,
+  now = Date.now(),
+): PropTimerView {
+  return timerViewFor(screenTimerDef(presentation, state), state.timer, now)
 }
 
 // ─── Markup for the program layers ─────────────────────────────────────────────
@@ -720,8 +891,19 @@ export function renderMessageHTML(text: string | null, style: ProgramMessageStyl
 
 const pct = (share: number): string => `${Math.round(share * 10_000) / 100}%`
 
+/** What a timer object needs to draw: the run and the moment it is drawn at. */
+export interface PropTimerView {
+  durationSec: number
+  endsAt: number | null
+  remainingSec: number
+  rollover: boolean
+  now: number
+}
+
+const NO_TIMER: PropTimerView = { durationSec: 0, endsAt: null, remainingSec: 0, rollover: true, now: 0 }
+
 /** One prop object as positioned markup. Shared by the screens and the Props editor. */
-export function renderPropObjectHTML(object: PropObject): string {
+export function renderPropObjectHTML(object: PropObject, timer: PropTimerView = NO_TIMER): string {
   const box = `position:absolute;left:${pct(object.x)};top:${pct(object.y)};width:${pct(object.w)};height:${pct(object.h)};opacity:${object.opacity};`
   switch (object.kind) {
     case 'text': {
@@ -737,6 +919,34 @@ export function renderPropObjectHTML(object: PropObject): string {
       ].join('')
       return `<div style="${style}"><div>${escapeAndBreak(object.text)}</div></div>`
     }
+    case 'timer': {
+      const readout = timerReadout(
+        { durationSec: timer.durationSec, endsAt: timer.endsAt, remainingSec: timer.remainingSec },
+        timer.now,
+        timer.rollover,
+      )
+      const justify = object.align === 'left' ? 'flex-start' : object.align === 'right' ? 'flex-end' : 'center'
+      const style = [
+        box,
+        'display:flex;align-items:center;',
+        `justify-content:${justify};text-align:${object.align};`,
+        `color:${readout.timeUp ? object.overrunColor : object.color};`,
+        `font-size:${object.fontSizePx}px;`,
+        `font-weight:${object.bold ? 700 : 400};line-height:1.2;font-variant-numeric:tabular-nums;`,
+        "font-family:'Source Sans 3','Helvetica Neue',Arial,sans-serif;",
+        'white-space:nowrap;overflow:hidden;',
+      ].join('')
+      const attrs = [
+        'data-kairo-timer',
+        `data-duration-sec="${timer.durationSec}"`,
+        `data-ends-at="${timer.endsAt ?? ''}"`,
+        `data-remaining-sec="${timer.remainingSec}"`,
+        `data-rollover="${timer.rollover}"`,
+        `data-color="${escapeHtml(object.color)}"`,
+        `data-overrun-color="${escapeHtml(object.overrunColor)}"`,
+      ].join(' ')
+      return `<div style="${style}" ${attrs}><span style="opacity:${readout.paused ? 0.55 : 1}">${formatTimer(readout.seconds)}</span></div>`
+    }
     case 'shape': {
       const radius = object.shape === 'ellipse' ? '50%' : `${object.radiusPx}px`
       return `<div style="${box}background:${object.fill};border-radius:${radius};"></div>`
@@ -747,16 +957,16 @@ export function renderPropObjectHTML(object: PropObject): string {
 }
 
 /** One prop, full frame: its background (if any) and its objects, back to front. */
-export function renderPropHTML(prop: ProgramProp): string {
+export function renderPropHTML(prop: ProgramProp, timer?: PropTimerView): string {
   const background = prop.background ? `background:${prop.background};` : ''
-  return `<div style="position:absolute;inset:0;${background}">${prop.objects.map(renderPropObjectHTML).join('')}</div>`
+  return `<div style="position:absolute;inset:0;${background}">${prop.objects.map((o) => renderPropObjectHTML(o, timer)).join('')}</div>`
 }
 
 /** Every active prop in one layer, in list order. Nothing to draw → ''. */
-export function renderPropsHTML(props: readonly ProgramProp[], activeIds: readonly string[]): string {
+export function renderPropsHTML(props: readonly ProgramProp[], activeIds: readonly string[], timer?: PropTimerView): string {
   const active = props.filter((p) => activeIds.includes(p.id) && (p.background || p.objects.length > 0))
   if (active.length === 0) return ''
-  return `<div class="pa-props">${active.map(renderPropHTML).join('')}</div>`
+  return `<div class="pa-props">${active.map((p) => renderPropHTML(p, timer)).join('')}</div>`
 }
 
 /** Full-frame logo. Off → ''. A logo with no image is just the colour. */
@@ -874,11 +1084,17 @@ export function programLayersFor(
   output: Pick<import('./ipc').OverlayOutput, 'show'>,
   state: ProgramState,
   presentation: PresentationSettings,
-): { props: string; message: string; question: string; poll: string; logo: string } {
+  /** The moment the layer is drawn; a timer object uses it for its readout. */
+  now = Date.now(),
+): { props: string; timer: string; message: string; question: string; poll: string; logo: string } {
+  const timerView = propTimerViewFor(state, presentation, now)
   return {
     poll: output.show.poll ? renderPollHTML(state.poll, presentation.question) : '',
     question: output.show.question ? renderQuestionHTML(state.question, presentation.question) : '',
-    props: output.show.overlays ? renderPropsHTML(presentation.props, state.activePropIds) : '',
+    props: output.show.overlays ? renderPropsHTML(presentation.props, state.activePropIds, timerView) : '',
+    timer: output.show.countdown && state.countdownOnScreens
+      ? renderTimerHTML(screenTimerDef(presentation, state), timerView)
+      : '',
     message: output.show.messages ? renderMessageHTML(state.message, presentation.message) : '',
     logo: output.show.overlays ? renderLogoHTML(presentation.logo, state.logo) : '',
   }
@@ -886,7 +1102,6 @@ export function programLayersFor(
 
 /** Countdown, clock and stage message for one output, with how to draw them. */
 export interface ConfidenceInfo {
-  timer: ProgramTimerState | null
   clock: boolean
   stageMessage: string | null
   layout: ConfidenceLayout
@@ -900,12 +1115,10 @@ export function confidenceFor(
   state: ProgramState,
   presentation: PresentationSettings,
 ): ConfidenceInfo | null {
-  const timer = output.show.countdown && state.countdownOnScreens ? state.timer : null
   const clock = output.show.clock && state.clockOnScreens
   const stageMessage = output.show.stageMessage ? state.stageMessage : null
-  if (!timer && !clock && !stageMessage) return null
+  if (!clock && !stageMessage) return null
   return {
-    timer,
     clock,
     stageMessage,
     layout: output.confidence,
@@ -938,6 +1151,8 @@ export const PROGRAM = {
   RELOAD_WEB: 'program:reloadWeb',
   /** send (x, y): the preview scrolled; screens showing its page follow. */
   SCROLL_WEB: 'program:scrollWeb',
+  /** send (x, y) or (null, null): the operator's pointer over the live page. */
+  WEB_POINTER: 'program:webPointer',
   /** push ({ url }) — the operator's web preview went to another page. */
   WEB_NAVIGATED: 'program:webNavigated',
   TIMER_SET: 'program:timerSet',
@@ -976,6 +1191,8 @@ export interface ProgramAPI {
   reloadWeb: () => Promise<ProgramState>
   /** Scrolls the live web page on every screen to where the preview is. */
   scrollWeb: (x: number, y: number) => void
+  /** Draws the pointer on screens at (x, y), or hides it with null. */
+  webPointer: (x: number | null, y: number | null) => void
   /** The web preview in the operator window went to another page (link, redirect, search). */
   onWebNavigated: (callback: (event: { url: string }) => void) => Unsubscribe
   /** Each takes a timer id; without one, it acts on the timer on screens. */

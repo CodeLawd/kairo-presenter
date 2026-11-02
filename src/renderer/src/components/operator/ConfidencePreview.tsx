@@ -1,15 +1,16 @@
+import { useRef } from 'react'
 import { useNow } from '@/hooks/useProgramState'
-import { cn } from '@/lib/utils'
+import { usePropTimerTick } from '@/hooks/usePropTimerTick'
 import { OVERLAY_FRAME_HEIGHT, OVERLAY_FRAME_WIDTH } from '@/components/overlay/ScaledOverlayPreview'
-import { formatClock, formatTimer, timerReadout, timerRunning, type ConfidenceInfo } from '@shared/program'
+import { formatClock, type ConfidenceInfo } from '@shared/program'
 
 // The program layers over the live preview, drawn from the same data the
 // screen windows get (programLayersFor / confidenceFor in src/lib/program.ts),
 // at the screen's 1920×1080 metrics scaled to the preview.
 
-type Layers = { poll: string; question: string; props: string; message: string; logo: string }
+type Layers = { props: string; timer: string; message: string; question: string; poll: string; logo: string }
 
-/** Props, message, countdown/clock/stage message, then the logo on top — the screen's stacking order. */
+/** Props, the timer design, message, clock/stage message, then the logo — the screen's stacking order. */
 export function ProgramLayersPreview({
   layers,
   info,
@@ -19,15 +20,21 @@ export function ProgramLayersPreview({
   info: ConfidenceInfo | null
   width: number
 }): React.ReactElement {
+  const designRef = useRef<HTMLDivElement>(null)
   const slot = (html: string): React.ReactElement | null =>
     html ? <div className="absolute inset-0 overflow-hidden [&>*]:absolute [&>*]:inset-0" dangerouslySetInnerHTML={{ __html: html }} /> : null
+  // A timer's readout ticks in place, like it does on the screens.
+  usePropTimerTick(designRef, layers.props.includes('data-kairo-timer') || layers.timer.includes('data-kairo-timer'))
   return (
     <div className="pointer-events-none absolute inset-0 overflow-hidden">
       <div
         className="absolute left-0 top-0 origin-top-left font-sans"
         style={{ width: OVERLAY_FRAME_WIDTH, height: OVERLAY_FRAME_HEIGHT, transform: `scale(${width / OVERLAY_FRAME_WIDTH})` }}
       >
-        {slot(layers.props)}
+        <div ref={designRef} className="absolute inset-0">
+          {slot(layers.props)}
+          {slot(layers.timer)}
+        </div>
         {slot(layers.message)}
         {slot(layers.poll)}
         {slot(layers.question)}
@@ -40,18 +47,16 @@ export function ProgramLayersPreview({
 
 /** Mirrors the info layer in src/main/services/output/overlay.html. */
 function InfoLayer({ info }: { info: ConfidenceInfo }): React.ReactElement {
-  const { timer, clock, stageMessage, layout, sizes, style } = info
-  // Sub-second only while a countdown runs; the clock alone changes by the minute.
-  const now = useNow(timer && timerRunning(timer) ? 250 : 1000)
-  const readout = timer ? timerReadout(timer, now, style.rollover) : null
-  const hasBar = !!timer || clock
+  const { clock, stageMessage, layout, sizes, style } = info
+  // The clock changes by the minute; a second is plenty.
+  const now = useNow(1000)
   const edge = layout.position
 
   return (
     <>
-      {hasBar && (
+      {clock && (
         <div
-          className="absolute inset-x-0 flex items-center justify-between font-bold tabular-nums text-white"
+          className="absolute inset-x-0 flex items-center font-bold tabular-nums text-white"
           style={{
             [edge]: 0,
             padding: '20px 48px',
@@ -60,12 +65,7 @@ function InfoLayer({ info }: { info: ConfidenceInfo }): React.ReactElement {
             textShadow: style.backdrop ? undefined : '0 2px 8px rgba(0,0,0,0.8)',
           }}
         >
-          <span>{clock ? formatClock(new Date(now)) : ''}</span>
-          {readout && (
-            <span className={cn(readout.paused && 'opacity-60')} style={{ color: readout.timeUp ? style.overrunColor : style.color }}>
-              {formatTimer(readout.seconds)}
-            </span>
-          )}
+          <span>{formatClock(new Date(now))}</span>
         </div>
       )}
       {stageMessage && (
@@ -74,7 +74,7 @@ function InfoLayer({ info }: { info: ConfidenceInfo }): React.ReactElement {
           style={{
             left: 40,
             right: 40,
-            [edge]: hasBar ? sizes.barPx * 1.25 + 40 : 40,
+            [edge]: clock ? sizes.barPx * 1.25 + 40 : 40,
             padding: '18px 28px',
             fontSize: sizes.messagePx,
             lineHeight: 1.15,

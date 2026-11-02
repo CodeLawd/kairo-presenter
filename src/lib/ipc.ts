@@ -1684,6 +1684,12 @@ export interface TracksAPI {
   play: (itemId: string) => Promise<TracksLibrary>
   setPaused: (paused: boolean) => Promise<TracksLibrary>
   stop: () => Promise<TracksLibrary>
+  /** Renames the track's file in place; the extension is kept. */
+  rename: (itemId: string, name: string) => Promise<TracksLibrary>
+  /** Shows the track's file in Finder / Explorer. */
+  reveal: (itemId: string) => Promise<void>
+  /** Moves the track's file to the system Trash and rescans. */
+  remove: (itemId: string) => Promise<TracksLibrary>
   onLibraryChange: (callback: (library: TracksLibrary) => void) => () => void
 }
 
@@ -1793,6 +1799,9 @@ export const IPC = {
     PLAY:            'tracks:play',
     SET_PAUSED:      'tracks:setPaused',
     STOP:            'tracks:stop',
+    RENAME:          'tracks:rename',
+    REVEAL:          'tracks:reveal',
+    REMOVE:          'tracks:remove',
     LIBRARY:         'tracks:library',
   },
   LYRICS: {

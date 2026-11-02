@@ -45,6 +45,11 @@ export function surfaceOutputs(outputs: readonly OverlayOutput[]): OverlayOutput
   return outputs.filter((o) => o.enabled && isRenderedKind(o.kind) && followsProgram(o))
 }
 
+/** Configured outputs remain available to preview even when switched off. */
+export function previewOutputs(outputs: readonly OverlayOutput[]): OverlayOutput[] {
+  return [...outputs].sort((a, b) => a.order - b.order)
+}
+
 /**
  * The rendered output a preview (or "apply this theme") should target: an
  * enabled screen, else an enabled NDI output, else any NDI output.

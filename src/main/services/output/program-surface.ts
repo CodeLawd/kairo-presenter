@@ -6,7 +6,7 @@ import log from 'electron-log/main'
 import overlayHtml from './overlay.html?asset'
 import { overlayMediaUrl, renderOverlayHTML, type OverlayColoredLine } from '@shared/overlay-template'
 import type { MediaPlayback, OverlayTheme } from '@shared/ipc'
-import type { ConfidenceInfo, ProgramWeb } from '@shared/program'
+import { DEFAULT_VIDEO_SETTINGS, type ConfidenceInfo, type ProgramWeb, type VideoSettings } from '@shared/program'
 import type { DocumentSlide, DocumentPlaybackStatus, DocumentVideoCommand } from '@shared/documents'
 import { mediaFilterCss } from '@shared/media-playback'
 import type { NdiService } from '../ndi'
@@ -73,6 +73,8 @@ export interface SurfaceConfig {
   cameraAudible: boolean
   /** NDI surfaces only: tap program sound and send it with the video. */
   ndiAudio: boolean
+  /** How the live video input sits with the presentation. */
+  video?: VideoSettings
 }
 
 const DEFAULT_CONFIG: SurfaceConfig = {
@@ -80,6 +82,7 @@ const DEFAULT_CONFIG: SurfaceConfig = {
   audio: { enabled: false, volume: 1, outputLabel: '' },
   cameraAudible: false,
   ndiAudio: false,
+  video: DEFAULT_VIDEO_SETTINGS,
 }
 
 /** The live camera: its video input and, optionally, the audio input played with it. */
@@ -95,6 +98,8 @@ export interface SurfaceLayers {
   question: string
   message: string
   props: string
+  /** The active timer's design, drawn over the slide. */
+  timer: string
   logo: string
   camera: CameraLayer | null
   /** A live web page behind the words. */
@@ -116,7 +121,7 @@ export interface FrameTap {
   pixels(bgra: Buffer, width: number, height: number): void
 }
 
-const EMPTY_LAYERS: SurfaceLayers = { poll: '', question: '', message: '', props: '', logo: '', camera: null, web: null, info: null }
+const EMPTY_LAYERS: SurfaceLayers = { poll: '', question: '', message: '', props: '', timer: '', logo: '', camera: null, web: null, info: null }
 
 interface RenderState {
   reference: string
@@ -499,6 +504,7 @@ export class ProgramSurface extends ManagedWindow {
     if (next.question !== previous.question) calls.push(`window.__setQuestion(${JSON.stringify(next.question)})`)
     if (next.message !== previous.message) calls.push(`window.__setMessage(${JSON.stringify(next.message)})`)
     if (next.props !== previous.props) calls.push(`window.__setProps(${JSON.stringify(next.props)})`)
+    if (next.timer !== previous.timer) calls.push(`window.__setTimerDesign(${JSON.stringify(next.timer)})`)
     if (next.logo !== previous.logo) calls.push(`window.__setLogo(${JSON.stringify(next.logo)})`)
     if (!sameCamera(next.camera, previous.camera)) {
       calls.push(
@@ -527,6 +533,14 @@ export class ProgramSurface extends ManagedWindow {
     const win = this.win
     if (!this.layers.web || !win || win.isDestroyed()) return
     scrollWebFrame(win.webContents, WEB_SCREEN_FRAME, x, y)
+  }
+
+  /** Draws the operator's pointer over the page; null hides it. */
+  setWebPointer(x: number | null, y: number | null): void {
+    const win = this.win
+    if (!this.layers.web || !win || win.isDestroyed()) return
+    const point = x === null || y === null ? 'null' : JSON.stringify({ x, y })
+    win.webContents.executeJavaScript(`window.__setWebPointer(${point})`).catch(() => undefined)
   }
 
   /** Offscreen capture runs slowly between changes; run it at motion rate while a fade plays. */
@@ -846,5 +860,5 @@ function sameCamera(a: CameraLayer | null, b: CameraLayer | null): boolean {
 }
 
 function hasAnyLayer(layers: SurfaceLayers): boolean {
-  return !!(layers.poll || layers.question || layers.message || layers.props || layers.logo || layers.camera || layers.web || layers.info)
+  return !!(layers.poll || layers.question || layers.message || layers.props || layers.timer || layers.logo || layers.camera || layers.web || layers.info)
 }

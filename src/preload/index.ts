@@ -561,6 +561,15 @@ const tracks: KairoAPI['tracks'] = {
   stop() {
     return ipcRenderer.invoke(IPC.TRACKS.STOP)
   },
+  rename(itemId, name) {
+    return ipcRenderer.invoke(IPC.TRACKS.RENAME, itemId, name)
+  },
+  reveal(itemId) {
+    return ipcRenderer.invoke(IPC.TRACKS.REVEAL, itemId)
+  },
+  remove(itemId) {
+    return ipcRenderer.invoke(IPC.TRACKS.REMOVE, itemId)
+  },
   onLibraryChange(callback) {
     const listener = (_e: unknown, library: TracksLibrary): void => callback(library)
     ipcRenderer.on(IPC.TRACKS.LIBRARY, listener)
@@ -730,6 +739,7 @@ const program: KairoAPI['program'] = {
   setWeb: (url) => ipcRenderer.invoke(PROGRAM.SET_WEB, url),
   reloadWeb: () => ipcRenderer.invoke(PROGRAM.RELOAD_WEB),
   scrollWeb: (x, y) => ipcRenderer.send(PROGRAM.SCROLL_WEB, x, y),
+  webPointer: (x, y) => ipcRenderer.send(PROGRAM.WEB_POINTER, x, y),
   onWebNavigated: (callback) => subscribe(PROGRAM.WEB_NAVIGATED, callback),
   timer: {
     set: (durationSec, id) => ipcRenderer.invoke(PROGRAM.TIMER_SET, durationSec, id),

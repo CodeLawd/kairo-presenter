@@ -34,6 +34,28 @@
         position: absolute;
         inset: 0;
       }
+      /* Camera layouts: the slide content and the camera are transformed
+         independently so side-by-side can shrink the presentation while the
+         camera stays full height. The camera sits between them in full mode
+         (above the background, below the words) and above them in a corner. */
+      #pa-split-backdrop {
+        position: absolute;
+        inset: 0;
+        background: #000;
+        display: none;
+        z-index: 0;
+      }
+      #pa-content-bg,
+      #pa-content-fore {
+        position: absolute;
+        inset: 0;
+        overflow: hidden;
+        transform-origin: 0 0;
+      }
+      #pa-content-bg { z-index: 1; }
+      #pa-camera-layer { z-index: 2; }
+      #pa-content-fore { z-index: 3; }
+      #pa-program.camera-pip #pa-camera-layer { z-index: 4; }
       .pa-verse-box,
       .pa-verse {
         min-height: 0;
@@ -66,10 +88,20 @@
         font-variant-numeric: tabular-nums;
         text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
       }
+      #pa-web-pointer {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 56px;
+        height: 56px;
+        display: none;
+        pointer-events: none;
+        filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.65));
+      }
+      #pa-web-pointer.on { display: block; }
+      #pa-web-pointer svg { display: block; width: 100%; height: 100%; }
       #pa-info-bar.empty { display: none; }
       #pa-info-bar.backdrop { background: rgba(0, 0, 0, 0.72); text-shadow: none; }
-      #pa-info-timer { margin-left: auto; }
-      #pa-info-timer.paused { opacity: 0.55; }
       #pa-info-message {
         top: calc(var(--info-bar) * 1.25 + 40px);
         left: 40px;
@@ -114,21 +146,30 @@
   <body>
     <div id="root">
       <div class="pa-overlay-root" id="pa-program" style="position:absolute;inset:0;overflow:hidden;">
-        <div class="pa-slot" id="pa-bg-layer"></div>
-        <div class="pa-slot" id="pa-camera-layer"></div>
-        <div class="pa-slot" id="pa-web-layer"></div>
-        <div class="pa-slot" id="pa-elements-below-layer"></div>
-        <div class="pa-slot" id="pa-text-layer"></div>
-        <div class="pa-slot" id="pa-elements-above-layer"></div>
-        <div class="pa-slot" id="pa-props-layer"></div>
-        <div class="pa-slot" id="pa-message-layer"></div>
-        <div class="pa-slot" id="pa-poll-layer"></div>
-        <div class="pa-slot" id="pa-question-layer"></div>
-        <div class="pa-slot" id="pa-info-layer">
-          <div id="pa-info-bar"><span id="pa-info-clock"></span><span id="pa-info-timer"></span></div>
-          <div id="pa-info-message"></div>
+        <div id="pa-split-backdrop"></div>
+        <div id="pa-content-bg">
+          <div class="pa-slot" id="pa-bg-layer"></div>
         </div>
-        <div class="pa-slot" id="pa-logo-layer"></div>
+        <div class="pa-slot" id="pa-camera-layer"></div>
+        <div id="pa-content-fore">
+          <div class="pa-slot" id="pa-web-layer"></div>
+          <div id="pa-web-pointer" aria-hidden="true">
+            <svg viewBox="0 0 32 32"><path d="M6 3 L26 16.5 L16.8 17.8 L21.6 27.4 L17.6 29.3 L12.8 19.6 L6 26.5 Z" fill="#111111" stroke="#ffffff" stroke-width="1.6" stroke-linejoin="round"/></svg>
+          </div>
+          <div class="pa-slot" id="pa-elements-below-layer"></div>
+          <div class="pa-slot" id="pa-text-layer"></div>
+          <div class="pa-slot" id="pa-elements-above-layer"></div>
+          <div class="pa-slot" id="pa-props-layer"></div>
+          <div class="pa-slot" id="pa-timer-layer"></div>
+          <div class="pa-slot" id="pa-message-layer"></div>
+          <div class="pa-slot" id="pa-poll-layer"></div>
+          <div class="pa-slot" id="pa-question-layer"></div>
+          <div class="pa-slot" id="pa-info-layer">
+            <div id="pa-info-bar"><span id="pa-info-clock"></span></div>
+            <div id="pa-info-message"></div>
+          </div>
+          <div class="pa-slot" id="pa-logo-layer"></div>
+        </div>
       </div>
     </div>
     <script>
@@ -161,6 +202,7 @@
         text: document.getElementById('pa-text-layer'),
         elementsAbove: document.getElementById('pa-elements-above-layer'),
         props: document.getElementById('pa-props-layer'),
+        timer: document.getElementById('pa-timer-layer'),
         poll: document.getElementById('pa-poll-layer'),
         question: document.getElementById('pa-question-layer'),
         message: document.getElementById('pa-message-layer'),
@@ -170,10 +212,97 @@
       // Set by the main process (window.__configure). `transitionMs` 0 = cut.
       // `audio.enabled`: this window plays background-video sound (only the one
       // audio surface does). `ndiAudio`: this window feeds its NDI sender sound.
-      var config = { transitionMs: 0, audio: { enabled: false, volume: 1, outputLabel: '' }, ndiAudio: false };
+      var DEFAULT_VIDEO_LAYOUT = { layout: 'full', corner: 'bottom-right', sizePct: 30, marginPct: 2, radiusPx: 12, side: 'right', splitPct: 50 };
+      var config = { transitionMs: 0, audio: { enabled: false, volume: 1, outputLabel: '' }, ndiAudio: false, video: DEFAULT_VIDEO_LAYOUT };
       // Whether this window plays the camera's sound — also only the audio surface.
       var cameraAudible = false;
+      var cameraNode = null;
       var documentSlide = null;
+
+      function videoLayout(raw) {
+        var value = raw || {};
+        var layout = ['full', 'pip', 'split'].indexOf(value.layout) >= 0 ? value.layout : 'full';
+        // Older saved layouts had a corner and a width; read those if no box.
+        var legacyWidth = Math.max(10, Math.min(60, Number(value.sizePct) || 30));
+        var legacyMargin = Math.max(0, Math.min(8, Number(value.marginPct) || 0));
+        var legacyCorner = value.corner || 'bottom-right';
+        var box = value.box || {};
+        var widthPct = Math.max(10, Math.min(90, Number(box.widthPct) || legacyWidth));
+        var heightPct = Math.max(10, Math.min(90, Number(box.heightPct) || legacyWidth));
+        var legacyX = legacyCorner.indexOf('right') >= 0 ? 100 - legacyWidth - legacyMargin : legacyMargin;
+        var legacyY = legacyCorner.indexOf('bottom') >= 0 ? 100 - legacyWidth - legacyMargin : legacyMargin;
+        return {
+          layout: layout,
+          box: {
+            xPct: Math.max(0, Math.min(100 - widthPct, Number(box.xPct) || legacyX)),
+            yPct: Math.max(0, Math.min(100 - heightPct, Number(box.yPct) || legacyY)),
+            widthPct: widthPct,
+            heightPct: heightPct,
+          },
+          radiusPx: Math.max(0, Math.min(48, Number(value.radiusPx) || 0)),
+          side: value.side === 'left' ? 'left' : 'right',
+          splitPct: Math.max(20, Math.min(80, Number(value.splitPct) || 50)),
+        };
+      }
+
+      /* Fits the slide content and the camera together: full, an inset over
+         the slide, or each taking a share of the width. */
+      function applyCameraLayout() {
+        var program = document.getElementById('pa-program');
+        var bg = document.getElementById('pa-content-bg');
+        var fore = document.getElementById('pa-content-fore');
+        var backdrop = document.getElementById('pa-split-backdrop');
+        // No camera live: the presentation keeps the whole frame.
+        var settings = videoLayout(cameraNode ? config.video : { layout: 'full' });
+        var mode = settings.layout;
+        program.classList.toggle('camera-pip', mode === 'pip');
+        backdrop.style.display = mode === 'split' ? 'block' : 'none';
+        var transform = '';
+        if (mode === 'split') {
+          var share = settings.splitPct / 100;
+          var scale = 1 - share;
+          var x = settings.side === 'left' ? FRAME_W * share : 0;
+          var y = (FRAME_H - FRAME_H * scale) / 2;
+          transform = 'translate(' + x + 'px,' + y + 'px) scale(' + scale + ')';
+        }
+        bg.style.transform = transform;
+        fore.style.transform = transform;
+        applyCameraNodeStyle(settings);
+      }
+
+      function applyCameraNodeStyle(settings) {
+        var node = cameraNode;
+        if (!node) return;
+        node.style.position = 'absolute';
+        node.style.right = 'auto';
+        node.style.bottom = 'auto';
+        node.style.overflow = 'hidden';
+        node.style.borderRadius = '0';
+        node.style.boxShadow = 'none';
+        if (settings.layout === 'full') {
+          node.style.left = '0';
+          node.style.top = '0';
+          node.style.width = '100%';
+          node.style.height = '100%';
+          return;
+        }
+        if (settings.layout === 'split') {
+          var width = (FRAME_W * settings.splitPct) / 100;
+          node.style.top = '0';
+          node.style.height = '100%';
+          node.style.width = width + 'px';
+          node.style.left = (settings.side === 'left' ? 0 : FRAME_W - width) + 'px';
+          return;
+        }
+        // Picture in picture: the freeform box, as shares of the frame.
+        var box = settings.box;
+        node.style.left = box.xPct + '%';
+        node.style.top = box.yPct + '%';
+        node.style.width = box.widthPct + '%';
+        node.style.height = box.heightPct + '%';
+        node.style.borderRadius = settings.radiusPx + 'px';
+        node.style.boxShadow = '0 16px 48px rgba(0, 0, 0, 0.5)';
+      }
 
       function clearDocumentVideos() {
         documentSlide = null;
@@ -538,8 +667,10 @@
             outputLabel: (next.audio && next.audio.outputLabel) || '',
           },
           ndiAudio: !!next.ndiAudio,
+          video: videoLayout(next.video),
         };
         cameraAudible = !!next.cameraAudible;
+        applyCameraLayout();
         if (graph) {
           graph.bus.gain.value = config.ndiAudio ? 1 : 0;
           // A tap with sound off would still allocate and post ~47 blocks a second.
@@ -735,6 +866,11 @@
       };
       window.__setProps = function (html) {
         swapLayer(layers.props, html || '', config.transitionMs);
+        propTimerSchedule();
+      };
+      window.__setTimerDesign = function (html) {
+        swapLayer(layers.timer, html || '', config.transitionMs);
+        propTimerSchedule();
       };
       window.__setLogo = function (html) {
         swapLayer(layers.logo, html || '', config.transitionMs);
@@ -747,10 +883,6 @@
       var info = null;
       var infoTicker = null;
       function infoPad(n) { return (n < 10 ? '0' : '') + n; }
-      function infoRemaining(timer) {
-        if (timer.endsAt === null) return timer.remainingSec;
-        return Math.ceil((timer.endsAt - Date.now()) / 1000);
-      }
       function infoFormat(seconds) {
         var sign = seconds < 0 ? '-' : '';
         var total = Math.abs(Math.trunc(seconds));
@@ -759,6 +891,39 @@
         var s = total % 60;
         return h > 0 ? sign + h + ':' + infoPad(m) + ':' + infoPad(s) : sign + m + ':' + infoPad(s);
       }
+      // ─── Prop timers ───────────────────────────────────────────────────────
+      // A timer object inside a prop carries its run in data attributes, so the
+      // page ticks it locally instead of asking main for a frame every second.
+      var propTimerTicker = null;
+      function propTimerUpdate(node) {
+        if (node.closest('[data-leaving]')) return;
+        var duration = Number(node.getAttribute('data-duration-sec')) || 0;
+        var endsAt = node.getAttribute('data-ends-at');
+        var remaining = endsAt ? Math.ceil((Number(endsAt) - Date.now()) / 1000) : Number(node.getAttribute('data-remaining-sec')) || 0;
+        var running = !!endsAt;
+        var rollover = node.getAttribute('data-rollover') === 'true';
+        var seconds = rollover ? remaining : Math.max(0, remaining);
+        var timeUp = duration > 0 && (remaining < 0 || (remaining === 0 && running));
+        var span = node.firstElementChild || node;
+        var text = infoFormat(seconds);
+        if (span.textContent !== text) span.textContent = text;
+        span.style.color = timeUp
+          ? (node.getAttribute('data-overrun-color') || '#f87171')
+          : (node.getAttribute('data-color') || '#ffffff');
+        span.style.opacity = (!running && remaining !== duration) ? '0.55' : '1';
+      }
+      function propTimerTick() {
+        var nodes = document.querySelectorAll('#pa-props-layer [data-kairo-timer], #pa-timer-layer [data-kairo-timer]');
+        for (var i = 0; i < nodes.length; i++) propTimerUpdate(nodes[i]);
+      }
+      function propTimerSchedule() {
+        if (propTimerTicker) clearInterval(propTimerTicker);
+        propTimerTicker = null;
+        if (!document.querySelector('#pa-props-layer [data-kairo-timer], #pa-timer-layer [data-kairo-timer]')) return;
+        propTimerTick();
+        propTimerTicker = setInterval(propTimerTick, 250);
+      }
+
       function infoSet(id, text) {
         var node = document.getElementById(id);
         if (node.textContent !== text) node.textContent = text;
@@ -772,18 +937,6 @@
           infoSet('pa-info-clock', (hours % 12 || 12) + ':' + infoPad(now.getMinutes()) + (hours < 12 ? ' AM' : ' PM'));
         } else {
           infoSet('pa-info-clock', '');
-        }
-        if (info.timer) {
-          // Mirrors timerReadout() in src/lib/program.ts.
-          var timer = info.timer;
-          var raw = infoRemaining(timer);
-          var running = timer.endsAt !== null;
-          var t = infoSet('pa-info-timer', infoFormat(info.style.rollover ? raw : Math.max(0, raw)));
-          var timeUp = timer.durationSec > 0 && (raw < 0 || (raw === 0 && running));
-          t.style.color = timeUp ? info.style.overrunColor : info.style.color;
-          t.classList.toggle('paused', !running && raw !== timer.durationSec);
-        } else {
-          infoSet('pa-info-timer', '');
         }
       }
       window.__setInfo = function (next) {
@@ -799,13 +952,12 @@
         infoTicker = null;
         if (!next) return;
         var bar = document.getElementById('pa-info-bar');
-        bar.classList.toggle('empty', !next.clock && !next.timer);
-        bar.classList.toggle('backdrop', next.style.backdrop);
+        bar.classList.toggle('empty', !next.clock);
+        bar.classList.toggle('backdrop', next.style.backdrop && !!next.clock);
         infoSet('pa-info-message', next.stageMessage || '');
         infoTick();
-        // A running countdown needs sub-second ticks; the clock alone only changes by the minute.
-        if (next.timer && next.timer.endsAt !== null) infoTicker = setInterval(infoTick, 250);
-        else if (next.clock) infoTicker = setInterval(infoTick, 1000);
+        // The clock alone only changes by the minute.
+        if (next.clock) infoTicker = setInterval(infoTick, 1000);
       };
 
       // Live web page, in a sandboxed frame: it runs its own scripts, but can't
@@ -813,10 +965,24 @@
       // camera or microphone. The main process lets pages that refuse framing
       // load here (src/main/services/web). `reload` changes to reload it.
       var webShown = null;
+      var webPointerNode = document.getElementById('pa-web-pointer');
+      window.__setWebPointer = function (point) {
+        if (!point || typeof point.x !== 'number' || typeof point.y !== 'number' || !webShown) {
+          webPointerNode.classList.remove('on');
+          return;
+        }
+        var x = Math.max(0, Math.min(FRAME_W, point.x));
+        var y = Math.max(0, Math.min(FRAME_H, point.y));
+        // The arrow's tip is at (6, 3) in its 32×32 viewBox, drawn at 56px.
+        webPointerNode.style.left = Math.max(0, x - 10) + 'px';
+        webPointerNode.style.top = Math.max(0, y - 5) + 'px';
+        webPointerNode.classList.add('on');
+      };
       window.__setWeb = function (url, reload) {
         var key = url ? url + ' ' + reload : null;
         if (key === webShown) return true;
         webShown = key;
+        webPointerNode.classList.remove('on');
         if (!url) {
           swapLayer(layers.web, '', config.transitionMs);
           return true;
@@ -846,7 +1012,9 @@
         cameraLabel = label || null;
         var wantedAudio = audioLabel || null;
         if (!cameraLabel) {
+          cameraNode = null;
           swapLayer(layers.camera, '', config.transitionMs);
+          applyCameraLayout();
           return Promise.resolve(true);
         }
         var wanted = cameraLabel;
@@ -898,6 +1066,8 @@
             video.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;';
             video.srcObject = stream;
             node.appendChild(video);
+            cameraNode = node;
+            applyCameraLayout();
             applyCameraAudio(video);
             enter(layers.camera, node, config.transitionMs);
             var old = layers.camera.children;

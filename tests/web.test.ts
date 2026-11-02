@@ -36,7 +36,13 @@ test('bookmarks keep only safe addresses and get a name', () => {
     { id: 'a', name: 'Giving', url: 'https://church.example/give' },
     { id: 'b', name: 'youtube.com', url: 'https://youtube.com/' },
   ])
-  assert.deepEqual(normalizeWebSettings(undefined), { bookmarks: [] })
+  assert.deepEqual(normalizeWebSettings(undefined), { bookmarks: [], showPointer: false })
+})
+
+test('the pointer toggle is kept only when explicitly on', () => {
+  assert.equal(normalizeWebSettings({ showPointer: true }).showPointer, true)
+  assert.equal(normalizeWebSettings({ showPointer: 'yes' }).showPointer, false)
+  assert.equal(normalizeWebSettings({}).showPointer, false)
 })
 
 test('framing is allowed by dropping only frame-ancestors from a policy', () => {

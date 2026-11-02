@@ -22,3 +22,23 @@ export function siblingAudioFolder(mediaFolder: string): string {
   }
   return `${trimmed.startsWith('/') ? '/' : ''}${parts.join(sep)}`.replace(/\/{2,}/g, '/')
 }
+
+/**
+ * A safe display/file name for a renamed track: no path separators or
+ * characters Windows forbids, no trailing dot or space, at most 120 chars.
+ * A pasted "Song.mp3" becomes "Song" — the extension is kept by the caller.
+ */
+export function trackFileName(raw: string, ext: string): string {
+  const suffix = `.${ext.replace(/^\./, '')}`
+  const trimmed = raw.trim()
+  const withoutExt = trimmed.toLowerCase().endsWith(suffix.toLowerCase())
+    ? trimmed.slice(0, -suffix.length)
+    : trimmed
+  return withoutExt
+    .replace(/[/\\:*?"<>|]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[. ]+$/, '')
+    .slice(0, 120)
+    .trim()
+}

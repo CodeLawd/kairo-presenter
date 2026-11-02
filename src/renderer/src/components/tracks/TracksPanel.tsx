@@ -1,8 +1,16 @@
-import { FolderOpen, Music2, Pause, Play, Plus, X } from '@/icons'
-import { useCallback, useState } from 'react'
+import { FolderOpen, MoreHorizontal, Music2, Pause, Pencil, Play, Plus, RefreshCw, Trash2, X } from '@/icons'
+import { useCallback, useRef, useState } from 'react'
 import { formatMediaClock } from '@shared/media-playback'
+import type { TrackItem } from '@shared/ipc'
 import { useTracksPlaybackStore } from '@/stores/useTracksPlaybackStore'
 import { cn } from '@/lib/utils'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 
 export function TracksPanel(): React.ReactElement {
   const library = useTracksPlaybackStore((state) => state.library)
@@ -12,6 +20,9 @@ export function TracksPanel(): React.ReactElement {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [scrub, setScrub] = useState<number | null>(null)
+  const [renamingId, setRenamingId] = useState<string | null>(null)
+  // Escape clears the name being edited, then the blur handler must not save it.
+  const cancelRename = useRef(false)
 
   const live = library.items.find((item) => item.id === library.liveId) ?? null
   const playing = !!live && !library.livePaused && !ended
@@ -37,12 +48,45 @@ export function TracksPanel(): React.ReactElement {
 
   const addTracks = (): void => void run(() => window.api.tracks.importFiles())
 
+  const beginRename = (item: TrackItem): void => {
+    cancelRename.current = false
+    setRenamingId(item.id)
+  }
+
+  const commitRename = (item: TrackItem, name: string): void => {
+    setRenamingId(null)
+    if (cancelRename.current) {
+      cancelRename.current = false
+      return
+    }
+    const trimmed = name.trim()
+    if (!trimmed || trimmed === item.name) return
+    void run(() => window.api.tracks.rename(item.id, trimmed))
+  }
+
+  /** The folder is the library, so removing a track moves its file to the Trash. */
+  const removeTrack = (item: TrackItem): void => {
+    const ok = window.confirm(`Move “${item.name}” to the Trash?\n\nThe file leaves the audio folder, and you can restore it from the Trash.`)
+    if (!ok) return
+    void run(() => window.api.tracks.remove(item.id))
+  }
+
   // Grouped like the other operator panels: the title and its actions above
   // one rounded box of tracks.
   return (
     <div className="flex flex-col px-3 pt-3">
       <div className="flex min-h-7 shrink-0 items-center gap-1.5 px-1 pb-1.5">
         <h3 className="min-w-0 flex-1 truncate text-[12px] font-semibold text-zinc-200">House audio</h3>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void run(() => window.api.tracks.rescan())}
+          className="grid size-7 place-items-center rounded-md text-slate-400 hover:bg-surface-tertiary hover:text-white disabled:opacity-50"
+          title="Refresh the audio folder"
+          aria-label="Refresh the audio folder"
+        >
+          <RefreshCw size={13} aria-hidden="true" />
+        </button>
         <button
           type="button"
           disabled={busy}
@@ -126,19 +170,38 @@ export function TracksPanel(): React.ReactElement {
                           ? <Pause size={11} fill="currentColor" aria-hidden="true" />
                           : <Play size={11} fill="currentColor" aria-hidden="true" />}
                       </button>
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => {
-                          if (!active) void window.api.tracks.play(item.id)
-                        }}
-                        className={cn(
-                          'min-w-0 flex-1 truncate text-left text-[12px]',
-                          active ? 'font-semibold text-white' : 'font-medium text-slate-300 hover:text-white',
-                        )}
-                      >
-                        {item.name}
-                      </button>
+                      {renamingId === item.id ? (
+                        <input
+                          autoFocus
+                          defaultValue={item.name}
+                          maxLength={120}
+                          aria-label={`Rename ${item.name}`}
+                          className="input min-w-0 flex-1 px-1.5 py-0.5 text-[12px]"
+                          onFocus={(event) => event.currentTarget.select()}
+                          onBlur={(event) => commitRename(item, event.currentTarget.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') event.currentTarget.blur()
+                            if (event.key === 'Escape') {
+                              cancelRename.current = true
+                              event.currentTarget.blur()
+                            }
+                          }}
+                        />
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => {
+                            if (!active) void window.api.tracks.play(item.id)
+                          }}
+                          className={cn(
+                            'min-w-0 flex-1 truncate text-left text-[12px]',
+                            active ? 'font-semibold text-white' : 'font-medium text-slate-300 hover:text-white',
+                          )}
+                        >
+                          {item.name}
+                        </button>
+                      )}
                       {active && (
                         <>
                           <span className="shrink-0 font-mono text-[10px] tabular-nums text-slate-500">
@@ -161,6 +224,31 @@ export function TracksPanel(): React.ReactElement {
                           </button>
                         </>
                       )}
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            type="button"
+                            disabled={busy}
+                            aria-label={`Options for ${item.name}`}
+                            title="More"
+                            className="grid size-6 shrink-0 place-items-center rounded-md text-slate-500 transition-colors hover:bg-surface-elevated hover:text-white disabled:opacity-40"
+                          >
+                            <MoreHorizontal size={14} aria-hidden="true" />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-48">
+                          <DropdownMenuItem onSelect={() => beginRename(item)}>
+                            <Pencil size={13} aria-hidden="true" /> Rename…
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => void run(() => window.api.tracks.reveal(item.id))}>
+                            <FolderOpen size={13} aria-hidden="true" /> Show in folder
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem variant="destructive" onSelect={() => removeTrack(item)}>
+                            <Trash2 size={13} aria-hidden="true" /> Move to Trash…
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                     {active && (
                       <input

@@ -1,12 +1,22 @@
 import { promises as fs } from 'fs'
-import { basename, extname, join, relative, resolve, sep } from 'path'
+import { basename, dirname, extname, join, relative, resolve, sep } from 'path'
+import { shell } from 'electron'
 import log from 'electron-log/main'
 import type { TracksLibrary, TracksSettings, TrackItem } from '@shared/ipc'
-import { isTrackExtension, siblingAudioFolder } from '@shared/tracks'
+import { isTrackExtension, siblingAudioFolder, trackFileName } from '@shared/tracks'
 import { store } from '../../db'
 import { uniqueFileName, isInsideRoot } from '../media'
 
 const MAX_DEPTH = 1
+
+async function exists(path: string): Promise<boolean> {
+  try {
+    await fs.access(path)
+    return true
+  } catch {
+    return false
+  }
+}
 
 function readSettings(): TracksSettings {
   const raw = store.get('tracks') as Partial<TracksSettings> | undefined
@@ -158,6 +168,85 @@ class TracksService {
     }
     if (imported === 0) throw new Error('None of those files are audio we can play.')
     return this.scan()
+  }
+
+  /**
+   * Takes a track out of the library by moving its file to the system Trash —
+   * the folder is the library, so hiding it from the list would only last until
+   * the next scan. Undo lives in the Finder/Explorer Trash.
+   */
+  async remove(id: string): Promise<TracksLibrary> {
+    const item = this.items.find((candidate) => candidate.id === id)
+    if (!item) throw new Error('That track is no longer in the folder.')
+    const root = this.allowedRoot()
+    if (!root || !isInsideRoot(item.path, root)) throw new Error('That track is outside the audio folder.')
+    if (this.liveId === id) {
+      this.liveId = null
+      this.livePaused = false
+      // Tell the player first, then give it a moment to close the file — on
+      // Windows a file still open in the audio element cannot be trashed.
+      this.emit()
+      await new Promise((resolve) => setTimeout(resolve, 250))
+    }
+    try {
+      await shell.trashItem(item.path)
+      log.info('[Tracks] Moved to Trash', { path: item.path })
+    } catch (err) {
+      // Already gone (deleted in Finder): still rescan so the row disappears.
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
+    }
+    return this.scan()
+  }
+
+  /**
+   * Renames the file itself, keeping its folder and extension — the library is
+   * a folder scan, so a name held only in memory would vanish on the next scan.
+   */
+  async rename(id: string, nextName: string): Promise<TracksLibrary> {
+    const item = this.items.find((candidate) => candidate.id === id)
+    if (!item) throw new Error('That track is no longer in the folder.')
+    const root = this.allowedRoot()
+    if (!root || !isInsideRoot(item.path, root)) throw new Error('That track is outside the audio folder.')
+    // Keep the extension exactly as the file has it, including its case.
+    const fileExt = extname(item.path).slice(1) || item.ext
+    const name = trackFileName(nextName, fileExt)
+    if (!name) throw new Error('Give the track a name.')
+    const target = join(dirname(item.path), `${name}.${fileExt}`)
+    if (resolve(target) === resolve(item.path)) return this.getLibrary()
+    if (!isInsideRoot(target, root)) throw new Error('That name cannot be used here.')
+    // A case-only rename on a case-insensitive disk finds the same file, not a clash.
+    const caseOnly = resolve(target).toLowerCase() === resolve(item.path).toLowerCase()
+    if (!caseOnly && (await exists(target))) throw new Error(`A file called “${name}.${fileExt}” is already in that folder.`)
+    const wasLive = this.liveId === id
+    const wasPaused = this.livePaused
+    if (wasLive) {
+      // The player holds the file open; let it pause before the rename.
+      this.livePaused = true
+      this.emit()
+      await new Promise((resolve) => setTimeout(resolve, 250))
+    }
+    try {
+      await fs.rename(item.path, target)
+    } catch (err) {
+      if (wasLive) {
+        this.livePaused = wasPaused
+        this.emit()
+      }
+      throw err
+    }
+    if (wasLive) {
+      this.liveId = itemIdFor(root, target)
+      this.livePaused = wasPaused
+    }
+    log.info('[Tracks] Renamed', { from: item.path, to: target })
+    return this.scan()
+  }
+
+  /** Shows the track in Finder / Explorer. */
+  reveal(id: string): void {
+    const item = this.items.find((candidate) => candidate.id === id)
+    if (!item) throw new Error('That track is no longer in the folder.')
+    shell.showItemInFolder(item.path)
   }
 
   play(id: string): TracksLibrary {

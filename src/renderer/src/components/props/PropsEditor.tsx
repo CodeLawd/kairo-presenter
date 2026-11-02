@@ -8,6 +8,12 @@ import {
   Circle,
   Image,
   Layers,
+  ObjectAlignBottom,
+  ObjectAlignCenter,
+  ObjectAlignLeft,
+  ObjectAlignMiddle,
+  ObjectAlignRight,
+  ObjectAlignTop,
   Plus,
   Square,
   TextT,
@@ -20,11 +26,19 @@ import { SegmentedControl } from '@/components/shared/SegmentedControl'
 import { MacTrafficLights } from '@/components/shared/MacTrafficLights'
 import { PropPreview } from './PropPreview'
 import { useProgramState } from '@/hooks/useProgramState'
-import { useDraftPresentation } from '@/components/operator/ProgramPanels'
+import { usePropTimerTick } from '@/hooks/usePropTimerTick'
+import { useDraftPresentation } from '@/hooks/useDraftPresentation'
 import {
+  DEFAULT_TIMER,
   MAX_PROP_OBJECTS,
+  MAX_PROGRAM_TIMERS,
+  defaultTimerTheme,
+  propTimerViewFor,
   renderPropHTML,
+  screenTimerDef,
+  timerViewFor,
   type ProgramProp,
+  type ProgramTimerDef,
   type PropObject,
   type PropObjectKind,
 } from '@shared/program'
@@ -36,7 +50,7 @@ const IS_MAC = navigator.platform.startsWith('Mac')
 const FRAME_W = 1920
 const FRAME_H = 1080
 
-const KIND_LABEL: Record<PropObjectKind, string> = { text: 'Text', shape: 'Shape', image: 'Image' }
+const KIND_LABEL: Record<PropObjectKind, string> = { text: 'Text', timer: 'Timer', shape: 'Shape', image: 'Image' }
 
 const newId = (prefix: string): string => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
 const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value))
@@ -69,10 +83,24 @@ export default function PropsEditor({
     }
   }
   const program = useProgramState()
+  // The markup ticks itself (usePropTimerTick); this is only its starting readout.
+  const timerView = propTimerViewFor(program, presentation)
+  const stageContentRef = useRef<HTMLDivElement>(null)
   const props = presentation.props
-  const [selectedPropId, setSelectedPropId] = useState<string | null>(initialSelect ?? props[0]?.id ?? null)
+  const timers = presentation.timers
+  const timerOnScreens = screenTimerDef(presentation, program)
+  const requestedTimerId = initialSelect?.startsWith('timer:') ? initialSelect.slice('timer:'.length) : null
+  const initialTimerId = requestedTimerId && timers.some((t) => t.id === requestedTimerId) ? requestedTimerId : null
+  const [selectedTimerId, setSelectedTimerId] = useState<string | null>(initialTimerId)
+  const [selectedPropId, setSelectedPropId] = useState<string | null>(initialTimerId ? null : initialSelect ?? props[0]?.id ?? null)
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null)
-  const prop = props.find((p) => p.id === selectedPropId) ?? props[0] ?? null
+  const selectedTimer = timers.find((t) => t.id === selectedTimerId) ?? null
+  // Designing a timer previews that timer's own run, not whichever one is on screens.
+  const stageTimerView = selectedTimer ? timerViewFor(selectedTimer, program.timers[selectedTimer.id]) : timerView
+  // A timer is edited as a prop-shaped design: same stage, same objects, same inspector.
+  const prop: ProgramProp | null = selectedTimer
+    ? { id: `timer:${selectedTimer.id}`, name: selectedTimer.name, background: selectedTimer.theme.background, objects: selectedTimer.theme.objects }
+    : props.find((p) => p.id === selectedPropId) ?? props[0] ?? null
   const object = prop?.objects.find((o) => o.id === selectedObjectId) ?? null
 
   // ── Writes ────────────────────────────────────────────────────────────────
@@ -83,42 +111,119 @@ export default function PropsEditor({
     (next: ProgramProp[]): void => setPresentation({ ...latest.current, props: next }),
     [setPresentation],
   )
+  /** Writes the selected prop — or the selected timer's theme when one is open. */
   const patchProp = useCallback(
-    (id: string, patch: Partial<ProgramProp>): void =>
-      setProps(latest.current.props.map((p) => (p.id === id ? { ...p, ...patch } : p))),
-    [setProps],
+    (id: string, patch: Partial<ProgramProp>): void => {
+      const current = latest.current
+      if (selectedTimerId) {
+        setPresentation({
+          ...current,
+          timers: current.timers.map((timer) =>
+            timer.id === selectedTimerId
+              ? {
+                  ...timer,
+                  ...(patch.name !== undefined ? { name: patch.name } : {}),
+                  theme: {
+                    background: patch.background !== undefined ? patch.background : timer.theme.background,
+                    objects: patch.objects ?? timer.theme.objects,
+                  },
+                }
+              : timer,
+          ),
+        })
+        return
+      }
+      setProps(current.props.map((p) => (p.id === id ? { ...p, ...patch } : p)))
+    },
+    [selectedTimerId, setPresentation, setProps],
   )
   const patchObject = useCallback(
-    (propId: string, objectId: string, patch: Partial<PropObject>): void =>
-      setProps(latest.current.props.map((p) =>
-        p.id === propId
-          ? { ...p, objects: p.objects.map((o) => (o.id === objectId ? ({ ...o, ...patch } as PropObject) : o)) }
-          : p,
-      )),
-    [setProps],
+    (propId: string, objectId: string, patch: Partial<PropObject>): void => {
+      const current = latest.current
+      const objects = (items: PropObject[]): PropObject[] =>
+        items.map((o) => (o.id === objectId ? ({ ...o, ...patch } as PropObject) : o))
+      if (selectedTimerId) {
+        setPresentation({
+          ...current,
+          timers: current.timers.map((timer) =>
+            timer.id === selectedTimerId
+              ? { ...timer, theme: { ...timer.theme, objects: objects(timer.theme.objects) } }
+              : timer,
+          ),
+        })
+        return
+      }
+      setProps(current.props.map((p) => (p.id === propId ? { ...p, objects: objects(p.objects) } : p)))
+    },
+    [selectedTimerId, setPresentation, setProps],
   )
+
+  const selectProp = (id: string | null): void => {
+    setSelectedTimerId(null)
+    setSelectedPropId(id)
+    setSelectedObjectId(null)
+  }
+  const selectTimer = (id: string): void => {
+    setSelectedTimerId(id)
+    setSelectedPropId(null)
+    setSelectedObjectId(null)
+  }
+
+  // The Timers panel can open this window again with another timer selected.
+  useEffect(() => {
+    if (!initialSelect) return
+    if (initialSelect.startsWith('timer:')) {
+      const id = initialSelect.slice('timer:'.length)
+      if (timers.some((timer) => timer.id === id)) selectTimer(id)
+      return
+    }
+    if (props.some((p) => p.id === initialSelect)) selectProp(initialSelect)
+    // Selecting on request only; edits inside the editor must not be reset.
+  }, [initialSelect])
 
   const addProp = (): void => {
     const id = newId('prop')
     const name = `Prop ${props.length + 1}`
     setProps([...props, { id, name, background: null, objects: [] }])
-    setSelectedPropId(id)
-    setSelectedObjectId(null)
+    selectProp(id)
   }
   const removeProp = (id: string): void => {
     if (program.activePropIds.includes(id)) void window.api.program.setProp(id, false)
     const next = props.filter((p) => p.id !== id)
     setProps(next)
-    if (selectedPropId === id) {
-      setSelectedPropId(next[0]?.id ?? null)
-      setSelectedObjectId(null)
-    }
+    if (selectedPropId === id) selectProp(next[0]?.id ?? null)
   }
-  const addObject = async (kind: 'text' | 'rectangle' | 'ellipse' | 'image'): Promise<void> => {
+  const addTimer = (): void => {
+    const current = latest.current
+    if (current.timers.length >= MAX_PROGRAM_TIMERS) return
+    const id = `timer-${Date.now().toString(36)}`
+    const timer: ProgramTimerDef = {
+      ...DEFAULT_TIMER,
+      id,
+      name: `Timer ${current.timers.length + 1}`,
+      overrun: true,
+      theme: defaultTimerTheme(),
+    }
+    setPresentation({ ...current, timers: [...current.timers, timer] })
+    selectTimer(id)
+  }
+  const removeTimer = (id: string): void => {
+    const current = latest.current
+    if (current.timers.length <= 1) return
+    const next = current.timers.filter((t) => t.id !== id)
+    const wasOnScreens = timerOnScreens.id === id
+    setPresentation({ ...current, timers: next })
+    // The timer on screens was deleted: move screens to the next one.
+    if (wasOnScreens && next[0]) void window.api.program.timer.show(next[0].id).catch(() => undefined)
+    if (selectedTimerId === id) selectProp(current.props[0]?.id ?? null)
+  }
+  const addObject = async (kind: 'text' | 'timer' | 'rectangle' | 'ellipse' | 'image'): Promise<void> => {
     if (!prop || prop.objects.length >= MAX_PROP_OBJECTS) return
     let added: PropObject
     if (kind === 'text') {
       added = { id: newId('text'), kind: 'text', text: 'Your text', fontSizePx: 96, color: '#ffffff', bold: true, align: 'center', x: 0.1, y: 0.4, w: 0.8, h: 0.2, opacity: 1 }
+    } else if (kind === 'timer') {
+      added = { id: newId('timer'), kind: 'timer', fontSizePx: 96, color: '#ffffff', overrunColor: '#f87171', bold: true, align: 'center', x: 0.3, y: 0.05, w: 0.4, h: 0.12, opacity: 1 }
     } else if (kind === 'image') {
       const mediaPath = await window.api.program.pickImage()
       if (!mediaPath) return
@@ -131,6 +236,8 @@ export default function PropsEditor({
   }
   const removeObject = (objectId: string): void => {
     if (!prop) return
+    // A timer design is its readout; remove the rest, not the countdown itself.
+    if (selectedTimer && prop.objects.find((o) => o.id === objectId)?.kind === 'timer') return
     patchProp(prop.id, { objects: prop.objects.filter((o) => o.id !== objectId) })
     setSelectedObjectId(null)
   }
@@ -217,7 +324,9 @@ export default function PropsEditor({
     return () => window.removeEventListener('keydown', onKey, true)
   })
 
-  const tools: Array<{ kind: 'text' | 'rectangle' | 'ellipse' | 'image'; label: string; icon: typeof TextT }> = [
+  usePropTimerTick(stageContentRef, !!prop?.objects.some((object) => object.kind === 'timer'))
+
+  const tools: Array<{ kind: 'text' | 'timer' | 'rectangle' | 'ellipse' | 'image'; label: string; icon: typeof TextT }> = [
     { kind: 'text', label: 'Text', icon: TextT },
     { kind: 'rectangle', label: 'Rectangle', icon: Square },
     { kind: 'ellipse', label: 'Ellipse', icon: Circle },
@@ -243,19 +352,19 @@ export default function PropsEditor({
         </div>
         <ul className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2.5 py-2">
           {props.map((p) => {
-            const selected = p.id === prop?.id
+            const selected = !selectedTimer && p.id === prop?.id
             const on = program.activePropIds.includes(p.id)
             return (
               <li key={p.id} className="group/prop relative">
                 <button
                   type="button"
-                  onClick={() => { setSelectedPropId(p.id); setSelectedObjectId(null) }}
+                  onClick={() => selectProp(p.id)}
                   className={cn(
                     'flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left',
                     selected ? 'bg-teal-500 text-on-accent' : 'hover:bg-surface-tertiary',
                   )}
                 >
-                  <PropPreview prop={p} width={44} className="rounded-[3px] ring-1 ring-black/30" />
+                  <PropPreview prop={p} width={44} timer={timerView} className="rounded-[3px] ring-1 ring-black/30" />
                   <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">{p.name}</span>
                   {on && <span className="size-1.5 shrink-0 rounded-full bg-live" title="On screen" aria-label="On screen" />}
                 </button>
@@ -272,6 +381,49 @@ export default function PropsEditor({
             )
           })}
         </ul>
+
+        <div className="hairline-t flex max-h-[42%] shrink-0 flex-col">
+          <div className="flex h-9 shrink-0 items-center gap-2 px-3">
+            <h2 className="min-w-0 flex-1 text-[12px] font-semibold text-white">Timers</h2>
+            <button
+              type="button"
+              className="grid size-7 place-items-center rounded-md text-slate-400 hover:bg-surface-elevated hover:text-white disabled:opacity-40"
+              aria-label="New timer"
+              title="New timer"
+              disabled={timers.length >= MAX_PROGRAM_TIMERS}
+              onClick={addTimer}
+            >
+              <Plus size={15} aria-hidden="true" />
+            </button>
+          </div>
+          <ul className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2.5 pb-2">
+            {timers.map((timer) => {
+              const selected = timer.id === selectedTimer?.id
+              const onScreens = timer.id === timerOnScreens.id
+              return (
+                <li key={timer.id}>
+                  <button
+                    type="button"
+                    onClick={() => selectTimer(timer.id)}
+                    className={cn(
+                      'flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left',
+                      selected ? 'bg-teal-500 text-on-accent' : 'hover:bg-surface-tertiary',
+                    )}
+                  >
+                    <PropPreview
+                      prop={{ id: `timer-preview-${timer.id}`, name: timer.name, background: timer.theme.background, objects: timer.theme.objects }}
+                      width={44}
+                      timer={timerViewFor(timer, program.timers[timer.id])}
+                      className="rounded-[3px] ring-1 ring-black/30"
+                    />
+                    <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">{timer.name}</span>
+                    {onScreens && <span className={cn('size-1.5 shrink-0 rounded-full', selected ? 'bg-surface' : 'bg-teal-400')} title="On screens" aria-label="On screens" />}
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
       </div>
 
       {/* ── The stage ─────────────────────────────────────────────────────── */}
@@ -307,9 +459,10 @@ export default function PropsEditor({
               onPointerDown={() => setSelectedObjectId(null)}
             >
               <div
+                ref={stageContentRef}
                 className="pointer-events-none absolute left-0 top-0 origin-top-left"
                 style={{ width: FRAME_W, height: FRAME_H, transform: `scale(${scale})` }}
-                dangerouslySetInnerHTML={{ __html: renderPropHTML(prop) }}
+                dangerouslySetInnerHTML={{ __html: renderPropHTML(prop, stageTimerView) }}
               />
               {prop.objects.map((o) => {
                 const selected = o.id === object?.id
@@ -385,9 +538,12 @@ export default function PropsEditor({
           {prop && !object && (
             <PropInspector
               prop={prop}
+              title={selectedTimer ? 'Timer' : 'Prop'}
+              note={selectedTimer ? 'Run, reset and show this timer from Operator → Timers. This design is what appears on screen.' : undefined}
+              removeLabel={selectedTimer ? 'Delete timer' : 'Delete prop'}
               onChange={(patch) => patchProp(prop.id, patch)}
               onSelectObject={setSelectedObjectId}
-              onRemove={() => removeProp(prop.id)}
+              onRemove={() => (selectedTimer ? removeTimer(selectedTimer.id) : removeProp(prop.id))}
             />
           )}
         </div>
@@ -473,24 +629,33 @@ function PercentInput({
 
 function PropInspector({
   prop,
+  title = 'Prop',
+  note,
+  removeLabel = 'Delete prop',
   onChange,
   onSelectObject,
   onRemove,
 }: {
   prop: ProgramProp
+  title?: string
+  note?: string
+  removeLabel?: string
   onChange: (patch: Partial<ProgramProp>) => void
   onSelectObject: (id: string) => void
   onRemove: () => void
 }): React.ReactElement {
   return (
     <>
-      <Group title="Prop">
+      {note && (
+        <p className="rounded-md bg-surface px-2.5 py-2 text-[11px] leading-relaxed text-slate-400">{note}</p>
+      )}
+      <Group title={title}>
         <Row label="Name">
           <input
             className="input w-[140px] px-2 py-1 text-[12px]"
             value={prop.name}
             maxLength={80}
-            aria-label="Prop name"
+            aria-label={`${title} name`}
             onChange={(e) => onChange({ name: e.target.value })}
           />
         </Row>
@@ -524,7 +689,10 @@ function PropInspector({
             >
               <span className="w-12 shrink-0 text-slate-500">{KIND_LABEL[o.kind]}</span>
               <span className="min-w-0 truncate">
-                {o.kind === 'text' ? o.text || 'Empty text' : o.kind === 'image' ? fileName(o.mediaPath) : o.shape === 'ellipse' ? 'Ellipse' : 'Rectangle'}
+                {o.kind === 'text' ? o.text || 'Empty text'
+                  : o.kind === 'timer' ? 'Countdown'
+                  : o.kind === 'image' ? fileName(o.mediaPath)
+                  : o.shape === 'ellipse' ? 'Ellipse' : 'Rectangle'}
               </span>
             </button>
           ))
@@ -538,7 +706,7 @@ function PropInspector({
         className="flex w-full items-center justify-center gap-1.5 rounded-md py-1.5 text-[12px] text-slate-400 hover:bg-surface-tertiary hover:text-red-400"
         onClick={onRemove}
       >
-        <Trash2 size={12} aria-hidden="true" /> Delete prop
+        <Trash2 size={12} aria-hidden="true" /> {removeLabel}
       </button>
     </>
   )
@@ -565,8 +733,10 @@ function ObjectInspector({
         <h3 className="text-[13px] font-semibold text-white">{KIND_LABEL[object.kind]}</h3>
         <button
           type="button"
-          className="flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-slate-400 hover:bg-surface-tertiary hover:text-red-400"
+          className="flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-slate-400 hover:bg-surface-tertiary hover:text-red-400 disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-slate-400"
           onClick={onRemove}
+          disabled={object.kind === 'timer'}
+          title={object.kind === 'timer' ? 'A timer design needs its readout' : 'Delete this object'}
         >
           <Trash2 size={12} aria-hidden="true" /> Delete
         </button>
@@ -599,7 +769,51 @@ function ObjectInspector({
           <Row label="Bold">
             <Switch checked={object.bold} onCheckedChange={(bold) => onChange({ bold })} aria-label="Bold" />
           </Row>
-          <Row label="Align">
+          <Row label="Text align">
+            <div className="flex rounded-md bg-surface-tertiary p-0.5">
+              {([['left', AlignLeft], ['center', AlignCenter], ['right', AlignRight]] as const).map(([align, Icon]) => (
+                <button
+                  key={align}
+                  type="button"
+                  aria-label={`Align ${align}`}
+                  aria-pressed={object.align === align}
+                  className={cn('grid size-6 place-items-center rounded', object.align === align ? 'bg-teal-500 text-on-accent' : 'text-slate-400 hover:text-white')}
+                  onClick={() => onChange({ align })}
+                >
+                  <Icon size={13} aria-hidden="true" />
+                </button>
+              ))}
+            </div>
+          </Row>
+        </Group>
+      )}
+
+      {object.kind === 'timer' && (
+        <Group title="Timer">
+          <div className="px-3 py-2.5 text-[11px] leading-relaxed text-slate-500">
+            Shows the timer that is on screens. Place and size it like any other prop object.
+          </div>
+          <Row label="Size">
+            <input
+              type="number"
+              className="input w-[64px] px-1.5 py-0.5 text-right text-[12px] tabular-nums"
+              min={8}
+              max={400}
+              value={object.fontSizePx}
+              aria-label="Timer size"
+              onChange={(e) => onChange({ fontSizePx: clamp(Number(e.target.value) || 8, 8, 400) })}
+            />
+          </Row>
+          <Row label="Colour">
+            <input type="color" className="h-6 w-8 cursor-pointer rounded bg-transparent" value={hexOr(object.color, '#ffffff')} aria-label="Timer colour" onChange={(e) => onChange({ color: e.target.value })} />
+          </Row>
+          <Row label="Time-up">
+            <input type="color" className="h-6 w-8 cursor-pointer rounded bg-transparent" value={hexOr(object.overrunColor, '#f87171')} aria-label="Time-up colour" onChange={(e) => onChange({ overrunColor: e.target.value })} />
+          </Row>
+          <Row label="Bold">
+            <Switch checked={object.bold} onCheckedChange={(bold) => onChange({ bold })} aria-label="Bold" />
+          </Row>
+          <Row label="Text align">
             <div className="flex rounded-md bg-surface-tertiary p-0.5">
               {([['left', AlignLeft], ['center', AlignCenter], ['right', AlignRight]] as const).map(([align, Icon]) => (
                 <button
@@ -673,6 +887,49 @@ function ObjectInspector({
           </Row>
         </Group>
       )}
+
+      <Group title="Align to slide">
+        <Row label="Across">
+          <div className="flex rounded-md bg-surface-tertiary p-0.5">
+            {([
+              ['left', 'Left', ObjectAlignLeft, 0],
+              ['centre', 'Centre', ObjectAlignCenter, (1 - object.w) / 2],
+              ['right', 'Right', ObjectAlignRight, 1 - object.w],
+            ] as const).map(([key, label, Icon, x]) => (
+              <button
+                key={key}
+                type="button"
+                aria-label={`Align ${label.toLowerCase()} on the slide`}
+                aria-pressed={Math.abs(object.x - x) < 0.005}
+                className={cn('grid size-6 place-items-center rounded', Math.abs(object.x - x) < 0.005 ? 'bg-teal-500 text-on-accent' : 'text-slate-400 hover:text-white')}
+                onClick={() => onChange({ x })}
+              >
+                <Icon size={14} aria-hidden="true" />
+              </button>
+            ))}
+          </div>
+        </Row>
+        <Row label="Down">
+          <div className="flex rounded-md bg-surface-tertiary p-0.5">
+            {([
+              ['top', 'Top', ObjectAlignTop, 0],
+              ['middle', 'Middle', ObjectAlignMiddle, (1 - object.h) / 2],
+              ['bottom', 'Bottom', ObjectAlignBottom, 1 - object.h],
+            ] as const).map(([key, label, Icon, y]) => (
+              <button
+                key={key}
+                type="button"
+                aria-label={`Align ${label.toLowerCase()} on the slide`}
+                aria-pressed={Math.abs(object.y - y) < 0.005}
+                className={cn('grid size-6 place-items-center rounded', Math.abs(object.y - y) < 0.005 ? 'bg-teal-500 text-on-accent' : 'text-slate-400 hover:text-white')}
+                onClick={() => onChange({ y })}
+              >
+                <Icon size={14} aria-hidden="true" />
+              </button>
+            ))}
+          </div>
+        </Row>
+      </Group>
 
       <Group title="Place">
         <Row label="Position">

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { retireProPresenterSettings } from '../src/lib/pp-retirement'
 import { makeOverlayOutput, normalizeOverlaySettings } from '../src/lib/overlay-defaults'
+import { OVERLAY_OUTPUT_KINDS } from '../src/lib/overlay-outputs'
 
 test('mixed upgrade removes PP destinations and bindings while preserving Kairo outputs', () => {
   const screen = { ...makeOverlayOutput('room', 'screen', { enabled: true, displayId: 24 }), lookId: 'look' }
@@ -42,3 +43,30 @@ test('legacy message-only stores do not become an enabled NDI feed', () => {
   const result = normalizeOverlaySettings({ mode: 'message' })
   assert.equal(result.outputs.some(o => o.enabled), false)
 })
+
+test('every kind of screen survives the launch-time sanitize, restart after restart', () => {
+  const outputs = OVERLAY_OUTPUT_KINDS.map((kind) =>
+    makeOverlayOutput(`${kind}-screen`, kind, { name: `${kind} screen`, enabled: true }),
+  )
+  const stored = normalizeOverlaySettings({ outputs })
+  // What db/index.ts writes back on each launch, then the next launch again.
+  const once = retireProPresenterSettings({ overlay: stored }) as { overlay: unknown }
+  const twice = retireProPresenterSettings(once) as { overlay: unknown }
+  for (const sanitized of [once, twice]) {
+    assert.deepEqual(
+      normalizeOverlaySettings(sanitized.overlay).outputs.map((o) => o.id),
+      outputs.map((o) => o.id),
+    )
+  }
+})
+
+test('a saved Syphon screen is not deleted on launch', () => {
+  const syphon = makeOverlayOutput('lower-third', 'syphon', { name: 'Lower Third', enabled: true })
+  const screen = makeOverlayOutput('projector', 'screen', { name: 'Main Screen', enabled: true })
+  const result = retireProPresenterSettings({ overlay: normalizeOverlaySettings({ outputs: [screen, syphon] }) })
+  assert.deepEqual(
+    normalizeOverlaySettings(result.overlay).outputs.map((o) => `${o.id}:${o.kind}`),
+    ['projector:screen', 'lower-third:syphon'],
+  )
+})
+

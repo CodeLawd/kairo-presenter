@@ -1,5 +1,6 @@
 import { after, NextRequest, NextResponse } from 'next/server'
 import { apiTarget } from '@/lib/api-target'
+import { changelog } from '@/lib/changelog'
 
 type ReleaseAsset = { name: string; browser_download_url: string }
 type GitHubRelease = { tag_name?: string; assets?: ReleaseAsset[] }
@@ -11,6 +12,16 @@ const matches: Record<string, (name: string) => boolean> = {
   'linux-x64': (name) => /\.AppImage$/i.test(name),
 }
 
+const fallbackFilenames: Record<string, (version: string) => string> = {
+  'windows-x64': (v) => `Kairo-Setup-${v}.exe`,
+  'mac-arm64': (v) => `Kairo-${v}-arm64.dmg`,
+  'mac-x64': (v) => `Kairo-${v}.dmg`,
+  'linux-x64': (v) => `Kairo-${v}.AppImage`,
+}
+
+let cachedRelease: { release: GitHubRelease; expiresAt: number } | null = null
+const CACHE_TTL_MS = 5 * 60 * 1000 // 5 minutes
+
 export async function GET(
   request: NextRequest,
   context: { params: Promise<{ platform: string }> },
@@ -20,26 +31,62 @@ export async function GET(
   if (!match) return new NextResponse('Unknown platform', { status: 404 })
 
   let version = ''
-  try {
-    const response = await fetch('https://api.github.com/repos/CodeLawd/kairo-presenter/releases/latest', {
-      headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'Kairo-website' },
-      cache: 'no-store',
-    })
-    if (response.ok) {
-      const release = (await response.json()) as GitHubRelease
-      version = release.tag_name?.replace(/^v/, '') ?? ''
-      const asset = release.assets?.find((item) => match(item.name))
-      if (asset && asset.browser_download_url.startsWith('https://github.com/CodeLawd/kairo-presenter/releases/download/')) {
-        record(request, platform, version, true)
-        return NextResponse.redirect(asset.browser_download_url)
+  let release: GitHubRelease | null = null
+
+  // 1. Check in-memory cache
+  if (cachedRelease && Date.now() < cachedRelease.expiresAt) {
+    release = cachedRelease.release
+  } else {
+    try {
+      const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN
+      const headers: Record<string, string> = {
+        Accept: 'application/vnd.github+json',
+        'User-Agent': 'Kairo-website',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      }
+      const response = await fetch('https://api.github.com/repos/CodeLawd/kairo-presenter/releases/latest', {
+        headers,
+        next: { revalidate: 300 },
+      })
+      if (response.ok) {
+        release = (await response.json()) as GitHubRelease
+        cachedRelease = {
+          release,
+          expiresAt: Date.now() + CACHE_TTL_MS,
+        }
+      } else if (cachedRelease) {
+        // Retain stale cache if GitHub rate-limits (e.g. HTTP 403)
+        release = cachedRelease.release
+      }
+    } catch {
+      if (cachedRelease) {
+        release = cachedRelease.release
       }
     }
-  } catch {
-    // A missing or unreachable release gets the same useful fallback page.
   }
 
+  // 2. If release info is available, find asset matching platform
+  if (release) {
+    version = release.tag_name?.replace(/^v/, '') ?? ''
+    const asset = release.assets?.find((item) => match(item.name))
+    if (asset && asset.browser_download_url.startsWith('https://github.com/CodeLawd/kairo-presenter/releases/download/')) {
+      record(request, platform, version, true)
+      return NextResponse.redirect(asset.browser_download_url)
+    }
+  }
+
+  // 3. Fallback: construct direct release asset URL using latest known changelog version
+  const fallbackVersion = changelog[0]?.version
+  const getFilename = fallbackFilenames[platform]
+  if (fallbackVersion && getFilename) {
+    const fallbackUrl = `https://github.com/CodeLawd/kairo-presenter/releases/download/v${fallbackVersion}/${getFilename(fallbackVersion)}`
+    record(request, platform, fallbackVersion, true)
+    return NextResponse.redirect(fallbackUrl)
+  }
+
+  // 4. Last resort: direct to GitHub releases page rather than a broken "missing installer" screen
   record(request, platform, version, false)
-  return NextResponse.redirect(new URL(`/download?platform=${encodeURIComponent(platform)}`, request.url))
+  return NextResponse.redirect('https://github.com/CodeLawd/kairo-presenter/releases')
 }
 
 /**

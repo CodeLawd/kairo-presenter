@@ -14,6 +14,17 @@ export type ChangelogEntry = {
 
 export const changelog: ChangelogEntry[] = [
   {
+    version: '1.0.26',
+    date: '2026-11-02',
+    title: 'More control over your live presentation',
+    notes: [
+      'Show live video full screen, picture-in-picture, or side by side. Position and size the inset, choose its corner style, or adjust the split between video and slides.',
+      'Design each countdown with your own text, shapes, images, colours and timer readout. The live preview lets you choose any configured screen, see when it is off, and clear individual layers.',
+      'Rename audio tracks, find their files, or move them to the Trash from Kairo. Show your pointer on screens while presenting a web page that follows the preview.',
+      'Engage can renew expired access and reconnect. The workspace navigation, presentation controls, scripture tools and download experience have also been refined.',
+    ],
+  },
+  {
     version: '1.0.25',
     date: '2026-11-01',
     title: 'Clearer account recovery',

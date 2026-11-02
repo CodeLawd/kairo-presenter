@@ -2,6 +2,7 @@ import type { EngageCommand } from '../../../../lib/engage'
 import { WebSocket } from 'ws'
 import { toDataURL } from 'qrcode'
 import { randomUUID } from 'crypto'
+import log from 'electron-log/main'
 import type { AudienceQuestionState, AudienceSession } from '../../../../lib/audience'
 import { AUDIENCE_MAX_SNAPSHOT_BYTES, normalizeAudienceRoomSettings, type AudienceRoomCreated, type AudienceRoomSettings, type AudienceServerEvent } from '../../../../lib/audience-protocol'
 import type { AudienceSource, AudienceUpdate } from '../source'
@@ -28,6 +29,8 @@ export class KairoAudienceSource implements AudienceSource {
   private ws: WebSocket | null = null
   private reconnect: ReturnType<typeof setTimeout> | null = null
   private attempts = 0
+  private authRecovery = false
+  private authRecoveries = 0
   private stopped = false
   private room: AudienceRoomCreated | null = null
   private session: AudienceSession | null = null
@@ -35,7 +38,12 @@ export class KairoAudienceSource implements AudienceSource {
   private pending = new Map<string, { type: 'state'; id: string; state: AudienceQuestionState; requestId: string }>()
   private endAck: { requestId: string; resolve: () => void; reject: (error: Error) => void } | null = null
   private settingsAck: { requestId: string; settings: AudienceRoomSettings; resolve: () => void } | null = null
-  constructor(private readonly baseUrl: string, private readonly createRoom: () => Promise<AudienceRoomCreated>) {}
+  constructor(
+    private readonly baseUrl: string,
+    private readonly createRoom: () => Promise<AudienceRoomCreated>,
+    private readonly fallbackBaseUrl?: string,
+    private readonly refreshRoom?: () => Promise<AudienceRoomCreated>,
+  ) {}
   onUpdate(callback: (update: AudienceUpdate) => void): () => void {
     this.listeners.add(callback)
     return () => this.listeners.delete(callback)
@@ -54,7 +62,8 @@ export class KairoAudienceSource implements AudienceSource {
   private connect(): void {
     if (this.stopped || !this.room) return
     this.status('connecting', this.attempts ? 'Reconnecting. Your questions are safe.' : undefined, 'connecting')
-    const url = new URL(`/v1/engage/${this.room.code}/ws?role=operator`, this.baseUrl)
+    const endpoint = this.fallbackBaseUrl && this.attempts % 2 === 1 ? this.fallbackBaseUrl : this.baseUrl
+    const url = new URL(`/v1/engage/${this.room.code}/ws?role=operator`, endpoint)
     url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
     const ws = new WebSocket(url, { headers: { Authorization: `Bearer ${this.room.operatorToken}` }, handshakeTimeout: 10_000, maxPayload: AUDIENCE_MAX_SNAPSHOT_BYTES })
     this.ws = ws
@@ -76,6 +85,7 @@ export class KairoAudienceSource implements AudienceSource {
       if (event.type === 'engage') this.emit({ engage: event })
       else if (event.type === 'snapshot') {
         this.attempts = 0
+        this.authRecoveries = 0
         this.joined = event.joined
         this.emit({ questions: event.questions, moderation: 'authoritative' })
         if (this.session && JSON.stringify(event.settings) !== JSON.stringify(this.session.settings)) {
@@ -102,15 +112,39 @@ export class KairoAudienceSource implements AudienceSource {
         else this.status('error', event.message)
       }
     })
-    ws.on('error', () => this.status('error', 'Lost the connection. Reconnecting…'))
+    ws.on('error', error => {
+      log.warn('[Engage] Socket error', { host: url.host, message: error.message })
+      this.status('error', 'Lost the connection. Reconnecting…')
+    })
     ws.on('unexpected-response', (_request, response) => {
+      log.warn('[Engage] Socket handshake rejected', { host: url.host, status: response.statusCode })
       response.resume()
       ws.terminate()
-      if (response.statusCode === 410 || response.statusCode === 404) this.finish()
+      if (response.statusCode === 410 || response.statusCode === 404) { this.finish(); return }
+      if (response.statusCode === 401 || response.statusCode === 403) {
+        if (!this.refreshRoom || this.authRecoveries >= 1) {
+          this.authRecovery = true
+          this.status('error', 'Engage access was rejected. Open this engagement again to reconnect.')
+          return
+        }
+        this.authRecovery = true
+        this.authRecoveries += 1
+        void this.refreshRoom().then(room => {
+          if (this.stopped) return
+          this.room = room
+          this.authRecovery = false
+          this.connect()
+        }).catch(error => {
+          log.warn('[Engage] Could not renew operator access', { message: error instanceof Error ? error.message : String(error) })
+          this.status('error', 'Engage access expired. Open this engagement again to reconnect.')
+        })
+      }
     })
-    ws.on('close', () => {
+    ws.on('close', (code, reason) => {
       if (heartbeat) clearInterval(heartbeat)
       if (this.stopped || this.ws !== ws) return
+      log.info('[Engage] Socket closed', { host: url.host, code, reason: reason.toString() })
+      if (this.authRecovery) return
       this.status('connecting', 'Reconnecting. Your questions are safe.', 'connecting')
       const delay = Math.min(30_000, 1000 * 2 ** Math.min(this.attempts++, 5)) + Math.floor(Math.random() * 500)
       this.reconnect = setTimeout(() => this.connect(), delay)

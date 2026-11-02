@@ -13,6 +13,8 @@ import {
   renderLogoHTML,
   renderMessageHTML,
   renderPropsHTML,
+  renderTimerHTML,
+  propTimerViewFor,
   resetTimer,
   startTimer,
   timerRemainingSec,
@@ -24,6 +26,7 @@ import {
   screenTimerDef,
   screenTimerStyle,
   type ProgramTimerDef,
+  type PropTimerObject,
 } from '../src/lib/program'
 import { frameHeightFor, testPatternLayout } from '../src/lib/displays'
 
@@ -274,12 +277,62 @@ test("the program preload sends on the channel main listens to", async () => {
   assert.ok(!/from '@shared\//.test(preload));
 });
 
-test('timer style defaults to roll over on and keeps valid choices', () => {
-  assert.equal(normalizePresentationSettings(undefined).timer.rollover, true)
-  const style = normalizePresentationSettings({ timer: { rollover: false, color: '#ffffff', backdrop: true } }).timer
-  assert.equal(style.rollover, false)
-  assert.equal(style.color, '#ffffff')
-  assert.equal(style.backdrop, true)
+test('video layouts default to full and keep their box inside the frame', () => {
+  assert.equal(normalizePresentationSettings(undefined).video.layout, 'full')
+  const video = normalizePresentationSettings({
+    video: { layout: 'split', side: 'left', splitPct: 5, radiusPx: 500, box: { xPct: 95, yPct: -4, widthPct: 30, heightPct: 2 } },
+  }).video
+  assert.equal(video.layout, 'split')
+  assert.equal(video.side, 'left')
+  assert.equal(video.splitPct, 20)
+  assert.equal(video.radiusPx, 48)
+  assert.equal(video.box.widthPct, 30)
+  assert.equal(video.box.heightPct, 10)
+  assert.equal(video.box.xPct, 70)
+  assert.equal(video.box.yPct, 0)
+  // Saved before the freeform box: a corner + size still becomes a box.
+  const legacy = normalizePresentationSettings({ video: { layout: 'pip', corner: 'top-left', sizePct: 25, marginPct: 3 } }).video
+  assert.deepEqual(legacy.box, { xPct: 3, yPct: 3, widthPct: 25, heightPct: 25 })
+  // Saved while this was called "camera": the old key still reads.
+  assert.equal(normalizePresentationSettings({ camera: { layout: 'pip' } }).video.layout, 'pip')
+  // An unknown layout falls back rather than rendering something half-broken.
+  assert.equal(normalizePresentationSettings({ video: { layout: 'diagonal' } }).video.layout, 'full')
+})
+
+test('each timer carries its own design, seeded from the old timer colours', () => {
+  const timers = normalizePresentationSettings({
+    timer: { color: '#abcdef', overrunColor: '#123456' },
+    timers: [{ id: 't', name: 'T', kind: 'countdown', durationSec: 60, overrun: false }],
+  }).timers
+  const readout = timers[0].theme.objects.find((o): o is PropTimerObject => o.kind === 'timer')
+  assert.ok(readout)
+  assert.equal(readout.color, '#abcdef')
+  assert.equal(readout.overrunColor, '#123456')
+  assert.equal(timers[0].theme.objects.length, 1)
+
+  // A saved design survives, and a theme without a readout gains one.
+  const saved = normalizePresentationSettings({
+    timers: [{
+      id: 'x', name: 'X', kind: 'countdown', durationSec: 60, overrun: true,
+      theme: {
+        background: '#112233',
+        objects: [{ id: 's', kind: 'shape', shape: 'rectangle', x: 0.1, y: 0.1, w: 0.2, h: 0.2, opacity: 1, fill: '#ffffff', radiusPx: 0 }],
+      },
+    }],
+  }).timers[0]
+  assert.equal(saved.theme.background, '#112233')
+  assert.equal(saved.theme.objects.some((o) => o.kind === 'shape'), true)
+  assert.equal(saved.theme.objects.some((o) => o.kind === 'timer'), true)
+})
+
+test('a timer design renders its readout and stays tickable', () => {
+  const presentation = normalizePresentationSettings({
+    timers: [{ id: 't', name: 'T', kind: 'countdown', durationSec: 60, overrun: false }],
+  })
+  const def = screenTimerDef(presentation, { screenTimerId: null })
+  const html = renderTimerHTML(def, { durationSec: 60, endsAt: null, remainingSec: 45, rollover: false, now: 0 })
+  assert.match(html, /data-kairo-timer/)
+  assert.match(html, /0:45/)
 })
 
 test('timerReadout agrees on time-up and pause for every surface', () => {
@@ -395,6 +448,46 @@ test('a countdown carries on from where it was paused', () => {
   assert.equal(paused.remainingSec, 840)
   const resumed = startTimerFor(def, paused, 1_000_000)
   assert.equal(timerRemainingSec(resumed, 1_000_000), 840)
+})
+
+test('a prop can carry a timer, drawn from the on-screens run', () => {
+  const presentation = normalizePresentationSettings({
+    timers: [{ id: 'game', name: 'Game', kind: 'countdown', durationSec: 300, targetTime: '10:00', overrun: false }],
+    props: [{
+      id: 'timer-prop',
+      name: 'Countdown',
+      background: null,
+      objects: [{
+        id: 't1',
+        kind: 'timer',
+        x: 0.3, y: 0.05, w: 0.4, h: 0.12, opacity: 1,
+        fontSizePx: 96, color: '#ffffff', overrunColor: '#ff0000', bold: true, align: 'center',
+      }],
+    }],
+  })
+  const timer = { durationSec: 300, endsAt: null, remainingSec: 285 }
+  const running = renderPropsHTML(presentation.props, ['timer-prop'], { ...timer, rollover: true, now: 0 })
+  assert.match(running, /data-kairo-timer/)
+  assert.match(running, /4:45/)
+  assert.match(running, /data-remaining-sec="285"/)
+
+  // Time is up: the prop uses its own time-up colour.
+  const up = renderPropsHTML(presentation.props, ['timer-prop'], {
+    durationSec: 60, endsAt: 30_000, remainingSec: 60, rollover: false, now: 31_000,
+  })
+  assert.match(up, /color:#ff0000/)
+})
+
+test('a timer prop follows the roll-over of the timer on screens', () => {
+  const presentation = normalizePresentationSettings({
+    timers: [
+      { id: 'one', name: 'One', kind: 'countdown', durationSec: 60, targetTime: '10:00', overrun: true },
+      { id: 'two', name: 'Two', kind: 'countdown', durationSec: 60, targetTime: '10:00', overrun: false },
+    ],
+  })
+  const state = { screenTimerId: 'two', timer: { durationSec: 60, endsAt: null, remainingSec: 45 } }
+  assert.equal(propTimerViewFor(state, presentation, 1_000).rollover, false)
+  assert.equal(propTimerViewFor({ ...state, screenTimerId: 'one' }, presentation, 1_000).rollover, true)
 })
 
 test('the timer on screens is the chosen one, else the first; its roll-over comes from it', () => {

@@ -17,6 +17,8 @@ export const WEB_MIRROR_FRAME = 'kairo-web-mirror'
  * preview taller than the screens would lay it out differently.
  */
 export const WEB_SCROLL_MESSAGE = 'kairo:web-scroll'
+/** Posted by the preview frame as the pointer moves over the page: { type, x, y } (null when it leaves). */
+export const WEB_POINTER_MESSAGE = 'kairo:web-pointer'
 /** The page size screens lay a web page out at; previews draw it at this size, scaled down. */
 export const WEB_FRAME_WIDTH = 1920
 export const WEB_FRAME_HEIGHT = 1080
@@ -33,9 +35,11 @@ export interface WebBookmark {
 
 export interface WebSettings {
   bookmarks: WebBookmark[]
+  /** Draw the operator's pointer on screens while it is over this page. */
+  showPointer: boolean
 }
 
-export const DEFAULT_WEB_SETTINGS: WebSettings = { bookmarks: [] }
+export const DEFAULT_WEB_SETTINGS: WebSettings = { bookmarks: [], showPointer: false }
 
 const MAX_BOOKMARKS = 50
 const MAX_URL = 2048
@@ -97,5 +101,5 @@ export function normalizeWebSettings(raw: unknown): WebSettings {
     bookmarks.push({ id: entry.id, name, url })
     if (bookmarks.length >= MAX_BOOKMARKS) break
   }
-  return { bookmarks }
+  return { bookmarks, showPointer: source.showPointer === true }
 }

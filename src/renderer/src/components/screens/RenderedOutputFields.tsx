@@ -255,7 +255,7 @@ export function NdiSoundField(): React.ReactElement {
             void setPresentation({ ...presentation, audio: { ...presentation.audio, ndi: e.target.checked } })
           }
         />
-        Send program sound with every NDI feed — background videos and the camera’s audio input.
+        Send program sound with every NDI feed — background videos and the video input’s audio.
       </label>
       {supported === false && (
         <p className="text-[11px] leading-snug text-slate-500">

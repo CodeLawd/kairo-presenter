@@ -1458,8 +1458,8 @@ export default function Scripture({ active = true }: { active?: boolean }): Reac
         {/* The Bible bar, compact like ProPresenter's rather than row-wide: pick
             the translation, then one field that takes a reference ("jn 3 16") or
             remembered words ("love is patient"), with live suggestions for both. */}
-        <div className="flex shrink-0 items-center gap-1.5 px-5 pb-1 pt-3 lg:px-6">
-          <div className="flex w-52 min-w-0 shrink">
+        <div className="flex shrink-0 flex-wrap items-center gap-1.5 px-4 pb-1 pt-3 sm:px-5 lg:px-6">
+          <div className="flex w-[5.5rem] min-w-0 shrink-0 sm:w-24">
             <ScriptureTranslationSelect
               translation={translation}
               translations={translations}
@@ -1467,7 +1467,7 @@ export default function Scripture({ active = true }: { active?: boolean }): Reac
               onChange={(value) => void handleTranslationChange(value)}
             />
           </div>
-          <div className="w-80 min-w-0 shrink">
+          <div className="min-w-[12rem] flex-1">
             <ScriptureSearchBar
               query={query}
               loading={loading}

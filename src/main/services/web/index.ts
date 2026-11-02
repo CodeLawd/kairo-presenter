@@ -1,6 +1,6 @@
 import { session, webFrameMain, type WebContents } from 'electron'
 import log from 'electron-log/main'
-import { WEB_MIRROR_FRAME, WEB_PREVIEW_FRAME, WEB_SCREEN_FRAME, WEB_SCROLL_MESSAGE, webAddress, withoutFrameAncestors } from '@shared/web'
+import { WEB_MIRROR_FRAME, WEB_POINTER_MESSAGE, WEB_PREVIEW_FRAME, WEB_SCREEN_FRAME, WEB_SCROLL_MESSAGE, webAddress, withoutFrameAncestors } from '@shared/web'
 
 /**
  * Pages framed in Kairo's own windows — the web layer on screens and the
@@ -97,6 +97,26 @@ const SCROLL_SCRIPT = `(() => {
   }).observe(document.documentElement);
   addEventListener('scroll', report, { passive: true });
   report();
+
+  // The operator's pointer, in the page's own 1920-wide coordinates, so a
+  // screen can draw it in exactly the same place. Once a frame at most.
+  let pointerX = 0, pointerY = 0, pointerQueued = false;
+  const sendPointer = () => {
+    if (pointerQueued) return;
+    pointerQueued = true;
+    requestAnimationFrame(() => {
+      pointerQueued = false;
+      parent.postMessage({ type: ${JSON.stringify(WEB_POINTER_MESSAGE)}, x: pointerX, y: pointerY }, '*');
+    });
+  };
+  addEventListener('pointermove', (event) => {
+    pointerX = event.clientX;
+    pointerY = event.clientY;
+    sendPointer();
+  }, { passive: true, capture: true });
+  addEventListener('pointerleave', () => {
+    parent.postMessage({ type: ${JSON.stringify(WEB_POINTER_MESSAGE)}, x: null, y: null }, '*');
+  });
 })()`
 
 /**

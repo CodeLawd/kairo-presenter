@@ -599,7 +599,10 @@
   height: 60px;
   padding: 0 12px;
 }
-.workspace-rail { width: 56px; background: rgb(var(--surface-rail)); }
+/* Wide enough to read a name under each mark — "Documents" is the longest — and
+   a touch wider than the corner the header reserves for the Mac window buttons
+   (w-[68px] in AppShell), so the rail reads as its own column. */
+.workspace-rail { width: 72px; background: rgb(var(--surface-rail)); }
 .app-header {
   background: rgb(var(--surface-header));
 }

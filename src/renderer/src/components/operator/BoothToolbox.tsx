@@ -1,5 +1,5 @@
-import { BookOpen, Clock, Layers, MessageSquare, Music2, Search, Video } from '@/icons'
-import { LivePanel, MessagesPanel, ProgramSoundSection, PropsPanel, TimersPanel } from '@/components/operator/ProgramPanels'
+import { Bible, Clock, Layers, MessageSquare, Music2, Search, Video } from '@/icons'
+import { VideoPanel, MessagesPanel, ProgramSoundSection, PropsPanel, TimersPanel } from '@/components/operator/ProgramPanels'
 import type { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { useBoothToolboxStore, type BoothToolboxTab } from '@/stores/useBoothToolboxStore'
@@ -10,13 +10,13 @@ import { useAppStore } from '@/stores/useAppStore'
 import type { ScriptureResult, ScriptureSuggestion } from '@shared/ipc'
 
 const TABS: Array<{ id: BoothToolboxTab; label: string; icon: typeof Search }> = [
-  { id: 'search', label: 'Scripture', icon: BookOpen },
+  { id: 'search', label: 'Scripture', icon: Bible },
   { id: 'audio', label: 'Audio', icon: Music2 },
   { id: 'timers', label: 'Timers', icon: Clock },
   { id: 'messages', label: 'Messages', icon: MessageSquare },
   // 'show' kept as the id so a remembered tab still lands on props.
   { id: 'show', label: 'Props', icon: Layers },
-  { id: 'live', label: 'Camera', icon: Video },
+  { id: 'live', label: 'Video', icon: Video },
 ]
 
 export function BoothToolbox({
@@ -76,7 +76,7 @@ export function BoothToolbox({
         {active === 'timers' && <TimersPanel />}
         {active === 'messages' && <MessagesPanel />}
         {active === 'show' && <PropsPanel />}
-        {active === 'live' && <LivePanel />}
+        {active === 'live' && <VideoPanel />}
       </div>
     </div>
   )

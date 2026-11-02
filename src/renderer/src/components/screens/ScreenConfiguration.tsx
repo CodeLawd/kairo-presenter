@@ -1438,7 +1438,7 @@ function OutputDetail({
                     {PRODUCT_NAME} {output.name}
                   </span>
                   . Turn on its transparency option to put the words over your
-                  camera.
+                  video input.
                 </p>
               )}
               <LookFields output={output} onChange={onChange} />

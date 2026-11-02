@@ -4,6 +4,7 @@ import { useBootstrapStore } from "@/bootstrap/useBootstrapStore";
 import { useAppStore } from "@/stores/useAppStore";
 import { LiveLayerStrip } from "./LiveLayerStrip";
 import { normalizeMediaPlayback } from "@shared/media-playback";
+import { previewOutputs } from "@shared/overlay-outputs";
 import type {
   MediaLibrary,
   ScriptureResult,
@@ -104,14 +105,12 @@ export function LiveOutputRail({
   // Stored settings do not guarantee array order, so sort by the configured
   // precedence — the picker should read the same as the Outputs screen.
   const outputs = useMemo(
-    () =>
-      overlay.outputs
-        .filter((output) => output.enabled)
-        .sort((a, b) => a.order - b.order),
+    () => previewOutputs(overlay.outputs),
     [overlay.outputs],
   );
-  // The clear-layer column (36px + its hairline) sits beside the frame.
-  const previewWidth = Math.max(160, width - 38);
+  // The frame sits inside 12px insets, beside the 36px clear-layer column, so
+  // the monitor and that column fill the rail's width exactly.
+  const previewWidth = Math.max(160, width - 60);
   const previewHeight = Math.round((previewWidth * 9) / 16);
 
   return (
@@ -135,11 +134,9 @@ export function LiveOutputRail({
         style={{ width }}
       >
         <div className="hairline-b min-h-0 shrink-0" data-tour="live-preview">
-          <div className="flex items-baseline justify-between gap-2 px-3 py-1.5">
+          <div className="flex items-center px-3 pb-1.5 pt-2">
             <p className="text-[11px] font-medium text-zinc-400">Live</p>
           </div>
-          <div className="flex">
-          <div className="min-w-0 flex-1">
           <LiveOutputPreview
             outputs={outputs}
             selectedOutputId={selectedOutputId}
@@ -151,10 +148,8 @@ export function LiveOutputRail({
             overlay={overlay}
             width={previewWidth}
             height={previewHeight}
+            side={<LiveLayerStrip hasText={Boolean(payload)} hasBackground={Boolean(liveMedia || documentPreview)} />}
           />
-          </div>
-          <LiveLayerStrip hasText={Boolean(payload)} hasBackground={Boolean(liveMedia || documentPreview)} />
-          </div>
         </div>
 
         <div className="flex min-h-0 flex-1 flex-col">
