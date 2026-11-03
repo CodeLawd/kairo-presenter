@@ -164,7 +164,7 @@ export function VerseThemePreview({
               // A grid card: a hairline frame and a quiet label, so the slides
               // carry the page. Red rings what is on screen; white the current
               // (or picked) card, so "being read" never looks like "live".
-              "rounded-lg border bg-white/[0.03]",
+              "rounded-md border bg-white/[0.03]",
               isLive
                 ? "border-live ring-1 ring-live"
                 : isPicked || isActive
@@ -204,6 +204,7 @@ export function VerseThemePreview({
             seekTo={seekTo}
             onTime={onTime}
             backdrop={backdrop}
+            className={backdrop && chrome && footer ? "!bg-[repeating-conic-gradient(#303030_0%_25%,#242424_0%_50%)]" : undefined}
           />
         ) : drawSlide ? (
           <div className="flex h-full items-center justify-center px-3">

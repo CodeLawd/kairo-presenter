@@ -163,7 +163,7 @@ function StripButton({
     // The tooltip lives on the wrapper: a disabled button never fires the
     // pointer events that would show it, and a dim icon needs its name most.
     <div
-      className="flex max-h-9 min-h-[22px] min-w-0 flex-1"
+      className="flex w-full max-h-7 min-h-[22px] flex-1"
       data-tooltip={label}
       data-tooltip-side="left"
     >
@@ -173,14 +173,13 @@ function StripButton({
         disabled={disabled}
         aria-label={label}
         className={cn(
-          'grid h-full w-full place-items-center rounded-md transition-colors',
-          // Lit = something is on that layer. Clear all is solid red; a layer turns
-          // red on hover, because a click takes it down. Off stays quiet: an icon
-          // you can see but not press.
+          'grid h-full w-full place-items-center rounded-md transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-teal-400',
+          // Active layers are framed consistently; red is reserved for the
+          // destructive action when hovered.
           on
             ? danger
-              ? 'bg-red-900 text-white hover:bg-red-700'
-              : 'bg-surface-elevated text-white hover:bg-red-900/60 hover:text-red-200'
+              ? 'bg-red-900/50 text-red-100 ring-1 ring-inset ring-red-500/30 hover:bg-red-800'
+              : 'bg-surface-elevated text-teal-300 ring-1 ring-inset ring-teal-400/30 hover:bg-red-900/60 hover:text-red-200 hover:ring-red-400/40'
             : 'text-zinc-600',
           disabled ? 'cursor-default' : 'cursor-pointer',
         )}

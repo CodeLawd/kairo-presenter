@@ -31,11 +31,10 @@ export function BoothToolbox({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-surface-rail">
-      {/* As ProPresenter draws it: one bar of equal cells across the panel,
-          split by thin lines, the open tool filled blue. */}
+      {/* Equal-width tabs keep the tools easy to scan in the narrow rail. */}
       <div className="hairline-b shrink-0">
         <div
-          className="flex items-stretch divide-x divide-surface-rail bg-surface-tertiary"
+          className="flex items-stretch divide-x divide-white/[0.04] bg-surface-stage"
           role="tablist"
           aria-label="Presentation tools"
         >
@@ -50,11 +49,10 @@ export function BoothToolbox({
                 title={label}
                 onClick={() => setTab(id)}
                 className={cn(
-                  'flex h-11 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60',
-                  // Picked is filled with the blue accent, as on every other picked tab.
+                  'flex h-11 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 border-b-2 text-[10px] font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60',
                   selected
-                    ? 'bg-teal-500 text-on-accent'
-                    : 'text-zinc-400 hover:bg-surface-elevated hover:text-white',
+                    ? 'border-teal-500 bg-teal-500 text-on-accent'
+                    : 'border-transparent text-zinc-400 hover:bg-surface-secondary hover:text-zinc-100',
                 )}
               >
                 <Icon size={14} aria-hidden="true" />

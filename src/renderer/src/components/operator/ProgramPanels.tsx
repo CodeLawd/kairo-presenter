@@ -60,22 +60,24 @@ function Section({
   title,
   action,
   split = false,
+  flat = false,
   children,
 }: {
   title: string;
   action?: React.ReactNode;
   split?: boolean;
+  flat?: boolean;
   children: React.ReactNode;
 }): React.ReactElement {
   return (
-    <section className="space-y-1.5 px-3 pt-3 last:pb-3">
+    <section className={cn("space-y-1.5 px-3 pt-3 last:pb-3", flat && "px-4 pt-4") }>
       <div className="flex min-h-7 items-center justify-between gap-2 px-1">
         <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-zinc-400">
           {title}
         </h3>
         {action}
       </div>
-      <div className="pref-group pref-group-dim overflow-hidden rounded-lg bg-surface">
+      <div className={cn(!flat && "pref-group pref-group-dim overflow-hidden rounded-lg bg-surface")}>
         {split ? (
           Children.toArray(children).map((child, i) => (
             <div key={i} className="px-3.5 py-2.5">
@@ -83,7 +85,7 @@ function Section({
             </div>
           ))
         ) : (
-          <div className="space-y-2.5 px-3.5 py-3">{children}</div>
+          <div className={cn("space-y-2.5", flat ? "px-1 pb-2" : "px-3.5 py-3")}>{children}</div>
         )}
       </div>
     </section>
@@ -1264,8 +1266,8 @@ export function VideoPanel(): React.ReactElement {
   };
 
   return (
-    <div className="h-full overflow-y-auto">
-      <Section title="Video input">
+    <div className="h-full overflow-y-auto bg-surface-rail">
+      <Section title="Video input" flat>
         <div className="flex items-center gap-2.5">
           <span
             className={cn(
@@ -1307,7 +1309,7 @@ export function VideoPanel(): React.ReactElement {
         ) : (
           <div className="flex gap-2">
             <select
-              className="input h-8 flex-1 py-0 text-xs"
+              className="input h-8 min-w-0 flex-1 border border-white/[0.08] bg-surface-elevated py-0 text-xs"
               aria-label="Video input"
               value={camera || state.camera || ""}
               onChange={(e) => {
@@ -1355,7 +1357,7 @@ export function VideoPanel(): React.ReactElement {
         )}
         {cameras.length > 0 && (
           <select
-            className="input w-full py-1 text-xs"
+            className="input w-full border border-white/[0.08] bg-surface-elevated py-1 text-xs"
             aria-label="Video input sound"
             value={liveCameraAudio}
             onChange={(e) => {
@@ -1384,7 +1386,8 @@ export function VideoPanel(): React.ReactElement {
         )}
       </Section>
 
-      <Section title="Video layout">
+      <div className="mx-4 mt-2 border-t border-white/[0.08]" />
+      <Section title="Video layout" flat>
         <VideoLayoutCanvas
           value={videoSettings}
           onChange={(patch) => patchVideo(patch)}
