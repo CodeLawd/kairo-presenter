@@ -14,6 +14,17 @@ export type ChangelogEntry = {
 
 export const changelog: ChangelogEntry[] = [
   {
+    version: '1.0.28',
+    date: '2026-11-03',
+    title: 'A roomier live preview',
+    notes: [
+      'The buttons that clear what is on screen now sit in a row under the live preview, so the slide gets the full width of the panel.',
+      'When a scripture passage is queued, pick which verse goes up from the row itself, one verse per slide.',
+      'Menus and pop-ups, including the audio input picker, are softer and easier to read and tap.',
+      'The start-up screen has a fresh look while Kairo loads.',
+    ],
+  },
+  {
     version: '1.0.27',
     date: '2026-11-03',
     title: 'A simpler workspace',
