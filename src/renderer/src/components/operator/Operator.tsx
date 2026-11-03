@@ -388,6 +388,8 @@ export default function Operator(): React.ReactElement {
   /** Verses the operator staged to push on cue. Separate from what was detected. */
   const [queue, setQueue] = useState<ScriptureSuggestion[]>([]);
   const [queueBusyId, setQueueBusyId] = useState<string | null>(null);
+  /** Which verse of a staged passage its row shows and presents, by queue id. */
+  const [queuePicks, setQueuePicks] = useState<Record<string, number>>({});
   const [selectedSuggestionId, setSelectedSuggestionId] = useState<
     string | null
   >(null);
@@ -1056,17 +1058,21 @@ export default function Operator(): React.ReactElement {
     setQueue((prev) => prev.filter((item) => item.id !== id));
   }, []);
 
-  /** Queue rows push straight to Kairo outputs; the themed preview follows. */
+  /** Queue rows push one verse straight to Kairo outputs; the themed preview follows. */
   const handlePresentQueued = useCallback(
-    async (entry: ScriptureSuggestion): Promise<void> => {
-      entry = singleVerseSuggestion(entry);
+    async (entry: ScriptureSuggestion, index = 0): Promise<void> => {
+      const verse = entry.verses[index];
+      const slide = singleVerseSuggestion(
+        verse && index > 0 ? { ...entry, id: `${entry.id}-${index}`, verses: [verse] } : entry,
+      );
+      setQueuePicks((prev) => ({ ...prev, [entry.id]: index }));
       setQueueBusyId(entry.id);
       try {
-        await window.api.scripture.register(entry);
-        await window.api.orchestrator.approveSuggestion(entry.id);
+        await window.api.scripture.register(slide);
+        await window.api.orchestrator.approveSuggestion(slide.id);
         goLive(
-          entry.reference,
-          entry.verses.map((verse) => verse.text).join(" "),
+          slide.reference,
+          slide.verses.map((item) => item.text).join(" "),
         );
       } catch (err) {
         console.error(err);
@@ -1559,53 +1565,121 @@ export default function Operator(): React.ReactElement {
                       or search above. Click a row to put it on screen.
                     </p>
                   ) : (
-                    <ul className="space-y-1">
+                    <ul className="space-y-0.5 rounded-lg bg-surface p-1">
                       {queue.map((entry) => {
+                        // A passage is one row, as in the detections list: its verse
+                        // numbers pick which verse goes up, one verse per slide.
+                        const verseRef = (verse: ScriptureSuggestion["verses"][number]) =>
+                          `${verse.book} ${verse.chapter}:${verse.verse}`;
+                        const passage = entry.verses.length > 1;
+                        const liveIndex = entry.verses.findIndex(
+                          (verse) => activeProjection?.reference === verseRef(verse),
+                        );
                         const isLive =
-                          activeProjection?.reference === entry.reference;
+                          liveIndex >= 0 || activeProjection?.reference === entry.reference;
+                        const picked = Math.min(
+                          queuePicks[entry.id] ?? (liveIndex >= 0 ? liveIndex : 0),
+                          entry.verses.length - 1,
+                        );
+                        const shownVerse = entry.verses[picked];
+                        const heading = (
+                          <p
+                            className={cn(
+                              "truncate text-[11px] font-semibold",
+                              isLive ? "text-live" : "text-zinc-200",
+                            )}
+                          >
+                            {entry.reference}
+                            <span className="ml-1.5 font-normal text-zinc-600">
+                              {entry.translation}
+                            </span>
+                            {passage && (
+                              <span className="ml-1.5 font-normal text-zinc-600">
+                                · {entry.verses.length} verses
+                              </span>
+                            )}
+                          </p>
+                        );
+                        const text = (
+                          <p className="mt-0.5 line-clamp-2 text-[10px] leading-snug text-zinc-500">
+                            {shownVerse?.text ?? ""}
+                          </p>
+                        );
                         return (
                           <li key={entry.id}>
                             <div
                               className={cn(
-                                "group flex items-start gap-2 rounded-md border px-2.5 py-2 transition-colors",
-                                isLive
-                                  ? "border-transparent bg-tint-live"
-                                  : "border-transparent hover:bg-surface",
+                                "group flex items-start gap-2 rounded-md px-2.5 py-2 transition-colors",
+                                isLive ? "bg-tint-live" : "hover:bg-surface-rail",
                               )}
                             >
-                              <button
-                                type="button"
-                                onClick={() => void handlePresentQueued(entry)}
-                                disabled={queueBusyId === entry.id}
-                                className="min-w-0 flex-1 text-left focus-visible:outline-none"
-                                title={`Show ${entry.reference}`}
-                              >
-                                <p
-                                  className={cn(
-                                    "truncate text-[11px] font-semibold",
-                                    isLive ? "text-live" : "text-slate-300",
-                                  )}
-                                >
-                                  {entry.reference}
-                                  <span className="ml-1.5 font-normal text-slate-600">
-                                    {entry.translation}
-                                  </span>
-                                  {entry.verses.length > 1 && (
-                                    <span className="ml-1.5 font-normal text-slate-600">
-                                      · {entry.verses.length} verses
-                                    </span>
-                                  )}
-                                </p>
-                                <p className="mt-0.5 line-clamp-2 text-[10px] leading-snug text-slate-500">
-                                  {entry.verses
-                                    .map((verse) => verse.text)
-                                    .join(" ")}
-                                </p>
-                              </button>
+                              <div className="min-w-0 flex-1">
+                                {passage ? (
+                                  <>
+                                    {heading}
+                                    <div
+                                      className="mt-1 flex flex-wrap gap-1"
+                                      role="group"
+                                      aria-label={`Verses of ${entry.reference}`}
+                                    >
+                                      {entry.verses.map((verse, index) => {
+                                        const live = index === liveIndex;
+                                        // A step across a chapter keeps its chapter, so "2:1" never reads as "1".
+                                        const label =
+                                          verse.chapter !== entry.verses[0]?.chapter
+                                            ? `${verse.chapter}:${verse.verse}`
+                                            : String(verse.verse);
+                                        return (
+                                          <button
+                                            key={`${verse.chapter}:${verse.verse}`}
+                                            type="button"
+                                            onClick={() => void handlePresentQueued(entry, index)}
+                                            onFocus={() =>
+                                              setQueuePicks((prev) => ({ ...prev, [entry.id]: index }))
+                                            }
+                                            disabled={queueBusyId === entry.id}
+                                            title={`Present ${verseRef(verse)}`}
+                                            aria-label={`Present ${verseRef(verse)}${live ? ", on screen" : ""}`}
+                                            className={cn(
+                                              "h-5 min-w-5 rounded px-1 text-[10px] font-medium tabular-nums transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/60",
+                                              live
+                                                ? "bg-live text-white"
+                                                : index === picked
+                                                  ? "bg-teal-500 text-on-accent"
+                                                  : "text-zinc-400 hover:bg-surface-tertiary hover:text-zinc-100",
+                                            )}
+                                          >
+                                            {label}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => void handlePresentQueued(entry, picked)}
+                                      disabled={queueBusyId === entry.id}
+                                      className="block w-full text-left focus-visible:outline-none"
+                                      aria-label={`Present ${shownVerse ? verseRef(shownVerse) : entry.reference}`}
+                                    >
+                                      {text}
+                                    </button>
+                                  </>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => void handlePresentQueued(entry)}
+                                    disabled={queueBusyId === entry.id}
+                                    className="block w-full text-left focus-visible:outline-none"
+                                  >
+                                    {heading}
+                                    {text}
+                                  </button>
+                                )}
+                              </div>
                               <button
                                 type="button"
                                 onClick={() => removeFromQueue(entry.id)}
-                                className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded text-slate-700 transition-colors hover:bg-tint-rose hover:text-rose-400 focus-visible:outline-none focus-visible:text-rose-400"
+                                className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded text-zinc-500 opacity-0 transition-[color,background-color,opacity] hover:bg-tint-rose hover:text-rose-400 focus-visible:text-rose-400 focus-visible:opacity-100 focus-visible:outline-none group-hover:opacity-100"
                                 title={`Remove ${entry.reference} from the queue`}
                                 aria-label={`Remove ${entry.reference} from the queue`}
                               >

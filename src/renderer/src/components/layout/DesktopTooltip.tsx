@@ -5,7 +5,7 @@ interface VisibleTooltip {
   label: string
   x: number
   y: number
-  side: 'left' | 'right'
+  side: 'left' | 'right' | 'bottom'
 }
 
 /** A visible hover/focus tooltip for compact desktop controls. */
@@ -32,7 +32,19 @@ export function DesktopTooltip(): React.ReactElement | null {
       const label = anchor.dataset.tooltip || anchor.getAttribute('aria-label')
       if (!label) return
       const rect = anchor.getBoundingClientRect()
-      const side = anchor.dataset.tooltipSide === 'left' || rect.right + 240 > window.innerWidth ? 'left' : 'right'
+      // The nearest match is often the button inside the wrapper that carries the side.
+      const preferred = anchor.closest<HTMLElement>('[data-tooltip-side]')?.dataset.tooltipSide
+      // A row of controls (data-tooltip-side="bottom") labels each one under it.
+      if (preferred === 'bottom') {
+        setVisible({
+          label,
+          x: Math.max(60, Math.min(window.innerWidth - 60, rect.left + rect.width / 2)),
+          y: Math.min(window.innerHeight - 36, rect.bottom + 6),
+          side: 'bottom',
+        })
+        return
+      }
+      const side = preferred === 'left' || rect.right + 240 > window.innerWidth ? 'left' : 'right'
       setVisible({
         label,
         x: side === 'left' ? rect.left - 9 : rect.right + 9,
@@ -73,7 +85,7 @@ export function DesktopTooltip(): React.ReactElement | null {
     <div
       role="tooltip"
       className="pointer-events-none fixed z-[100] w-max max-w-[calc(100vw-2rem)] whitespace-nowrap rounded-md bg-surface-elevated px-2.5 py-1.5 text-xs font-medium text-zinc-100 shadow-lg"
-      style={{ left: visible.x, top: visible.y, transform: visible.side === 'left' ? 'translate(-100%, -50%)' : 'translateY(-50%)' }}
+      style={{ left: visible.x, top: visible.y, transform: visible.side === 'left' ? 'translate(-100%, -50%)' : visible.side === 'bottom' ? 'translateX(-50%)' : 'translateY(-50%)' }}
     >
       {visible.label}
     </div>,

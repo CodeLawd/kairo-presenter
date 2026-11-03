@@ -34,7 +34,7 @@ export function BoothToolbox({
       {/* Equal-width tabs keep the tools easy to scan in the narrow rail. */}
       <div className="hairline-b shrink-0">
         <div
-          className="flex items-stretch divide-x divide-white/[0.04] bg-surface-stage"
+          className="flex items-stretch divide-x divide-zinc-800 bg-zinc-900"
           role="tablist"
           aria-label="Presentation tools"
         >
@@ -52,7 +52,7 @@ export function BoothToolbox({
                   'flex h-11 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 border-b-2 text-[10px] font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60',
                   selected
                     ? 'border-teal-500 bg-teal-500 text-on-accent'
-                    : 'border-transparent text-zinc-400 hover:bg-surface-secondary hover:text-zinc-100',
+                    : 'border-transparent text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100',
                 )}
               >
                 <Icon size={14} aria-hidden="true" />

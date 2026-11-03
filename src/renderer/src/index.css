@@ -6,43 +6,43 @@
 
 @layer base {
   :root {
-    /* Neutral graphite in Codex's order: the workspace is darkest (#181818),
-       sidebars and docks sit one quiet step above it (#1D1D1D), cards and
-       controls above that (#2D2D2D), and the frame — header and rail — is the
-       lightest band (#272727). Pure grey, no blue cast.
+    /* Tailwind zinc greys (a faint cool cast, 50 #fafafa … 950 #09090b).
+       Workspace is 900 (#18181b), cards and controls 800 (#27272a), borders
+       700 (#3f3f46); sidebars, rail and lifted surfaces sit on in-between
+       steps the scale doesn't have, mixed from its neighbours.
        Colour belongs to actions (macOS system blue), live state, tool icons
        and status. */
-    --surface: 24 24 24;
-    --surface-secondary: 29 29 29;
-    --surface-tertiary: 45 45 45;
-    --surface-elevated: 56 56 56;
-    --surface-rail: 39 39 39;
+    --surface: 24 24 27;
+    --surface-secondary: 30 30 33;
+    --surface-tertiary: 39 39 42;
+    --surface-elevated: 51 51 56;
+    --surface-rail: 33 33 36;
     --surface-header: var(--surface-rail);
-    --surface-border: 64 64 64;
+    --surface-border: 63 63 70;
     /* Dropdown menus: a step lighter than anything under them, split by a line. */
-    --surface-menu: 45 45 45;
-    --surface-menu-hover: 58 58 58;
-    --surface-menu-line: 66 66 66;
+    --surface-menu: 39 39 42;
+    --surface-menu-hover: 51 51 56;
+    --surface-menu-line: 63 63 70;
     /* Hairline between regions (sidebar | workspace, header | body), on top of the tone step. */
-    --surface-line: 14 14 14;
+    --surface-line: 9 9 11;
     --panel-border-width: 0.5px;
     --panel-border-color: rgb(var(--surface-border) / 0.75);
     /* The black band behind a screen canvas, and the grey of a display on it. */
-    --surface-stage: 10 10 10;
-    --surface-display: 84 84 84;
+    --surface-stage: 9 9 11;
+    --surface-display: 82 82 91;
     /* The editor's pasteboard behind a slide being designed: a mid grey, as
        in ProPresenter, so both dark and light slides show their edges. */
-    --surface-canvas: 98 98 98;
+    --surface-canvas: 82 82 91;
     /* Page sidebars, as in Codex: one even tone a step above the workspace,
        plain headings, and a soft fill (no outline) for the selected row. */
-    --sidebar-sources: 29 29 29;
-    --sidebar-list: 29 29 29;
-    --sidebar-band: 29 29 29;
-    --sidebar-pick-sources: 47 47 47;
-    --sidebar-pick-sources-line: 47 47 47;
-    --sidebar-pick-list: 47 47 47;
-    --sidebar-pick-list-line: 47 47 47;
-    --sidebar-field: 40 40 40;
+    --sidebar-sources: 30 30 33;
+    --sidebar-list: 30 30 33;
+    --sidebar-band: 30 30 33;
+    --sidebar-pick-sources: 39 39 42;
+    --sidebar-pick-sources-line: 39 39 42;
+    --sidebar-pick-list: 39 39 42;
+    --sidebar-pick-list-line: 39 39 42;
+    --sidebar-field: 33 33 36;
     /* Accent is the website's stage blue (#3B6BFF) for what is picked and the primary action; red
        (broadcast tally) marks only what is live on screen. */
     --control-accent: 10 132 255;
@@ -73,62 +73,62 @@
     --hue-indigo: 138 146 245;
     /* Solid red wash for a live row, readable on surface and secondary. */
     --tint-live: 74 38 38;
-    --tint-teal: 45 45 45;
+    --tint-teal: 39 39 42;
     --tint-red: 52 26 26;
-    --tint-amber: 45 45 45;
-    --tint-yellow: 45 45 45;
+    --tint-amber: 39 39 42;
+    --tint-yellow: 39 39 42;
     --tint-rose: 54 26 28;
-    --range-track: 58 58 58;
-    --text-primary: 236 236 236;
+    --range-track: 51 51 56;
+    --text-primary: 244 244 245;
     /* Grey text, a step brighter than the neutral scale so labels read on
        charcoal. slate/zinc text-* map here (tailwind.config.js); bg/border don't. */
-    --fg-200: 244 244 244;
-    --fg-300: 214 214 214;
-    --fg-400: 184 184 184;
-    --fg-500: 166 166 166;
-    --fg-600: 150 150 150;
+    --fg-200: 250 250 250;
+    --fg-300: 228 228 231;
+    --fg-400: 212 212 216;
+    --fg-500: 161 161 170;
+    --fg-600: 137 137 146;
     --neutral-50: 250 250 250;
-    --neutral-100: 240 240 240;
-    --neutral-200: 224 224 224;
-    --neutral-300: 202 202 202;
-    --neutral-400: 150 150 150;
-    --neutral-500: 128 128 128;
-    --neutral-600: 84 84 84;
-    --neutral-700: 64 64 64;
-    --neutral-800: 45 45 45;
-    --neutral-900: 29 29 29;
-    --neutral-950: 24 24 24;
+    --neutral-100: 244 244 245;
+    --neutral-200: 228 228 231;
+    --neutral-300: 212 212 216;
+    --neutral-400: 161 161 170;
+    --neutral-500: 113 113 122;
+    --neutral-600: 82 82 91;
+    --neutral-700: 63 63 70;
+    --neutral-800: 39 39 42;
+    --neutral-900: 24 24 27;
+    --neutral-950: 9 9 11;
     /* Frosted glass (as in ProPresenter's windows): the tone a modal's
        sidebar, title bar or whole small dialog is tinted with. */
-    --glass: 29 29 29;
+    --glass: 30 30 33;
     --radius: 0.375rem;
     --radius-md: 0.5rem;
     --radius-sm: 0.25rem;
   }
 
   [data-theme='light'] {
-    --glass: 236 236 236;
-    --surface: 246 246 246;
-    --surface-secondary: 236 236 236;
-    --surface-tertiary: 225 225 225;
+    --glass: 244 244 245;
+    --surface: 250 250 250;
+    --surface-secondary: 244 244 245;
+    --surface-tertiary: 228 228 231;
     --surface-elevated: 255 255 255;
-    --surface-border: 206 206 206;
+    --surface-border: 212 212 216;
     --surface-menu: 255 255 255;
-    --surface-menu-hover: 236 236 236;
-    --surface-menu-line: 225 225 225;
-    --surface-line: 216 216 216;
-    --surface-rail: 222 222 222;
-    --surface-header: 222 222 222;
-    --surface-stage: 204 204 204;
+    --surface-menu-hover: 244 244 245;
+    --surface-menu-line: 228 228 231;
+    --surface-line: 228 228 231;
+    --surface-rail: 228 228 231;
+    --surface-header: 228 228 231;
+    --surface-stage: 212 212 216;
     --surface-display: 250 250 250;
-    --surface-canvas: 188 188 188;
-    --sidebar-sources: 232 232 232;
-    --sidebar-list: 244 244 244;
-    --sidebar-band: 220 220 220;
-    --sidebar-pick-sources: 214 214 214;
-    --sidebar-pick-sources-line: 176 176 176;
-    --sidebar-pick-list: 226 226 226;
-    --sidebar-pick-list-line: 188 188 188;
+    --surface-canvas: 161 161 170;
+    --sidebar-sources: 244 244 245;
+    --sidebar-list: 244 244 245;
+    --sidebar-band: 228 228 231;
+    --sidebar-pick-sources: 228 228 231;
+    --sidebar-pick-sources-line: 212 212 216;
+    --sidebar-pick-list: 228 228 231;
+    --sidebar-pick-list-line: 212 212 216;
     --sidebar-field: 255 255 255;
     --control-accent: 0 122 255;
     --accent-50: 0 96 206;
@@ -155,29 +155,29 @@
     --hue-amber: 156 100 10;
     --hue-indigo: 72 64 196;
     --tint-live: 253 224 221;
-    --tint-teal: 225 225 225;
+    --tint-teal: 228 228 231;
     --tint-red: 253 227 221;
-    --tint-amber: 225 225 225;
-    --tint-yellow: 225 225 225;
+    --tint-amber: 228 228 231;
+    --tint-yellow: 228 228 231;
     --tint-rose: 254 227 225;
-    --range-track: 206 206 206;
-    --text-primary: 10 10 10;
-    --fg-200: 22 22 22;
-    --fg-300: 38 38 38;
-    --fg-400: 54 54 54;
-    --fg-500: 84 84 84;
-    --fg-600: 64 64 64;
-    --neutral-50: 23 23 23;
-    --neutral-100: 28 28 28;
-    --neutral-200: 34 34 34;
-    --neutral-300: 50 50 50;
-    --neutral-400: 64 64 64;
-    --neutral-500: 102 102 102;
-    --neutral-600: 146 146 146;
-    --neutral-700: 204 204 204;
-    --neutral-800: 222 222 222;
-    --neutral-900: 238 238 238;
-    --neutral-950: 247 247 247;
+    --range-track: 212 212 216;
+    --text-primary: 9 9 11;
+    --fg-200: 24 24 27;
+    --fg-300: 39 39 42;
+    --fg-400: 63 63 70;
+    --fg-500: 82 82 91;
+    --fg-600: 63 63 70;
+    --neutral-50: 9 9 11;
+    --neutral-100: 24 24 27;
+    --neutral-200: 39 39 42;
+    --neutral-300: 63 63 70;
+    --neutral-400: 63 63 70;
+    --neutral-500: 82 82 91;
+    --neutral-600: 113 113 122;
+    --neutral-700: 212 212 216;
+    --neutral-800: 228 228 231;
+    --neutral-900: 244 244 245;
+    --neutral-950: 250 250 250;
   }
 
   html,
@@ -349,6 +349,31 @@
   /* On a darker group (bg-surface) the line drops a step so it stays faint. */
   .pref-group-dim {
     --pref-line: var(--surface-tertiary);
+  }
+
+  /* The live rail (preview + Scripture … Video tabs) runs on whole zinc steps
+     only: rail 800, a step above the 900 workspace beside it; groups and cards
+     sink back to 900 with 800 lines; controls 700, hover 600; borders and
+     hairlines are 800 or the 900 shadow, never lighter than the rail; text
+     from zinc 100 down to 500. Light theme is already zinc. */
+  :root:not([data-theme='light']) .booth-toolbox {
+    --surface-rail: 39 39 42;
+    --surface: 24 24 27;
+    --surface-secondary: 24 24 27;
+    --surface-tertiary: 63 63 70;
+    --surface-elevated: 82 82 91;
+    --surface-border: 39 39 42;
+    --panel-border-color: rgb(24 24 27);
+    --range-track: 63 63 70;
+    --text-primary: 244 244 245;
+    --fg-200: 228 228 231;
+    --fg-300: 212 212 216;
+    --fg-400: 161 161 170;
+    --fg-500: 161 161 170;
+    --fg-600: 113 113 122;
+  }
+  :root:not([data-theme='light']) .booth-toolbox .pref-group-dim {
+    --pref-line: 39 39 42;
   }
 
   /* Sidebars, as ProPresenter draws them: the sources (library, playlists)

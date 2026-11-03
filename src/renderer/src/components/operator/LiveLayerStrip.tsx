@@ -25,8 +25,8 @@ interface Layer {
 }
 
 /**
- * One button per thing that can be on screen, beside the live preview — the
- * ProPresenter clear-group column. A lit button has content; clicking it takes
+ * One button per thing that can be on screen, under the live preview — the
+ * ProPresenter clear group, laid out as a row so the slide keeps the full width. A lit button has content; clicking it takes
  * down that layer and nothing else. The top button clears them all.
  */
 export function LiveLayerStrip({
@@ -111,14 +111,13 @@ export function LiveLayerStrip({
   }
 
   return (
-    // A column of its own, set off from the monitor: its own tone, a hairline on
-    // the seam, and buttons that stop at their natural size instead of
-    // stretching to the frame's height (which left the icons scattered down the
-    // side). On a short frame they tighten up rather than clip.
+    // A segmented bar under the monitor, in its dark zinc so the two read as one
+    // unit: one cell per layer split by a faint line, clear-all set apart on the
+    // left by a firmer one, and a single faint border round the whole bar.
     <div
       role="group"
       aria-label="Clear layers"
-      className="hairline-l flex min-h-0 w-9 shrink-0 flex-col items-center gap-1 overflow-hidden bg-surface-tertiary p-1"
+      className="relative flex h-9 shrink-0 bg-zinc-900 after:pointer-events-none after:absolute after:inset-0 after:rounded-b-md after:ring-1 after:ring-inset after:ring-white/[0.08]"
     >
       <StripButton
         label="Clear all"
@@ -128,14 +127,15 @@ export function LiveLayerStrip({
         disabled={!anything || busy}
         onClick={() => void run(clearAll)}
       />
-      {/* Everything below takes down one layer; above takes down all of them. */}
-      <span className="my-0.5 h-px w-5 shrink-0 bg-surface-border" aria-hidden="true" />
-      {layers.map((layer) => (
+      {/* Everything right of the line takes down one layer; left of it, all of them. */}
+      <span className="w-px shrink-0 bg-zinc-700" aria-hidden="true" />
+      {layers.map((layer, index) => (
         <StripButton
           key={layer.id}
           label={layer.on ? `Clear ${layer.label.toLowerCase()}` : layer.label}
           icon={layer.icon}
           on={layer.on}
+          divided={index > 0}
           disabled={!layer.on || busy}
           onClick={() => void run(layer.clear)}
         />
@@ -149,6 +149,7 @@ function StripButton({
   icon: Icon,
   on,
   danger = false,
+  divided = false,
   disabled,
   onClick,
 }: {
@@ -156,6 +157,8 @@ function StripButton({
   icon: Icon
   on: boolean
   danger?: boolean
+  /** A faint line on the left, between this cell and the one before it. */
+  divided?: boolean
   disabled: boolean
   onClick: () => void
 }): React.ReactElement {
@@ -163,9 +166,9 @@ function StripButton({
     // The tooltip lives on the wrapper: a disabled button never fires the
     // pointer events that would show it, and a dim icon needs its name most.
     <div
-      className="flex w-full max-h-7 min-h-[22px] flex-1"
+      className={cn('flex h-full min-w-0 flex-1', divided && 'border-l border-zinc-800')}
       data-tooltip={label}
-      data-tooltip-side="left"
+      data-tooltip-side="bottom"
     >
       <button
         type="button"
@@ -173,13 +176,13 @@ function StripButton({
         disabled={disabled}
         aria-label={label}
         className={cn(
-          'grid h-full w-full place-items-center rounded-md transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-teal-400',
-          // Active layers are framed consistently; red is reserved for the
-          // destructive action when hovered.
+          'grid h-full w-full place-items-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-400',
+          // A layer with something on it lifts a step with a blue icon; hover
+          // turns it red, since clicking takes it down. Empty layers stay dim.
           on
             ? danger
-              ? 'bg-red-900/50 text-red-100 ring-1 ring-inset ring-red-500/30 hover:bg-red-800'
-              : 'bg-surface-elevated text-teal-300 ring-1 ring-inset ring-teal-400/30 hover:bg-red-900/60 hover:text-red-200 hover:ring-red-400/40'
+              ? 'bg-tint-red text-red-300 hover:bg-red-900/70 hover:text-red-100'
+              : 'bg-zinc-800 text-teal-300 hover:bg-tint-red hover:text-red-300'
             : 'text-zinc-600',
           disabled ? 'cursor-default' : 'cursor-pointer',
         )}

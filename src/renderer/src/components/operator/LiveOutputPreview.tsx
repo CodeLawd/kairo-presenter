@@ -60,7 +60,7 @@ interface LiveOutputPreviewProps {
   height: number;
   /** Actions that belong under the monitor — clear, etc. */
   toolbar?: ReactNode;
-  /** Column beside the frame, matching its height — the clear-layer strip. */
+  /** Row under the frame, matching its width — the clear-layer strip. */
   side?: ReactNode;
 }
 
@@ -140,10 +140,10 @@ export function LiveOutputPreview({
 
   return (
     <div>
-      {/* The monitor and its clear-layer column read as one unit, inset from the
+      {/* The monitor and its clear-layer row read as one unit, inset from the
           panel edge like the output picker beneath them. */}
       <div className="px-3">
-        <div className="flex overflow-hidden rounded-md">
+        <div className="flex flex-col overflow-hidden rounded-md">
           <div ref={setFrameBox} className="relative shrink-0" style={{ width, height }}>
             {web && shown && !showDocument && (
               <ScaledWebFrame
@@ -223,7 +223,7 @@ export function LiveOutputPreview({
             </button>
           </div>
         ) : (
-          <div className="relative min-w-0 w-full rounded-md bg-surface-elevated transition-colors hover:bg-surface-border focus-within:ring-2 focus-within:ring-teal-400/60">
+          <div className="relative min-w-0 w-full rounded-md bg-surface-tertiary ring-1 ring-inset ring-white/[0.06] transition-colors hover:bg-surface-elevated hover:ring-white/10 focus-within:ring-2 focus-within:ring-teal-400/60">
             <select
               className="w-full cursor-pointer appearance-none truncate bg-transparent px-2.5 py-2 pr-8 text-xs font-semibold text-zinc-100 outline-none"
               value={selected?.id ?? ''}

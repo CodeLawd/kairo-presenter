@@ -137,15 +137,15 @@ export function TracksPanel(): React.ReactElement {
             </button>
           </div>
         ) : (
-          <ul className="pref-group">
+          <ul className="space-y-0.5 p-1">
             {library.items.map((item) => {
               const active = item.id === library.liveId
               return (
                 <li key={item.id}>
                   <div
                     className={cn(
-                      'px-3.5 py-2',
-                      active && 'bg-surface-tertiary',
+                      'group rounded-md px-2.5 py-2 transition-colors',
+                      active ? 'bg-surface-rail' : 'hover:bg-surface-rail/60',
                     )}
                   >
                     <div className="flex items-center gap-2">
@@ -165,7 +165,7 @@ export function TracksPanel(): React.ReactElement {
                           'grid size-6 shrink-0 place-items-center rounded-md transition-colors',
                           active
                             ? 'bg-teal-500 text-on-accent hover:bg-teal-600'
-                            : 'text-slate-400 hover:bg-surface-tertiary hover:text-white',
+                            : 'text-zinc-400 hover:bg-surface-tertiary hover:text-white',
                         )}
                       >
                         {active && playing
@@ -198,7 +198,7 @@ export function TracksPanel(): React.ReactElement {
                           }}
                           className={cn(
                             'min-w-0 flex-1 truncate text-left text-[12px]',
-                            active ? 'font-semibold text-white' : 'font-medium text-slate-300 hover:text-white',
+                            active ? 'font-semibold text-white' : 'font-medium text-zinc-200 hover:text-white',
                           )}
                         >
                           {item.name}
@@ -206,11 +206,6 @@ export function TracksPanel(): React.ReactElement {
                       )}
                       {active && (
                         <>
-                          <span className="shrink-0 font-mono text-[10px] tabular-nums text-slate-500">
-                            {formatMediaClock(shown)}
-                            <span className="text-slate-600"> / </span>
-                            {ready ? formatMediaClock(duration) : '–:––'}
-                          </span>
                           <button
                             type="button"
                             disabled={busy}
@@ -220,7 +215,7 @@ export function TracksPanel(): React.ReactElement {
                             }}
                             title="Stop and clear"
                             aria-label={`Stop ${item.name}`}
-                            className="grid size-5 shrink-0 place-items-center rounded text-slate-500 hover:bg-surface-elevated hover:text-white"
+                            className="grid size-6 shrink-0 place-items-center rounded-md text-zinc-500 transition-colors hover:bg-surface-tertiary hover:text-white"
                           >
                             <X size={11} aria-hidden="true" />
                           </button>
@@ -233,7 +228,7 @@ export function TracksPanel(): React.ReactElement {
                             disabled={busy}
                             aria-label={`Options for ${item.name}`}
                             title="More"
-                            className="grid size-6 shrink-0 place-items-center rounded-md text-slate-500 transition-colors hover:bg-surface-elevated hover:text-white disabled:opacity-40"
+                            className="grid size-6 shrink-0 place-items-center rounded-md text-zinc-500 transition-colors hover:bg-surface-tertiary hover:text-white disabled:opacity-40"
                           >
                             <MoreHorizontal size={14} aria-hidden="true" />
                           </button>
@@ -253,27 +248,36 @@ export function TracksPanel(): React.ReactElement {
                       </DropdownMenu>
                     </div>
                     {active && (
-                      <input
-                        type="range"
-                        min={0}
-                        max={ready ? duration : 0}
-                        step={0.05}
-                        value={ready ? Math.min(shown, duration) : 0}
-                        disabled={!ready}
-                        aria-label="Seek"
-                        onChange={(event) => {
-                          const next = Number(event.target.value)
-                          setScrub(next)
-                          seek(next)
-                        }}
-                        onPointerUp={() => setScrub(null)}
-                        className="mt-1.5 h-1 w-full cursor-pointer appearance-none rounded-full bg-zinc-700 accent-teal-400 disabled:cursor-default [&::-webkit-slider-thumb]:h-2.5 [&::-webkit-slider-thumb]:w-2.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-teal-400"
-                        style={{
-                          background: ready
-                            ? `linear-gradient(to right, rgb(var(--control-accent)) 0%, rgb(var(--control-accent)) ${(shown / duration) * 100}%, rgb(var(--range-track)) ${(shown / duration) * 100}%, rgb(var(--range-track)) 100%)`
-                            : 'rgb(var(--range-track))',
-                        }}
-                      />
+                      // Elapsed and total flank the bar, so the top row stays just the name and actions.
+                      <div className="mt-2 flex items-center gap-2 pl-8">
+                        <span className="w-8 shrink-0 text-right font-mono text-[10px] tabular-nums text-zinc-400">
+                          {formatMediaClock(shown)}
+                        </span>
+                        <input
+                          type="range"
+                          min={0}
+                          max={ready ? duration : 0}
+                          step={0.05}
+                          value={ready ? Math.min(shown, duration) : 0}
+                          disabled={!ready}
+                          aria-label="Seek"
+                          onChange={(event) => {
+                            const next = Number(event.target.value)
+                            setScrub(next)
+                            seek(next)
+                          }}
+                          onPointerUp={() => setScrub(null)}
+                          className="h-1 min-w-0 flex-1 cursor-pointer appearance-none rounded-full disabled:cursor-default [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:shadow-[0_0_0_2px_rgb(var(--control-accent))]"
+                          style={{
+                            background: ready
+                              ? `linear-gradient(to right, rgb(var(--control-accent)) 0%, rgb(var(--control-accent)) ${(shown / duration) * 100}%, rgb(var(--range-track)) ${(shown / duration) * 100}%, rgb(var(--range-track)) 100%)`
+                              : 'rgb(var(--range-track))',
+                          }}
+                        />
+                        <span className="w-8 shrink-0 font-mono text-[10px] tabular-nums text-zinc-500">
+                          {ready ? formatMediaClock(duration) : '–:––'}
+                        </span>
+                      </div>
                     )}
                   </div>
                 </li>

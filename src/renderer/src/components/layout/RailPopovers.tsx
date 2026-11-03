@@ -30,7 +30,7 @@ import type { AudioDevice } from '@shared/ipc'
  * and spacing do the separating — with a short staggered rise on open.
  */
 
-const PANEL = 'z-50 overflow-hidden rounded-xl border border-zinc-700 bg-surface-elevated text-zinc-200 animate-spring-in'
+const PANEL = 'z-50 overflow-hidden rounded-xl border border-white/[0.08] bg-surface-elevated text-zinc-200 animate-spring-in'
 
 /** Stagger for the items inside a popover (uses the shared `ob-rise`). */
 const rise = (i: number): CSSProperties => ({ '--i': i, '--base': '40ms' }) as CSSProperties
@@ -57,12 +57,12 @@ function MenuRow({ icon, label, onSelect, tone, close = true, disabled, index }:
   index: number
 }): React.ReactElement {
   const className = cn(
-    'ob-rise group flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-[12px] transition-colors hover:bg-surface-tertiary disabled:opacity-50',
+    'ob-rise group flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-[12px] transition-colors hover:bg-white/[0.06] disabled:opacity-50',
     tone === 'danger' ? 'text-red-400' : 'text-zinc-200',
   )
   const content = (
     <>
-      <span className={cn('grid size-6 shrink-0 place-items-center rounded border border-zinc-700 bg-surface-tertiary transition-colors group-hover:bg-surface-border', tone === 'danger' ? 'text-red-400' : 'text-zinc-300')}>
+      <span className={cn('grid size-7 shrink-0 place-items-center rounded-md bg-white/[0.06] transition-colors group-hover:bg-white/[0.1]', tone === 'danger' ? 'text-red-400' : 'text-zinc-300')}>
         {icon}
       </span>
       <span className="min-w-0 flex-1 truncate">{label}</span>
@@ -226,7 +226,7 @@ export function AudioRailButton(): React.ReactElement {
       <Popover.Portal>
         <Popover.Content side="right" align="end" sideOffset={10} collisionPadding={12} className={cn(PANEL, 'w-72')}>
           {/* The input in use, breathing with the level while Kairo listens. */}
-          <div className="border-b border-zinc-700 bg-surface-tertiary p-3">
+          <div className="border-b border-white/[0.06] px-4 pb-3.5 pt-4">
             <div className="flex items-center gap-2.5">
               <span className="relative grid size-9 shrink-0 place-items-center">
                 <span
@@ -234,22 +234,22 @@ export function AudioRailButton(): React.ReactElement {
                   className={cn('absolute inset-0 rounded-full border-2 transition-[transform,opacity] duration-100', capturing ? 'border-emerald-500' : 'border-transparent')}
                   style={{ transform: `scale(${1 + value * 0.35})`, opacity: capturing ? 0.35 + value * 0.65 : 0 }}
                 />
-                <span className={cn('relative grid size-9 place-items-center rounded-full', capturing ? 'bg-emerald-500 text-ink' : 'bg-surface-elevated text-zinc-300')}>
+                <span className={cn('relative grid size-9 place-items-center rounded-full', capturing ? 'bg-emerald-500 text-ink' : 'bg-white/[0.08] text-zinc-300')}>
                   <Mic size={16} weight={capturing ? 'fill' : 'regular'} aria-hidden="true" />
                 </span>
               </span>
               <div className="min-w-0 flex-1">
-                <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">Audio input</p>
+                <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-400">Audio input</p>
                 <p className="truncate text-[13px] font-semibold tracking-tight text-zinc-50">{active?.label ?? 'System default'}</p>
               </div>
-              <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium', capturing ? 'bg-emerald-500 text-ink' : 'bg-surface-elevated text-zinc-400')}>
+              <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium', capturing ? 'bg-emerald-500 text-ink' : 'bg-white/[0.08] text-zinc-400')}>
                 {capturing ? 'Listening' : 'Idle'}
               </span>
             </div>
 
             {/* Segmented meter, the same read as the transcript's rail. */}
             <div
-              className="mt-3 flex h-2 gap-[2px]"
+              className="mt-3.5 flex h-1.5 gap-[2px]"
               role="meter"
               aria-label="Input level"
               aria-valuemin={0}
@@ -259,13 +259,13 @@ export function AudioRailButton(): React.ReactElement {
               {Array.from({ length: METER_SEGMENTS }, (_, i) => {
                 const lit = value >= (i + 1) / METER_SEGMENTS
                 const tone = i >= METER_SEGMENTS - 3 || clipping ? 'bg-red-500' : i >= METER_SEGMENTS - 7 ? 'bg-amber-400' : 'bg-emerald-500'
-                return <span key={i} className={cn('min-w-0 flex-1 rounded-[2px] transition-colors duration-75', lit ? tone : 'border border-zinc-700 bg-surface-elevated')} />
+                return <span key={i} className={cn('min-w-0 flex-1 rounded-[2px] transition-colors duration-75', lit ? tone : 'bg-white/[0.08]')} />
               })}
             </div>
-            {!capturing && <p className="mt-1.5 text-[10px] text-zinc-500">The level shows while Kairo is listening.</p>}
+            {!capturing && <p className="mt-2 text-[11px] text-zinc-500">The level shows while Kairo is listening.</p>}
           </div>
 
-          <ul className="max-h-52 overflow-y-auto p-1.5" role="listbox" aria-label="Audio input devices">
+          <ul className="max-h-56 space-y-0.5 overflow-y-auto p-2" role="listbox" aria-label="Audio input devices">
             {devices === null ? (
               <li className="px-2 py-3 text-[12px] text-zinc-500">Finding microphones…</li>
             ) : devices.length === 0 ? (
@@ -283,18 +283,18 @@ export function AudioRailButton(): React.ReactElement {
                       aria-selected={selected}
                       onClick={() => choose(device.id)}
                       className={cn(
-                        'group flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors',
-                        selected ? 'bg-surface-tertiary' : 'hover:bg-surface-tertiary',
+                        'group flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors',
+                        selected ? 'bg-white/[0.08]' : 'hover:bg-white/[0.05]',
                       )}
                     >
-                      <span className={cn('grid size-7 shrink-0 place-items-center rounded transition-colors', selected ? 'bg-teal-500 text-on-accent' : 'border border-zinc-700 bg-surface-tertiary text-zinc-300 group-hover:bg-surface-border')}>
+                      <span className={cn('grid size-8 shrink-0 place-items-center rounded-md transition-colors', selected ? 'bg-teal-500 text-on-accent' : 'bg-white/[0.06] text-zinc-300 group-hover:bg-white/[0.1]')}>
                         <Icon size={13} aria-hidden="true" />
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className={cn('block truncate text-[12px]', selected ? 'font-medium text-zinc-50' : 'text-zinc-200')}>{device.label}</span>
-                        <span className="block text-[10px] text-zinc-500">{kind}</span>
+                        <span className="block text-[11px] text-zinc-500">{kind}</span>
                       </span>
-                      {selected && <Check size={12} className="shrink-0 text-zinc-100" aria-hidden="true" />}
+                      {selected && <Check size={14} className="mr-1 shrink-0 text-zinc-100" aria-hidden="true" />}
                     </button>
                   </li>
                 )
@@ -302,12 +302,12 @@ export function AudioRailButton(): React.ReactElement {
             )}
           </ul>
 
-          <div className="border-t border-zinc-700 p-1.5">
+          <div className="border-t border-white/[0.06] p-2">
             <Popover.Close
-              className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-[12px] text-zinc-300 transition-colors hover:bg-surface-tertiary"
+              className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left text-[12px] text-zinc-300 transition-colors hover:bg-white/[0.05]"
               onClick={() => useAppStore.getState().openSettings('audio')}
             >
-              <span className="grid size-6 shrink-0 place-items-center rounded border border-zinc-700 bg-surface-tertiary text-zinc-400">
+              <span className="grid size-8 shrink-0 place-items-center rounded-md bg-white/[0.06] text-zinc-400">
                 <Settings size={12} aria-hidden="true" />
               </span>
               <span className="flex-1">Audio settings</span>

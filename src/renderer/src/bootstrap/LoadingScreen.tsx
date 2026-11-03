@@ -1,7 +1,7 @@
-import type { BootstrapProgress } from '@shared/ipc'
-import { PRODUCT_NAME, PRODUCT_TAGLINE } from '@shared/brand'
-import { getBootstrapPercent } from './bootstrap-state'
-import kairoStacked from '@/assets/kairo-stacked.png'
+import type { BootstrapProgress } from "@shared/ipc";
+import { PRODUCT_NAME, PRODUCT_TAGLINE } from "@shared/brand";
+import { getBootstrapPercent } from "./bootstrap-state";
+import kairoStacked from "@/assets/kairo-stacked.png";
 
 /**
  * Branded startup screen, shown briefly on every launch. The progress row only
@@ -14,20 +14,20 @@ export function LoadingScreen({
   showProgress,
   fadingOut,
 }: {
-  progress: BootstrapProgress
-  showProgress: boolean
-  fadingOut: boolean
+  progress: BootstrapProgress;
+  showProgress: boolean;
+  fadingOut: boolean;
 }): React.ReactElement {
-  const percent = fadingOut ? 100 : getBootstrapPercent(progress)
-  const step = fadingOut ? 'Ready' : progress.step
+  const percent = fadingOut ? 100 : getBootstrapPercent(progress);
+  const step = fadingOut ? "Ready" : progress.step;
 
   return (
     <div
       className={[
-        'absolute inset-0 z-[60] flex flex-col items-center justify-center bg-surface',
-        'transition-opacity duration-300 motion-reduce:transition-none',
-        fadingOut ? 'opacity-0 pointer-events-none' : 'opacity-100',
-      ].join(' ')}
+        "absolute inset-0 z-[60] flex flex-col items-center justify-center bg-surface",
+        "transition-opacity duration-300 motion-reduce:transition-none",
+        fadingOut ? "opacity-0 pointer-events-none" : "opacity-100",
+      ].join(" ")}
       role="status"
       aria-live="polite"
       aria-busy={!fadingOut}
@@ -36,29 +36,38 @@ export function LoadingScreen({
         {/* The stacked logo (mark over "Kairo") under a glass lens — a top
             specular and a slowly drifting caustic, every layer masked to the
             logo's own shape. The brand blue stays visible in either theme. */}
-        <div className="splash-mark relative h-[100px] w-[152px]" role="img" aria-label={PRODUCT_NAME}>
+        <div
+          className="splash-mark relative h-[100px] w-[152px]"
+          role="img"
+          aria-label={PRODUCT_NAME}
+        >
           <span
             aria-hidden
             className="absolute inset-0 bg-[rgb(var(--accent-500))]"
             style={{
               WebkitMaskImage: `url(${kairoStacked})`,
               maskImage: `url(${kairoStacked})`,
-              WebkitMaskSize: 'contain',
-              maskSize: 'contain',
-              WebkitMaskRepeat: 'no-repeat',
-              maskRepeat: 'no-repeat',
-              WebkitMaskPosition: 'center',
-              maskPosition: 'center',
+              WebkitMaskSize: "contain",
+              maskSize: "contain",
+              WebkitMaskRepeat: "no-repeat",
+              maskRepeat: "no-repeat",
+              WebkitMaskPosition: "center",
+              maskPosition: "center",
             }}
           />
-          {(['splash-glass-caustic', 'splash-glass-lens'] as const).map((layer) => (
-            <div
-              key={layer}
-              aria-hidden
-              className={`splash-glass-layer ${layer}`}
-              style={{ WebkitMaskImage: `url(${kairoStacked})`, maskImage: `url(${kairoStacked})` }}
-            />
-          ))}
+          {(["splash-glass-caustic", "splash-glass-lens"] as const).map(
+            (layer) => (
+              <div
+                key={layer}
+                aria-hidden
+                className={`splash-glass-layer ${layer}`}
+                style={{
+                  WebkitMaskImage: `url(${kairoStacked})`,
+                  maskImage: `url(${kairoStacked})`,
+                }}
+              />
+            ),
+          )}
         </div>
 
         <div className="splash-copy -mt-2 text-center">
@@ -85,16 +94,18 @@ export function LoadingScreen({
                 >
                   {step}
                 </p>
-                <p className="shrink-0 font-mono text-[12px] tabular-nums text-zinc-400">{percent}%</p>
+                <p className="shrink-0 font-mono text-[12px] tabular-nums text-zinc-400">
+                  {percent}%
+                </p>
               </div>
             </>
           ) : (
             <p className="splash-boot text-center font-mono text-[11px] uppercase tracking-[0.3em]">
-              {fadingOut ? 'Ready' : 'Booting up'}
+              {fadingOut ? "Ready" : "Powering up"}
             </p>
           )}
         </div>
       </div>
     </div>
-  )
+  );
 }

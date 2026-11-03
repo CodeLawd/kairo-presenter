@@ -108,14 +108,14 @@ export function LiveOutputRail({
     () => previewOutputs(overlay.outputs),
     [overlay.outputs],
   );
-  // The frame sits inside 12px insets, beside the 36px clear-layer column, so
-  // the monitor and that column fill the rail's width exactly.
-  const previewWidth = Math.max(160, width - 60);
+  // The frame sits inside 12px insets and takes the rail's full width; the
+  // clear-layer row runs under it, so the slide is as large as the rail allows.
+  const previewWidth = Math.max(160, width - 24);
   const previewHeight = Math.round((previewWidth * 9) / 16);
 
   return (
     // The rail keeps a consistent panel tone around the live preview.
-    <div className="hairline-l relative flex min-h-0 shrink-0">
+    <div className="booth-toolbox hairline-l relative flex min-h-0 shrink-0">
       {onResizeStart && (
         <button
           type="button"
@@ -130,7 +130,7 @@ export function LiveOutputRail({
       <aside
         // One tone top to bottom, no gap: the toolbox's tab bar is what
         // divides the live output from the tools below it.
-        className={`flex min-h-0 w-full flex-col overflow-hidden bg-surface-secondary ${className}`}
+        className={`flex min-h-0 w-full flex-col overflow-hidden bg-surface-rail ${className}`}
         style={{ width }}
       >
         <div className="hairline-b min-h-0 shrink-0" data-tour="live-preview">
