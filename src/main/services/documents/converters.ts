@@ -3,6 +3,7 @@ import { dirname, join } from 'path'
 import { pathToFileURL } from 'url'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
+import log from 'electron-log/main'
 import type { PowerpointConverterId } from '@shared/documents'
 import {
   findAppByBundleId,
@@ -13,6 +14,7 @@ import {
   isPowerPointAppName,
   isWpsAppName,
 } from './office-apps'
+import { slideConverter } from './slide-converter'
 
 const run = promisify(execFile)
 const CONVERT_MS = 120_000
@@ -167,7 +169,8 @@ export async function detectKeynote(): Promise<string | null> {
   )
 }
 
-export async function detectLibreOffice(): Promise<string | null> {
+/** A LibreOffice installed on the system — not the one Kairo downloads. */
+export async function detectSystemLibreOffice(): Promise<string | null> {
   if (process.platform === 'darwin') {
     const app = await findAppByName(isLibreOfficeAppName)
     const soffice = app
@@ -190,6 +193,11 @@ export async function detectLibreOffice(): Promise<string | null> {
     }
   }
   return firstAvailableCommand(['soffice', 'libreoffice'])
+}
+
+/** Kairo's downloaded converter first: its version is pinned and known to work. */
+export async function detectLibreOffice(): Promise<string | null> {
+  return (await slideConverter.binary()) ?? detectSystemLibreOffice()
 }
 
 export async function detectPowerpointConverters(): Promise<PowerpointConverterId[]> {
@@ -370,7 +378,10 @@ export async function convertPowerPointToPdf(
       return attempt.id
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      if (message !== 'skip') errors.push(`${attempt.id}: ${message}`)
+      if (message !== 'skip') {
+        errors.push(`${attempt.id}: ${message}`)
+        log.warn('[Documents] Converter failed', { converter: attempt.id, error: message })
+      }
     }
   }
   if (errors.length === 0) {

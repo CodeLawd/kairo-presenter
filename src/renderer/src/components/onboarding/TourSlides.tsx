@@ -54,12 +54,12 @@ export const TOUR_SLIDES: TourSlide[] = [
   },
   {
     id: 'documents',
-    headline: 'Documents',
+    headline: 'Slides',
     subhead: 'sermon slides and handouts, ready to show',
     bullets: [
       'Import PowerPoint and PDF files',
       'Videos inside your slides play too',
-      'Step through pages live, one click each',
+      'Step through slides live, one click each',
     ],
     art: DocumentsArt,
   },

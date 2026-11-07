@@ -1,14 +1,14 @@
 import type { CSSProperties } from 'react'
 import type { NavRoute } from '@/App'
 import { KAIRO_MARK_URL, KairoMark } from '@/components/brand/KairoMark'
-import { BookOpen, ChevronRight, FileText, Music2 } from '@/icons'
+import { BookOpen, ChevronRight, Music2, Presentation } from '@/icons'
 
 const at = (i: number, base = 0): CSSProperties => ({ '--i': i, '--base': `${base}ms` }) as CSSProperties
 
 const QUICK_STARTS: Array<{ route: NavRoute; title: string; detail: string; icon: typeof BookOpen }> = [
   { route: 'scripture', title: 'Find a verse', detail: 'Search by reference or words', icon: BookOpen },
   { route: 'lyrics', title: 'Add a song', detail: 'Import or type in lyrics', icon: Music2 },
-  { route: 'documents', title: 'Import a document', detail: 'PowerPoint or PDF', icon: FileText },
+  { route: 'documents', title: 'Import slides', detail: 'PowerPoint or PDF', icon: Presentation },
 ]
 
 /**

@@ -659,9 +659,9 @@ const account: KairoAPI['account'] = {
 const documents: KairoAPI['documents'] = {
   list: () => ipcRenderer.invoke(DOCUMENTS.LIST),
   capabilities: () => ipcRenderer.invoke(DOCUMENTS.CAPABILITIES),
-  prepare: async (kind, onPreparing) => {
+  prepare: async (kind, onPreparing, options) => {
     const unsubscribe = onPreparing ? subscribe(DOCUMENTS.PREPARING, onPreparing) : undefined
-    try { return await ipcRenderer.invoke(DOCUMENTS.PREPARE, kind) }
+    try { return await ipcRenderer.invoke(DOCUMENTS.PREPARE, kind, options) }
     finally { unsubscribe?.() }
   },
   savePage: (id, page, png) => ipcRenderer.invoke(DOCUMENTS.SAVE_PAGE, id, page, png),
@@ -672,6 +672,13 @@ const documents: KairoAPI['documents'] = {
   push: (id, page) => ipcRenderer.invoke(DOCUMENTS.PUSH, id, page),
   playback: (id, page) => ipcRenderer.invoke(DOCUMENTS.PLAYBACK, id, page),
   control: (id, page, video, command) => ipcRenderer.invoke(DOCUMENTS.CONTROL, id, page, video, command),
+  converter: {
+    status: () => ipcRenderer.invoke(DOCUMENTS.CONVERTER_STATUS),
+    install: () => ipcRenderer.invoke(DOCUMENTS.CONVERTER_INSTALL),
+    cancel: () => ipcRenderer.invoke(DOCUMENTS.CONVERTER_CANCEL),
+    remove: () => ipcRenderer.invoke(DOCUMENTS.CONVERTER_REMOVE),
+    onChanged: (callback) => subscribe(DOCUMENTS.CONVERTER_CHANGED, callback),
+  },
 }
 
 const updates: KairoAPI['updates'] = {

@@ -1588,7 +1588,9 @@ function MediaCard({
         <Thumb
           item={item}
           className="pointer-events-none absolute inset-0 h-full w-full object-cover"
-          style={filter ? { filter } : undefined}
+          // The card frames the media the way it was set to scale; with no
+          // setting of its own it fills the card, as most outputs do.
+          style={filter || playback.fit ? { ...(filter ? { filter } : {}), ...(playback.fit ? { objectFit: playback.fit } : {}) } : undefined}
           onError={onUndecodable}
         />
 

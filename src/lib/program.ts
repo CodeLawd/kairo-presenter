@@ -1047,7 +1047,7 @@ export function outputShowLabel(key: keyof OutputShowFilter): string {
   switch (key) {
     case 'scripture': return 'Scripture'
     case 'lyrics': return 'Lyrics'
-    case 'documents': return 'Documents'
+    case 'documents': return 'Slides'
     case 'backgrounds': return 'Backgrounds'
     case 'poll': return 'Poll results'
     case 'question': return 'Audience questions'

@@ -1,4 +1,7 @@
 import Store from 'electron-store'
+import { app } from 'electron'
+import { existsSync, readFileSync } from 'fs'
+import { join } from 'path'
 import log from 'electron-log/main'
 import { renamedStore } from './legacy-store'
 import type { AppSettings } from '@shared/ipc'
@@ -74,10 +77,32 @@ const defaults: AppSettings = {
   web: DEFAULT_WEB_SETTINGS,
 }
 
+const settingsName = renamedStore('proautomate-settings', 'kairo-settings')
+
+/**
+ * The What's New sheet reads an empty lastSeenVersion as a fresh install. A
+ * settings file written before the sheet shipped (1.0.29) has no `whatsNew`
+ * key, but that machine is upgrading, not new — so it must see the sheet.
+ * Checked before the Store is built, because building it writes the defaults in.
+ */
+const upgradedFromBeforeWhatsNew = ((): boolean => {
+  try {
+    const file = join(app.getPath('userData'), `${settingsName}.json`)
+    if (!existsSync(file)) return false
+    const raw = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>
+    return !('whatsNew' in raw)
+  } catch {
+    return false
+  }
+})()
+
 export const store = new Store<AppSettings>({
-  name: renamedStore('proautomate-settings', 'kairo-settings'),
+  name: settingsName,
   defaults,
 })
+
+// The last release without the sheet, so 1.0.29 onward counts as new to them.
+if (upgradedFromBeforeWhatsNew) store.set('whatsNew', { lastSeenVersion: '1.0.28' })
 
 export const migrations = new Store<{
   nkjvDefaultV1: boolean

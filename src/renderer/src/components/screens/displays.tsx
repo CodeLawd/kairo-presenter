@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { DisplayInfo, OverlayOutput } from '@shared/ipc'
+import type { VideoPort } from '@shared/video-devices'
 import { bindingForDisplay, describeDisplay, resolveDisplay } from '@shared/displays'
 
 /** Anything bound to a physical display: a Kairo screen output or a stage display. */
@@ -34,6 +35,9 @@ export function DisplayPicker({
   displays,
   others,
   onChange,
+  cards = [],
+  cardPortsInUse = [],
+  onPickCard,
 }: {
   id: string
   target: DisplayBound
@@ -41,6 +45,10 @@ export function DisplayPicker({
   /** Other enabled things on displays — their display is taken. */
   others: DisplayBound[]
   onChange: (patch: Pick<OverlayOutput, 'displayId' | 'displayLabel' | 'displaySize'>) => void
+  /** Video card outputs this can move onto (Kairo screens only). */
+  cards?: VideoPort[]
+  cardPortsInUse?: string[]
+  onPickCard?: (port: VideoPort) => void
 }): React.ReactElement {
   const bound = resolveDisplay(target, displays)
   // A bound display that is unplugged stays selected — the output keeps its
@@ -59,6 +67,11 @@ export function DisplayPicker({
           onChange={(e) => {
             if (e.target.value === '') {
               onChange({ displayId: null, displayLabel: '', displaySize: null })
+              return
+            }
+            if (e.target.value.startsWith('card:')) {
+              const port = cards.find((p) => `card:${p.id}` === e.target.value)
+              if (port && onPickCard) onPickCard(port)
               return
             }
             const display = displays.find((d) => String(d.id) === e.target.value)
@@ -84,6 +97,20 @@ export function DisplayPicker({
               </option>
             )
           })}
+          {onPickCard && cards.length > 0 && (
+            <optgroup label="Video cards">
+              {cards.map((port) => {
+                const inUse = cardPortsInUse.includes(port.id)
+                const reason = port.unavailableReason || (inUse ? 'in use' : '')
+                return (
+                  <option key={port.id} value={`card:${port.id}`} disabled={!!reason}>
+                    {port.portName}
+                    {reason ? ` — ${reason}` : ''}
+                  </option>
+                )
+              })}
+            </optgroup>
+          )}
         </select>
       </div>
       {bound?.hostsMainWindow && (

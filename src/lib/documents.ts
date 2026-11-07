@@ -96,10 +96,60 @@ export function formatDocumentSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
+/**
+ * The slide converter Kairo downloads on demand (LibreOffice, run headless
+ * from Kairo's own folder) for computers with no PowerPoint or Keynote.
+ */
+export type SlideConverterState =
+  | 'unsupported' // no build for this platform — install LibreOffice from the package manager
+  | 'missing'
+  | 'downloading'
+  | 'installing'
+  | 'ready'
+  | 'error'
+
+export interface SlideConverterStatus {
+  state: SlideConverterState
+  version: string
+  /** Download size for this computer, in bytes. */
+  sizeBytes: number
+  receivedBytes: number
+  error?: string
+  /** Another app already converts slides (PowerPoint, Keynote, a system LibreOffice). */
+  otherConverter: PowerpointConverterId | null
+}
+
+/** Returned by prepare() when a PowerPoint was picked but nothing can convert it accurately. */
+export interface DocumentNeedsConverter {
+  needsConverter: true
+  token: string
+  name: string
+  format: ProjectionDocument['format']
+}
+
+export interface DocumentPrepareOptions {
+  /** Continue an import that stopped for the converter, without picking the file again. */
+  resume?: string
+  /** Use the simplified built-in renderer instead of waiting for a converter. */
+  simplified?: boolean
+}
+
+export type DocumentPrepared = { id: string; data: Uint8Array; name: string; format: ProjectionDocument['format'] }
+
+export const SIMPLIFIED_IMPORT_WARNING =
+  'Imported with Kairo’s simplified renderer, so some pictures, fonts and effects may be missing. Download the slide converter in Settings → Documents, then import this file again for an exact copy.'
+
 export interface DocumentsAPI {
   list(): Promise<ProjectionDocument[]>
   capabilities(): Promise<DocumentsCapabilities>
-  prepare(kind?: 'pdf' | 'powerpoint', onPreparing?: (document: DocumentImportInfo) => void): Promise<{ id: string; data: Uint8Array; name: string; format: ProjectionDocument['format'] } | null>
+  prepare(kind?: 'pdf' | 'powerpoint', onPreparing?: (document: DocumentImportInfo) => void, options?: DocumentPrepareOptions): Promise<DocumentPrepared | DocumentNeedsConverter | null>
+  converter: {
+    status(): Promise<SlideConverterStatus>
+    install(): Promise<SlideConverterStatus>
+    cancel(): Promise<void>
+    remove(): Promise<SlideConverterStatus>
+    onChanged(callback: (status: SlideConverterStatus) => void): () => void
+  }
   savePage(id: string, page: number, png: Uint8Array): Promise<void>
   finish(id: string): Promise<ProjectionDocument[]>
   cancel(id: string): Promise<void>
@@ -114,6 +164,9 @@ export const DOCUMENTS = {
   LIST: 'documents:list', CAPABILITIES: 'documents:capabilities', PREPARE: 'documents:prepare', SAVE_PAGE: 'documents:savePage',
   FINISH: 'documents:finish', CANCEL: 'documents:cancel', RENAME: 'documents:rename', REMOVE: 'documents:remove', PUSH: 'documents:push',
   PREPARING: 'documents:preparing', PLAYBACK: 'documents:playback', CONTROL: 'documents:control',
+  CONVERTER_STATUS: 'documents:converter:status', CONVERTER_INSTALL: 'documents:converter:install',
+  CONVERTER_CANCEL: 'documents:converter:cancel', CONVERTER_REMOVE: 'documents:converter:remove',
+  CONVERTER_CHANGED: 'documents:converter:changed',
 } as const
 
 /** Strip Electron's invoke wrapper so operators see the real reason. */

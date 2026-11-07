@@ -65,7 +65,7 @@ import type {
 import { ArrangementCanvas, type CanvasBinding } from "./ArrangementCanvas";
 import { DisplayPicker, useDisplays, type DisplayBound } from "./displays";
 import { VideoConnectorTile, VideoDeviceFields } from "./VideoDeviceFields";
-import type { VideoDeviceSnapshot } from "@shared/video-devices";
+import type { VideoDeviceSnapshot, VideoPort } from "@shared/video-devices";
 
 const IS_MAC = navigator.platform.startsWith("Mac");
 
@@ -284,6 +284,33 @@ export default function ScreenConfiguration({
     }
     if (selected === key) setSelected(null);
   };
+  // A screen moved onto a video card becomes a card output. It gets a new id so
+  // the old display window is torn down and the card surface built fresh, but
+  // keeps its name, content, looks and themes.
+  const moveToCard = (id: string, port: VideoPort): void => {
+    const nextId = `device-${Date.now().toString(36)}`;
+    setOutputs((current) =>
+      current.map((o) =>
+        o.id === id
+          ? {
+              ...o,
+              id: nextId,
+              kind: "device",
+              displayId: null,
+              displayLabel: "",
+              displaySize: null,
+              devicePortId: port.id,
+              devicePortLabel: `${port.deviceName} · ${port.portName}`,
+              deviceModeId: port.modes[0]?.id ?? "",
+              deviceKeyFill: false,
+            }
+          : o,
+      ),
+    );
+    setSelected(nextId);
+    setTab("hardware");
+  };
+
   const removeSelected = (): void => {
     if (selected) removeScreen(selected);
   };
@@ -573,6 +600,10 @@ export default function ScreenConfiguration({
             tab={tab}
             onTab={setTab}
             onChange={(patch) => updateOutput(selectedOutput.id, patch)}
+            onPickCard={(port) => moveToCard(selectedOutput.id, port)}
+            cardPortsInUse={outputs
+              .filter((o) => o.kind === "device" && o.id !== selectedOutput.id)
+              .map((o) => o.devicePortId)}
             onRemove={removeSelected}
           />
         )}
@@ -1320,9 +1351,13 @@ function OutputDetail({
   tab,
   onTab,
   onChange,
+  onPickCard,
+  cardPortsInUse,
   onRemove,
 }: {
   output: OverlayOutput;
+  onPickCard: (port: VideoPort) => void;
+  cardPortsInUse: string[];
   status: Status;
   resolution: string | null;
   canvas: React.ReactNode;
@@ -1379,6 +1414,9 @@ function OutputDetail({
                   displays={displays}
                   others={others}
                   onChange={(patch) => onChange(patch)}
+                  cards={devices?.ports ?? []}
+                  cardPortsInUse={cardPortsInUse}
+                  onPickCard={onPickCard}
                 />
               </FieldRow>
               {output.source === "playlist" ? (

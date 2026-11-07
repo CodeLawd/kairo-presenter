@@ -9,7 +9,7 @@ import {
   Radio,
   Settings,
 } from "@/icons";
-import { ChatsCircle, FileText, Globe, Gauge as CircleGauge, MusicNotes as Music2, Palette } from "@phosphor-icons/react";
+import { ChatsCircle, Presentation, Globe, Gauge as CircleGauge, MusicNotes as Music2, Palette } from "@phosphor-icons/react";
 import type { NavRoute } from "@/App";
 import { AccountRailButton, AudioRailButton } from "./RailPopovers";
 import { FeedbackRailButton } from "./FeedbackRailButton";
@@ -73,7 +73,7 @@ const workspaces: Array<{
   { id: "operator", label: "Operator", icon: CircleGauge, hue: "green" },
   { id: "scripture", label: "Bible", icon: Bible, hue: "blue" },
   { id: "lyrics", label: "Lyrics", icon: Music2, hue: "violet" },
-  { id: "documents", label: "Documents", icon: FileText, hue: "cyan" },
+  { id: "documents", label: "Slides", icon: Presentation, hue: "cyan" },
   { id: "audience", label: "Engage", icon: ChatsCircle, hue: "coral" },
   { id: "web", label: "Web", icon: Globe, hue: "indigo" },
   {

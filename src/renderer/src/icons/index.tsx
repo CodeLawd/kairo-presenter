@@ -117,6 +117,7 @@ import {
   WifiOff01Icon,
   ZoomInIcon,
   ZoomOutIcon,
+  Presentation01Icon,
 } from '@hugeicons/core-free-icons'
 
 type Props = Omit<ComponentProps<typeof HugeiconsIcon>, 'icon'> & {
@@ -264,6 +265,7 @@ export const MonitorOff = wrap(MonitorOffIcon)
 export const Images = wrap(ImagesIcon)
 export const Queue = wrap(Playlist01Icon)
 export const MonitorPlay = wrapPhosphor(PhMonitorPlay)
+export const Presentation = wrap(Presentation01Icon)
 export const Moon = wrap(Moon01Icon)
 export const MoreHorizontal = wrap(MoreHorizontalIcon)
 export const MoreVertical = wrap(MoreVerticalIcon)

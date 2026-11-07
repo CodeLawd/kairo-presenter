@@ -33,7 +33,7 @@ export const DEFAULT_LIBRARY_ID = 'default'
 
 export const DEFAULT_LIBRARY_NAME: Record<LibraryKind, string> = {
   songs: 'All songs',
-  documents: 'All documents',
+  documents: 'All slides',
   scripture: 'All passages',
 }
 

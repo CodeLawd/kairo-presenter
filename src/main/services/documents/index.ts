@@ -3,18 +3,32 @@ import { promises as fs } from 'fs'
 import { basename, extname, join } from 'path'
 import { randomUUID } from 'crypto'
 import log from 'electron-log/main'
-import type { DocumentSlide, DocumentsCapabilities, ProjectionDocument, DocumentImportInfo } from '@shared/documents'
-import { formatDocumentSize, POWERPOINT_NEEDS_CONVERTER, normalizeDocumentName, validDocumentPage } from '@shared/documents'
+import type { DocumentSlide, DocumentsCapabilities, ProjectionDocument, DocumentImportInfo, DocumentNeedsConverter, DocumentPrepareOptions, DocumentPrepared } from '@shared/documents'
+import { formatDocumentSize, POWERPOINT_NEEDS_CONVERTER, SIMPLIFIED_IMPORT_WARNING, normalizeDocumentName, validDocumentPage } from '@shared/documents'
 import { allowPickedOverlayMedia } from '../ndi/media-allowlist'
 import {
   convertPowerPointToPdf,
+  detectKeynote,
+  detectPowerPoint,
   detectPowerpointConverters,
+  detectSystemLibreOffice,
 } from './converters'
+import { slideConverter } from './slide-converter'
+
+// Accurate converters other than Kairo's own download. WPS is left out: on
+// macOS it can't convert in the background, so it never actually helps there.
+slideConverter.detectOthers = async () =>
+  (await detectPowerPoint()) ? 'powerpoint'
+    : (await detectKeynote()) ? 'keynote'
+      : (await detectSystemLibreOffice()) ? 'libreoffice'
+        : null
 import { convertPptxBuiltin } from './pptx-builtin'
 import { readPptxVideos } from './pptx-videos'
 
 class DocumentsService {
   private pending = new Map<string, ProjectionDocument>()
+  /** PowerPoints picked while no converter was ready, waiting for the operator's choice. */
+  private waiting = new Map<string, string>()
   private get root(): string { return join(app.getPath('userData'), 'documents') }
   private directory(id: string): string {
     if (!/^[a-f0-9-]{36}$/.test(id)) throw new Error('Invalid document ID.')
@@ -45,8 +59,32 @@ class DocumentsService {
     }
     return documents.sort((a, b) => a.name.localeCompare(b.name))
   }
-  async prepare(kind?: 'pdf' | 'powerpoint', onPreparing?: (document: DocumentImportInfo) => void): Promise<{ id: string; data: Uint8Array; name: string; format: ProjectionDocument['format'] } | null> {
+  async prepare(kind?: 'pdf' | 'powerpoint', onPreparing?: (document: DocumentImportInfo) => void, options: DocumentPrepareOptions = {}): Promise<DocumentPrepared | DocumentNeedsConverter | null> {
     if (kind !== undefined && kind !== 'pdf' && kind !== 'powerpoint') throw new Error('Unsupported document type.')
+    let source: string
+    if (options.resume !== undefined) {
+      const waiting = typeof options.resume === 'string' ? this.waiting.get(options.resume) : undefined
+      if (!waiting) throw new Error('Choose the file again.')
+      this.waiting.delete(options.resume)
+      source = waiting
+    } else {
+      const picked = await this.pick(kind)
+      if (!picked) return null
+      source = picked
+    }
+    const format = extname(source).slice(1).toLowerCase() as ProjectionDocument['format']
+    if (!['pdf', 'ppt', 'pptx'].includes(format)) throw new Error('Choose a PDF or PowerPoint file.')
+    // Nothing can convert this deck accurately: let the operator download the
+    // converter (or, for .pptx, take the simplified renderer) before going on.
+    if (format !== 'pdf' && !options.simplified && (await detectPowerpointConverters()).filter((id) => id !== 'wps' || process.platform !== 'darwin').length === 0) {
+      const token = randomUUID()
+      this.waiting.set(token, source)
+      return { needsConverter: true, token, name: basename(source, extname(source)), format }
+    }
+    return this.importFrom(source, format, onPreparing, options.simplified === true)
+  }
+
+  private async pick(kind?: 'pdf' | 'powerpoint'): Promise<string | null> {
     const extensions = kind === 'pdf'
       ? ['pdf']
       : kind === 'powerpoint'
@@ -62,14 +100,15 @@ class DocumentsService {
           { name: 'PowerPoint', extensions: ['ppt', 'pptx'] },
         ]
     const result = await dialog.showOpenDialog({
-      title: kind === 'powerpoint' ? 'Import PowerPoint' : kind === 'pdf' ? 'Import PDF' : 'Import document',
+      title: kind === 'powerpoint' ? 'Import PowerPoint' : kind === 'pdf' ? 'Import PDF' : 'Import slides',
       properties: ['openFile'],
       filters,
     })
     if (result.canceled || !result.filePaths[0]) return null
-    const source = result.filePaths[0]
-    const format = extname(source).slice(1).toLowerCase() as ProjectionDocument['format']
-    if (!['pdf', 'ppt', 'pptx'].includes(format)) throw new Error('Choose a PDF or PowerPoint file.')
+    return result.filePaths[0]
+  }
+
+  private async importFrom(source: string, format: ProjectionDocument['format'], onPreparing: ((document: DocumentImportInfo) => void) | undefined, simplified: boolean): Promise<DocumentPrepared> {
     const maxMB = format === 'pptx' ? 500 : 100
     const sizeBytes = (await fs.stat(source)).size
     onPreparing?.({ name: basename(source, extname(source)), format, sizeBytes, maxSizeBytes: maxMB * 1024 * 1024 })
@@ -97,6 +136,7 @@ class DocumentsService {
         const dest = join(dir, 'source.pdf')
         let used: string
         try {
+          if (simplified) throw new Error('simplified')
           used = await convertPowerPointToPdf(copy, dest, dir)
         } catch (error) {
           if (format !== 'pptx') {
@@ -106,6 +146,7 @@ class DocumentsService {
           }
           await convertPptxBuiltin(copy, dest, dir)
           used = 'builtin'
+          metadata.warnings = [SIMPLIFIED_IMPORT_WARNING, ...(metadata.warnings ?? [])]
         }
         log.info('[Documents] Converted PowerPoint', { converter: used, format })
         pdf = dest

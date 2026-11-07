@@ -20,6 +20,7 @@ import { songUsageService } from "../services/song-usage";
 import { TRANSFER, type TransferCommitRequest, type TransferExportRequest } from "@shared/kairo-bundle";
 import { transferService } from "../services/transfer";
 import { documentsService } from "../services/documents";
+import { slideConverter } from "../services/documents/slide-converter";
 import { app, ipcMain, BrowserWindow, clipboard, dialog, powerMonitor, shell } from "electron";
 import type { OpenDialogOptions } from "electron";
 import type { TestPatternInput } from "@shared/ipc";
@@ -654,9 +655,21 @@ function registerResilienceHandlers(): void {
 function registerDocumentHandlers(): void {
   handle(DOCUMENTS.LIST, () => documentsService.list());
   handle(DOCUMENTS.CAPABILITIES, () => documentsService.capabilities());
-  handle(DOCUMENTS.PREPARE, (event, kind) => documentsService.prepare(kind, (document) => {
+  handle(DOCUMENTS.PREPARE, (event, kind, options) => documentsService.prepare(kind, (document) => {
     if (!event.sender.isDestroyed()) event.sender.send(DOCUMENTS.PREPARING, document);
-  }));
+  }, options && typeof options === "object" ? {
+    resume: typeof options.resume === "string" ? options.resume : undefined,
+    simplified: options.simplified === true,
+  } : {}));
+  handle(DOCUMENTS.CONVERTER_STATUS, () => slideConverter.status());
+  handle(DOCUMENTS.CONVERTER_INSTALL, () => slideConverter.install());
+  handle(DOCUMENTS.CONVERTER_CANCEL, () => slideConverter.cancel());
+  handle(DOCUMENTS.CONVERTER_REMOVE, () => slideConverter.remove());
+  slideConverter.onChanged((status) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send(DOCUMENTS.CONVERTER_CHANGED, status);
+    }
+  });
   handle(DOCUMENTS.SAVE_PAGE, (_event, id, page, png) => documentsService.savePage(id, page, png));
   handle(DOCUMENTS.FINISH, (_event, id) => documentsService.finish(id));
   handle(DOCUMENTS.CANCEL, (_event, id) => documentsService.cancel(id));

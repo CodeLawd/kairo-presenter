@@ -4,13 +4,13 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { createPortal } from 'react-dom'
 import { useHeaderToolbarSlot } from '@/components/layout/header-toolbar'
 import {
-  ChevronLeft,
-  ChevronRight,
   FileText,
+  Film,
+  Minus,
+  Plus,
   Loader,
   Pencil,
   Play,
-  Send,
   SlidersHorizontal,
   Square,
   Trash2,
@@ -27,6 +27,8 @@ import {
   type ProjectionDocument,
   type DocumentPlaybackStatus,
   type DocumentVideoCommand,
+  type DocumentNeedsConverter,
+  type DocumentPrepareOptions,
 } from '@shared/documents'
 import { overlayMediaUrl } from '@shared/overlay-template'
 import { commandForShortcut, shortcutFromEvent } from '@shared/keyboard-shortcuts'
@@ -41,6 +43,7 @@ import { LiveOutputRail } from '@/components/operator/LiveOutputRail'
 import { useLiveRailWidth } from '@/components/operator/useLiveRailWidth'
 import { DocumentImportModal, type DocumentImportProgress } from './DocumentImportModal'
 import { DocumentSlidePreview } from './DocumentSlidePreview'
+import { SlideConverterDialog } from './SlideConverterDialog'
 import { LiveVideoControls } from '@/components/operator/LiveVideoControls'
 
 interface ContextMenuState {
@@ -48,6 +51,11 @@ interface ContextMenuState {
   x: number
   y: number
 }
+
+const THUMB_KEY = 'kairo.documents.slideWidth'
+const THUMB_MIN = 140
+const THUMB_MAX = 420
+const THUMB_DEFAULT = 240
 
 /** Thrown to unwind the render loop when the operator cancels an import. */
 class ImportCanceled extends Error {}
@@ -80,11 +88,21 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
   const [slideshowMenuOpen, setSlideshowMenuOpen] = useState(false)
   const slideshowMenuRef = useRef<HTMLDivElement>(null)
   const liveThumbRef = useRef<HTMLButtonElement>(null)
+  const [thumbWidth, setThumbWidth] = useState<number>(() => {
+    try {
+      const saved = Number(localStorage.getItem(THUMB_KEY))
+      return saved >= THUMB_MIN && saved <= THUMB_MAX ? saved : THUMB_DEFAULT
+    } catch { return THUMB_DEFAULT }
+  })
+  useEffect(() => {
+    try { localStorage.setItem(THUMB_KEY, String(thumbWidth)) } catch { /* per-viewer convenience only */ }
+  }, [thumbWidth])
   /** Set by the Cancel button; the render loop checks it between pages. */
   const cancelImport = useRef(false)
   const [canceling, setCanceling] = useState(false)
   const [importProgress, setImportProgress] = useState<DocumentImportProgress | null>(null)
   const retryKind = useRef<'pdf' | 'powerpoint' | undefined>(undefined)
+  const [converterPrompt, setConverterPrompt] = useState<(DocumentNeedsConverter & { kind?: 'pdf' | 'powerpoint' }) | null>(null)
   const current = documents.find((doc) => doc.id === selected)
   const [playback, setPlayback] = useState<DocumentPlaybackStatus | null>(null)
   const [localPresentation, setLocalPresentation] = useState<string | null>(null)
@@ -157,7 +175,7 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
 
   const importDocument = useCallback(
     /** No `kind` opens one picker that takes PDFs and PowerPoints together. */
-    async (kind?: 'pdf' | 'powerpoint'): Promise<void> => {
+    async (kind?: 'pdf' | 'powerpoint', options?: DocumentPrepareOptions): Promise<void> => {
       if (lock.current) return
       lock.current = true
       cancelImport.current = false
@@ -172,8 +190,10 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
       try {
         const prepared = await window.api.documents.prepare(kind, (document) => {
           setImportProgress({ stage: 'preparing', completed: 0, total: 0, ...document })
-        })
-        if (!prepared) {
+        }, options)
+        if (!prepared || 'needsConverter' in prepared) {
+          // Nothing here converts PowerPoint accurately yet: ask, then resume.
+          if (prepared) setConverterPrompt({ ...prepared, kind })
           setImportProgress(null)
           setStatus('')
           return
@@ -496,7 +516,7 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
                 <span className="text-zinc-500"> · {page + 1}/{current.pages.length}</span>
               </p>
             ) : (
-              <p className="truncate text-xs text-zinc-600">No document selected</p>
+              <p className="truncate text-xs text-zinc-600">No slides selected</p>
             )}
             {busy && !importProgress && status && (
               <div className="flex min-w-0 items-baseline gap-2">
@@ -520,6 +540,14 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
         document.body,
       )}
 
+      {converterPrompt && createPortal(
+        <SlideConverterDialog name={converterPrompt.name} format={converterPrompt.format}
+          onReady={() => { const prompt = converterPrompt; setConverterPrompt(null); void importDocument(prompt.kind, { resume: prompt.token }) }}
+          onSimplified={() => { const prompt = converterPrompt; setConverterPrompt(null); void importDocument(prompt.kind, { resume: prompt.token, simplified: true }) }}
+          onCancel={() => setConverterPrompt(null)} />,
+        document.body,
+      )}
+
       {error && (
         <p
           role="alert"
@@ -533,7 +561,7 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
         <aside
           className="page-sidebar hairline-r flex min-h-0 shrink-0 flex-col bg-surface-secondary"
           style={{ width: sidebar.width }}
-          aria-label="Imported documents"
+          aria-label="Slide library"
         >
           {/* As Sermon Notes does it: one plain card at the top of the library. */}
           <div className="shrink-0 px-3 pt-3" data-tour="documents-import">
@@ -551,7 +579,7 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
               </span>
               <span className="min-w-0">
                 <span className="block text-[13px] font-semibold text-white">
-                  {importProgress ? 'Importing…' : 'Import a document'}
+                  {importProgress ? 'Importing…' : 'Import slides'}
                 </span>
                 <span className="block truncate text-[11px] text-slate-400">PDF or PowerPoint</span>
               </span>
@@ -570,7 +598,7 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
           <div className="min-h-0 flex-1 overflow-auto p-2">
             {visibleDocuments.length === 0 ? (
               <p className="px-2 py-3 text-xs text-zinc-600">
-                {documents.length === 0 ? 'No documents' : 'Nothing in this library'}
+                {documents.length === 0 ? 'No slides yet' : 'Nothing in this library'}
               </p>
             ) : (
               visibleDocuments.map((doc) => {
@@ -634,7 +662,7 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-xs font-medium">{doc.name}</span>
                           <span className="mt-0.5 block text-[10px] text-zinc-600">
-                            {doc.pages.length} {doc.pages.length === 1 ? 'page' : 'pages'}
+                            {doc.pages.length} {doc.pages.length === 1 ? 'slide' : 'slides'}
                           </span>
                         </span>
                       </button>
@@ -648,15 +676,15 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
         <button
           type="button"
           {...sidebar.separatorProps}
-          aria-label="Resize document library"
-          title="Drag to resize document library · double-click to reset"
+          aria-label="Resize slide library"
+          title="Drag to resize slide library · double-click to reset"
           className="page-sidebar-handle z-10 w-1.5 shrink-0 cursor-col-resize bg-surface-secondary hover:bg-surface-elevated focus-visible:bg-surface-elevated focus-visible:outline-none"
         />
 
         <div className="flex min-w-0 flex-1 flex-col">
           {!current ? (
             <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6">
-              <p className="text-sm text-zinc-500">Import a PDF or PowerPoint to present page by page</p>
+              <p className="text-sm text-zinc-500">Import a PowerPoint or PDF to show it slide by slide</p>
               <button
                 type="button"
                 className="btn-secondary flex h-8 items-center gap-1.5 px-3 text-xs"
@@ -665,76 +693,18 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
                 onClick={() => void importDocument()}
               >
                 <Upload size={13} aria-hidden="true" />
-                Import document
+                Import slides
               </button>
             </div>
           ) : (
             <>
-              {current.warnings?.length ? (
-                <details className="shrink-0 px-3 py-2 text-xs text-amber-300">
-                  <summary className="cursor-pointer">Import notes ({current.warnings.length})</summary>
-                  <ul className="mt-1 list-inside list-disc">{current.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul>
-                </details>
-              ) : null}
-              {localMode && <p className="px-3 py-2 text-xs text-zinc-400">Preview only · No output connected</p>}
-              <DocumentSlidePreview doc={current} page={page} playback={livePlayback} local={localMode} command={localCommand} onPlayback={setPlayback} />
-              {pageVideos.length > 0 && (
-                <div data-document-transport className="shrink-0">
-                  {!livePlayback && <p className="px-3 py-2 text-xs text-zinc-400">Push this slide to play its embedded video.</p>}
-                  {livePlayback?.videos.map((video, index) => (
-                    <div key={`${current.id}:${page}:${index}`}>
-                      <p className="px-3 pt-2 text-xs text-zinc-400">Video {index + 1}{playing && !video.ended ? ' · Slideshow waits for playback' : ''}</p>
-                      {video.error ? <p role="alert" className="px-3 py-2 text-xs text-amber-300">{video.error}</p> : (
-                        <LiveVideoControls paused={video.paused} ended={video.ended} loop={false} showLoop={false}
-                          currentTime={video.currentTime} duration={video.duration}
-                          onTogglePause={() => void controlVideo(index, { action: video.paused || video.ended ? 'play' : 'pause' })}
-                          onRestart={() => void controlVideo(index, { action: 'restart' })}
-                          onSeek={(seconds) => void controlVideo(index, { action: 'seek', seconds })}
-                          onSkip={(delta) => void controlVideo(index, { action: 'seek', seconds: video.currentTime + delta })}
-                        />
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <div className="flex shrink-0 items-center justify-between gap-3 px-3 py-2.5">
+              <div className="hairline-b flex h-11 shrink-0 items-center justify-between gap-3 px-3">
                 <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    className="btn-secondary inline-flex h-9 w-9 items-center justify-center p-0"
-                    disabled={busy || page === 0}
-                    onClick={() => void push(page - 1)}
-                    title="Push previous page"
-                    aria-label="Push previous page"
-                  >
-                    <ChevronLeft size={16} aria-hidden="true" />
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-primary inline-flex h-9 items-center gap-1.5 px-4 text-sm"
-                    disabled={busy}
-                    onClick={() => void push(page)}
-                  >
-                    <Send size={14} aria-hidden="true" />
-                    Push
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-secondary inline-flex h-9 w-9 items-center justify-center p-0"
-                    disabled={busy || page === current.pages.length - 1}
-                    onClick={() => void push(page + 1)}
-                    title="Push next page"
-                    aria-label="Push next page"
-                  >
-                    <ChevronRight size={16} aria-hidden="true" />
-                  </button>
-
-                  <div ref={slideshowMenuRef} className="relative ml-3 flex items-center gap-0.5">
+                  <div ref={slideshowMenuRef} className="relative flex items-center gap-0.5">
                     <button
                       type="button"
                       className={cn(
-                        'inline-flex h-9 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors disabled:opacity-40',
+                        'inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors disabled:opacity-40',
                         playing
                           ? 'bg-tint-teal text-teal-300'
                           : 'text-zinc-500 hover:bg-surface-tertiary hover:text-zinc-100',
@@ -753,7 +723,7 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
                     </button>
                     <button
                       type="button"
-                      className="inline-flex h-9 items-center rounded-md px-2 text-zinc-500 transition-colors hover:bg-surface-tertiary hover:text-zinc-100"
+                      className="inline-flex h-7 items-center rounded-md px-1.5 text-zinc-500 transition-colors hover:bg-surface-tertiary hover:text-zinc-100"
                       aria-expanded={slideshowMenuOpen}
                       aria-haspopup="dialog"
                       aria-label="Slideshow settings"
@@ -766,7 +736,7 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
                       <div
                         role="dialog"
                         aria-label="Slideshow settings"
-                        className="absolute bottom-full left-0 z-30 mb-1.5 w-60 rounded-lg bg-surface-elevated p-3 shadow-2xl"
+                        className="absolute left-0 top-full z-30 mt-1.5 w-60 rounded-lg bg-surface-elevated p-3 shadow-2xl"
                       >
                         <label className="block text-[11px] text-zinc-400">
                           Seconds per page
@@ -820,12 +790,19 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-1.5 text-zinc-500" title="Slide size">
+                    <Minus size={11} aria-hidden="true" />
+                    <input type="range" min={THUMB_MIN} max={THUMB_MAX} step={10} value={thumbWidth}
+                      aria-label="Slide size" className="w-24 accent-teal-500"
+                      onChange={(event) => setThumbWidth(Number(event.target.value))} />
+                    <Plus size={11} aria-hidden="true" />
+                  </label>
                   <span className="font-mono text-xs tabular-nums text-zinc-500">
                     {page + 1} / {current.pages.length}
                   </span>
                   <button
                     type="button"
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-md p-0 text-zinc-600 transition-colors hover:bg-surface-tertiary hover:text-rose-300 disabled:opacity-40"
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-md p-0 text-zinc-600 transition-colors hover:bg-surface-tertiary hover:text-rose-300 disabled:opacity-40"
                     disabled={busy}
                     onClick={() => void remove(current.id)}
                     title="Remove imported copy"
@@ -835,49 +812,75 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
                   </button>
                 </div>
               </div>
-
-              {current.pages.length > 1 && (
-                <div
-                  className="flex shrink-0 gap-2.5 overflow-x-auto bg-surface px-3 py-3"
-                  aria-label="Pages"
-                >
-                  {current.pages.map((path, index) => (
-                    <button
-                      key={path}
-                      type="button"
-                      disabled={busy}
-                      onClick={() => void push(index)}
-                      aria-label={`Push page ${index + 1}`}
-                      title={`Push page ${index + 1}`}
-                      aria-pressed={page === index}
-                      ref={page === index ? liveThumbRef : undefined}
-                      className={cn(
-                        // Height, not width: pages come portrait and landscape,
-                        // and a fixed box letterboxes one of them into a stamp.
-                        'group/page relative h-28 shrink-0 overflow-hidden rounded-md border bg-black transition-opacity',
-                        page === index
-                          ? 'border-live'
-                          : 'border-transparent opacity-60 hover:opacity-100',
+              {current.warnings?.length ? (
+                <details className="shrink-0 px-3 py-2 text-xs text-zinc-300">
+                  <summary className="cursor-pointer">Import notes ({current.warnings.length})</summary>
+                  <ul className="mt-1 list-inside list-disc">{current.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul>
+                </details>
+              ) : null}
+              {pageVideos.length > 0 && (
+                <div data-document-transport className="shrink-0">
+                  {!livePlayback && <p className="px-3 py-2 text-xs text-zinc-400">Push this slide to play its embedded video.</p>}
+                  {livePlayback?.videos.map((video, index) => (
+                    <div key={`${current.id}:${page}:${index}`}>
+                      <p className="px-3 pt-2 text-xs text-zinc-400">Video {index + 1}{playing && !video.ended ? ' · Slideshow waits for playback' : ''}</p>
+                      {video.error ? <p role="alert" className="px-3 py-2 text-xs text-amber-300">{video.error}</p> : (
+                        <LiveVideoControls paused={video.paused} ended={video.ended} loop={false} showLoop={false}
+                          currentTime={video.currentTime} duration={video.duration}
+                          onTogglePause={() => void controlVideo(index, { action: video.paused || video.ended ? 'play' : 'pause' })}
+                          onRestart={() => void controlVideo(index, { action: 'restart' })}
+                          onSeek={(seconds) => void controlVideo(index, { action: 'seek', seconds })}
+                          onSkip={(delta) => void controlVideo(index, { action: 'seek', seconds: video.currentTime + delta })}
+                        />
                       )}
-                    >
-                      <img
-                        loading="lazy"
-                        src={overlayMediaUrl(path)}
-                        alt=""
-                        className="h-full w-auto max-w-[22rem] object-contain"
-                      />
-                      <span
-                        className={cn(
-                          'absolute bottom-1 right-1.5 rounded px-1 text-[10px] font-medium tabular-nums',
-                          page === index ? 'bg-teal-400 text-black' : 'bg-black text-white/70',
-                        )}
-                      >
-                        {index + 1}
-                      </span>
-                    </button>
+                    </div>
                   ))}
                 </div>
               )}
+              {/* The live rail shows what's on screen; this band only appears to
+                  play a slide's videos, or when no output is connected. */}
+              {(localMode || pageVideos.length > 0) && (
+                <div className="flex h-[38%] min-h-[160px] shrink-0 flex-col">
+                  {localMode && <p className="px-3 pt-2 text-xs text-zinc-400">Preview only · No output connected</p>}
+                  <DocumentSlidePreview doc={current} page={page} playback={livePlayback} local={localMode} command={localCommand} onPlayback={setPlayback} />
+                </div>
+              )}
+
+              <div className="min-h-0 flex-1 overflow-y-auto p-3" aria-label="Slides">
+                <div className="grid gap-x-3 gap-y-4" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${thumbWidth}px, 1fr))` }}>
+                  {current.pages.map((path, index) => {
+                    const live = pushedDocument?.doc.id === current.id && pushedDocument.page === index
+                    const picked = page === index
+                    const hasVideo = (current.videos?.[index]?.length ?? 0) > 0
+                    return (
+                      <button
+                        key={path}
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void push(index)}
+                        aria-label={`Push ${current.format === 'pdf' ? 'page' : 'slide'} ${index + 1}`}
+                        aria-current={live ? 'true' : undefined}
+                        ref={picked ? liveThumbRef : undefined}
+                        className="group/page block min-w-0 text-left"
+                      >
+                        <span
+                          className={cn(
+                            'block overflow-hidden rounded-lg border-2 bg-black transition-colors',
+                            live ? 'border-live' : picked ? 'border-teal-500' : 'border-transparent group-hover/page:border-slate-600',
+                          )}
+                          style={{ aspectRatio: current.slideSize ? `${current.slideSize.width} / ${current.slideSize.height}` : '16 / 9' }}
+                        >
+                          <img loading="lazy" src={overlayMediaUrl(path)} alt="" className="h-full w-full object-contain" />
+                        </span>
+                        <span className={cn('mt-1.5 flex items-center gap-1.5 px-0.5 text-[11px] tabular-nums', live ? 'text-live' : 'text-zinc-500')}>
+                          {index + 1}
+                          {hasVideo && <Film size={11} aria-label="Has video" />}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
             </>
           )}
         </div>

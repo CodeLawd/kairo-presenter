@@ -1,3 +1,4 @@
+import { ConverterProgress, formatMB, useSlideConverter } from "@/components/documents/SlideConverterDialog";
 import LicensePanel from "@/components/account/LicensePanel";
 import KeyboardShortcutsSection from "./KeyboardShortcutsSection";
 import { MacTrafficLights } from "@/components/shared/MacTrafficLights";
@@ -19,6 +20,7 @@ import {
   CircleUser,
   Search,
   FolderOpen,
+  Download,
   type Icon,
 } from "@/icons";
 import { cn } from "@/lib/utils";
@@ -1204,6 +1206,49 @@ function WorkspaceGroup(): React.ReactElement {
   );
 }
 
+/** The PowerPoint converter Kairo downloads on demand. */
+function SlideConverterGroup(): React.ReactElement {
+  const status = useSlideConverter();
+  const busy = status?.state === "downloading" || status?.state === "installing";
+  const other =
+    status?.otherConverter === "powerpoint" ? "Microsoft PowerPoint"
+      : status?.otherConverter === "keynote" ? "Keynote"
+        : status?.otherConverter === "libreoffice" ? "LibreOffice"
+          : null;
+  const hint = !status
+    ? "Checking\u2026"
+    : status.state === "unsupported"
+      ? "Install LibreOffice from your software center. Kairo uses it to import PowerPoint slides exactly."
+      : status.state === "ready"
+        ? `Installed · version ${status.version}. PowerPoint slides keep every picture, font and effect.`
+        : status.state === "error"
+          ? status.error ?? "The download didn\u2019t finish."
+          : other
+            ? `${other} already converts your slides. Download this as a backup, or for when ${other} isn\u2019t available.`
+            : `A free, one-time download of about ${formatMB(status.sizeBytes)} so PowerPoint slides keep every picture, font and effect.`;
+  return (
+    <PrefGroup title="PowerPoint">
+      <PrefRow stacked={busy} label="Slide converter" hint={busy ? undefined : hint}>
+        {busy && status ? (
+          <div className="flex items-center gap-3">
+            <div className="min-w-0 flex-1"><ConverterProgress status={status} /></div>
+            <button type="button" className="btn-secondary text-[12px]"
+              onClick={() => void window.api.documents.converter.cancel()}>Stop</button>
+          </div>
+        ) : status?.state === "ready" ? (
+          <button type="button" className="btn-secondary text-[12px]"
+            onClick={() => void window.api.documents.converter.remove()}>Remove</button>
+        ) : status && status.state !== "unsupported" ? (
+          <button type="button" className="btn-primary flex items-center gap-1.5 text-[12px]"
+            onClick={() => void window.api.documents.converter.install()}>
+            <Download size={13} aria-hidden="true" /> {status.state === "error" ? "Try again" : "Download"}
+          </button>
+        ) : null}
+      </PrefRow>
+    </PrefGroup>
+  );
+}
+
 function GeneralSection({
   settings,
   update,
@@ -1324,6 +1369,8 @@ function GeneralSection({
       </PrefGroup>
 
       <WorkspaceGroup />
+
+      <SlideConverterGroup />
 
       <PrefGroup title="Privacy">
         <PrefRow
