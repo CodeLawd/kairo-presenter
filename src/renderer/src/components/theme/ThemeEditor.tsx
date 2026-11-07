@@ -1170,7 +1170,7 @@ function ThemeTile({
     [previewTheme, sample.reference, sample.short],
   )
   return (
-    <div className={cn('group relative rounded-md p-1.5 transition-colors', selected ? 'row-selected' : 'hover:bg-surface-tertiary')}>
+    <div className={cn('group relative rounded-md p-1.5 transition-colors', selected ? 'bg-teal-500/[0.18]' : 'hover:bg-surface-tertiary')}>
       <button type="button" onClick={onClick} aria-pressed={selected} className="w-full text-left">
         <div className={cn('overflow-hidden rounded-sm ring-1', selected ? 'ring-teal-500' : 'ring-black/30')}>
           <TileSlide html={html} autoFit={previewTheme.layout.autoFitText} />

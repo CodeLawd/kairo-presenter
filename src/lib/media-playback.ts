@@ -11,7 +11,14 @@ export const DEFAULT_MEDIA_PLAYBACK: MediaPlayback = {
 
 export function normalizeMediaPlayback(raw: unknown): MediaPlayback {
   const value = raw && typeof raw === 'object' ? (raw as Partial<MediaPlayback>) : {}
+  const start = clamp(value.startSeconds, 0, Number.MAX_SAFE_INTEGER, 0)
+  const end = clamp(value.endSeconds, 0, Number.MAX_SAFE_INTEGER, 0)
+  const rate = clamp(value.rate, 0.5, 2, 1)
   return {
+    ...(start > 0 ? { startSeconds: start } : {}),
+    ...(end > start ? { endSeconds: end } : {}),
+    ...(rate !== 1 ? { rate } : {}),
+    ...(value.fit === 'contain' || value.fit === 'cover' || value.fit === 'fill' ? { fit: value.fit } : {}),
     loop: typeof value.loop === 'boolean' ? value.loop : DEFAULT_MEDIA_PLAYBACK.loop,
     hue: clamp(value.hue, -180, 180, DEFAULT_MEDIA_PLAYBACK.hue),
     saturation: clamp(value.saturation, 0, 2, DEFAULT_MEDIA_PLAYBACK.saturation),
@@ -22,7 +29,8 @@ export function normalizeMediaPlayback(raw: unknown): MediaPlayback {
 
 export function isDefaultMediaPlayback(playback: MediaPlayback): boolean {
   return (
-    playback.loop === DEFAULT_MEDIA_PLAYBACK.loop &&
+    !playback.startSeconds && !playback.endSeconds && (playback.rate ?? 1) === 1 &&
+    !playback.fit && playback.loop === DEFAULT_MEDIA_PLAYBACK.loop &&
     playback.hue === DEFAULT_MEDIA_PLAYBACK.hue &&
     playback.saturation === DEFAULT_MEDIA_PLAYBACK.saturation &&
     playback.brightness === DEFAULT_MEDIA_PLAYBACK.brightness &&
@@ -59,6 +67,9 @@ export function applyPlaybackToBackground(
   return {
     ...background,
     mediaLoop: kind === 'video' ? playback.loop : true,
+    mediaStartSeconds: kind === 'video' ? playback.startSeconds : undefined,
+    mediaEndSeconds: kind === 'video' ? playback.endSeconds : undefined,
+    mediaRate: kind === 'video' ? playback.rate : undefined,
     hue: playback.hue,
     saturation: playback.saturation,
     brightness: playback.brightness,
@@ -75,6 +86,7 @@ export function themeWithLiveMedia(
   theme: OverlayTheme,
   item: { kind: MediaKind; path: string } | null,
   playback: MediaPlayback = DEFAULT_MEDIA_PLAYBACK,
+  cue?: number,
 ): OverlayTheme {
   if (!item) return theme
   return {
@@ -84,8 +96,9 @@ export function themeWithLiveMedia(
         ...theme.background,
         type: item.kind === 'video' ? 'video' : 'image',
         mediaPath: item.path,
-        mediaFit: theme.background.mediaFit ?? 'cover',
+        mediaFit: playback.fit ?? theme.background.mediaFit ?? 'cover',
         blurPx: 0,
+        mediaCue: item.kind === 'video' ? cue : undefined,
       },
       playback,
       item.kind,
@@ -140,10 +153,11 @@ export function themeForPush(
     showsBackgrounds: boolean
     live: { kind: MediaKind; path: string } | null
     playback?: MediaPlayback
+    cue?: number
     force?: boolean
   },
 ): OverlayTheme {
   if (!options.showsBackgrounds) return withoutBackground(theme)
   if (!options.live || (!options.force && themeOwnsBackground(theme))) return theme
-  return themeWithLiveMedia(theme, options.live, options.playback)
+  return themeWithLiveMedia(theme, options.live, options.playback, options.cue)
 }

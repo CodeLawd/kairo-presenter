@@ -12,6 +12,7 @@ import {
 import { ChatsCircle, FileText, Globe, Gauge as CircleGauge, MusicNotes as Music2, Palette } from "@phosphor-icons/react";
 import type { NavRoute } from "@/App";
 import { AccountRailButton, AudioRailButton } from "./RailPopovers";
+import { FeedbackRailButton } from "./FeedbackRailButton";
 import { useAppStore } from "@/stores/useAppStore";
 import { useMediaDockStore } from "@/stores/useMediaDockStore";
 import { useTracksPlaybackStore } from "@/stores/useTracksPlaybackStore";
@@ -125,6 +126,7 @@ export function WorkspaceRail({
         })}
       </div>
       <div className="flex w-full shrink-0 flex-col items-center gap-1 px-1 pb-1">
+        <FeedbackRailButton context={currentRoute} />
         <AudioRailButton />
         <AccountRailButton />
       </div>

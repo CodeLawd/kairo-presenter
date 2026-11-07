@@ -9,8 +9,9 @@
  *   bun run release --skip-changelog   # internal-only release, no changelog entry
  *
  * Every release needs an entry for its new version in website/src/lib/changelog.ts
- * (the public /changelog page), committed before running this; the script stops
- * without changing anything if it's missing.
+ * (the public /changelog page and the in-app What's New sheet). If it's missing,
+ * this drafts one from the commits since the last tag (scripts/draft-changelog.mjs),
+ * lets you preview, edit or reject it, and commits it before releasing.
  *
  * Pushing the `v*` tag starts .github/workflows/release.yml, which builds Mac,
  * Windows and Linux and publishes the GitHub release the website downloads from.
@@ -18,6 +19,8 @@
 import { execFileSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { createInterface } from 'node:readline/promises'
+import { spawnSync } from 'node:child_process'
+import { CHANGELOG_FILE, draftChangelog, hasEntry } from './draft-changelog.mjs'
 
 const args = process.argv.slice(2)
 const skipChangelog = args.includes('--skip-changelog')
@@ -50,13 +53,17 @@ const current = JSON.parse(readFileSync('package.json', 'utf8')).version
 const next = nextVersion(current, bump)
 if (git('tag', '--list', `v${next}`)) fail(`Tag v${next} already exists.`)
 
-// The public changelog must describe this version, unless it's internal-only.
-if (!skipChangelog) checkChangelog(next)
+const rl = createInterface({ input: process.stdin, output: process.stdout })
+
+// The changelog (and What's New) must describe this version, unless it's internal-only.
+if (!skipChangelog) {
+  if (!hasEntry(next)) await draftAndCommitChangelog(next)
+  checkChangelog(next)
+}
 
 // 3. Confirm — this publishes to everyone who downloads Kairo.
 console.log(`\n  Release Kairo v${current} → v${next}`)
 console.log(`  from branch ${branch}${branch === 'main' ? '' : '  (not main)'}\n`)
-const rl = createInterface({ input: process.stdin, output: process.stdout })
 const answer = (await rl.question('  Publish this release? (y/N) ')).trim().toLowerCase()
 rl.close()
 if (answer !== 'y' && answer !== 'yes') fail('Cancelled. Nothing was changed.')
@@ -109,6 +116,48 @@ function checkChangelog(version) {
   }
   const today = new Date().toLocaleDateString('en-CA') // YYYY-MM-DD, local time
   if (entry[1] !== today) console.warn(`\n  ! The changelog entry for v${version} is dated ${entry[1]}, not today (${today}).`)
+}
+
+async function draftAndCommitChangelog(version) {
+  console.log(`\n→ No changelog entry for v${version} — drafting one from the commits`)
+  let entry
+  try {
+    entry = await draftChangelog(version)
+  } catch (error) {
+    fail(`Could not draft the changelog: ${error.message}
+  Write the entry in ${CHANGELOG_FILE} by hand, commit it, then run this again.`)
+  }
+  if (!entry) {
+    fail(`The commits since the last release hold nothing a church would notice.
+  If that's right, run again with --skip-changelog.`)
+  }
+  const discard = () => git('checkout', '--', CHANGELOG_FILE)
+  for (;;) {
+    console.log(`\n${readEntry(version)}\n`)
+    const choice = (await rl.question("  Use this for the changelog and What's New? [y]es / [p]review in app / [e]dit / [n]o ")).trim().toLowerCase()
+    if (choice === 'y' || choice === 'yes') break
+    if (choice === 'p') {
+      console.log("  Opening the app with the What's New preview. Quit it to come back here.")
+      spawnSync('npm', ['run', 'dev'], { stdio: 'inherit', env: { ...process.env, VITE_WHATS_NEW_PREVIEW: '1' }, shell: process.platform === 'win32' })
+    } else if (choice === 'e') {
+      const editor = process.env.VISUAL || process.env.EDITOR || 'vi'
+      spawnSync(editor, [CHANGELOG_FILE], { stdio: 'inherit', shell: true })
+      if (!hasEntry(version)) { discard(); fail(`The v${version} entry was removed. Nothing was changed.`) }
+    } else {
+      discard()
+      fail('Cancelled. The draft was discarded and nothing was changed.')
+    }
+  }
+  run('git', ['add', CHANGELOG_FILE])
+  run('git', ['commit', '-m', `Add ${version} changelog entry`])
+}
+
+/** The text of one entry, for showing in the terminal. */
+function readEntry(version) {
+  const source = readFileSync(CHANGELOG_FILE, 'utf8')
+  const start = source.search(new RegExp(`\\{\\s*version:\\s*['"]${version.replace(/\./g, '\\.')}['"]`))
+  const end = source.indexOf('\n  },', start)
+  return source.slice(start, end + 5)
 }
 
 function fail(message) {

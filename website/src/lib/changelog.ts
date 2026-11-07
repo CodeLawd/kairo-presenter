@@ -4,12 +4,28 @@
  * changes something a church would notice; purely internal releases can skip it.
  */
 
+/**
+ * A headline feature for the in-app "What's New" sheet: a coloured mark, a
+ * short title, one or two sentences. `icon` names a mark in the app's
+ * What's New sheet (see WHATS_NEW_ICONS there); unknown names fall back.
+ */
+export type ChangelogHighlight = {
+  icon: 'operator' | 'scripture' | 'lyrics' | 'documents' | 'theme' | 'media' | 'screens' | 'cloud' | 'speed' | 'tip'
+  title: string
+  body: string
+}
+
 export type ChangelogEntry = {
   version: string
   /** Release date, YYYY-MM-DD. */
   date: string
   title: string
   notes: string[]
+  /**
+   * Optional: what the app's "What's New" sheet leads with after this update.
+   * Without it the sheet shows `notes` as a list.
+   */
+  highlights?: ChangelogHighlight[]
 }
 
 export const changelog: ChangelogEntry[] = [
@@ -22,6 +38,11 @@ export const changelog: ChangelogEntry[] = [
       'When a scripture passage is queued, pick which verse goes up from the row itself, one verse per slide.',
       'Menus and pop-ups, including the audio input picker, are softer and easier to read and tap.',
       'The start-up screen has a fresh look while Kairo loads.',
+    ],
+    highlights: [
+      { icon: 'operator', title: 'A roomier live preview', body: 'The buttons that clear what is on screen now sit in a row under the live preview, so the slide gets the full width of the panel.' },
+      { icon: 'scripture', title: 'Pick the verse that goes up', body: 'When a passage is queued, choose which verse goes up right from the row, one verse per slide.' },
+      { icon: 'tip', title: 'Softer menus', body: 'Menus and pop-ups, including the audio input picker, are easier to read and tap.' },
     ],
   },
   {

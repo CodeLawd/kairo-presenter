@@ -10,6 +10,7 @@ import {
   Save,
   CheckCircle,
   Loader,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   MonitorPlay,
@@ -663,26 +664,35 @@ function ScriptureSection({
               : "Used for new searches and auto-detection. Add more in Bible library below."
           }
         >
-          <select
-            className={PREF_SELECT}
-            value={sc.defaultTranslation}
-            disabled={downloadingTranslation}
-            onChange={(e) => {
-              void selectTranslation(e.target.value as ScriptureTranslation);
-            }}
-            aria-label="Default bible translation"
-          >
-            {savedMissing && (
-              <option value={savedMissing.id} disabled>
-                {savedMissing.id} — {savedMissing.name} (not installed)
-              </option>
-            )}
-            {readyTranslations.map((translation) => (
-              <option key={translation.id} value={translation.id}>
-                {translation.id} — {translation.name}
-              </option>
-            ))}
-          </select>
+          <div className="relative h-7 w-[168px] shrink-0">
+            <select
+              className="peer absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0 disabled:cursor-wait"
+              value={sc.defaultTranslation}
+              disabled={downloadingTranslation}
+              onChange={(e) => {
+                void selectTranslation(e.target.value as ScriptureTranslation);
+              }}
+              aria-label="Default bible translation"
+            >
+              {savedMissing && (
+                <option value={savedMissing.id} disabled>
+                  {savedMissing.id} — {savedMissing.name} (not installed)
+                </option>
+              )}
+              {readyTranslations.map((translation) => (
+                <option key={translation.id} value={translation.id}>
+                  {translation.id} — {translation.name}
+                </option>
+              ))}
+            </select>
+            <span
+              aria-hidden="true"
+              className={`${PREF_SELECT} pointer-events-none flex items-center justify-between gap-2 peer-focus-visible:ring-2 peer-focus-visible:ring-teal-500/40 peer-disabled:opacity-50`}
+            >
+              <span className="truncate">{sc.defaultTranslation}</span>
+              <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+            </span>
+          </div>
         </PrefRow>
         <PrefRow label="Verse numbers" hint="Include numbers on slides">
           <Toggle
@@ -1375,6 +1385,7 @@ export default function Settings({
       if (cancelled) return;
       useBootstrapStore.getState().setSettings(stored);
       setSettings((prev) => ({
+        whatsNew: { ...prev.whatsNew, ...stored.whatsNew },
         audio: { ...prev.audio, ...stored.audio },
         stt: { ...prev.stt, ...stored.stt },
         scripture: { ...prev.scripture, ...stored.scripture },

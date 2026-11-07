@@ -9,6 +9,12 @@ import { AlertTriangle, RefreshCw, X } from '@/icons'
 import AppShell, { WorkspaceRail } from '@/components/layout/AppShell'
 import { DesktopTooltip } from '@/components/layout/DesktopTooltip'
 import UpdateToast from '@/components/layout/UpdateToast'
+import { LOCKUP_INTRO_MS } from '@/bootstrap/AnimatedMark'
+
+/** A pause on the finished logo before the app fades in. */
+const INTRO_BEAT_MS = 450
+import KeychainNotice from '@/components/layout/KeychainNotice'
+import WhatsNewSheet from '@/components/layout/WhatsNewSheet'
 import { TransferHost } from '@/components/transfer/TransferHost'
 import { TracksPlayer } from '@/components/tracks/TracksPlayer'
 import { ProgramAudioFallback } from '@/components/media/ProgramAudioFallback'
@@ -412,12 +418,27 @@ export default function App(): React.ReactElement {
 
   const bootstrapped = phase === 'ready' || phase === 'ready-with-warnings'
 
-  // The branded splash holds on every launch, then fades into the app — or
-  // stays, with real progress, if loading runs longer.
+  // The branded splash holds on every launch until the logo intro has really
+  // finished (its last animation ends, plus a beat), then fades into the app —
+  // or stays, with real progress, if loading runs longer. The timer is only a
+  // fallback in case the animation never reports (reduced motion, a hidden window).
+  const [introDone, setIntroDone] = useState(false)
   useEffect(() => {
-    const timer = setTimeout(() => setSplashHeld(true), SPLASH_MIN_VISIBLE_MS)
+    if (!introDone) return
+    const timer = setTimeout(() => setSplashHeld(true), INTRO_BEAT_MS)
+    return () => clearTimeout(timer)
+  }, [introDone])
+  useEffect(() => {
+    const timer = setTimeout(() => setSplashHeld(true), Math.max(SPLASH_MIN_VISIBLE_MS, LOCKUP_INTRO_MS + 2_000))
     return () => clearTimeout(timer)
   }, [])
+  const onIntroDone = useCallback(() => setIntroDone(true), [])
+  const reducedMotion = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+  useEffect(() => {
+    if (!reducedMotion) return
+    const timer = setTimeout(() => setSplashHeld(true), SPLASH_MIN_VISIBLE_MS)
+    return () => clearTimeout(timer)
+  }, [reducedMotion])
 
   const ready = bootstrapped && splashHeld
   // Progress is only worth showing once loading outlasts the brand beat.
@@ -513,7 +534,7 @@ export default function App(): React.ReactElement {
     return (
       <div className="relative h-screen w-screen bg-surface text-white overflow-hidden select-none">
         <CloudSubscriptions />
-        <LoadingScreen progress={progress} showProgress={showProgress} fadingOut={false} />
+        <LoadingScreen progress={progress} showProgress={showProgress} fadingOut={false} onIntroDone={onIntroDone} />
       </div>
     )
   }
@@ -577,6 +598,8 @@ export default function App(): React.ReactElement {
         </div>
       )}
       <UpdateToast />
+      <KeychainNotice />
+      <WhatsNewSheet suppressed={onboardingOpen || Boolean(coachSteps)} />
       <TransferHost />
       <AppShell
         currentRoute={route}

@@ -79,6 +79,7 @@ const audio: KairoAPI['audio'] = {
 
 const appApi: KairoAPI['app'] = {
   onQuitRequested: (callback) => subscribe(IPC.APP.QUIT_REQUESTED, callback),
+  onWhatsNewRequested: (callback) => subscribe(IPC.APP.WHATS_NEW, callback),
   quitPending: () => ipcRenderer.invoke(IPC.APP.QUIT_PENDING),
   respondToQuit: (confirmed) => ipcRenderer.invoke(IPC.APP.QUIT_RESPONSE, confirmed),
   isFullScreen: () => ipcRenderer.invoke(IPC.APP.IS_FULL_SCREEN),
@@ -523,8 +524,8 @@ const media: KairoAPI['media'] = {
   addMediaToPlaylist(playlistId: string) {
     return ipcRenderer.invoke(IPC.MEDIA.ADD_MEDIA_TO_PLAYLIST, playlistId)
   },
-  setPlayback(itemId, playback) {
-    return ipcRenderer.invoke(IPC.MEDIA.SET_PLAYBACK, itemId, playback)
+  setPlayback(itemId, playback, nextCue) {
+    return ipcRenderer.invoke(IPC.MEDIA.SET_PLAYBACK, itemId, playback, nextCue)
   },
   setPaused(paused) {
     return ipcRenderer.invoke(IPC.MEDIA.SET_PAUSED, paused)
@@ -599,6 +600,10 @@ const onboarding: KairoAPI['onboarding'] = {
   onStateChange(callback) {
     return subscribe(IPC.ONBOARDING.STATE, callback)
   },
+}
+
+const feedback: KairoAPI['feedback'] = {
+  send: (input) => ipcRenderer.invoke(IPC.FEEDBACK.SEND, input),
 }
 
 const account: KairoAPI['account'] = {
@@ -791,7 +796,7 @@ const audience: KairoAPI['audience'] = {
   showJoinCode: () => ipcRenderer.invoke(AUDIENCE.JOIN),
   onChanged: callback => subscribe(AUDIENCE.CHANGED, callback),
 }
-const api: KairoAPI = { audience, transfer, passages, libraries, setlist, services, documents, app: appApi, audio, scripture, transcription, workspace, lyrics, settings, orchestrator, resilience, ndi, capture, displays, videoDevices, output, program, songUsage, media, tracks, onboarding, account, updates }
+const api: KairoAPI = { audience, transfer, passages, libraries, setlist, services, documents, app: appApi, audio, scripture, transcription, workspace, lyrics, settings, orchestrator, resilience, ndi, capture, displays, videoDevices, output, program, songUsage, media, tracks, onboarding, account, feedback, updates }
 
 if (process.contextIsolated) {
   try {

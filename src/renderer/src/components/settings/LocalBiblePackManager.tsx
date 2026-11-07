@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AlertDialog, DropdownMenu } from 'radix-ui'
-import { AlertTriangle, Check, Download, Loader, MoreHorizontal, Trash2 } from '@/icons'
+import { AlertTriangle, CheckCircle, ChevronDown, Download, Loader, Trash2 } from '@/icons'
 import type { InstalledLocalBiblePack, LocalBiblePackStatus } from '@shared/ipc'
 import { isBundledTranslation } from '@shared/bible-translations'
 import { useBootstrapStore } from '@/bootstrap/useBootstrapStore'
@@ -20,6 +20,9 @@ import { cn } from '@/lib/utils'
  */
 export function LocalBiblePackManager(): JSX.Element {
   const translations = useBootstrapStore((state) => state.translations)
+  const [expanded, setExpanded] = useState(true)
+  const [bulkBusy, setBulkBusy] = useState(false)
+  const [bulkError, setBulkError] = useState<string | null>(null)
   const [epoch, setEpoch] = useState(0)
   const [installed, setInstalled] = useState<InstalledLocalBiblePack[]>([])
 
@@ -62,37 +65,81 @@ export function LocalBiblePackManager(): JSX.Element {
     packs.push({ id: pack.translation, name: pack.name, downloadable: false })
   }
 
+  const pendingPacks = packs.filter(pack => pack.downloadable &&
+    !installed.some(item => item.translation.toUpperCase() === pack.id.toUpperCase()))
+
+  const downloadAll = async (): Promise<void> => {
+    setBulkBusy(true)
+    setBulkError(null)
+    try {
+      for (const pack of pendingPacks) {
+        const status = await window.api.scripture.getLocalBiblePackStatus(pack.id)
+        if (!status.installed) await window.api.scripture.downloadLocalBibleTranslation(pack.id)
+      }
+    } catch (error) {
+      setBulkError((error as Error).message)
+    } finally {
+      try {
+        useBootstrapStore.getState().setTranslations(await window.api.scripture.getTranslations())
+      } catch (error) {
+        setBulkError((error as Error).message)
+      } finally {
+        refreshAll()
+        setBulkBusy(false)
+      }
+    }
+  }
+
   return (
-    <ul>
-      {bundled.map((option) => (
-        <BibleRowShell key={option.id} id={option.id} name={option.name} detail="Included with Kairo · works offline">
-          <span className="inline-flex items-center gap-1 text-[11px] text-white/40">
-            <Check size={12} aria-hidden="true" />
-            Built in
-          </span>
-        </BibleRowShell>
-      ))}
-      {packs.map((pack) => (
-        <LocalBiblePackRow
-          key={pack.id}
-          translationId={pack.id}
-          translationName={pack.name || pack.id}
-          downloadable={pack.downloadable}
-          size={pack.size}
-          epoch={epoch}
-          onChanged={refreshAll}
-        />
-      ))}
-      {online.map((option) => (
-        <BibleRowShell key={option.id} id={option.id} name={option.name} detail="Available online · No offline download available">
-          <span className="text-[11px] text-white/65">Online</span>
-        </BibleRowShell>
-      ))}
-    </ul>
+    <div className="py-2">
+      <div className="flex items-center gap-3 px-4 py-3">
+        <button type="button" className="flex min-w-0 flex-1 items-center gap-2.5 rounded-md text-left text-[13px] font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400"
+          aria-expanded={expanded} aria-controls="english-bible-library" onClick={() => setExpanded(value => !value)}>
+          <span aria-hidden="true" className="grid h-6 w-6 place-items-center overflow-hidden rounded-full text-xl">🇬🇧</span>
+          English
+        </button>
+        {pendingPacks.length > 0 && (
+          <button type="button" disabled={bulkBusy} onClick={() => { void downloadAll() }}
+            className="rounded-md text-[12px] font-medium text-white hover:text-white/75 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400">
+            {bulkBusy ? 'Downloading…' : 'Download all'}
+          </button>
+        )}
+        <button type="button" aria-label={expanded ? 'Collapse English Bibles' : 'Expand English Bibles'} aria-expanded={expanded} aria-controls="english-bible-library"
+          onClick={() => setExpanded(value => !value)} className={ROW_ICON_ACTION}>
+          <ChevronDown size={18} className={expanded ? 'rotate-180' : ''} aria-hidden="true" />
+        </button>
+      </div>
+      {bulkError && <p role="alert" className="px-4 pb-2 text-[12px] text-amber-400">{bulkError}</p>}
+      <ul id="english-bible-library" hidden={!expanded}>
+        {bundled.map((option) => (
+          <BibleRowShell key={option.id} id={option.id} name={option.name} detail={null}>
+            <span className="grid h-7 w-7 place-items-center text-white" role="img" aria-label="Built in · available offline" title="Built in · available offline">
+              <CheckCircle size={18} aria-hidden="true" />
+            </span>
+          </BibleRowShell>
+        ))}
+        {packs.map((pack) => (
+          <LocalBiblePackRow
+            key={pack.id}
+            translationId={pack.id}
+            translationName={pack.name || pack.id}
+            downloadable={pack.downloadable}
+            size={pack.size}
+            epoch={epoch}
+            onChanged={refreshAll}
+          />
+        ))}
+        {online.map((option) => (
+          <BibleRowShell key={option.id} id={option.id} name={option.name} detail={null}>
+            <span className="text-[11px] text-white/65">Online</span>
+          </BibleRowShell>
+        ))}
+      </ul>
+    </div>
   )
 }
 
-/** Shared list row (`<li>`): abbreviation tile, name + detail line, trailing actions. */
+/** Compact translation row with optional progress or error details. */
 function BibleRowShell({
   id,
   name,
@@ -109,21 +156,18 @@ function BibleRowShell({
   footer?: React.ReactNode
 }): JSX.Element {
   return (
-    <li className="px-3.5 py-2.5">
+    <li className="px-4 py-2">
       <div className="flex items-center gap-3">
-        <span className="grid h-8 min-w-[40px] shrink-0 place-items-center rounded-md bg-surface-tertiary px-1.5 font-mono text-[10px] font-semibold tracking-wide text-white/75">
-          {id}
-        </span>
         <div className="min-w-0 flex-1">
-          <p className="text-[13px] leading-tight text-white">{name}</p>
-          <p
+          <p className="text-[13px] leading-snug text-white"><span className="font-semibold">{id}</span> · {name}</p>
+          {detail && <p
             className={cn(
               'mt-0.5 break-words text-[12px] leading-snug',
               detailTone === 'warn' ? 'text-amber-400' : 'text-white/65',
             )}
           >
             {detail}
-          </p>
+          </p>}
         </div>
         {children ? <div className="flex shrink-0 items-center gap-1">{children}</div> : null}
       </div>
@@ -132,8 +176,6 @@ function BibleRowShell({
   )
 }
 
-const ROW_ACTION =
-  'inline-flex h-7 items-center gap-1.5 rounded-md bg-surface-elevated px-2.5 text-[12px] font-medium text-white transition-colors hover:bg-surface-border disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400'
 const ROW_ICON_ACTION =
   'grid h-7 w-7 place-items-center rounded-md text-white/50 transition-colors hover:bg-surface-tertiary hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400 disabled:opacity-40'
 
@@ -281,11 +323,11 @@ function LocalBiblePackRow({
               <AlertTriangle size={12} className="mt-0.5 shrink-0" aria-hidden="true" />
               {detail}
             </span>
-          ) : <span role="status" aria-live="polite">{detail}</span>
+          ) : (installing || loading) ? <span role="status" aria-live="polite">{detail}</span> : null
         }
         detailTone={failure ? 'warn' : 'muted'}
         footer={installing ? (
-          <div className="mt-2 pl-[52px]">
+          <div className="mt-2">
             {phase === 'downloading' && total ? (
               <div role="progressbar" aria-label={`Downloading ${translationId}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent} className="h-1 overflow-hidden rounded-full bg-surface-border">
                 <div className="h-full rounded-full bg-teal-400 transition-[width] duration-150 motion-reduce:transition-none" style={{ width: `${percent}%` }} />
@@ -301,16 +343,11 @@ function LocalBiblePackRow({
             Installing…
           </span>
         ) : isInstalled ? (
-          <>
-            <span className="inline-flex items-center gap-1 pr-1 text-[11px] text-[#30D158]">
-              <Check size={12} aria-hidden="true" />
-              Installed
-            </span>
             <DropdownMenu.Root modal={false}>
               <DropdownMenu.Trigger asChild>
                 <button ref={actionsRef} type="button" className={ROW_ICON_ACTION} disabled={busy !== null || loading}
-                  aria-label={`Actions for ${translationName}`} title="More actions">
-                  <MoreHorizontal size={16} aria-hidden="true" />
+                  aria-label={`Actions for ${translationName}`} title="Installed · manage download">
+                  <CheckCircle size={18} className="text-white" aria-hidden="true" />
                 </button>
               </DropdownMenu.Trigger>
               <DropdownMenu.Portal>
@@ -325,16 +362,16 @@ function LocalBiblePackRow({
                 </DropdownMenu.Content>
               </DropdownMenu.Portal>
             </DropdownMenu.Root>
-          </>
         ) : downloadable ? (
           <button
             type="button"
-            className={ROW_ACTION}
+            className={ROW_ICON_ACTION}
             disabled={busy !== null || loading}
+            aria-label={`${failure ? 'Retry download' : 'Download'} ${translationName}`}
+            title={`${failure ? 'Retry download' : 'Download'} ${translationId}${size ? ` (${size})` : ''}`}
             onClick={() => { void download() }}
           >
-            <Download size={12} aria-hidden="true" />
-            {failure ? 'Retry' : 'Install'}
+            <Download size={18} className="text-white" aria-hidden="true" />
           </button>
         ) : null}
       </BibleRowShell>

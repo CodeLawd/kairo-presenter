@@ -1,3 +1,4 @@
+import type { FeedbackUpload, FeedbackUploadResult } from '@shared/cloud/feedback'
 import { audienceApiBaseUrl, audienceRoomError } from '@shared/audience-connection'
 import { randomUUID } from 'crypto'
 import type { UsageReport, UsageReportResult } from '@shared/cloud/usage'
@@ -499,6 +500,18 @@ export class CloudSessionService {
   async reportCrashes(upload: CrashUpload): Promise<CrashUploadResult> {
     if (!this.canUpload()) throw new Error('Not signed in')
     return this.api.request<CrashUploadResult>('post', '/v1/crashes', upload, { timeoutMs: 20_000 })
+  }
+
+  /**
+   * Sends a note from the Feedback button. The API attaches who sent it from
+   * the token (user, church, install) so staff can reply; the body only adds
+   * the app version and system, which help with problems.
+   */
+  async sendFeedback(input: { kind: FeedbackUpload['kind']; message: string; context?: string }): Promise<FeedbackUploadResult> {
+    if (!this.canUpload()) throw new Error('Sign in and confirm your email address to send feedback.')
+    const { os, osVersion, appVersion } = this.deviceSnapshot()
+    const body: FeedbackUpload = { ...input, appVersion, os, osVersion }
+    return this.api.request<FeedbackUploadResult>('post', '/v1/feedback', body, { timeoutMs: 15_000 })
   }
 
   /** This install's id and the machine facts usage reports carry. */

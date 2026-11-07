@@ -83,8 +83,9 @@ export function LiveOutputRail({
     if (!item) return null;
     return {
       item,
-      playback: normalizeMediaPlayback(mediaLibrary.playback[item.id]),
+      playback: mediaLibrary.livePlayback ?? normalizeMediaPlayback(mediaLibrary.playback[item.id]),
       paused: mediaLibrary.livePaused,
+      cue: mediaLibrary.liveCue,
     };
   }, [mediaLibrary]);
   const liveMedia = liveMediaFromLibrary;

@@ -3,6 +3,7 @@ import { useState, type ReactNode } from 'react'
 import { AlertTriangle, ChevronRight, Church, CircleUser, Clock, Lightbulb, LogOut, RefreshCw } from '@/icons'
 import { needsEmailConfirmation } from '@shared/cloud/auth-state'
 import type { OrgRole, SessionSnapshot } from '@shared/cloud/contracts'
+import { CREDENTIALS_NOT_SAVED_NOTICE } from '@/lib/credentials-notice'
 import { cn } from '@/lib/utils'
 import { useAccountStore } from '@/stores/useAccountStore'
 import AuthPanel from '@/components/account/AuthPanel'
@@ -130,7 +131,7 @@ export default function AccountSection({
   const notice = offline
     ? 'Working offline. Kairo can’t reach the cloud right now — everything on this computer keeps working.'
     : session.credentialsPersisted === false
-      ? 'This computer has no keychain, so you’ll need to sign in again next launch.'
+      ? CREDENTIALS_NOT_SAVED_NOTICE
       : null
 
   return (

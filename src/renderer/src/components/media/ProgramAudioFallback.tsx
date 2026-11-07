@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { MediaLibrary } from '@shared/ipc'
+import { overlayVideoTime, prepareOverlayMedia } from '@shared/overlay-fit'
 import { overlayMediaUrl } from '@shared/overlay-template'
 import { DEFAULT_PRESENTATION_SETTINGS } from '@shared/program'
 import { useBootstrapStore } from '@/bootstrap/useBootstrapStore'
@@ -49,36 +50,55 @@ export function ProgramAudioFallback(): null {
     return status?.outputs.find((s) => s.id === output.id)?.ready === true
   })
   const active = audio.enabled && live?.kind === 'video' && !surfaceLive
-  const loop = live ? (library?.playback[live.id]?.loop ?? false) : false
+  const playback = library?.livePlayback
+  const loop = playback?.loop ?? false
+  const start = playback?.startSeconds
+  const end = playback?.endSeconds
+  const rate = playback?.rate
   const paused = library?.livePaused ?? false
+  const cue = library?.liveCue
+  const path = active ? live?.path : undefined
 
-  // Source: load when the live video changes, drop it when inactive.
+  // Load a fresh player on every cue, including a cue of the same clip.
   useEffect(() => {
-    const element = elementRef.current ?? new Audio()
+    if (!path) return
+    const element = new Audio(overlayMediaUrl(path))
     elementRef.current = element
-    if (!active || !live) {
+    if (start !== undefined || end != null || rate !== undefined) {
+      element.dataset.mediaStart = String(start ?? 0)
+      element.dataset.mediaEnd = end?.toString() ?? ''
+      element.dataset.mediaRate = String(rate ?? 1)
+    }
+    return () => {
       element.pause()
       element.removeAttribute('src')
-      delete element.dataset.itemId
       element.load()
-      return
+      elementRef.current = null
     }
-    if (element.dataset.itemId !== live.id) {
-      element.dataset.itemId = live.id
-      element.src = overlayMediaUrl(live.path)
-      element.currentTime = 0
-    }
-  }, [active, live])
+  }, [path, cue, start, end, rate])
 
-  // Transport, loop and level follow the program.
   useEffect(() => {
     const element = elementRef.current
-    if (!element || !active) return
+    if (!element) return
     element.loop = loop
-    element.volume = Math.min(1, Math.max(0, audio.volume))
-    if (paused) element.pause()
-    else void element.play().catch(() => undefined)
-  }, [active, loop, paused, audio.volume, live?.id])
+    prepareOverlayMedia(element, loop)
+  }, [path, cue, start, end, rate, loop])
+
+  useEffect(() => {
+    const element = elementRef.current
+    if (!element) return
+    element.dataset.paPaused = paused ? '1' : ''
+    if (paused) {
+      element.pause()
+    } else {
+      if (overlayVideoTime(element).ended) element.currentTime = start ?? 0
+      void element.play().catch(() => undefined)
+    }
+  }, [path, cue, start, end, rate, paused])
+
+  useEffect(() => {
+    if (elementRef.current) elementRef.current.volume = Math.min(1, Math.max(0, audio.volume))
+  }, [path, cue, start, end, rate, audio.volume])
 
   // Output device, matched by label the way the Show panel stores it.
   useEffect(() => {
@@ -98,11 +118,7 @@ export function ProgramAudioFallback(): null {
     return () => {
       cancelled = true
     }
-  }, [active, audio.outputLabel])
-
-  useEffect(() => () => {
-    elementRef.current?.pause()
-  }, [])
+  }, [active, path, cue, start, end, rate, audio.outputLabel])
 
   return null
 }

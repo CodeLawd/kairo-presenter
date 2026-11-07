@@ -44,6 +44,7 @@
     "package:ci:win-x64": "electron-builder --win --x64 --publish never",
     "package:ci:linux-x64": "electron-builder --linux --x64 --publish never",
     "verify:package": "node scripts/verify-package.mjs",
+    "changelog:draft": "node scripts/draft-changelog.mjs",
     "release": "node scripts/release.mjs",
     "release:mac": "bun run typecheck && bun run prepare:mac-natives && electron-vite build && electron-builder --mac --arm64 --publish always",
     "build:mac:unsigned": "bun run typecheck && bun run prepare:mac-natives && electron-vite build && CSC_IDENTITY_AUTO_DISCOVERY=false KAIRO_ADHOC_SIGN=1 electron-builder --mac --arm64 -c.mac.identity=null -c.mac.notarize=false",

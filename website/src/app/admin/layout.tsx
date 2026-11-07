@@ -11,6 +11,7 @@ import {
   CreditCardIcon,
   DownloadIcon,
   LayoutDashboardIcon,
+  MessageSquareIcon,
   ShieldIcon,
   UsersIcon,
 } from 'lucide-react'
@@ -40,6 +41,7 @@ const ADMIN_NAV: SidebarConfig = {
       items: [
         { title: 'Usage', href: '/admin/usage', icon: ActivityIcon },
         { title: 'Crashes', href: '/admin/crashes', icon: BugIcon },
+        { title: 'Feedback', href: '/admin/feedback', icon: MessageSquareIcon },
         { title: 'Downloads', href: '/admin/downloads', icon: DownloadIcon },
         { title: 'Subscriptions', href: '/admin/subscriptions', icon: CreditCardIcon },
       ],
@@ -55,6 +57,7 @@ const TITLES: Record<string, string> = {
   '/admin/team': 'Team',
   '/admin/usage': 'Usage',
   '/admin/crashes': 'Crashes',
+  '/admin/feedback': 'Feedback',
   '/admin/downloads': 'Downloads',
   '/admin/subscriptions': 'Subscriptions',
 }

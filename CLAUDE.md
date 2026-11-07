@@ -106,7 +106,11 @@ the top of the list and commit it:
 - Skip it only when nothing changes that a church would notice (CI, tests, build plumbing):
   `bun run release --skip-changelog`.
 
-The release script stops, before changing anything, if the entry is missing.
+The same entry drives the in-app **What's New** sheet (optional `highlights`: icon, title, body).
+If the entry is missing, the release script drafts it from the commits (`scripts/draft-changelog.mjs`,
+with whichever agent CLI is installed — claude, codex, gemini, opencode — or `CHANGELOG_AGENT=<name or stdin command>`), then asks to use, preview in the app, edit, or discard it,
+and commits it before releasing. Draft on its own with `bun run changelog:draft [version]`;
+preview with `VITE_WHATS_NEW_PREVIEW=1 npm run dev`.
 
 ## Legacy files (safe to delete)
 

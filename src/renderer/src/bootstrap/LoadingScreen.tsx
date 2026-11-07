@@ -1,7 +1,7 @@
 import type { BootstrapProgress } from "@shared/ipc";
 import { PRODUCT_NAME, PRODUCT_TAGLINE } from "@shared/brand";
 import { getBootstrapPercent } from "./bootstrap-state";
-import kairoStacked from "@/assets/kairo-stacked.png";
+import { AnimatedMark } from "./AnimatedMark";
 
 /**
  * Branded startup screen, shown briefly on every launch. The progress row only
@@ -13,10 +13,13 @@ export function LoadingScreen({
   progress,
   showProgress,
   fadingOut,
+  onIntroDone,
 }: {
   progress: BootstrapProgress;
   showProgress: boolean;
   fadingOut: boolean;
+  /** The logo intro has played out (see AnimatedMark). */
+  onIntroDone?: () => void;
 }): React.ReactElement {
   const percent = fadingOut ? 100 : getBootstrapPercent(progress);
   const step = fadingOut ? "Ready" : progress.step;
@@ -26,51 +29,19 @@ export function LoadingScreen({
       className={[
         "absolute inset-0 z-[60] flex flex-col items-center justify-center bg-surface",
         "transition-opacity duration-300 motion-reduce:transition-none",
-        fadingOut ? "opacity-0 pointer-events-none" : "opacity-100",
+        // The fading copy is a fresh mount: hold everything still, don't replay.
+        fadingOut ? "splash-still opacity-0 pointer-events-none" : "opacity-100",
       ].join(" ")}
       role="status"
       aria-live="polite"
       aria-busy={!fadingOut}
     >
       <div className="flex w-[340px] flex-col items-center gap-7">
-        {/* The stacked logo (mark over "Kairo") under a glass lens — a top
-            specular and a slowly drifting caustic, every layer masked to the
-            logo's own shape. The brand blue stays visible in either theme. */}
-        <div
-          className="splash-mark relative h-[100px] w-[152px]"
-          role="img"
-          aria-label={PRODUCT_NAME}
-        >
-          <span
-            aria-hidden
-            className="absolute inset-0 bg-[rgb(var(--accent-500))]"
-            style={{
-              WebkitMaskImage: `url(${kairoStacked})`,
-              maskImage: `url(${kairoStacked})`,
-              WebkitMaskSize: "contain",
-              maskSize: "contain",
-              WebkitMaskRepeat: "no-repeat",
-              maskRepeat: "no-repeat",
-              WebkitMaskPosition: "center",
-              maskPosition: "center",
-            }}
-          />
-          {(["splash-glass-caustic", "splash-glass-lens"] as const).map(
-            (layer) => (
-              <div
-                key={layer}
-                aria-hidden
-                className={`splash-glass-layer ${layer}`}
-                style={{
-                  WebkitMaskImage: `url(${kairoStacked})`,
-                  maskImage: `url(${kairoStacked})`,
-                }}
-              />
-            ),
-          )}
-        </div>
+        {/* The lockup builds itself — mark, then "Kairo" — and stays alive
+            while Kairo loads. */}
+        <AnimatedMark width={300} label={PRODUCT_NAME} still={fadingOut} onIntroDone={onIntroDone} />
 
-        <div className="splash-copy -mt-2 text-center">
+        <div className="splash-copy text-center">
           <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-300">
             {PRODUCT_TAGLINE}
           </p>

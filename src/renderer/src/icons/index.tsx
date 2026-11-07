@@ -93,6 +93,7 @@ import {
   Search01Icon,
   SendIcon,
   Settings01Icon,
+  SidebarLeftIcon,
   SlidersHorizontalIcon,
   SmartphoneIcon,
   Square01Icon,
@@ -207,6 +208,7 @@ export const Brain = wrap(BrainIcon)
 export const Check = wrap(HugeCheckIcon)
 export const CheckCircle = wrap(CheckmarkCircle01Icon)
 export const CheckCircle2 = wrap(CheckmarkCircle01Icon)
+export const SidebarLeft = wrap(SidebarLeftIcon)
 export const ChevronDown = wrap(HugeChevronDownIcon)
 export const ChevronLeft = wrap(ChevronLeftIcon)
 export const ChevronRight = wrap(HugeChevronRightIcon)

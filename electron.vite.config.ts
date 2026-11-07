@@ -49,5 +49,7 @@ export default defineConfig({
       },
     },
     plugins: [react()],
+    // What's New compares this with the last version the operator saw.
+    define: { __APP_VERSION__: JSON.stringify(process.env.npm_package_version ?? '0.0.0') },
   },
 })

@@ -1,3 +1,4 @@
+import { MediaInspector } from './MediaInspector'
 import { selectGesture, useMultiSelect, type SelectGesture } from '@/hooks/useMultiSelect'
 import { MarqueeSelect } from '@/components/shared/MarqueeSelect'
 import {
@@ -29,6 +30,7 @@ import {
   RefreshCw,
   Repeat,
   Scissors,
+  SidebarLeft,
   Trash2,
   Volume2,
   VolumeX,
@@ -124,6 +126,7 @@ export default function MediaDock(): React.ReactElement | null {
   const [renamingItemId, setRenamingItemId] = useState<string | null>(null)
   const [addingMedia, setAddingMedia] = useState(false)
   const [canPaste, setCanPaste] = useState(false)
+  const [inspectingItem, setInspectingItem] = useState<MediaItem | null>(null)
   /** Right-click / keyboard target for Copy · Cut. */
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
   /** Right-click on empty grid chrome (not a thumbnail). */
@@ -347,6 +350,14 @@ export default function MediaDock(): React.ReactElement | null {
 
   // ── Sidebar width ──────────────────────────────────────────────────────────
   const [sidebarWidth, setSidebarWidth] = useState<number>(readSidebarWidth)
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    try { return window.localStorage.getItem(SIDEBAR_HIDDEN_KEY) !== 'true' } catch { return true }
+  })
+  const sidebarAction = sidebarOpen ? 'Hide media sidebar' : 'Show media sidebar'
+
+  useEffect(() => {
+    try { window.localStorage.setItem(SIDEBAR_HIDDEN_KEY, String(!sidebarOpen)) } catch { /* per-viewer nicety only */ }
+  }, [sidebarOpen])
   useEffect(() => {
     try { window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth)) } catch { /* per-viewer nicety only */ }
   }, [sidebarWidth])
@@ -574,7 +585,7 @@ export default function MediaDock(): React.ReactElement | null {
 
   // Cmd/Ctrl+C · X · V while the dock is open (capture so Edit-menu roles don't win).
   useEffect(() => {
-    if (!open) return
+    if (!open || inspectingItem) return
 
     const typing = (target: EventTarget | null): boolean => {
       const el = target as HTMLElement | null
@@ -622,7 +633,7 @@ export default function MediaDock(): React.ReactElement | null {
       window.removeEventListener('keydown', onKey, true)
       window.removeEventListener('paste', onPaste, true)
     }
-  }, [open, selectedItemId, liveItem?.id, visibleItems, copyItem, cutItem, pasteItems])
+  }, [open, inspectingItem, selectedItemId, liveItem?.id, visibleItems, copyItem, cutItem, pasteItems])
 
   /**
    * Persist a rearrange. Playlist order is the playlist's own `itemIds`
@@ -728,6 +739,17 @@ export default function MediaDock(): React.ReactElement | null {
       style={{ gridTemplateRows: open ? `${height}px` : '0px' }}
       aria-hidden={!open}
     >
+      {open && inspectingItem && (
+        <MediaInspector
+          key={inspectingItem.id}
+          item={inspectingItem}
+          playback={normalizeMediaPlayback(library.playback[inspectingItem.id])}
+          onClose={() => setInspectingItem(null)}
+          onSave={async (settings) => {
+            setLibrary(await window.api.media.setPlayback(inspectingItem.id, settings, true))
+          }}
+        />
+      )}
       <div className="hairline-t flex min-h-0 flex-col overflow-hidden">
         <DragHandle onPointerDown={beginDrag} onKeyDown={resizeWithKeyboard} height={height} maximum={maxHeight()} />
 
@@ -741,7 +763,11 @@ export default function MediaDock(): React.ReactElement | null {
 
           {/* Collections — resizable, like a Finder sidebar */}
           <div
-            className="hairline-r relative flex shrink-0 flex-col overflow-y-auto bg-surface-secondary py-2"
+            id="media-dock-sidebar"
+            className={cn(
+              'hairline-r relative shrink-0 flex-col overflow-y-auto bg-surface-secondary py-2',
+              sidebarOpen ? 'flex' : 'hidden',
+            )}
             style={{ width: sidebarWidth }}
           >
             <SidebarHeading>Library</SidebarHeading>
@@ -825,6 +851,20 @@ export default function MediaDock(): React.ReactElement | null {
           {/* Content */}
           <div className="flex flex-1 min-w-0 flex-col overflow-hidden">
             <div className="flex flex-wrap items-center gap-2 px-4 pt-2 shrink-0">
+              <button
+                type="button"
+                aria-controls="media-dock-sidebar"
+                aria-expanded={sidebarOpen}
+                aria-label={sidebarAction}
+                title={sidebarAction}
+                onClick={() => setSidebarOpen((current) => !current)}
+                className={cn(
+                  'grid h-[26px] w-[26px] shrink-0 place-items-center rounded transition-colors hover:bg-surface-tertiary',
+                  sidebarOpen ? 'text-teal-400' : 'text-slate-400 hover:text-white',
+                )}
+              >
+                <SidebarLeft size={17} aria-hidden="true" />
+              </button>
               <div className="flex items-baseline gap-2 min-w-0">
                 <span className="text-[13px] font-semibold text-slate-200 truncate">
                   {selectionLabel(selection, library)}
@@ -959,6 +999,7 @@ export default function MediaDock(): React.ReactElement | null {
                     void pushItem(item)
                   }}
                   onSelect={() => setSelectedItemId(item.id)}
+                  onInspect={() => setInspectingItem(item)}
                   onPlaybackChange={(patch) => void setPlayback(item.id, patch)}
                   onAddToPlaylist={(playlistId) => void addToPlaylist(playlistId, item.id)}
                   onRemoveFromPlaylist={
@@ -1097,6 +1138,7 @@ function DragHandle({ onPointerDown, onKeyDown, height, maximum }: {
   )
 }
 
+const SIDEBAR_HIDDEN_KEY = 'kairo.mediaDock.sidebarHidden'
 const SIDEBAR_WIDTH_KEY = 'kairo.mediaDock.sidebarWidth'
 const SIDEBAR_MIN = 150
 const SIDEBAR_MAX = 360
@@ -1388,6 +1430,7 @@ function MediaCard({
   renaming,
   onPush,
   onSelect,
+  onInspect,
   onPlaybackChange,
   onAddToPlaylist,
   onRemoveFromPlaylist,
@@ -1421,6 +1464,7 @@ function MediaCard({
   renaming: boolean
   onPush: () => void
   onSelect: () => void
+  onInspect: () => void
   onPlaybackChange: (patch: Partial<MediaPlayback>) => void
   onAddToPlaylist: (playlistId: string) => void
   onRemoveFromPlaylist?: () => void
@@ -1586,6 +1630,7 @@ function MediaCard({
           playback={playback}
           playlists={playlists}
           canPaste={canPaste}
+          onInspect={onInspect}
           onPlaybackChange={onPlaybackChange}
           onAddToPlaylist={onAddToPlaylist}
           onRemoveFromPlaylist={onRemoveFromPlaylist}
@@ -1668,6 +1713,7 @@ function ItemMenu({
   playback,
   playlists,
   canPaste,
+  onInspect,
   onPlaybackChange,
   onAddToPlaylist,
   onRemoveFromPlaylist,
@@ -1685,6 +1731,7 @@ function ItemMenu({
   playback: MediaPlayback
   playlists: MediaLibrary['playlists']
   canPaste: boolean
+  onInspect: () => void
   onPlaybackChange: (patch: Partial<MediaPlayback>) => void
   onAddToPlaylist: (playlistId: string) => void
   onRemoveFromPlaylist?: () => void
@@ -1757,6 +1804,7 @@ function ItemMenu({
         onClick={() => run(onReveal)}
       />
 
+      <MenuItem icon={item.kind === 'video' ? <Film size={12} /> : <ImageIcon size={12} />} label="Inspect" onClick={() => run(onInspect)} />
       {item.kind === 'video' && (
         <button
           type="button"
@@ -1770,36 +1818,6 @@ function ItemMenu({
           {playback.loop && <Check size={12} className="text-teal-300" aria-hidden="true" />}
         </button>
       )}
-
-      <div className="px-3 py-2.5">
-        <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-          Adjust color
-        </p>
-        <ColorSlider
-          label="Brightness"
-          min={0.25}
-          max={1.75}
-          step={0.05}
-          value={playback.brightness}
-          onChange={(brightness) => onPlaybackChange({ brightness })}
-        />
-        <ColorSlider
-          label="Contrast"
-          min={0.25}
-          max={1.75}
-          step={0.05}
-          value={playback.contrast}
-          onChange={(contrast) => onPlaybackChange({ contrast })}
-        />
-        <ColorSlider
-          label="Saturation"
-          min={0}
-          max={2}
-          step={0.05}
-          value={playback.saturation}
-          onChange={(saturation) => onPlaybackChange({ saturation })}
-        />
-      </div>
 
       {playlists.length > 0 && (
         <div className="py-1">
@@ -1867,46 +1885,6 @@ function MenuItem({
   )
 }
 
-function ColorSlider({
-  label,
-  min,
-  max,
-  step,
-  value,
-  onChange,
-}: {
-  label: string
-  min: number
-  max: number
-  step: number
-  value: number
-  onChange: (value: number) => void
-}): React.ReactElement {
-  return (
-    <label className="mb-1.5 flex items-center gap-2 last:mb-0">
-      <span className="w-[72px] shrink-0 text-[11px] text-slate-400">{label}</span>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(event) => onChange(Number(event.target.value))}
-        className="h-1 min-w-0 flex-1 cursor-pointer appearance-none rounded-full bg-surface-border accent-teal-400"
-      />
-      <span className="w-8 shrink-0 text-right text-[10px] tabular-nums text-slate-500">
-        {Math.round(value * 100)}%
-      </span>
-    </label>
-  )
-}
-
-/**
- * Thumbnails come from the file itself — a paused `<video>` shows frame one, so
- * there is no thumbnail cache to build, invalidate or ship ffmpeg for. A codec
- * Chromium cannot decode fires `error`, which is how the "can't play" badge
- * knows: the check is the real decoder, not a guess from the extension.
- */
 function LiveTransportButton({
   paused,
   onToggle,

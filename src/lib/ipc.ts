@@ -13,6 +13,8 @@ export type ScriptureTranslation = string
 export type STTProvider = 'deepgram' | 'whisper' | 'none'
 
 export interface AppSettings {
+  /** The release whose What's New sheet was last shown ('' = fresh install). */
+  whatsNew: { lastSeenVersion: string }
   /** Live → Start Capture: what is recorded, and how. */
   capture: import('./capture').CaptureSettings
   /** Bookmarks for the Web tab. */
@@ -309,9 +311,13 @@ export interface MediaPlaylist {
   createdAt: number
 }
 
-/** Per-file playback — loop and a light color grade. Lives in the media manifest. */
+/** Per-file playback settings stored in the media manifest. */
 export interface MediaPlayback {
   loop: boolean
+  startSeconds?: number
+  endSeconds?: number | null
+  rate?: number
+  fit?: OverlayTheme['background']['mediaFit'] | null
   /** Degrees, −180 to 180. Identity is 0. */
   hue: number
   /** Multiplier, 0 to 2. Identity is 1. */
@@ -331,6 +337,8 @@ export interface MediaLibrary {
   playback: Record<string, MediaPlayback>
   /** Item currently pushed to screen, or null. */
   liveItemId: string | null
+  livePlayback?: MediaPlayback
+  liveCue?: number
   /** True when the live video is paused. Images ignore this. Reset on every push. */
   livePaused: boolean
   /** Set when the last scan failed — e.g. the folder was moved or unmounted. */
@@ -475,6 +483,10 @@ export interface OverlayTheme {
     mediaFit?: 'cover' | 'contain' | 'fill'
     /** Videos only. Default false — loop is an explicit choice. */
     mediaLoop?: boolean
+    mediaStartSeconds?: number
+    mediaEndSeconds?: number | null
+    mediaRate?: number
+    mediaCue?: number
     hue?: number
     saturation?: number
     brightness?: number
@@ -1489,6 +1501,8 @@ export interface OrchestratorAPI {
 
 export interface AppAPI {
   onQuitRequested: (callback: () => void) => Unsubscribe
+  /** The app menu's "What's New in Kairo" item. */
+  onWhatsNewRequested: (callback: () => void) => Unsubscribe
   quitPending: () => Promise<boolean>
   respondToQuit: (confirmed: boolean) => Promise<void>
   /** The main window is full screen (on a Mac, its window buttons are hidden). */
@@ -1511,6 +1525,11 @@ export interface OnboardingAPI {
   /** "Run setup again" — reopens the wizard; settings are untouched. */
   reset: () => Promise<OnboardingState>
   onStateChange: (callback: (state: OnboardingState) => void) => Unsubscribe
+}
+
+export interface FeedbackAPI {
+  /** Sends a note to the Kairo team; the sender is attached from the signed-in account. */
+  send: (input: { kind: import('./cloud/feedback').FeedbackKind; message: string; context?: string }) => Promise<import('./cloud/contracts').CloudResult<import('./cloud/feedback').FeedbackUploadResult>>
 }
 
 export interface AccountAPI {
@@ -1615,6 +1634,7 @@ export interface KairoAPI {
   tracks: TracksAPI
   onboarding: OnboardingAPI
   account: AccountAPI
+  feedback: FeedbackAPI
   updates: UpdatesAPI
 }
 
@@ -1668,7 +1688,7 @@ export interface MediaAPI {
    * Files already in the media folder are referenced; anything else is copied in.
    */
   addMediaToPlaylist: (playlistId: string) => Promise<MediaLibrary>
-  setPlayback: (itemId: string, playback: Partial<MediaPlayback>) => Promise<MediaLibrary>
+  setPlayback: (itemId: string, playback: Partial<MediaPlayback>, nextCue?: boolean) => Promise<MediaLibrary>
   /** Pause or resume the video currently on screen. No-op when an image is live. */
   setPaused: (paused: boolean) => Promise<MediaLibrary>
   /** Scrub the live video. No-op when an image is live. */
@@ -1707,6 +1727,7 @@ export const IPC = {
   },
   APP: {
     QUIT_REQUESTED: 'app:quitRequested',
+    WHATS_NEW: 'app:whatsNew',
     QUIT_PENDING: 'app:quitPending',
     QUIT_RESPONSE: 'app:quitResponse',
     IS_FULL_SCREEN: 'app:isFullScreen',   // invoke
@@ -1880,6 +1901,9 @@ export const IPC = {
     STATUS: 'videoDevices:status',
     TEST_PATTERN: 'videoDevices:testPattern',
     CHANGED: 'videoDevices:changed',
+  },
+  FEEDBACK: {
+    SEND: 'feedback:send',
   },
   ACCOUNT: {
     GET_LICENSE: 'account:getLicense',

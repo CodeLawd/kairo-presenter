@@ -139,6 +139,9 @@ function backgroundLayerHTML(theme: OverlayTheme): string {
     const src = escapeHtml(overlayMediaUrl(bg.mediaPath))
     const playback = normalizeMediaPlayback({
       loop: bg.mediaLoop,
+      startSeconds: bg.mediaStartSeconds,
+      endSeconds: bg.mediaEndSeconds,
+      rate: bg.mediaRate,
       hue: bg.hue,
       saturation: bg.saturation,
       brightness: bg.brightness,
@@ -149,9 +152,14 @@ function backgroundLayerHTML(theme: OverlayTheme): string {
     // A blur fades the frame's edges in; scaling the media past them keeps the edges solid.
     const blurStyle = blurPx > 0 ? ` filter:blur(${blurPx}px); transform:scale(${1 + (blurPx * 4) / 1080});` : ''
     const mediaStyle = `width:100%; height:100%; object-fit:${bg.mediaFit ?? 'cover'}; display:block;${blurStyle}`
+    const customTiming = playback.startSeconds !== undefined || playback.endSeconds !== undefined || playback.rate !== undefined
+    const transport = customTiming
+      ? `data-media-start="${playback.startSeconds ?? 0}" data-media-end="${playback.endSeconds ?? ''}" data-media-rate="${playback.rate ?? 1}"${playback.loop ? ' loop' : ''}`
+      : `autoplay${playback.loop ? ' loop' : ''}`
+    const cue = Number.isSafeInteger(bg.mediaCue) ? ` data-media-cue="${bg.mediaCue}"` : ''
     const media =
       bg.type === 'video'
-        ? `<video src="${src}" style="${mediaStyle}" autoplay${playback.loop ? ' loop' : ''} muted playsinline preload="auto" crossorigin="anonymous"></video>`
+        ? `<video src="${src}" style="${mediaStyle}" ${transport}${cue} muted playsinline preload="auto" crossorigin="anonymous"></video>`
         : `<img src="${src}" style="${mediaStyle}" alt="">`
     const filterStyle = filter ? ` filter:${filter};` : ''
     return `<div class="pa-bg" style="position:absolute; inset:0; opacity:${bg.opacity}; overflow:hidden;${filterStyle}">${media}</div>`

@@ -17,6 +17,7 @@
   },
   "include": [
     "src/lib/**/*",
-    "src/renderer/**/*"
+    "src/renderer/**/*",
+    "website/src/lib/changelog.ts"
   ]
 }

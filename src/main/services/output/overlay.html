@@ -404,7 +404,7 @@
       /** What makes two backgrounds "the same": the media file, else the markup. */
       function backgroundKey(bg) {
         var media = bg.querySelector('video, img');
-        return media ? media.tagName + ':' + media.getAttribute('src') : bg.outerHTML;
+        return media ? media.tagName + ':' + media.getAttribute('src') + ':' + (media.dataset.mediaCue || '') : bg.outerHTML;
       }
 
       // ─── Sound ────────────────────────────────────────────────────────────
@@ -558,21 +558,58 @@
         }).catch(function () { return null; });
       }
 
-      function startVideos(root) {
-        var videos = root.querySelectorAll('video');
-        for (var i = 0; i < videos.length; i++) {
-          if (videos[i].srcObject) continue;
-          applyAudio(videos[i]);
-          videos[i].playsInline = true;
-          var play = function (video) {
-            return function () {
-              if (video.dataset.paPaused === '1') return;
-              video.play().catch(function () {});
-            };
-          }(videos[i]);
-          if (videos[i].readyState >= 2) play();
-          else videos[i].addEventListener('canplay', play, { once: true });
+      function videoBounds(video) {
+        var duration = isFinite(video.duration) ? video.duration : Infinity;
+        var start = Number(video.dataset.mediaStart) || 0;
+        var end = Math.min(Number(video.dataset.mediaEnd) || Infinity, duration);
+        return { start: start < end ? start : 0, end: end };
+      }
+
+      function setBackgroundLoop(video, loop) {
+        var range = videoBounds(video);
+        video.dataset.mediaLoop = loop ? '1' : '';
+        video.loop = loop && range.start === 0 && !Number(video.dataset.mediaEnd);
+      }
+
+      function startBackgroundVideo(video) {
+        if (!video) return;
+        applyAudio(video);
+        video.playsInline = true;
+        video.dataset.mediaLoop = video.loop ? '1' : '';
+        var customTiming = video.hasAttribute('data-media-start');
+        if (customTiming) {
+          video.loop = false;
+          video.playbackRate = Number(video.dataset.mediaRate) || 1;
+          var initialize = function () {
+            setBackgroundLoop(video, video.dataset.mediaLoop === '1');
+            var start = videoBounds(video).start;
+            if (start > 0) video.currentTime = start;
+          };
+          if (video.readyState >= 1) initialize();
+          else video.addEventListener('loadedmetadata', initialize, { once: true });
         }
+        var play = function () {
+          if (video.dataset.paPaused === '1') return;
+          video.play().catch(function () {});
+        };
+        if (customTiming) {
+          var checkEnd = function () {
+            if (!video.isConnected || video.seeking) return;
+            var range = videoBounds(video);
+            if (video.currentTime < range.end) return;
+            if (video.dataset.mediaLoop === '1' && !video.loop && video.dataset.paPaused !== '1') {
+              video.currentTime = range.start;
+              play();
+            } else if (!video.loop && !video.paused) {
+              video.pause();
+              video.currentTime = range.end;
+            }
+          };
+          video.addEventListener('timeupdate', checkEnd);
+          video.addEventListener('ended', checkEnd);
+        }
+        if (video.readyState >= 2 && !video.seeking) play();
+        else video.addEventListener('canplay', play, { once: true });
       }
 
       function setBackground(nextBg, ms) {
@@ -589,13 +626,13 @@
           var media = current.querySelector('video, img');
           if (nextMedia && media) {
             media.setAttribute('style', nextMedia.getAttribute('style') || '');
-            if (media.tagName === 'VIDEO') media.loop = nextMedia.hasAttribute('loop');
+            if (media.tagName === 'VIDEO') setBackgroundLoop(media, nextMedia.hasAttribute('loop'));
           }
           return;
         }
         enter(layers.bg, nextBg, ms);
         retire(current, ms);
-        startVideos(nextBg);
+        startBackgroundVideo(nextBg.querySelector('video'));
       }
 
       // ─── Theme elements ───────────────────────────────────────────────────
@@ -682,7 +719,8 @@
       // Lobby playlists advance when a video finishes. No video counts as done.
       window.__videoEnded = function () {
         var video = live(layers.bg, 'video');
-        return !video || video.ended || !!video.error;
+        return !video || video.ended || !!video.error ||
+          (video.paused && video.currentTime >= videoBounds(video).end);
       };
 
       // Resolves once whatever was just changed has been composited — the
@@ -736,8 +774,12 @@
         }
         var video = live(layers.bg, 'video');
         if (video) {
-          video.loop = !!loop;
-          if (loop && video.ended && video.dataset.paPaused !== '1') video.play();
+          setBackgroundLoop(video, !!loop);
+          var range = videoBounds(video);
+          if (loop && (video.ended || video.currentTime >= range.end) && video.dataset.paPaused !== '1') {
+            video.currentTime = range.start;
+            video.play().catch(function () {});
+          }
         }
       };
       window.__setVideoPaused = function (paused) {
@@ -748,7 +790,8 @@
           video.pause();
           return;
         }
-        if (video.ended) video.currentTime = 0;
+        var range = videoBounds(video);
+        if (video.ended || video.currentTime >= range.end) video.currentTime = range.start;
         video.play().catch(function () {});
       };
       // Document decks swap one <img> instead of rebuilding the slide: a full
@@ -851,10 +894,8 @@
       window.__seekVideo = function (seconds) {
         var video = live(layers.bg, 'video');
         if (!video || !isFinite(seconds)) return;
-        var duration = video.duration;
-        var time = seconds < 0 ? 0 : seconds;
-        if (isFinite(duration) && duration > 0 && time > duration) time = duration;
-        video.currentTime = time;
+        var range = videoBounds(video);
+        video.currentTime = Math.min(range.end, Math.max(range.start, seconds));
       };
 
       // ─── Program layers (markup from src/lib/program.ts, already escaped) ──

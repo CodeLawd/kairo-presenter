@@ -8,6 +8,7 @@ import { DEFAULT_WEB_SETTINGS } from '@shared/web'
 
 /** Neutral settings used until the real ones arrive from the main process. */
 export const DEFAULT_SETTINGS: SettingsWithSecretsStatus = {
+  whatsNew: { lastSeenVersion: '' },
   audio: { deviceId: '' },
   stt: { provider: 'none', apiKey: '', anthropicApiKey: '', deepseekApiKey: '', llmProvider: 'anthropic', llmModel: '', bibleApiKey: '', language: 'en-US' },
   scripture: {

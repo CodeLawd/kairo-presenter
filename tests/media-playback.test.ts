@@ -140,3 +140,29 @@ test('a theme with its own background outranks the dock loop', () => {
   // A theme with no background of its own (every built-in lyrics theme) takes the dock's.
   assert.equal(themeOwnsBackground(DEFAULT_OVERLAY_THEME), false)
 })
+
+test('custom video timing persists and reaches the background player without autoplay', () => {
+  const playback = normalizeMediaPlayback({ startSeconds: 2.5, endSeconds: 7, rate: 1.5, loop: true })
+  assert.deepEqual(normalizePlaybackMap({ clip: playback }).clip, playback)
+  const theme = themeWithLiveMedia(DEFAULT_OVERLAY_THEME, { kind: 'video', path: '/media/clip.mp4' }, playback, 3)
+  const video = renderOverlayHTML(theme, '', '').match(/<video\b[^>]*>/)?.[0] ?? ''
+  assert.match(video, /data-media-start="2.5" data-media-end="7" data-media-rate="1.5" loop data-media-cue="3"/)
+  assert.doesNotMatch(video, /autoplay/)
+})
+
+test('invalid timing is normalized and timing can be reset to full length at normal speed', () => {
+  const playback = normalizeMediaPlayback({ startSeconds: -5, endSeconds: Number.NaN, rate: 4 })
+  assert.deepEqual(playback, { ...DEFAULT_MEDIA_PLAYBACK, rate: 2 })
+  assert.equal(normalizeMediaPlayback({ startSeconds: 8, endSeconds: 3 }).endSeconds, undefined)
+  assert.deepEqual(normalizeMediaPlayback({ ...playback, startSeconds: 0, endSeconds: null, rate: 1 }), DEFAULT_MEDIA_PLAYBACK)
+})
+
+test('per-item scaling overrides the output setting for stills and video', () => {
+  const playback = normalizeMediaPlayback({ fit: 'contain' })
+  assert.deepEqual(normalizePlaybackMap({ clip: playback }).clip, playback)
+  for (const kind of ['image', 'video'] as const) {
+    const theme = themeWithLiveMedia(DEFAULT_OVERLAY_THEME, { kind, path: '/media/item' }, playback)
+    assert.match(renderOverlayHTML(theme, '', ''), /object-fit:contain/)
+  }
+  assert.equal(isDefaultMediaPlayback(normalizeMediaPlayback({ ...playback, fit: null })), true)
+})

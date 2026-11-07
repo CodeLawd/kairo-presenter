@@ -54,7 +54,7 @@ interface LiveOutputPreviewProps {
   /** Content kind used when rendering a result without a generic payload. */
   contentKind?: OverlayContentKind;
   /** Background currently live from the media dock. */
-  liveMedia?: { item: MediaItem; playback: MediaPlayback; paused?: boolean } | null;
+  liveMedia?: { item: MediaItem; playback: MediaPlayback; paused?: boolean; cue?: number } | null;
   overlay: AppSettings["overlay"];
   width: number;
   height: number;
@@ -99,7 +99,7 @@ export function LiveOutputPreview({
   useEffect(() => {
     setMediaTime(EMPTY_TIME);
     setSeekTo(null);
-  }, [liveMedia?.item.id]);
+  }, [liveMedia?.item.id, liveMedia?.cue]);
 
   const onTime = useCallback((time: OverlayVideoTime) => {
     setMediaTime(time);
@@ -107,11 +107,13 @@ export function LiveOutputPreview({
 
   const seek = useCallback((seconds: number) => {
     const duration = mediaTime.duration;
-    const next = duration > 0 ? Math.min(duration, Math.max(0, seconds)) : Math.max(0, seconds);
+    const start = liveMedia?.playback.startSeconds ?? 0;
+    const lowerBound = duration > 0 && start >= duration ? 0 : start;
+    const next = duration > 0 ? Math.min(duration, Math.max(lowerBound, seconds)) : Math.max(lowerBound, seconds);
     setSeekTo((current) => ({ token: (current?.token ?? 0) + 1, seconds: next }));
     setMediaTime((current) => ({ ...current, currentTime: next, ended: false }));
     void window.api.media.seek(next);
-  }, [mediaTime.duration]);
+  }, [mediaTime.duration, liveMedia?.playback.startSeconds]);
 
   const showTransport =
     isRenderedKind(view.kind) && view.show.backgrounds && liveMedia?.item.kind === "video";
@@ -286,7 +288,7 @@ function PreviewBody({
   result: ScriptureResult | null;
   content: LiveOutputPayload | null;
   contentKind: OverlayContentKind;
-  liveMedia: { item: MediaItem; playback: MediaPlayback; paused?: boolean } | null;
+  liveMedia: { item: MediaItem; playback: MediaPlayback; paused?: boolean; cue?: number } | null;
   overlay: AppSettings["overlay"];
   width: number;
   height: number;
@@ -312,11 +314,12 @@ function PreviewBody({
   const force = kind === "lyrics" || (!result && !content);
   const liveItem = liveMedia?.item ?? null;
   const playback = liveMedia?.playback;
+  const cue = liveMedia?.cue;
   const theme = useMemo(() => {
     if (!output) return null;
-    const pushed = themeForPush(outputThemeFor(output, kind), { showsBackgrounds, live: liveItem, playback, force });
+    const pushed = themeForPush(outputThemeFor(output, kind), { showsBackgrounds, live: liveItem, playback, cue, force });
     return overWeb ? withoutBackground(pushed) : pushed;
-  }, [output, kind, showsBackgrounds, liveItem, playback, force, overWeb]);
+  }, [output, kind, showsBackgrounds, liveItem, playback, cue, force, overWeb]);
 
   if (!output || !theme) {
     return (

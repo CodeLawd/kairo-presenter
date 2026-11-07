@@ -267,3 +267,42 @@ const dateTimeFormat = new Intl.DateTimeFormat(undefined, { day: 'numeric', mont
 export function formatDateTime(value: string | null): string {
   return value ? dateTimeFormat.format(new Date(value)) : '—'
 }
+
+// ─── Feedback ────────────────────────────────────────────────────────────────
+
+export type FeedbackKind = 'idea' | 'problem' | 'praise' | 'other'
+export type FeedbackStatus = 'new' | 'read' | 'done'
+
+export const FEEDBACK_KIND_LABEL: Record<FeedbackKind, string> = {
+  idea: 'Idea',
+  problem: 'Problem',
+  praise: 'Praise',
+  other: 'Other',
+}
+
+export const FEEDBACK_STATUS_LABEL: Record<FeedbackStatus, string> = {
+  new: 'New',
+  read: 'Read',
+  done: 'Done',
+}
+
+export interface AdminFeedback {
+  id: string
+  kind: FeedbackKind
+  status: FeedbackStatus
+  message: string
+  context: string
+  appVersion: string
+  os: string
+  osVersion: string
+  createdAt: string
+  user: { id: string; name: string; email: string }
+  church: { id: string; name: string } | null
+}
+
+export interface AdminFeedbackList extends Page<AdminFeedback> {
+  counts: Partial<Record<FeedbackStatus, number>>
+  kinds: Partial<Record<FeedbackKind, number>>
+  /** The last 7 days, oldest first. */
+  byDay: DayCount[]
+}

@@ -14,6 +14,7 @@ import { DEFAULT_WEB_SETTINGS } from '@shared/web'
 export type { AppSettings }
 
 const defaults: AppSettings = {
+  whatsNew: { lastSeenVersion: '' },
   audio: {
     deviceId: '',
   },

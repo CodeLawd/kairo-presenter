@@ -21,6 +21,24 @@ async function until(win, predicate, ms = 5000) {
   }
   throw new Error('Timed out: ' + predicate)
 }
+// MediaRecorder emits live WebM without a Duration element. Give the dock
+// fixture a finite duration in the same timecode units as its recorded frames.
+function withWebmDuration(bytes, milliseconds) {
+  const data = Buffer.from(bytes)
+  const info = Buffer.from([0x15, 0x49, 0xa9, 0x66])
+  const offset = data.indexOf(info) + info.length
+  assert.ok(offset >= info.length)
+  const size = data[offset] & 0x7f
+  assert.ok(data[offset] & 0x80)
+  const duration = Buffer.alloc(11)
+  duration.set([0x44, 0x89, 0x88])
+  duration.writeDoubleBE(milliseconds, 3)
+  assert.ok(size + duration.length < 127)
+  data[offset] = 0x80 | (size + duration.length)
+  const end = offset + 1 + size
+  return Buffer.concat([data.subarray(0, end), duration, data.subarray(end)])
+}
+
 app.whenReady().then(async () => {
   temporary = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'kairo-document-video-')))
   app.setPath('userData', temporary)
@@ -98,6 +116,29 @@ app.whenReady().then(async () => {
     assert.equal(await evaluate(win, 'window.__documentPlayback()'), null)
     assert.equal(await evaluate(win, 'document.querySelectorAll("[data-document-videos] video").length'), 0)
   }
+  // Media Dock timing uses the real program shell and Chromium player.
+  const program = shells[0]
+  const clipMarkup = (cue, loop = false) => `<div class="pa-bg"><video src="${pathToFileURL(media).href}" muted data-media-start="0.3" data-media-end="1.1" data-media-rate="1.5" data-media-cue="${cue}" ${loop ? 'loop' : ''}></video></div>`
+  const cueClip = (cue, loop) => evaluate(program, `window.__setContent(${JSON.stringify(clipMarkup(cue, loop))}, true)`)
+  const liveVideo = 'document.querySelector(".pa-bg video")'
+  await cueClip(1)
+  await until(program, `${liveVideo}.currentTime >= 0.3 && !${liveVideo}.paused`)
+  assert.equal(await evaluate(program, `${liveVideo}.playbackRate`), 1.5)
+  await evaluate(program, `window.previousClip = ${liveVideo}`)
+  await cueClip(1)
+  assert.equal(await evaluate(program, `window.previousClip === ${liveVideo}`), true)
+  await until(program, 'window.__videoEnded()')
+  assert.ok(Math.abs(await evaluate(program, `${liveVideo}.currentTime`) - 1.1) < 0.03)
+
+  await cueClip(2, true)
+  assert.equal(await evaluate(program, `window.previousClip === ${liveVideo}`), false)
+  await until(program, `${liveVideo}.currentTime > 0.8`)
+  await until(program, `${liveVideo}.currentTime < 0.6 && !${liveVideo}.paused`)
+  await evaluate(program, 'window.__setVideoPaused(true); window.__seekVideo(0)')
+  assert.ok(Math.abs(await evaluate(program, `${liveVideo}.currentTime`) - 0.3) < 0.03)
+  const posterMarkup = `<div class="pa-bg"><img src="${pathToFileURL(image).href}"></div>`
+  await evaluate(program, `window.__setContent(${JSON.stringify(posterMarkup)}, true)`)
+
   // An invalid codec/file must be reported without making the deck unusable.
   await evaluate(shells[0], `window.__setDocumentVideos({id:'bad',page:0,width:1920,height:1080,videos:[{file:${JSON.stringify(pathToFileURL(image).href)},start:0,box:{x:0,y:0,width:1,height:1}}]})`)
   await until(shells[0], '!!window.__documentPlayback().videos[0].error')
@@ -156,13 +197,28 @@ app.whenReady().then(async () => {
   await fs.writeFile(path.join(uiRoot,'index.html'),(await fs.readFile('src/renderer/index.html','utf8')).replace('/src/main.tsx','/entry.tsx'))
   await fs.writeFile(path.join(uiRoot,'entry.tsx'),`import React from ${JSON.stringify(path.resolve('node_modules/react/index.js'))};
     import {createRoot} from ${JSON.stringify(path.resolve('node_modules/react-dom/client.js'))};
+    import MediaDock from ${JSON.stringify(path.resolve('src/renderer/src/components/media/MediaDock.tsx'))};
+    import {useMediaDockStore} from ${JSON.stringify(path.resolve('src/renderer/src/stores/useMediaDockStore.ts'))};
     import Documents from ${JSON.stringify(path.resolve('src/renderer/src/components/documents/Documents.tsx'))};
     import ${JSON.stringify(path.resolve('src/renderer/src/index.css'))};
-    createRoot(document.getElementById('root')).render(<Documents/>);`)
+    const dock = location.search.includes('dock');
+    if (dock) useMediaDockStore.getState().setOpen(true);
+    createRoot(document.getElementById('root')).render(dock ? <MediaDock/> : <Documents/>);`)
   await buildUi({configFile:false,root:uiRoot,base:'./',plugins:[react()],resolve:{alias:{'@shared':path.resolve('src/lib'),'@':path.resolve('src/renderer/src'),react:path.resolve('node_modules/react'),'react-dom':path.resolve('node_modules/react-dom')}},css:{postcss:path.resolve('.')},build:{outDir:path.join(uiRoot,'dist'),emptyOutDir:true},logLevel:'error'})
   ipcMain.handle('documents:list',()=>service.list())
   ipcMain.handle('settings:set',()=>undefined)
-  ipcMain.handle('media:getLibrary',()=>({folder:'',folders:[],items:[],playlists:[],playback:{},liveItemId:null,livePaused:false,error:null}))
+  const dockMedia = path.join(temporary, 'inspection.webm')
+  await fs.writeFile(dockMedia, withWebmDuration(bytes, 1700))
+  const dockClip = { id: 'clip.webm', name: 'Inspection clip', path: dockMedia, kind: 'video', ext: 'webm', folder: '', sizeBytes: bytes.length }
+  const dockImage = { id: 'poster.png', name: 'Inspection still', path: image, kind: 'image', ext: 'png', folder: '', sizeBytes: 500 }
+  const library = { folder: temporary, folders: [], items: [dockClip, dockImage], playlists: [], playback: {}, liveItemId: null, livePaused: false, error: null }
+  let savedSettings
+  ipcMain.handle('media:getLibrary', () => library)
+  ipcMain.handle('media:setPlayback', (_event, id, playback, nextCue) => {
+    savedSettings = { id, playback, nextCue }
+    library.playback[id] = playback
+    return library
+  })
   ipcMain.handle('media:clipboardHasFiles',()=>false)
   ipcMain.handle('program:getState',()=>({message:null,stageMessage:null,activePropIds:[],logo:false,camera:null,cameraAudio:null,timer:{durationSec:300,endsAt:null,remainingSec:300},countdownOnScreens:false,clockOnScreens:false,current:null,next:null}))
   let connected=true
@@ -246,6 +302,76 @@ app.whenReady().then(async () => {
   await until(ui,`!!document.querySelector('[data-document-transport] button[aria-label="Play"]')`)
   assert.equal(await evaluate(ui,'document.querySelector("section video").paused'),true)
   assert.equal(await evaluate(ui,`document.body.textContent.includes('Preview only')`),true)
+  await ui.loadFile(path.join(uiRoot, 'dist', 'index.html'), { query: { dock: '1' } })
+  const toggleSidebar = 'button[aria-controls="media-dock-sidebar"]'
+  await until(ui, `document.querySelector('${toggleSidebar}')?.getAttribute('aria-expanded') === 'true'`)
+  const sidebarWidth = await evaluate(ui, 'document.getElementById("media-dock-sidebar").offsetWidth')
+  assert.ok(sidebarWidth > 0)
+  await evaluate(ui, `document.querySelector('${toggleSidebar}').click()`)
+  await until(ui, `document.querySelector('${toggleSidebar}').getAttribute('aria-expanded') === 'false'`)
+  assert.equal(await evaluate(ui, 'document.getElementById("media-dock-sidebar").offsetWidth'), 0)
+  assert.equal(await evaluate(ui, 'localStorage.getItem("kairo.mediaDock.sidebarHidden")'), 'true')
+  await ui.reload()
+  await until(ui, `document.querySelector('${toggleSidebar}')?.getAttribute('aria-expanded') === 'false'`)
+  await evaluate(ui, `document.querySelector('${toggleSidebar}').click()`)
+  await until(ui, `document.querySelector('${toggleSidebar}').getAttribute('aria-expanded') === 'true'`)
+  assert.equal(await evaluate(ui, 'document.getElementById("media-dock-sidebar").offsetWidth'), sidebarWidth)
+  console.log('PASS: Media Dock sidebar hides, persists across reload, and restores its width')
+  async function inspect(name) {
+    const card = JSON.stringify(`[aria-label="Push ${name} to screen"]`)
+    await until(ui, `!!document.querySelector(${card})`)
+    await evaluate(ui, `document.querySelector(${card}).dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,clientX:40,clientY:40}))`)
+    await evaluate(ui, `[...document.querySelectorAll('[role="menuitem"]')].find(node=>node.textContent.trim()==='Inspect').click()`)
+    await until(ui, `!!document.querySelector('dialog[open]')`)
+  }
+
+  await inspect('Inspection clip')
+  assert.equal(await evaluate(ui, `document.querySelector('dialog video').muted`), true)
+  await until(ui, `!document.querySelector('[aria-label="Trim start"]').disabled`)
+  await evaluate(ui, `(() => {
+    for (const [name, time] of [['Trim start', 0.3], ['Trim end', 1.1]]) {
+      const handle = document.querySelector('[aria-label="' + name + '"]');
+      const track = handle.parentElement.getBoundingClientRect();
+      const bounds = handle.getBoundingClientRect();
+      const offset = name === 'Trim start' ? bounds.width / 2 : -bounds.width / 2;
+      const origin = (bounds.left + bounds.right) / 2;
+      handle.setPointerCapture = () => {};
+      handle.hasPointerCapture = () => true;
+      handle.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, isPrimary: true, clientX: origin }));
+      const clientX = track.left + track.width * time / 1.7 - offset;
+      handle.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, isPrimary: true, clientX }));
+    }
+  })()`)
+  assert.deepEqual(await evaluate(ui, `['video-in-point', 'video-out-point'].map(id => document.getElementById(id).value)`), ['0.3', '1.1'])
+  await evaluate(ui, `(() => {
+    const speed = document.querySelector('fieldset input[type="range"]');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(speed, '1.5');
+    speed.dispatchEvent(new Event('input', { bubbles: true }));
+    document.querySelector('dialog input[type="checkbox"]').click();
+    document.querySelector('dialog button[type="submit"]').click();
+  })()`)
+  await until(ui, `!document.querySelector('dialog[open]')`)
+  assert.deepEqual(savedSettings, {
+    id: dockClip.id, nextCue: true,
+    playback: { brightness: 1, contrast: 1, saturation: 1, fit: null, startSeconds: 0.3, endSeconds: 1.1, rate: 1.5, loop: true },
+  })
+
+  await inspect('Inspection still')
+  await until(ui, `document.querySelector('dialog img').naturalWidth > 0`)
+  assert.equal(await evaluate(ui, `!!document.querySelector('dialog [aria-label="Trim start"]')`), false)
+  await evaluate(ui, `(() => {
+    const select = document.querySelector('dialog select');
+    select.value = 'cover';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    const brightness = document.querySelector('dialog input[type="range"]');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(brightness, '0.65');
+    brightness.dispatchEvent(new Event('input', { bubbles: true }));
+  })()`)
+  assert.deepEqual(await evaluate(ui, `[document.querySelector('dialog img').style.objectFit, document.querySelector('dialog img').style.filter]`), ['cover', 'brightness(0.65)'])
+  await evaluate(ui, `document.querySelector('dialog button[type="submit"]').click()`)
+  await until(ui, `!document.querySelector('dialog[open]')`)
+  assert.deepEqual(savedSettings, { id: dockImage.id, nextCue: true, playback: { brightness: 0.65, contrast: 1, saturation: 1, fit: 'cover' } })
+  console.log('PASS: Media Inspector video trim handles, image color preview, scaling, and next-cue saves')
   console.log('PASS: no-output navigation and local embedded video playback')
   console.log('PASS: Slideshow waits on paused video, advances after completion, and stops on codec errors')
   console.log('PASS: Documents UI, compiled preload, embedded-video controls, muted monitor, slider seeking, slide navigation')

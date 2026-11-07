@@ -14,6 +14,7 @@ import { DownloadsModule } from './downloads/downloads.module'
 import { AdminModule } from './admin/admin.module'
 import { UsageModule } from './usage/usage.module'
 import { CrashesModule } from './crashes/crashes.module'
+import { FeedbackModule } from './feedback/feedback.module'
 import { MailModule } from './mail/mail.module'
 import { AccountModule } from './account/account.module'
 import { HealthController } from './health/health.controller'
@@ -37,6 +38,7 @@ import { AppThrottlerGuard } from './common/guards/app-throttler.guard'
     DownloadsModule,
     UsageModule,
     CrashesModule,
+    FeedbackModule,
     AdminModule,
     AccountModule,
     LicensingModule,

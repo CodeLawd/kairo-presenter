@@ -113,6 +113,8 @@ class MediaService {
   private scanError: string | null = null
   private liveItemId: string | null = null
   private livePaused = false
+  private livePlayback: MediaPlayback | undefined
+  private liveCue = 0
   /**
    * In-app clipboard. System pasteboard is also written for Finder, but
    * Electron's macOS clipboard clears between writes — so Paste here prefers
@@ -150,6 +152,8 @@ class MediaService {
       playback: this.playback,
       liveItemId: this.liveItemId,
       livePaused: this.livePaused,
+      livePlayback: this.getLivePlayback(),
+      liveCue: this.liveCue,
       error: this.scanError,
     }
   }
@@ -339,7 +343,7 @@ class MediaService {
     return healed
   }
 
-  private async savePlaylists(): Promise<void> {
+  private async savePlaylists(): Promise<string | undefined> {
     const root = this.root
     if (!root) return
     try {
@@ -362,6 +366,7 @@ class MediaService {
       // A read-only volume must not lose the edit that is already in memory.
       this.scanError = `Playlists could not be saved to the media folder — ${(err as Error).message}`
       log.warn('[Media] Could not write playlists manifest', (err as Error).message)
+      return this.scanError
     }
   }
 
@@ -730,7 +735,15 @@ class MediaService {
     return normalizeMediaPlayback(this.playback[id])
   }
 
-  async setPlayback(id: string, patch: Partial<MediaPlayback>): Promise<MediaLibrary> {
+  getLivePlayback(): MediaPlayback | undefined {
+    return this.liveItemId ? this.livePlayback : undefined
+  }
+
+  getLiveCue(): number {
+    return this.liveCue
+  }
+
+  async setPlayback(id: string, patch: Partial<MediaPlayback>, nextCue = false): Promise<MediaLibrary> {
     const next = normalizeMediaPlayback({ ...this.getPlayback(id), ...patch })
     if (isDefaultMediaPlayback(next)) {
       const { [id]: _removed, ...rest } = this.playback
@@ -738,13 +751,19 @@ class MediaService {
     } else {
       this.playback = { ...this.playback, [id]: next }
     }
-    await this.savePlaylists()
+    if (id === this.liveItemId && !nextCue) {
+      this.livePlayback = normalizeMediaPlayback({ ...this.livePlayback, ...patch })
+    }
+    const saveError = await this.savePlaylists()
     this.emit()
+    if (nextCue && saveError) throw new Error(saveError)
     return this.getLibrary()
   }
 
   setLiveItem(id: string | null): void {
     this.liveItemId = id
+    this.livePlayback = id ? this.getPlayback(id) : undefined
+    this.liveCue += 1
     this.livePaused = false
     this.emit()
   }

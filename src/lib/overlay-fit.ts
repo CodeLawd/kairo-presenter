@@ -58,12 +58,16 @@ export interface OverlayVideoTime {
 interface OverlayVideo {
   muted: boolean
   defaultMuted?: boolean
-  playsInline: boolean
+  playsInline?: boolean
   readyState: number
   ended?: boolean
   currentTime?: number
   duration?: number
-  dataset?: { paPaused?: string }
+  dataset?: { paPaused?: string; mediaStart?: string; mediaEnd?: string; mediaRate?: string }
+  playbackRate?: number
+  loop?: boolean
+  paused?: boolean
+  seeking?: boolean
   play(): Promise<void>
   pause(): void
   addEventListener(type: string, listener: () => void, options?: { once?: boolean }): void
@@ -79,6 +83,48 @@ interface OverlayVideoRoot {
  * Video elements placed in the theme are decoration and just keep playing.
  */
 export const OVERLAY_TRANSPORT_VIDEOS = 'video:not(.pa-element video)'
+
+const timedMedia = new WeakMap<OverlayVideo, { loop: boolean }>()
+
+function mediaBounds(video: OverlayVideo): { start: number; end: number } {
+  const duration = Number.isFinite(video.duration) ? video.duration ?? Infinity : Infinity
+  const end = Math.min(duration, Number(video.dataset?.mediaEnd) || Infinity)
+  const start = Number(video.dataset?.mediaStart) || 0
+  return { start: start < end ? start : 0, end }
+}
+
+/** Apply the same time range to the local monitor and fallback program audio. */
+export function prepareOverlayMedia(video: OverlayVideo, loop: boolean): void {
+  if (video.dataset?.mediaStart === undefined) return
+  video.loop = loop && !Number(video.dataset.mediaStart) && !Number(video.dataset.mediaEnd)
+  const settings = timedMedia.get(video)
+  if (settings) {
+    settings.loop = loop
+    return
+  }
+  const state = { loop }
+  timedMedia.set(video, state)
+  const initialize = (): void => {
+    video.playbackRate = Number(video.dataset?.mediaRate) || 1
+    const { start } = mediaBounds(video)
+    if (start > 0) video.currentTime = start
+  }
+  if (video.readyState >= 1) initialize()
+  else video.addEventListener('loadedmetadata', initialize, { once: true })
+  const checkEnd = (): void => {
+    const { start, end } = mediaBounds(video)
+    if (video.seeking || (video.currentTime ?? 0) < end || video.dataset?.paPaused === '1') return
+    if (state.loop && !video.loop) {
+      video.currentTime = start
+      if (video.paused) void video.play().catch(() => undefined)
+    } else if (!video.paused && !video.loop) {
+      video.pause()
+      video.currentTime = end
+    }
+  }
+  video.addEventListener('timeupdate', checkEnd)
+  video.addEventListener('ended', checkEnd)
+}
 
 /**
  * Videos written through innerHTML do not reliably honor `autoplay`.
@@ -100,7 +146,7 @@ export function playOverlayVideos(root: OverlayVideoRoot, paused = false): void 
       continue
     }
     const start = (): void => {
-      if (video.dataset?.paPaused === '1') return
+      if (video.dataset?.paPaused === '1' || (video.currentTime ?? 0) >= mediaBounds(video).end) return
       void video.play().catch(() => undefined)
     }
     video.addEventListener('loadeddata', start, { once: true })
@@ -119,7 +165,8 @@ export function setOverlayVideosPaused(root: OverlayVideoRoot, paused: boolean):
       video.pause()
       continue
     }
-    if (video.ended) video.currentTime = 0
+    const { start, end } = mediaBounds(video)
+    if (video.ended || (video.currentTime ?? 0) >= end) video.currentTime = start
     void video.play().catch(() => undefined)
   }
 }
@@ -134,17 +181,18 @@ export function seekOverlayVideos(root: OverlayVideoRoot, seconds: number): void
   const raw = Number.isFinite(seconds) ? Math.max(0, seconds) : 0
   for (let i = 0; i < videos.length; i++) {
     const video = videos[i]
-    const duration = video.duration ?? 0
-    video.currentTime = Number.isFinite(duration) && duration > 0 ? Math.min(duration, raw) : raw
+    const { start, end } = mediaBounds(video)
+    video.currentTime = Math.min(end, Math.max(start, raw))
   }
 }
 
 export function overlayVideoTime(video: OverlayVideo): OverlayVideoTime {
-  const duration = Number.isFinite(video.duration) ? (video.duration ?? 0) : 0
+  const { end } = mediaBounds(video)
+  const duration = Number.isFinite(end) ? end : 0
   return {
     currentTime: Number.isFinite(video.currentTime) ? (video.currentTime ?? 0) : 0,
     duration,
-    ended: !!video.ended,
+    ended: !!video.ended || (timedMedia.has(video) && !!video.paused && duration > 0 && (video.currentTime ?? 0) >= duration),
   }
 }
 

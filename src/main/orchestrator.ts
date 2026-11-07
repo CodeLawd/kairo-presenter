@@ -72,7 +72,8 @@ function withLiveBackground(theme: OverlayTheme, force = false, showsBackgrounds
   return themeForPush(theme, {
     showsBackgrounds,
     live,
-    playback: live ? mediaService.getPlayback(live.id) : undefined,
+    playback: mediaService.getLivePlayback(),
+    cue: mediaService.getLiveCue(),
     force,
   });
 }

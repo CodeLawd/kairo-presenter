@@ -6,6 +6,8 @@ import { OrgsModule } from '../orgs/orgs.module'
 import { DownloadsModule } from '../downloads/downloads.module'
 import { UsageModule } from '../usage/usage.module'
 import { CrashesModule } from '../crashes/crashes.module'
+import { FeedbackModule } from '../feedback/feedback.module'
+import { FeedbackAdminService } from './feedback-admin.service'
 import { Sermon, SermonSchema } from '../sermons/schemas/sermon.schema'
 import { Session, SessionSchema } from '../auth/schemas/session.schema'
 import { AdminController } from './admin.controller'
@@ -22,6 +24,7 @@ import { PlatformAdminGuard } from './platform-admin.guard'
     DownloadsModule,
     UsageModule,
     CrashesModule,
+    FeedbackModule,
     // Read-only counts for the overview.
     MongooseModule.forFeature([
       { name: Sermon.name, schema: SermonSchema },
@@ -29,6 +32,6 @@ import { PlatformAdminGuard } from './platform-admin.guard'
     ]),
   ],
   controllers: [AdminController],
-  providers: [AdminService, UsageAdminService, CrashesAdminService, PlatformAdminGuard],
+  providers: [AdminService, UsageAdminService, CrashesAdminService, FeedbackAdminService, PlatformAdminGuard],
 })
 export class AdminModule {}

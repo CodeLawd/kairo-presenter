@@ -5,6 +5,8 @@ import { CurrentUser } from '../common/decorators/current-user.decorator'
 import { AdminService, type Actor, type AdminEntry } from './admin.service'
 import { UsageAdminService } from './usage-admin.service'
 import { CrashesAdminService } from './crashes-admin.service'
+import { FeedbackAdminService } from './feedback-admin.service'
+import { FEEDBACK_KINDS, FEEDBACK_STATUSES, type FeedbackKind, type FeedbackStatus } from '@contracts/feedback'
 import { PlatformAdminGuard, SuperadminOnly, type AdminRequestUser } from './platform-admin.guard'
 
 export class ListQuery {
@@ -45,6 +47,21 @@ export class CrashesQuery extends UsageChurchesQuery {
   version?: string
 }
 
+export class FeedbackQuery extends ListQuery {
+  @IsOptional()
+  @IsIn(FEEDBACK_KINDS)
+  kind?: FeedbackKind
+
+  @IsOptional()
+  @IsIn(FEEDBACK_STATUSES)
+  status?: FeedbackStatus
+}
+
+export class SetFeedbackStatusDto {
+  @IsIn(FEEDBACK_STATUSES)
+  status!: FeedbackStatus
+}
+
 export class GrantAdminDto {
   // Pasted addresses often carry spaces; trim before judging the format.
   @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
@@ -65,7 +82,20 @@ export class AdminController {
     private readonly admin: AdminService,
     private readonly usage: UsageAdminService,
     private readonly crashes: CrashesAdminService,
+    private readonly feedback: FeedbackAdminService,
   ) {}
+
+  /** Notes sent from the app's Feedback button, newest first, with who sent them. */
+  @Get('feedback')
+  feedbackList(@Query() query: FeedbackQuery): Promise<unknown> {
+    return this.feedback.list(query)
+  }
+
+  @HttpCode(204)
+  @Patch('feedback/:id')
+  setFeedbackStatus(@Param('id') id: string, @Body() body: SetFeedbackStatusDto): Promise<void> {
+    return this.feedback.setStatus(id, body.status)
+  }
 
   @Get('overview')
   overview(): Promise<unknown> {

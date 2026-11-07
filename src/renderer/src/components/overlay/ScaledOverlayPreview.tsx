@@ -4,6 +4,7 @@ import {
   OVERLAY_TRANSPORT_VIDEOS,
   overlayVideoTime,
   playOverlayVideos,
+  prepareOverlayMedia,
   seekOverlayVideos,
   setOverlayVideosPaused,
   type OverlayVideoTime,
@@ -124,13 +125,18 @@ export function ScaledOverlayPreview({
     const kept = new Set<HTMLVideoElement>()
     if (motion) {
       next.forEach((fresh, index) => {
+        const loop = fresh.loop
         const old = previous[index]
-        if (!old || old.getAttribute('src') !== fresh.getAttribute('src')) return
+        if (!old || old.getAttribute('src') !== fresh.getAttribute('src') || old.dataset.mediaCue !== fresh.dataset.mediaCue) {
+          prepareOverlayMedia(fresh, loop)
+          return
+        }
         for (const name of ['style', 'loop']) {
           const value = fresh.getAttribute(name)
           if (value === null) old.removeAttribute(name)
           else old.setAttribute(name, value)
         }
+        prepareOverlayMedia(old, loop)
         fresh.replaceWith(old)
         releaseVideo(fresh)
         next[index] = old

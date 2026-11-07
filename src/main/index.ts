@@ -264,6 +264,10 @@ function setupApplicationMenu(): void {
                   void updaterService.check();
                 },
               },
+              {
+                label: "What's New in Kairo",
+                click: () => applicationWindow?.webContents.send(IPC.APP.WHATS_NEW),
+              },
               { type: "separator" as const },
               { role: "services" as const },
               { type: "separator" as const },
@@ -300,6 +304,19 @@ function setupApplicationMenu(): void {
       ],
     },
     { role: "windowMenu" },
+    ...(isMac
+      ? []
+      : [
+          {
+            label: "Help",
+            submenu: [
+              {
+                label: "What's New in Kairo",
+                click: () => applicationWindow?.webContents.send(IPC.APP.WHATS_NEW),
+              },
+            ],
+          },
+        ]),
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }

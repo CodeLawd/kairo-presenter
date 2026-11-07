@@ -829,11 +829,15 @@ function registerMediaHandlers(): void {
     return mediaService.importIntoPlaylist(playlistId, result.filePaths);
   });
 
-  ipcMain.handle(IPC.MEDIA.SET_PLAYBACK, async (_event, itemId: string, patch: Partial<MediaPlayback>) => {
-    const library = await mediaService.setPlayback(itemId, patch);
+  ipcMain.handle(IPC.MEDIA.SET_PLAYBACK, async (_event, itemId: string, patch: Partial<MediaPlayback>, nextCue?: boolean) => {
+    if (nextCue && !mediaService.getItem(itemId)) {
+      throw new Error("This item is no longer in the Media Dock.");
+    }
+    const library = await mediaService.setPlayback(itemId, patch, nextCue === true);
     const live = mediaService.getLiveItem();
-    if (live?.id === itemId) {
-      await surfaceManager.patchBackgroundPlayback(mediaService.getPlayback(itemId));
+    const playback = mediaService.getLivePlayback();
+    if (!nextCue && live?.id === itemId && playback) {
+      await surfaceManager.patchBackgroundPlayback(playback);
     }
     return library;
   });
@@ -1377,6 +1381,7 @@ function registerOnboardingHandlers(): void {
  * operator-facing message intact all the way to the field it belongs under.
  */
 function registerAccountHandlers(): void {
+  ipcMain.handle(IPC.FEEDBACK.SEND, (_event, input: Parameters<typeof cloudSession.sendFeedback>[0]) => cloudResult(() => cloudSession.sendFeedback(input)));
   ipcMain.handle(IPC.ACCOUNT.GET_LICENSE, () => licensing.getStatus());
   ipcMain.handle(IPC.ACCOUNT.ACTIVATE_LICENSE, (_event, key: string, name?: string) => cloudResult(() => licensing.activate(key, name)));
   ipcMain.handle(IPC.ACCOUNT.REFRESH_LICENSE, () => cloudResult(() => licensing.refresh()));
