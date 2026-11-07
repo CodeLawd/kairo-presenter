@@ -30,6 +30,22 @@ export type ChangelogEntry = {
 
 export const changelog: ChangelogEntry[] = [
   {
+    version: '1.0.29',
+    date: '2026-11-07',
+    title: 'Trim media and share feedback',
+    notes: [
+      'Trim a video or audio file to just the part you need with the new timeline in the media inspector, and media overlays and playback behave more reliably.',
+      'Send feedback to the Kairo team straight from the workspace sidebar, so you can report a problem or suggest an idea without leaving the app.',
+      'After each update, a What\'s New sheet shows you what changed, once, the first time you open Kairo.',
+      'Kairo for Mac is now signed and approved by Apple, so it installs and opens without any extra security steps, and the start-up screen now plays a short animation while Kairo loads.',
+    ],
+    highlights: [
+      { icon: 'media', title: 'Trim your media', body: 'Use the new timeline in the media inspector to play just the part of a video or audio file you need.' },
+      { icon: 'tip', title: 'Send us feedback', body: 'Use the feedback button in the workspace sidebar to report a problem or share an idea without leaving Kairo.' },
+      { icon: 'speed', title: 'Easier Mac install', body: 'Kairo for Mac is now signed and approved by Apple, so it opens without any extra security steps.' },
+    ],
+  },
+  {
     version: '1.0.28',
     date: '2026-11-03',
     title: 'A roomier live preview',
