@@ -30,6 +30,22 @@ export type ChangelogEntry = {
 
 export const changelog: ChangelogEntry[] = [
   {
+    version: '1.0.30',
+    date: '2026-11-07',
+    title: 'Slides that look like the original',
+    notes: [
+      'Documents is now called Slides, and every slide in a deck shows in one grid you can zoom, so you can see what is coming next at a glance.',
+      'PowerPoint slides keep every picture, font and effect. If this computer has no PowerPoint or Keynote, Kairo offers a free one-time download that stays inside Kairo and works offline.',
+      'A screen you already set up can now be moved onto a video card output such as a DeckLink, without making a new one.',
+      'Media cards now show the scaling you picked for each image or video, such as scale to fit.',
+    ],
+    highlights: [
+      { icon: 'documents', title: 'Slides, all in view', body: 'Every slide in a deck shows in one zoomable grid. Click any slide to put it on screen.' },
+      { icon: 'documents', title: 'PowerPoint, exactly as designed', body: 'Pictures, fonts and effects come through. Kairo offers a free one-time download when this computer has no PowerPoint or Keynote.' },
+      { icon: 'screens', title: 'Move a screen to a video card', body: 'Pick a DeckLink output straight from an existing screen\'s Output menu.' },
+    ],
+  },
+  {
     version: '1.0.29',
     date: '2026-11-07',
     title: 'Trim media and share feedback',
