@@ -1,3 +1,4 @@
+import { useShallow } from "zustand/react/shallow";
 import { useCallback, useEffect, useState } from 'react'
 import {
   BookOpen,
@@ -57,7 +58,7 @@ function formatDate(iso: string): string {
 export default function WhatsNewSheet({ suppressed = false }: { suppressed?: boolean }): React.ReactElement | null {
   const [entry, setEntry] = useState<ChangelogEntry | null>(null)
   const [auto, setAuto] = useState<ChangelogEntry | null>(null)
-  const { isTranscribing, liveOutputLabel } = useAppStore()
+  const { isTranscribing, liveOutputLabel } = useAppStore(useShallow((state) => ({ isTranscribing: state.isTranscribing, liveOutputLabel: state.liveOutputLabel })))
   const isLive = isTranscribing || Boolean(liveOutputLabel?.trim())
 
   // After an update: compare with the last version shown. Dev builds never

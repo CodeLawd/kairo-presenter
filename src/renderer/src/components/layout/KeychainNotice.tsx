@@ -1,3 +1,4 @@
+import { useShallow } from "zustand/react/shallow";
 import { useState } from 'react'
 import { AlertTriangle, X } from '@/icons'
 import { CREDENTIALS_NOT_SAVED_NOTICE } from '@/lib/credentials-notice'
@@ -16,7 +17,7 @@ import { useAppStore } from '@/stores/useAppStore'
 export default function KeychainNotice(): React.ReactElement | null {
   const credentialsPersisted = useAccountStore((s) => s.session.credentialsPersisted)
   const signedIn = useAccountStore((s) => s.session.state !== 'signed-out')
-  const { isTranscribing, liveOutputLabel } = useAppStore()
+  const { isTranscribing, liveOutputLabel } = useAppStore(useShallow((state) => ({ isTranscribing: state.isTranscribing, liveOutputLabel: state.liveOutputLabel })))
   const isLive = isTranscribing || Boolean(liveOutputLabel?.trim())
   const [dismissed, setDismissed] = useState(false)
 

@@ -1,3 +1,4 @@
+import { useShallow } from "zustand/react/shallow";
 import Audience from '@/components/audience/Audience'
 import { createAudioCapture } from '@/audio/capture'
 import { IMPORT_OPTIONS, isImportKind } from '@shared/import-menu'
@@ -76,11 +77,7 @@ function CloudSubscriptions(): null {
 // ─── Persistent audio pipeline (lives at app root, not tied to any route) ──────
 
 function AudioPipeline(): null {
-  const {
-    isTranscribing, setIsTranscribing,
-    setAudioCapturing, setAudioLevel,
-    captureDeviceId,
-  } = useAppStore()
+  const { isTranscribing, setIsTranscribing, setAudioCapturing, setAudioLevel, captureDeviceId } = useAppStore(useShallow((state) => ({ isTranscribing: state.isTranscribing, setIsTranscribing: state.setIsTranscribing, setAudioCapturing: state.setAudioCapturing, setAudioLevel: state.setAudioLevel, captureDeviceId: state.captureDeviceId })))
 
   // Runtime state is hydrated once by the startup bootstrap; the push
   // subscriptions below keep it current from then on.

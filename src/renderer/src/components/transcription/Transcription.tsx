@@ -1,3 +1,4 @@
+import { useShallow } from "zustand/react/shallow";
 import { useState, useEffect, useRef, useCallback } from 'react'
 import {
   Mic,
@@ -185,6 +186,11 @@ function HighlightedText({
 }
 
 // ─── Audio level bar ──────────────────────────────────────────────────────────
+
+function LiveAudioLevelBar({ active }: { active: boolean }): React.ReactElement {
+  const level = useAppStore((state) => state.audioLevel)
+  return <AudioLevelBar level={active ? level : null} />
+}
 
 function AudioLevelBar({ level }: { level: AudioLevel | null }): React.ReactElement {
   const rms     = level?.rms  ?? 0
@@ -617,7 +623,7 @@ function ScrollLockButton({
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function Transcription(): React.ReactElement {
-  const { isTranscribing, setIsTranscribing, addTranscriptLine, audioLevel, captureDeviceId, setCaptureDeviceId } = useAppStore()
+  const { isTranscribing, setIsTranscribing, addTranscriptLine, captureDeviceId, setCaptureDeviceId } = useAppStore(useShallow((state) => ({ isTranscribing: state.isTranscribing, setIsTranscribing: state.setIsTranscribing, addTranscriptLine: state.addTranscriptLine, captureDeviceId: state.captureDeviceId, setCaptureDeviceId: state.setCaptureDeviceId })))
 
   // Transcript state
   const [segments, setSegments] = useState<DisplaySegment[]>([])
@@ -1013,7 +1019,7 @@ export default function Transcription(): React.ReactElement {
         <div className="flex-1 flex flex-col card gap-0 p-0 overflow-hidden relative min-w-0">
           {/* Audio level bar */}
           <div className="flex-shrink-0 px-4 pt-3 pb-2">
-            <AudioLevelBar level={isTranscribing ? audioLevel : null} />
+            <LiveAudioLevelBar active={isTranscribing} />
           </div>
 
           {/* Scroll-lock toggle */}

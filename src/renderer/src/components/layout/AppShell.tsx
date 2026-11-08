@@ -1,3 +1,4 @@
+import { useShallow } from "zustand/react/shallow";
 import { useEffect, useState } from "react";
 import {
   Bible,
@@ -147,7 +148,7 @@ export function WorkspaceRail({
 
 /** The media dock belongs beside the other presentation controls. */
 function MediaToolbarButton(): React.ReactElement {
-  const { open, toggle, liveItemId, liveName } = useMediaDockStore();
+  const { open, toggle, liveItemId, liveName } = useMediaDockStore(useShallow((state) => ({ open: state.open, toggle: state.toggle, liveItemId: state.liveItemId, liveName: state.liveName })));
   return (
     <ToolbarButton
       label="Media"
@@ -431,14 +432,14 @@ export default function AppShell({
   currentRoute,
   toolbar,
 }: AppShellProps): React.ReactElement {
-  const { liveOutputLabel, isTranscribing } = useAppStore();
-  const houseTrack = useTracksPlaybackStore((state) => {
+  const { liveOutputLabel, isTranscribing } = useAppStore(useShallow((state) => ({ liveOutputLabel: state.liveOutputLabel, isTranscribing: state.isTranscribing })));
+  const houseTrack = useTracksPlaybackStore(useShallow((state) => {
     const live = state.library.items.find(
       (item) => item.id === state.library.liveId,
     );
     if (!live) return null;
     return { name: live.name, paused: state.library.livePaused || state.ended };
-  });
+  }));
   const [clearing, setClearing] = useState(false);
   const screens = useScreensStatus();
   const fullScreen = useFullScreen();

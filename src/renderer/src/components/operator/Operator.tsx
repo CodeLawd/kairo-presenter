@@ -1,3 +1,4 @@
+import { useShallow } from "zustand/react/shallow";
 import { useLicense } from "@/stores/useLicenseStore";
 import { useContentAutoScroll } from "./useContentAutoScroll";
 import { singleVerseSuggestion, splitVerseSuggestions } from "@shared/single-verse-presentation";
@@ -289,15 +290,7 @@ export default function Operator(): React.ReactElement {
   const [keyPromptOpen, setKeyPromptOpen] = useState(false);
   const livePlan = useBootstrapStore((state) => state.livePlan);
   const sermonPlans = useBootstrapStore((state) => state.sermonPlans);
-  const {
-    isTranscribing,
-    setIsTranscribing,
-    autoModeEnabled,
-    setAutoMode,
-    confidenceThreshold,
-    audioLevel,
-    scriptureOutputClearToken,
-  } = useAppStore();
+  const { isTranscribing, setIsTranscribing, autoModeEnabled, setAutoMode, confidenceThreshold, scriptureOutputClearToken } = useAppStore(useShallow((state) => ({ isTranscribing: state.isTranscribing, setIsTranscribing: state.setIsTranscribing, autoModeEnabled: state.autoModeEnabled, setAutoMode: state.setAutoMode, confidenceThreshold: state.confidenceThreshold, scriptureOutputClearToken: state.scriptureOutputClearToken })));
 
   // Transcript states
   const [segments, setSegments] = useState<DisplaySegment[]>([]);
@@ -1731,8 +1724,6 @@ export default function Operator(): React.ReactElement {
                   Transcript
                 </span>
                 <InputLevelMeter
-                  level={audioLevel?.rms ?? 0}
-                  clipping={audioLevel?.clipping ?? false}
                   active={isTranscribing}
                 />
               </div>
@@ -2286,11 +2277,10 @@ const METER_BARS = 5
  * green from the left as the voice comes in, red when the input clips. Dim
  * while not listening. The exact level is on hover.
  */
-function InputLevelMeter({ level, clipping, active }: {
-  level: number
-  clipping: boolean
-  active: boolean
-}): React.ReactElement {
+function InputLevelMeter({ active }: { active: boolean }): React.ReactElement {
+  const audioLevel = useAppStore((state) => state.audioLevel)
+  const level = audioLevel?.rms ?? 0
+  const clipping = audioLevel?.clipping ?? false
   const value = Math.min(Math.max(level, 0), 1)
   const percent = Math.round(value * 100)
   return (

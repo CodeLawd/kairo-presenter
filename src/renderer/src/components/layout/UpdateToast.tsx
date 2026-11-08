@@ -1,3 +1,4 @@
+import { useShallow } from "zustand/react/shallow";
 import { useEffect, useRef, useState } from 'react'
 import { Download, X } from '@/icons'
 import { useUpdates } from '@/hooks/useUpdates'
@@ -20,7 +21,7 @@ const DISMISS_MS = 12_000
  */
 export default function UpdateToast(): React.ReactElement | null {
   const { status, install } = useUpdates()
-  const { isTranscribing, liveOutputLabel } = useAppStore()
+  const { isTranscribing, liveOutputLabel } = useAppStore(useShallow((state) => ({ isTranscribing: state.isTranscribing, liveOutputLabel: state.liveOutputLabel })))
   const isLive = isTranscribing || Boolean(liveOutputLabel?.trim())
   const [visible, setVisible] = useState(false)
   /** Keyed by version so a later update can still announce itself once. */

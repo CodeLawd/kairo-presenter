@@ -401,3 +401,16 @@ it('clearing scripture restores the selected media background and removes verse 
     assert.equal(win.commands.at(-1), 'window.__clearText()', 'clearing again does not restart the media')
   } finally { surface.destroy() }
 })
+
+it('document pages never inherit a theme background blur', async () => {
+  const surface = new ProgramSurface('Card', { kind: 'device', sink: { setFrame: () => {}, close: async () => {} } })
+  try {
+    await surface.showDocument('card', {
+      ...DEFAULT_OVERLAY_THEME,
+      background: { ...DEFAULT_OVERLAY_THEME.background, type: 'image', mediaPath: '/pdf-page.png', blurPx: 18 },
+    })
+    const commands = WindowDouble.windows.at(-1)!.commands.join('\n')
+    assert.ok(commands.includes('pdf-page.png'))
+    assert.ok(!commands.includes('blur(18px)'), 'theme background blur must not soften imported pages')
+  } finally { surface.destroy() }
+})

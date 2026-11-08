@@ -1,3 +1,4 @@
+import { useShallow } from "zustand/react/shallow";
 import { useState } from 'react'
 import { Download } from '@/icons'
 import { useUpdates } from '@/hooks/useUpdates'
@@ -16,7 +17,7 @@ import { useAppStore } from '@/stores/useAppStore'
 export default function UpdatePill(): React.ReactElement | null {
   const { status, download, install } = useUpdates()
   const [confirming, setConfirming] = useState(false)
-  const { isTranscribing, liveOutputLabel } = useAppStore()
+  const { isTranscribing, liveOutputLabel } = useAppStore(useShallow((state) => ({ isTranscribing: state.isTranscribing, liveOutputLabel: state.liveOutputLabel })))
   const isLive = isTranscribing || Boolean(liveOutputLabel?.trim())
 
   if (status.state === 'idle' || status.state === 'checking' || status.state === 'error') return null

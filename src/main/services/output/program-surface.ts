@@ -691,7 +691,9 @@ export class ProgramSurface extends ManagedWindow {
 
   /** Documents use a clean, opaque frame and wait for the page pixels to decode. */
   async showDocument(outputId: string, theme: OverlayTheme, slide?: DocumentSlide): Promise<boolean> {
-    if (!(await this.showSlide(outputId, '', '', theme, undefined, { instant: true }))) return false
+    // A page is the presentation itself, not decorative theme media.
+    const documentTheme = { ...theme, background: { ...theme.background, blurPx: 0 } }
+    if (!(await this.showSlide(outputId, '', '', documentTheme, undefined, { instant: true }))) return false
     if (!this.win || this.win.isDestroyed()) return false
     await this.markDocument()
     if (slide) await this.setDocumentSlide(slide)
