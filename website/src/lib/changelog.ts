@@ -30,6 +30,16 @@ export type ChangelogEntry = {
 
 export const changelog: ChangelogEntry[] = [
   {
+    version: '1.0.33',
+    date: '2026-11-08',
+    title: 'Better scripture and song search',
+    notes: [
+      'Scripture detection and presentation have been improved, and song search finds the right song more easily.',
+      'Slide pages stay sharp on screen, and the app stays smoother during a live service.',
+      'If an update cannot be checked or downloaded, Kairo now shows a short, clear message.',
+    ],
+  },
+  {
     version: '1.0.31',
     date: '2026-11-08',
     title: 'Smoother scripture and transcription',
