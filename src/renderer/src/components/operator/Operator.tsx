@@ -609,10 +609,10 @@ export default function Operator(): React.ReactElement {
     setDefaultTranslation(bootstrapSettings.scripture.defaultTranslation);
   }, [bootstrapSettings]);
 
-  const advanceAutoFollowFromText = useCallback((text: string): void => {
+  const advanceAutoFollowFromText = useCallback((text: string, final: boolean): void => {
     const current = followStateRef.current;
     if (!current || !text.trim()) return;
-    const update = updatePassageFollow(current, text, suggestionsRef.current);
+    const update = updatePassageFollow(current, text, suggestionsRef.current, final);
     followStateRef.current = update.state;
     if (
       !update.nextSuggestionId ||
@@ -627,6 +627,12 @@ export default function Operator(): React.ReactElement {
     const sent = new Set(sentSuggestionIdsRef.current).add(candidate.id);
     sentSuggestionIdsRef.current = sent;
     setSentSuggestionIds(sent);
+    // The card shows the picked verse first; follow the screen, or it stays on
+    // the verse the reading started from.
+    setSelectedSuggestionId((picked) => {
+      const pickedItem = suggestionsRef.current.find((item) => item.id === picked);
+      return !pickedItem || pickedItem.passageId === candidate.passageId ? candidate.id : picked;
+    });
     setActiveProjection({
       reference: candidate.reference,
       text: candidate.verses.map((verse) => verse.text).join(" "),
@@ -752,7 +758,7 @@ export default function Operator(): React.ReactElement {
       const seg = resultToSegment(result);
       setSegments((prev) => [...prev, seg].slice(-50));
       setInterimText("");
-      advanceAutoFollowFromText(result.text);
+      advanceAutoFollowFromText(result.text, true);
 
       recentReadingTextRef.current =
         `${recentReadingTextRef.current} ${result.text}`.slice(-650);
@@ -779,7 +785,7 @@ export default function Operator(): React.ReactElement {
       )
         return;
       setInterimText(result.text);
-      advanceAutoFollowFromText(result.text);
+      advanceAutoFollowFromText(result.text, false);
     });
 
     const unsubSuggestion = window.api.scripture.onSuggestion((suggestion) => {
@@ -1261,7 +1267,7 @@ export default function Operator(): React.ReactElement {
             : all.stt.provider,
           sttApiKey: "",
           sttLanguage: all.stt.language || "en",
-          llmProvider: all.stt.llmProvider ?? "anthropic",
+          llmProvider: all.stt.llmProvider ?? "deepseek",
           llmApiKey: "",
           scriptureTranslation: all.scripture.defaultTranslation,
           autoMode: autoModeEnabled,

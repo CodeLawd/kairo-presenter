@@ -9,7 +9,7 @@ import type { AppConfig } from '../config/env'
 import { decryptJson, encryptJson, vaultKeyFromSecret } from '../orgs/vault-crypto'
 import { FEATURES, leaseTimes, validateManagedRequest } from './managed-policy'
 
-const DEFAULT_POLICY: LicensePolicy = { freeIssuanceEnabled: true, defaultMaxDevices: 3, defaultMaxTranscriptionSessions: 1, defaultTranscriptionMinutes: 600, defaultManagedRequests: 5000, offlineGraceDays: 14 }
+const DEFAULT_POLICY: LicensePolicy = { freeIssuanceEnabled: true, defaultMaxDevices: 3, defaultMaxTranscriptionSessions: 3, defaultTranscriptionMinutes: 600, defaultManagedRequests: 5000, offlineGraceDays: 14 }
 const PROVIDERS = ['deepgram', 'bible', 'anthropic', 'deepseek', 'brave', 'googleTranslate'] as const
 interface SecretConfig { privateKey: string; publicKey: string; providers: Record<string, string> }
 interface KeyRow { hash: string; createdAt?: string; sealed?: { ciphertext: string; iv: string; authTag: string } }
@@ -23,6 +23,25 @@ const hash = (s: string) => createHash('sha256').update(s).digest('hex')
  */
 const LEASE_MS = 180_000
 
+/**
+ * The licence's live-session limit is reached. Usually another computer is
+ * transcribing, or one that crashed still holds a lease (it lapses within
+ * LEASE_MS). Desktops match this wording to wait and retry instead of stopping.
+ */
+/**
+ * How many computers may transcribe at once: every computer the licence
+ * allows. A church running two or three rooms at the same time (auditorium,
+ * youth church) needs each of them listening; minutes still cap the cost.
+ * `maxTranscriptionSessions` can only raise this, never lower it below the
+ * computer limit.
+ */
+export function sessionLimit(row: { maxDevices: number; maxTranscriptionSessions: number }): number {
+  return Math.max(row.maxDevices, row.maxTranscriptionSessions)
+}
+const SESSION_LIMIT_EXPR = { $max: ['$maxDevices', '$maxTranscriptionSessions'] }
+
+export const SESSION_LIMIT_REASON = 'Another computer is using transcription on this licence'
+
 /** Why a transcription renewal was refused, in words a church can act on. */
 export function renewalRefusal(row: LicenseRow | null, id: string, deviceId: string, now: number): string {
   if (!row || row.status !== 'active' || (row.expiresAt && Date.parse(row.expiresAt) <= now)) return 'The licence is no longer active'
@@ -32,7 +51,7 @@ export function renewalRefusal(row: LicenseRow | null, id: string, deviceId: str
   if (!session || session.until <= now) return 'The transcription session expired'
   if (session.nextRenew > now) return 'The transcription session was renewed too early'
   if (row.usage.period === period() && row.usage.transcriptionMinutes + 1 > row.transcriptionMinutes) return "This month's transcription minutes are used up"
-  if (row.sessions.filter((s) => s.until > now).length > row.maxTranscriptionSessions) return 'Too many transcription sessions are open on this licence'
+  if (row.sessions.filter((s) => s.until > now).length > sessionLimit(row)) return SESSION_LIMIT_REASON
   return 'The transcription session could not be renewed'
 }
 
@@ -59,7 +78,17 @@ export class LicensingService {
     if (!doc) throw new ServiceUnavailableException('Licensing configuration unavailable')
     return { doc, secrets: decryptJson<SecretConfig>(this.key, doc.envelope) }
   }
-  async policy(): Promise<LicensePolicy> { return (await this.config()).doc.policy }
+  /**
+   * Only the settings this version knows, with defaults for any it added since.
+   * A saved policy can carry fields an older version stored; handing those back
+   * made the admin page send them on save, and the whole save was refused.
+   */
+  async policy(): Promise<LicensePolicy> {
+    const stored = ((await this.config()).doc.policy ?? {}) as Partial<LicensePolicy>
+    return Object.fromEntries(
+      (Object.keys(DEFAULT_POLICY) as (keyof LicensePolicy)[]).map((key) => [key, stored[key] ?? DEFAULT_POLICY[key]]),
+    ) as unknown as LicensePolicy
+  }
   async updatePolicy(actor: string, patch: Partial<LicensePolicy>): Promise<LicensePolicy> {
     this.validateNumbers(patch as unknown as Record<string, unknown>, { defaultMaxDevices: [1, 100], defaultMaxTranscriptionSessions: [1, 20], defaultTranscriptionMinutes: [0, 100000], defaultManagedRequests: [0, 1000000], offlineGraceDays: [1, 14] }, ['freeIssuanceEnabled'])
     if (patch.freeIssuanceEnabled !== undefined && typeof patch.freeIssuanceEnabled !== 'boolean') throw new BadRequestException('Invalid issuance policy')
@@ -248,8 +277,14 @@ export class LicensingService {
     // A computer that reconnects or restarts replaces its own session rather than
     // competing with it: the limit counts other computers' live sessions.
     const live = { $filter: { input: '$sessions', as: 's', cond: { $and: [{ $gt: ['$$s.until', now] }, { $ne: ['$$s.deviceId', user.deviceId] }] } } }
-    const row = await this.licenses.findOneAndUpdate({ orgId: user.orgId, ...active(), features: 'transcription', 'devices.deviceId': user.deviceId, 'usage.period': reservedPeriod, $expr: { $and: [{ $lt: [{ $size: live }, '$maxTranscriptionSessions'] }, { $lte: [{ $add: ['$usage.transcriptionMinutes', 2] }, '$transcriptionMinutes'] }] } }, [{ $set: { sessions: { $concatArrays: [live, { $literal: [{ id, deviceId: user.deviceId, until: now + LEASE_MS, nextRenew: now + 60000 }] }] }, 'usage.transcriptionMinutes': { $add: ['$usage.transcriptionMinutes', 2] } } }], { returnDocument: 'after' })
-    if (!row) throw new ForbiddenException('Transcription session or monthly minute limit reached; check activation')
+    const row = await this.licenses.findOneAndUpdate({ orgId: user.orgId, ...active(), features: 'transcription', 'devices.deviceId': user.deviceId, 'usage.period': reservedPeriod, $expr: { $and: [{ $lt: [{ $size: live }, SESSION_LIMIT_EXPR] }, { $lte: [{ $add: ['$usage.transcriptionMinutes', 2] }, '$transcriptionMinutes'] }] } }, [{ $set: { sessions: { $concatArrays: [live, { $literal: [{ id, deviceId: user.deviceId, until: now + LEASE_MS, nextRenew: now + 60000 }] }] }, 'usage.transcriptionMinutes': { $add: ['$usage.transcriptionMinutes', 2] } } }], { returnDocument: 'after' })
+    if (!row) {
+      // Say which limit, in words a church can act on: the two need different fixes.
+      const latest = await this.row(user.orgId)
+      const minutesLeft = latest ? latest.transcriptionMinutes - (latest.usage.period === reservedPeriod ? latest.usage.transcriptionMinutes : 0) : 0
+      if (minutesLeft < 2) throw new ForbiddenException("This month's transcription minutes are used up")
+      throw new ForbiddenException(SESSION_LIMIT_REASON)
+    }
     try {
       const response = await fetch('https://api.deepgram.com/v1/auth/grant', { method: 'POST', headers: { Authorization: 'Token ' + key, 'Content-Type': 'application/json' }, body: JSON.stringify({ ttl_seconds: 30 }), redirect: 'error', signal: AbortSignal.timeout(15000) })
       // Deepgram's reason (a revoked key, or one without the Member role grants need) never reaches the church.
@@ -268,7 +303,7 @@ export class LicensingService {
   async renew(user: RequestUser, id: string) {
     await this.member(user); await this.resetPeriod(user.orgId)
     const now = Date.now()
-    const result = await this.licenses.findOneAndUpdate({ orgId: user.orgId, ...active(), features: 'transcription', 'devices.deviceId': user.deviceId, 'usage.period': period(), sessions: { $elemMatch: { id, deviceId: user.deviceId, until: { $gt: now }, nextRenew: { $lte: now } } }, $expr: { $and: [{ $lte: [{ $add: ['$usage.transcriptionMinutes', 1] }, '$transcriptionMinutes'] }, { $lte: [{ $size: { $filter: { input: '$sessions', as: 's', cond: { $gt: ['$$s.until', now] } } } }, '$maxTranscriptionSessions'] }] } }, { $set: { 'sessions.$.until': now + LEASE_MS, 'sessions.$.nextRenew': now + 60000 }, $inc: { 'usage.transcriptionMinutes': 1 } }, { returnDocument: 'after' })
+    const result = await this.licenses.findOneAndUpdate({ orgId: user.orgId, ...active(), features: 'transcription', 'devices.deviceId': user.deviceId, 'usage.period': period(), sessions: { $elemMatch: { id, deviceId: user.deviceId, until: { $gt: now }, nextRenew: { $lte: now } } }, $expr: { $and: [{ $lte: [{ $add: ['$usage.transcriptionMinutes', 1] }, '$transcriptionMinutes'] }, { $lte: [{ $size: { $filter: { input: '$sessions', as: 's', cond: { $gt: ['$$s.until', now] } } } }, SESSION_LIMIT_EXPR] }] } }, { $set: { 'sessions.$.until': now + LEASE_MS, 'sessions.$.nextRenew': now + 60000 }, $inc: { 'usage.transcriptionMinutes': 1 } }, { returnDocument: 'after' })
     if (!result) {
       // Say which rule refused it: one vague message hid an out-of-minutes licence behind "expired".
       const reason = renewalRefusal(await this.row(user.orgId), id, user.deviceId, now)

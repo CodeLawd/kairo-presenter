@@ -922,7 +922,17 @@ export default function AdminLicensingPage(): React.ReactElement {
                     setPolicy(
                       await request<LicensePolicy>(
                         "/v1/admin/licensing/policy",
-                        { method: "PATCH", body: policy },
+                        // Only what this form edits: the loaded policy may hold
+                        // fields the server no longer accepts.
+                        {
+                          method: "PATCH",
+                          body: {
+                            freeIssuanceEnabled: policy.freeIssuanceEnabled,
+                            ...Object.fromEntries(
+                              (Object.keys(POLICY_FIELDS) as (keyof typeof POLICY_FIELDS)[]).map((k) => [k, policy[k]]),
+                            ),
+                          },
+                        },
                       ),
                     );
                     setMessage("Licence policy saved.");

@@ -1,3 +1,5 @@
+// Must stay first: moves a dev build onto its own profile before any store opens.
+import "./dev-profile";
 import { audienceService } from "./services/audience";
 import { IMPORT_OPTIONS, type ImportKind } from "@shared/import-menu";
 import { IPC } from "@shared/ipc";

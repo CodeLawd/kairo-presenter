@@ -313,3 +313,80 @@ test('a row never shows the same verse twice in one translation', () => {
   ])
   assert.deepEqual(row.suggestions.map((item) => item.reference), ['Matthew 1:8', 'Matthew 1:9'])
 })
+
+const john = [
+  "In the beginning was the Word, and the Word was with God, and the Word was God.",
+  "The same was in the beginning with God.",
+  "All things were made by him; and without him was not any thing made that was made.",
+].map((text, index): ScriptureSuggestion => ({
+  ...suggestions[0],
+  id: `john-1-${index + 1}`,
+  reference: `John 1:${index + 1}`,
+  verses: [{ book: "John", chapter: 1, verse: index + 1, text }],
+  passageId: "john-1-1-3",
+  passageReference: "John 1:1-3",
+  passageIndex: index,
+  passageLength: 3,
+}));
+
+test("holds a verse until its sentence is finished, even when its words repeat", () => {
+  let state = { passageId: "john-1-1-3", currentIndex: 0, matchedTokenIndexes: [] as number[] };
+  // Live text grows word by word, and arrives many times over.
+  for (const live of ["In the beginning", "In the beginning was the Word", "In the beginning was the Word and the Word was with God"]) {
+    for (let repeat = 0; repeat < 3; repeat++) {
+      const update = updatePassageFollow(state, live, john, false);
+      assert.equal(update.nextSuggestionId, null, `moved on at "${live}"`);
+      state = update.state;
+    }
+  }
+  const done = updatePassageFollow(state, "In the beginning was the Word and the Word was with God and the Word was God", john, false);
+  assert.equal(done.nextSuggestionId, "john-1-2");
+});
+
+test("the next verse's shared words do not count as it starting", () => {
+  // Verse 2 opens with words verse 1 already used ("beginning", "God").
+  const update = updatePassageFollow(
+    { passageId: "john-1-1-3", currentIndex: 0, matchedTokenIndexes: [] },
+    "In the beginning was the Word and the Word was with God",
+    john,
+  );
+  assert.equal(update.nextSuggestionId, null);
+});
+
+test("a narrower passage inside a loaded one does not split it into two cards", () => {
+  const passage = (from: number, to: number, id: string): ScriptureSuggestion[] =>
+    Array.from({ length: to - from + 1 }, (_, i): ScriptureSuggestion => ({
+      ...suggestions[0],
+      id: `${id}-${from + i}`,
+      reference: `John 1:${from + i}`,
+      verses: [{ book: "John", chapter: 1, verse: from + i, text: `verse ${from + i}` }],
+      passageId: id,
+      passageReference: `John 1:${from}-${to}`,
+      passageIndex: i,
+      passageLength: to - from + 1,
+    }));
+  let list: ScriptureSuggestion[] = [];
+  for (const item of passage(1, 10, "said")) list = mergeScriptureSuggestion(list, item);
+  for (const item of passage(1, 4, "ai")) list = mergeScriptureSuggestion(list, item);
+  assert.equal(list.length, 10);
+  assert.ok(list.every((item) => item.passageId === "said"));
+});
+
+test("a wider passage still replaces the narrower one it contains", () => {
+  const passage = (from: number, to: number, id: string): ScriptureSuggestion[] =>
+    Array.from({ length: to - from + 1 }, (_, i): ScriptureSuggestion => ({
+      ...suggestions[0],
+      id: `${id}-${from + i}`,
+      reference: `John 1:${from + i}`,
+      verses: [{ book: "John", chapter: 1, verse: from + i, text: `verse ${from + i}` }],
+      passageId: id,
+      passageReference: `John 1:${from}-${to}`,
+      passageIndex: i,
+      passageLength: to - from + 1,
+    }));
+  let list: ScriptureSuggestion[] = [];
+  for (const item of passage(1, 4, "short")) list = mergeScriptureSuggestion(list, item);
+  for (const item of passage(1, 10, "long")) list = mergeScriptureSuggestion(list, item);
+  assert.equal(list.length, 10);
+  assert.ok(list.every((item) => item.passageId === "long"));
+});

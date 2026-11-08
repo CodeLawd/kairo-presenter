@@ -124,12 +124,38 @@ describe('rotate', () => {
     expect(pair.refreshToken).toBeTruthy()
   })
 
-  it('revokes the family when the replay arrives after the grace window', async () => {
+  it('revokes the family when an old token is replayed after its successor was used', async () => {
+    const { service, revoke, store, seed } = setup()
+    const { doc, token } = seed()
+
+    const first = await service.rotate(token, context)
+    await service.rotate(first.refreshToken, context)
+    doc.consumedAt = new Date(Date.now() - 120_000)
+    store.get(hashToken(first.refreshToken))!.consumedAt = new Date(Date.now() - 60_000)
+
+    await expect(service.rotate(token, context)).rejects.toBeInstanceOf(RefreshTokenReuseError)
+    expect(revoke).toHaveBeenCalledWith('family-1')
+  })
+
+  it('keeps the church signed in when a refresh reply was lost and the old token comes back later', async () => {
     const { service, revoke, seed } = setup()
     const { doc, token } = seed()
 
     await service.rotate(token, context)
-    doc.consumedAt = new Date(Date.now() - 120_000)
+    // The app never received that reply; it retries hours later with the old token.
+    doc.consumedAt = new Date(Date.now() - 6 * 60 * 60 * 1000)
+
+    const pair = await service.rotate(token, context)
+    expect(revoke).not.toHaveBeenCalled()
+    expect(pair.refreshToken).toBeTruthy()
+  })
+
+  it('still revokes a lost-reply replay that is weeks old', async () => {
+    const { service, revoke, seed } = setup()
+    const { doc, token } = seed()
+
+    await service.rotate(token, context)
+    doc.consumedAt = new Date(Date.now() - 20 * 24 * 60 * 60 * 1000)
 
     await expect(service.rotate(token, context)).rejects.toBeInstanceOf(RefreshTokenReuseError)
     expect(revoke).toHaveBeenCalledWith('family-1')

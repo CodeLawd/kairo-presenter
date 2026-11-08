@@ -22,6 +22,12 @@ const managedAccess: TranscriptionAccess = {
 /** Retries for a failed renewal, all inside the lease's two minutes of slack. */
 const RENEWAL_RETRY_SECONDS = [5, 15, 30]
 
+/** The server's words for "another computer holds the session" (old and new wording). */
+const SESSION_LIMIT = /another computer is using transcription|too many transcription sessions|transcription session or monthly minute limit/i
+/** Long enough for an abandoned three-minute lease to lapse. */
+const SESSION_WAIT_SECONDS = 30
+const SESSION_WAIT_TRIES = 8
+
 interface DGWord {
   word: string
   punctuated_word?: string
@@ -99,6 +105,10 @@ export class DeepgramSTTService extends EventEmitter {
 
   private connectionGeneration = 0
   private grantId: string | null = null
+  /** A renewal was refused and a fresh session was tried; a second refusal stops. */
+  private refusedOnce = false
+  /** Retries while another computer's transcription session is still open. */
+  private sessionWaits = 0
   private renewalTimer: ReturnType<typeof setTimeout> | null = null
   private language = 'en'
   private keyterms: string[] = []
@@ -147,6 +157,8 @@ export class DeepgramSTTService extends EventEmitter {
 
     this.destroyed      = false
     this.active         = true
+    this.refusedOnce    = false
+    this.sessionWaits   = 0
     this.statsStartedAt = Date.now()
 
     await this.openSocket()
@@ -240,7 +252,35 @@ export class DeepgramSTTService extends EventEmitter {
 
     try {
       await this.releaseGrant()
-      const grant = await this.access.transcription()
+      let grant: TranscriptionGrant
+      try {
+        grant = await this.access.transcription()
+      } catch (error) {
+        const status = (error as { status?: unknown })?.status
+        const reason = (error as { message?: unknown })?.message
+        // Another computer holds the licence's session — often one that crashed
+        // or was force-quit, whose lease lapses within three minutes. Wait it out.
+        if (status === 403 && typeof reason === 'string' && SESSION_LIMIT.test(reason) &&
+            generation === this.connectionGeneration && this.active && this.sessionWaits < SESSION_WAIT_TRIES) {
+          this.sessionWaits++
+          log.warn('[Deepgram] Another computer is using transcription — retrying', { attempt: this.sessionWaits, inSeconds: SESSION_WAIT_SECONDS })
+          this.emit('reconnecting', this.sessionWaits, SESSION_WAIT_SECONDS * 1000)
+          this.reconnecting = true
+          this.reconnectTimer = setTimeout(() => {
+            this.reconnectTimer = null
+            if (this.active && !this.destroyed) void this.openSocket().catch(() => undefined)
+          }, SESSION_WAIT_SECONDS * 1000)
+          return
+        }
+        // The licence server said no (not "unreachable"): retrying won't help.
+        if (typeof status === 'number' && status >= 400 && status < 500 && generation === this.connectionGeneration && this.active) {
+          log.error('[Deepgram] Transcription refused', { status, reason })
+          this.disconnect()
+          this.emit('error', new Error(`Transcription stopped: ${typeof reason === 'string' && reason ? `${reason}. ` : ''}Your presentation is still live.`))
+          return
+        }
+        throw error
+      }
       if (!this.active || generation !== this.connectionGeneration) { void this.access.releaseTranscription(grant.sessionId).catch(() => undefined); return }
       this.grantId = grant.sessionId
       this.scheduleRenewal(grant.sessionId, grant.renewAfterSeconds)
@@ -290,6 +330,7 @@ export class DeepgramSTTService extends EventEmitter {
       })
       this.reconnecting     = false
       this.reconnectAttempt = 0
+      this.sessionWaits     = 0
       this.startKeepAlive()
 
       // Drain resilience buffer
@@ -358,6 +399,7 @@ export class DeepgramSTTService extends EventEmitter {
       this.renewalTimer = null
       if (this.grantId !== id || !this.active) return
       void this.access.renewTranscription(id).then(grant => {
+        this.refusedOnce = false
         if (this.grantId === id) this.scheduleRenewal(id, grant.renewAfterSeconds)
       }).catch((error: unknown) => {
         if (this.grantId !== id) return
@@ -368,6 +410,16 @@ export class DeepgramSTTService extends EventEmitter {
           return
         }
         const status = (error as { status?: unknown })?.status
+        if (typeof status === 'number' && status >= 400 && status < 500 && !this.refusedOnce) {
+          // A session can be refused for reasons a new one clears (it lapsed, or
+          // the server lost it). Start a fresh one; a real refusal — minutes
+          // used up, licence inactive — is refused again there, and stops.
+          this.refusedOnce = true
+          log.warn('[Deepgram] Renewal refused — starting a fresh transcription session', { reason })
+          this.closeSocket()
+          this.handleSocketClose()
+          return
+        }
         if (typeof status === 'number' && status >= 400 && status < 500) {
           this.disconnect()
           const why = typeof reason === 'string' && reason ? `${reason}. ` : ''

@@ -66,6 +66,18 @@ const REFRESH_TOKEN_BYTES = 32
  */
 const REFRESH_REUSE_GRACE_MS = 30_000
 
+/**
+ * How long a spent token may still claim a successor that was never used.
+ *
+ * A desktop app whose refresh reached the server but whose reply was lost (a
+ * church Wi-Fi drop, a timeout, the app closing mid-request) still holds the
+ * old token, and its next attempt can be minutes or days later. If nobody has
+ * used the successor, nobody else has the session: hand that client the
+ * successor's rotation instead of signing the church out. Once the successor
+ * has been used, an old copy is a real replay and revokes the family as ever.
+ */
+const LOST_REPLY_MS = 14 * 24 * 60 * 60 * 1000
+
 /** Follows one replacement hop per racer; a chain longer than this is theft. */
 const MAX_REUSE_HOPS = 5
 
@@ -216,14 +228,15 @@ export class TokenService {
     let current = presented
     for (let hops = 0; hops <= MAX_REUSE_HOPS; hops++) {
       if (!current.consumedAt) return current
-      const fresh =
-        Date.now() - current.consumedAt.getTime() < REFRESH_REUSE_GRACE_MS &&
-        current.replacedByTokenHash
-      if (!fresh) return null
+      if (!current.replacedByTokenHash) return null
+      const spentFor = Date.now() - current.consumedAt.getTime()
       const successor = await this.sessions
         .findOne({ tokenHash: current.replacedByTokenHash })
         .exec()
       if (!successor) return null
+      const racing = spentFor < REFRESH_REUSE_GRACE_MS
+      const lostReply = spentFor < LOST_REPLY_MS && !successor.consumedAt && !successor.revokedAt
+      if (!racing && !lostReply) return null
       current = successor
     }
     return null

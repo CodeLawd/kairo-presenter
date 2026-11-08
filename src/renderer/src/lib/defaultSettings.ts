@@ -10,7 +10,7 @@ import { DEFAULT_WEB_SETTINGS } from '@shared/web'
 export const DEFAULT_SETTINGS: SettingsWithSecretsStatus = {
   whatsNew: { lastSeenVersion: '' },
   audio: { deviceId: '' },
-  stt: { provider: 'none', apiKey: '', anthropicApiKey: '', deepseekApiKey: '', llmProvider: 'anthropic', llmModel: '', bibleApiKey: '', language: 'en-US' },
+  stt: { provider: 'none', apiKey: '', anthropicApiKey: '', deepseekApiKey: '', llmProvider: 'deepseek', llmModel: '', bibleApiKey: '', language: 'en-US' },
   scripture: {
     defaultTranslation: DEFAULT_TRANSLATION_ID,
     showVerseNumbers: true,

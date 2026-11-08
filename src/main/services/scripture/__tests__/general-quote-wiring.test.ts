@@ -124,3 +124,23 @@ test('a quotation cut into tiny pieces still resolves once they add up', async (
  for(const piece of ['Greater is he that is','in you than he that','in the world.']){h.send(piece);await tick();await tick()}
  assert.equal(h.emitted.filter(r=>r.book==='1 John').length,1);h.close()
 })
+test('reading the passage on screen aloud is following along, not a new quote — and the AI is not asked',async()=>{
+ const h=harness();let ai=0;h.detector.analyze=()=>{ai++}
+ h.detector.setGeneralQuoteProvider(async()=>[quote])
+ h.detector.setReadingPassage({book:'Luke',chapter:6,start:36,end:42})
+ h.send(quote.text);await tick()
+ assert.equal(h.emitted.length,0);assert.equal(ai,0);h.close()
+})
+test('a quote from outside the passage on screen is still detected',async()=>{
+ const h=harness();h.detector.analyze=()=>{}
+ h.detector.setGeneralQuoteProvider(async()=>[quote])
+ h.detector.setReadingPassage({book:'John',chapter:1,start:1,end:10})
+ h.send(quote.text);await tick()
+ assert.equal(h.emitted.length,1);assert.equal(h.emitted[0].book,'Luke');h.close()
+})
+test('a spoken citation inside the passage on screen still goes through',async()=>{
+ const h=harness()
+ h.detector.setReadingPassage({book:'Luke',chapter:6,start:36,end:42})
+ h.send('Luke 6:38');await tick()
+ assert.equal(h.emitted.some(r=>r.book==='Luke'&&r.verseStart===38),true);h.close()
+})

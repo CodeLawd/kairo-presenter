@@ -35,7 +35,12 @@ export interface ScriptureReadingProgress {
 export interface PassageFollowState {
   passageId: string;
   currentIndex: number;
+  /** Unused since reading is followed in order; kept so older callers still type-check. */
   matchedTokenIndexes: number[];
+  /** How far into the current verse's words the reader has got, from finished phrases. */
+  readTo?: number;
+  /** How many of those words were actually heard (the rest were skipped or misheard). */
+  heardCount?: number;
 }
 
 export interface PassageFollowUpdate {
@@ -168,6 +173,19 @@ export function mergeScriptureSuggestion(
   const chapter = Number(chapterText);
   const start = Number(startText);
   const end = Number(endText ?? startText);
+  // A passage already holding every one of these verses wins: a later, narrower
+  // guess at the same reading (the AI's "John 1:1-4" after "John 1:1-10" was
+  // said) must not carve verses out of it and split it into two cards.
+  const covering = new Map<string, number[]>();
+  for (const item of suggestions) {
+    const verse = item.verses[0];
+    if (!item.passageId || item.passageId === incoming.passageId || item.translation !== incoming.translation || !verse) continue;
+    if (verse.book.toLowerCase() !== book.toLowerCase() || verse.chapter !== chapter) continue;
+    covering.set(item.passageId, [...(covering.get(item.passageId) ?? []), verse.verse]);
+  }
+  for (const verses of covering.values()) {
+    if (Math.min(...verses) <= start && Math.max(...verses) >= end) return suggestions;
+  }
   const retained = suggestions.filter((item) => {
     if (item.passageId === incoming.passageId) return true;
     // The same passage in another translation sits beside it, never replaces it.
@@ -209,10 +227,49 @@ export function nextAutoFollowSuggestion(
   return (candidate.passageIndex ?? 0) > furthestSentIndex ? candidate : null;
 }
 
+/** How many verse words ahead a heard word may match: covers a skipped or misheard word or two. */
+const FOLLOW_LOOKAHEAD = 4;
+
+/**
+ * Walks heard words through the verse in order. Each heard word may match one
+ * of the next few verse words; a match moves the reader past it. Order is the
+ * point: "In the beginning was the Word" reaches the first "Word", not the last.
+ */
+function readThrough(verse: string[], heard: string[], from: number, heardBefore: number) {
+  let readTo = from;
+  let heardCount = heardBefore;
+  let lastHeard = -1;
+  heard.forEach((token, index) => {
+    const limit = Math.min(verse.length, readTo + FOLLOW_LOOKAHEAD);
+    for (let at = readTo; at < limit; at++) {
+      if (verse[at] !== token) continue;
+      readTo = at + 1;
+      heardCount += 1;
+      lastHeard = index;
+      return;
+    }
+  });
+  return { readTo, heardCount, lastHeard };
+}
+
+/**
+ * Follows a preacher reading a passage aloud, verse by verse.
+ *
+ * A verse is done once its closing words have been heard in order (allowing a
+ * misheard word or two) and at least half of it was heard at all — so it holds
+ * until the sentence is finished. It can also be done early when the next verse
+ * clearly begins, but only from words heard after the current verse's last
+ * match: the two often share words, which used to start the next one at once.
+ *
+ * `final` is false for live (interim) text, which keeps growing as the phrase
+ * goes on: it is re-read from the last finished phrase rather than added on,
+ * so the same words arriving again cannot push the reader forward.
+ */
 export function updatePassageFollow(
   state: PassageFollowState,
   transcript: string,
   suggestions: ScriptureSuggestion[],
+  final = true,
 ): PassageFollowUpdate {
   const passage = suggestions
     .filter((item) => item.passageId === state.passageId)
@@ -222,66 +279,43 @@ export function updatePassageFollow(
   const current = passage.find(
     (item) => item.passageIndex === state.currentIndex,
   );
-  const verseText = current?.verses[0]?.text ?? "";
-  const verseTokens = tokenize(verseText);
+  const verseTokens = tokenize(current?.verses[0]?.text ?? "");
   if (!current || verseTokens.length < 2) {
     return { state, nextSuggestionId: null };
   }
 
-  const heard = new Set(tokenize(transcript));
-  const matched = new Set(state.matchedTokenIndexes);
-  verseTokens.forEach((token, index) => {
-    if (heard.has(token)) matched.add(index);
-  });
+  const heard = tokenize(transcript);
+  const reading = readThrough(verseTokens, heard, state.readTo ?? 0, state.heardCount ?? 0);
+  const closingSlack = verseTokens.length <= 8 ? 1 : 2;
+  const finished =
+    reading.readTo >= verseTokens.length - closingSlack &&
+    reading.heardCount >= Math.ceil(verseTokens.length * 0.5);
 
-  const matchedIndexes = [...matched].sort((left, right) => left - right);
-  const coverage = matchedIndexes.length / verseTokens.length;
-  const tailStart = Math.max(0, Math.floor(verseTokens.length * 0.85));
-  const tokenCounts = new Map<string, number>();
-  verseTokens.forEach((token) => {
-    tokenCounts.set(token, (tokenCounts.get(token) ?? 0) + 1);
-  });
-  const distinctiveTailIndexes = verseTokens
-    .map((token, index) => ({ token, index }))
-    .filter(
-      ({ token, index }) =>
-        index >= tailStart && tokenCounts.get(token) === 1,
-    )
-    .map(({ index }) => index);
-  const tailMatches = distinctiveTailIndexes.filter((index) =>
-    matched.has(index),
-  ).length;
-  const tailNeeded = Math.min(2, distinctiveTailIndexes.length);
-  const nextCandidate = passage.find(
-    (item) => item.passageIndex === state.currentIndex + 1,
-  );
-  const nextTokens = tokenize(nextCandidate?.verses[0]?.text ?? "");
-  const nextLeadLength = Math.max(3, Math.ceil(nextTokens.length * 0.35));
-  const nextLeadTokens = [...new Set(nextTokens.slice(0, nextLeadLength))];
-  const nextLeadMatches = nextLeadTokens.filter((token) => heard.has(token)).length;
-  const nextVerseClearlyStarted =
-    nextLeadTokens.length >= 3 &&
-    nextLeadMatches >= 3 &&
-    nextLeadMatches / nextLeadTokens.length >= 0.6;
-  const complete =
-    (coverage >= 0.55 && tailMatches >= tailNeeded) || nextVerseClearlyStarted;
-  const next = complete
-    ? passage.find((item) => item.passageIndex === state.currentIndex + 1)
-    : null;
+  const next = passage.find((item) => item.passageIndex === state.currentIndex + 1);
+  const nextLead = tokenize(next?.verses[0]?.text ?? "").slice(0, 4);
+  const afterCurrent = heard.slice(reading.lastHeard + 1);
+  const nextStarted =
+    nextLead.length >= 3 &&
+    readThrough(nextLead, afterCurrent, 0, 0).heardCount >= 3;
 
-  if (!next) {
+  if (next && (finished || nextStarted)) {
     return {
-      state: { ...state, matchedTokenIndexes: matchedIndexes },
-      nextSuggestionId: null,
+      state: {
+        passageId: state.passageId,
+        currentIndex: state.currentIndex + 1,
+        matchedTokenIndexes: [],
+        readTo: 0,
+        heardCount: 0,
+      },
+      nextSuggestionId: next.id,
     };
   }
   return {
-    state: {
-      passageId: state.passageId,
-      currentIndex: state.currentIndex + 1,
-      matchedTokenIndexes: [],
-    },
-    nextSuggestionId: next.id,
+    // Live text is provisional: only a finished phrase moves the starting point.
+    state: final
+      ? { ...state, readTo: reading.readTo, heardCount: reading.heardCount }
+      : state,
+    nextSuggestionId: null,
   };
 }
 

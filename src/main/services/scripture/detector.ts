@@ -88,7 +88,7 @@ export function canAutoPresentScriptureReference(
 export interface DetectorConfig {
   /** Use the managed gateway even when no local credential exists. */
   managed?: boolean;
-  /** LLM provider — 'anthropic' (default) or 'deepseek' (OpenAI-compatible) */
+  /** LLM provider — 'deepseek' (default, OpenAI-compatible) or 'anthropic' */
   provider?: "anthropic" | "deepseek";
   /** API key for the selected provider */
   apiKey: string;
@@ -164,6 +164,8 @@ const DEFAULT_MODEL_DEEPSEEK = "deepseek-flash";
 const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
 const DEFAULT_MAX_TOKENS = 1536;
 const DEFAULT_INTERVAL = 1_500;
+/** How long after a passage goes up it still counts as being read aloud. */
+const READING_WINDOW_MS = 15 * 60_000;
 const DEFAULT_CACHE_WINDOW = 5 * 60_000;
 const DEFAULT_TIMEOUT = 15_000;
 const MAX_RETRIES = 3;
@@ -473,7 +475,7 @@ export class ScriptureDetector extends EventEmitter {
 
   constructor(config: DetectorConfig) {
     super();
-    const provider = config.provider ?? "anthropic";
+    const provider = config.provider ?? "deepseek";
     this.cfg = {
       provider,
       managed: config.managed ?? config.apiKey === MANAGED,
@@ -702,6 +704,7 @@ export class ScriptureDetector extends EventEmitter {
     // The preacher named a verse or moved to another passage, so a pending
     // chapter must not fall back to verse 1 on top of it.
     if (refs.length > 0) this.cancelChapterFallback();
+    refs = this.withoutReading(refs);
     const fresh = this.filterDedup(refs.map((ref) => this.withSpokenTranslations(ref)));
     if (fresh.length > 0) this.lastPublished = { ref: fresh[fresh.length - 1], at: Date.now() };
     this.statsData.cacheHits += refs.length - fresh.length;
@@ -822,10 +825,40 @@ export class ScriptureDetector extends EventEmitter {
   }
 
   /** Every detection emit goes through here so stamping cannot be forgotten. */
+  /**
+   * The passage on screen. Reading it aloud is following along, not quoting:
+   * the Operator moves through its verses, so a quote match or an AI guess
+   * inside it is not a new detection. A spoken citation still is ("verse 5").
+   */
+  private reading: { book: string; chapter: number; start: number; end: number; at: number } | null = null;
+
+  setReadingPassage(passage: { book: string; chapter: number; start: number; end: number } | null): void {
+    this.reading = passage ? { ...passage, at: Date.now() } : null;
+  }
+
+  private insideReading(book: string, chapter: number, start: number, end = start): boolean {
+    const reading = this.reading;
+    // A passage left up for a long time is no longer being read aloud.
+    if (!reading || Date.now() - reading.at > READING_WINDOW_MS) return false;
+    return book.toLowerCase() === reading.book.toLowerCase() && chapter === reading.chapter &&
+      start >= reading.start && end <= reading.end;
+  }
+
+  /** Drops what is just the passage on screen being read; see `reading`. */
+  private withoutReading(refs: ScriptureReference[]): ScriptureReference[] {
+    const reading = refs.filter((ref) => ref.resolver !== 'explicit' && ref.resolver !== 'sermon-plan' &&
+      this.insideReading(ref.book, ref.chapter, ref.verseStart, ref.verseEnd ?? ref.verseStart))
+    if (!reading.length) return refs
+    log.info('[ScriptureDetector] Reading the passage on screen — not a new detection', { refs: reading.map((ref) => `${ref.book} ${ref.chapter}:${ref.verseStart}`), resolver: reading[0].resolver })
+    return refs.filter((ref) => !reading.includes(ref))
+  }
+
   private emitDetection(
     refs: ScriptureReference[],
     queuedOrigin?: (TranscriptOrigin & { detectionStartedAt: number }) | null,
   ): void {
+    refs = this.withoutReading(refs)
+    if (!refs.length) return
     const origin = queuedOrigin ?? this.transcriptOrigin;
     if (origin) {
       for (const ref of refs) {
@@ -905,6 +938,11 @@ export class ScriptureDetector extends EventEmitter {
       // Otherwise old words in the rolling window could resurrect an operator-dismissed card.
       if (freshText !== text && matches.length) {
         matches = matches.filter((match) => freshSpeechSupports(freshText, match.text));
+      }
+      // Words from the passage on screen: the preacher is reading along, which
+      // the Operator follows. Claim it, so the AI isn't asked about it either.
+      if (matches.length && matches.every((match) => this.insideReading(match.book, match.chapter, match.verse))) {
+        return true;
       }
       if (!matches.length) {
         this.provisionalQuote = null;
@@ -1301,7 +1339,32 @@ export class ScriptureDetector extends EventEmitter {
 
   // ─── Model call ────────────────────────────────────────────────────────────
 
+  /**
+   * Kairo's server holds one AI provider's key, not necessarily the one this
+   * install was set to (fresh installs default to Anthropic; there is no
+   * setting on screen). When the server says the asked-for provider isn't set
+   * up, switch to the other one for this session, once, and keep detecting.
+   */
+  private switchedProvider = false;
+
   private async callModel(text: string): Promise<string> {
+    try {
+      return await this.callProvider(text);
+    } catch (error) {
+      const status = (error as { status?: unknown })?.status;
+      const message = (error as { message?: unknown })?.message;
+      const notConfigured = status === 503 && typeof message === "string" && /not been configured/i.test(message);
+      if (!this.cfg.managed || !notConfigured || this.switchedProvider) throw error;
+      this.switchedProvider = true;
+      const provider = this.cfg.provider === "deepseek" ? "anthropic" : "deepseek";
+      log.warn("[ScriptureDetector] AI provider not set up on Kairo's server — switching", { from: this.cfg.provider, to: provider });
+      this.cfg = { ...this.cfg, provider, model: provider === "deepseek" ? DEFAULT_MODEL_DEEPSEEK : DEFAULT_MODEL_ANTHROPIC };
+      this.initClient();
+      return this.callProvider(text);
+    }
+  }
+
+  private async callProvider(text: string): Promise<string> {
     const signal = AbortSignal.any([
       this.lifetime.signal,
       AbortSignal.timeout(this.cfg.timeoutMs),

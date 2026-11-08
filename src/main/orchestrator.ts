@@ -849,6 +849,8 @@ class Orchestrator {
 
     livePlanService.observe(suggestion.reference, suggestion.planItemId);
     if (this.session) this.session.totalPresentations++;
+    // Reading this passage aloud from here on is following along, not quoting.
+    this.detector?.setReadingPassage(readingPassageOf(suggestion));
     if (content && suggestion.verses.length) {
       const first = suggestion.verses[0];
       programService.setScriptureSlide({ reference: content.reference, text: content.text }, {
@@ -946,7 +948,13 @@ class Orchestrator {
       return surfaceManager.outputState(output).reason;
     }
     const theme = withLiveBackground(outputThemeFor(output, kind), kind === "lyrics", output.show.backgrounds);
+    const startedAt = Date.now();
     const shown = await surface.showSlide(output.id, content.reference, content.text, theme, content.coloredLines);
+    // What reached which screen, and how long it took — the log has to answer
+    // "the screen showed something else" after a service.
+    const ms = Date.now() - startedAt;
+    log.info("[Output] Pushed", { output: output.name, kind, reference: content.reference || undefined, shown, ms });
+    if (ms > 750) log.warn("[Output] Slow push", { output: output.name, ms });
     if (!shown) return SURFACE_GONE[output.kind] ?? "NDI sender unavailable";
     return null;
   }
@@ -1093,6 +1101,7 @@ class Orchestrator {
 
   async clearText(): Promise<boolean> {
     programService.clearCurrent();
+    this.detector?.setReadingPassage(null);
     let targets: SurfaceTarget[] | null = null;
     await Promise.all(
       surfaceManager.allSurfaces().map(async (surface) => {
@@ -1227,3 +1236,15 @@ export const orchestrator = new Orchestrator();
 
 // Break circular dep: inject orchestrator into resilienceManager instead of lazy-require
 resilienceManager.setOrchestrator(orchestrator);
+
+/** The whole passage a presented verse belongs to ("John 1:1-10"), else the verse itself. */
+export function readingPassageOf(suggestion: ScriptureSuggestion): { book: string; chapter: number; start: number; end: number } | null {
+  const first = suggestion.verses[0];
+  if (!first) return null;
+  const range = suggestion.passageReference?.match(/^(.+?)\s+(\d+):(\d+)(?:[-–—](\d+))?$/);
+  if (range && Number(range[2]) === first.chapter) {
+    return { book: first.book, chapter: first.chapter, start: Number(range[3]), end: Number(range[4] ?? range[3]) };
+  }
+  const last = suggestion.verses[suggestion.verses.length - 1];
+  return { book: first.book, chapter: first.chapter, start: first.verse, end: last.chapter === first.chapter ? last.verse : first.verse };
+}

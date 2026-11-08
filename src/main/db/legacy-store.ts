@@ -1,3 +1,4 @@
+import '../dev-profile' // a dev build's own profile — must run before any store opens
 import { app } from 'electron'
 import { copyFileSync, existsSync } from 'fs'
 import { join } from 'path'

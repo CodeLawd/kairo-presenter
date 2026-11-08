@@ -163,7 +163,7 @@ class DocumentsService {
   async savePage(id: string, page: number, png: Uint8Array): Promise<void> {
     const doc = this.pending.get(id)
     if (!doc || page !== doc.pages.length || !validDocumentPage(page, 500)) throw new Error('Invalid import page.')
-    if (!(png instanceof Uint8Array) || png.length > 20 * 1024 * 1024) throw new Error('Page image is too large.')
+    if (!(png instanceof Uint8Array) || png.length > 40 * 1024 * 1024) throw new Error('Page image is too large.')
     const image = nativeImage.createFromBuffer(Buffer.from(png))
     const size = image.getSize()
     if (image.isEmpty() || size.width > 3840 || size.height > 3840) throw new Error('Invalid page image.')

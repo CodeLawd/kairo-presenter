@@ -1,4 +1,4 @@
-import axios, { AxiosInstance, AxiosError } from "axios";
+import axios, { AxiosInstance, AxiosError, isAxiosError } from "axios";
 import log from "electron-log/main";
 
 /** Short: no cloud call may ever be the reason an operator waits. */
@@ -75,7 +75,13 @@ export class CloudApiClient {
         authenticated && status === 401 && options.allowRefresh !== false;
 
       if (refreshable && (await this.refreshOnce())) {
-        return this.send<T>(method, path, body, authenticated, options.timeoutMs, endpoint);
+        // The retry's failure carries the server's real reason (a 403 after a
+        // fresh token, say); throwing it raw lost that behind Axios's wording.
+        try {
+          return await this.send<T>(method, path, body, authenticated, options.timeoutMs, endpoint);
+        } catch (retryError) {
+          throw toApiError(retryError);
+        }
       }
       throw toApiError(error);
     }
@@ -153,7 +159,8 @@ export class CloudApiClient {
 export function toApiError(error: unknown): ApiError {
   // request() already converts Axios errors. Session callers may convert that
   // result again; keep its status and message instead of calling it offline.
-  if (error && typeof error === 'object' && 'status' in error && 'message' in error) {
+  // Axios errors carry `status` and `message` too, so they are not mistaken for one.
+  if (error && typeof error === 'object' && !isAxiosError(error) && 'status' in error && 'message' in error) {
     const apiError = error as ApiError;
     if ((typeof apiError.status === 'number' || apiError.status === null) && typeof apiError.message === 'string') {
       return apiError;

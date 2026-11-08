@@ -1,3 +1,4 @@
+import log from "electron-log/main";
 import type { ManagedRequest } from "@shared/cloud/licensing";
 
 /** A presence marker only, never a credential. All provider requests use the cloud gateway. */
@@ -73,16 +74,32 @@ export function managedFetch(
       undefined,
       purpose,
     );
-    const data = signal
-      ? await new Promise<unknown>((resolve, reject) => {
-          const abort = (): void => reject(abortError());
-          signal.addEventListener("abort", abort, { once: true });
-          if (signal.aborted) abort();
-          request
-            .then(resolve, reject)
-            .finally(() => signal.removeEventListener("abort", abort));
-        })
-      : await request;
+    let data: unknown;
+    try {
+      data = signal
+        ? await new Promise<unknown>((resolve, reject) => {
+            const abort = (): void => reject(abortError());
+            signal.addEventListener("abort", abort, { once: true });
+            if (signal.aborted) abort();
+            request
+              .then(resolve, reject)
+              .finally(() => signal.removeEventListener("abort", abort));
+          })
+        : await request;
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      // Thrown, this became the SDK's bare "Connection error." and hid why —
+      // not activated, minutes used up, Kairo unreachable. As an HTTP error
+      // response the SDK reports the server's own words.
+      const { status, message } = error as { status?: unknown; message?: unknown };
+      const reason = typeof message === "string" && message ? message : "Kairo could not complete the request";
+      const code = typeof status === "number" && status >= 400 ? status : 503;
+      log.warn("[Managed] AI request failed", { provider, status: code, reason });
+      return new Response(JSON.stringify({ type: "error", message: reason, error: { type: "api_error", message: reason } }), {
+        status: code,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
     return new Response(JSON.stringify(data), {
       status: 200,
       headers: { "Content-Type": "application/json" },

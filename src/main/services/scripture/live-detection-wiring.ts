@@ -54,7 +54,9 @@ export function subscribeExplicitScriptureDetection(
   const localBeforeAI = (text: string, result: TranscriptResult, alwaysAsk = false): void => {
     const current = revision;
     const pending = detector.analyzeGeneralQuote(text, false, transcriptEvidenceKey(result, result.id), result.text);
-    if (!pending) { detector.analyze(text); return; }
+    // No offline quote index: the same gate still applies, or every sentence
+    // of the sermon would go to the AI.
+    if (!pending) { if (alwaysAsk || soundsLikeScripture(text)) detector.analyze(text); return; }
     void pending.then(claimed => {
       if (active && current === revision && !claimed && (alwaysAsk || soundsLikeScripture(text))) detector.analyze(text);
     });

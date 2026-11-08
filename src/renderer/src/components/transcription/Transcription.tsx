@@ -869,7 +869,7 @@ export default function Transcription(): React.ReactElement {
       if (!captureDeviceId) return
       try {
         const all = await window.api.settings.getAll()
-        const llmProvider = all.stt.llmProvider ?? 'anthropic'
+        const llmProvider = all.stt.llmProvider ?? 'deepseek'
         const config: OrchestratorConfig = {
           audioDeviceId:       captureDeviceId,
           sttProvider:         all.secretsConfigured.deepgram ? 'deepgram' : all.stt.provider,

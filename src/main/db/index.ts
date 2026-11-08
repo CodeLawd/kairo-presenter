@@ -1,3 +1,4 @@
+import '../dev-profile' // a dev build's own profile — must run before any store opens
 import Store from 'electron-store'
 import { app } from 'electron'
 import { existsSync, readFileSync } from 'fs'
@@ -26,7 +27,7 @@ const defaults: AppSettings = {
     apiKey: '',
     anthropicApiKey: '',
     deepseekApiKey: '',
-    llmProvider: 'anthropic',
+    llmProvider: 'deepseek',
     llmModel: '',
     bibleApiKey: '',
     language: 'en-US',
@@ -116,6 +117,8 @@ export const migrations = new Store<{
   cloudOnboardingV1: boolean
   /** Songs that predate the Songs folder have been exported into it. */
   songsFolderExportV1: boolean
+  /** AI detection moved to DeepSeek, the provider Kairo's server is set up with. */
+  deepseekDefaultV1: boolean
 }>({
   name: renamedStore('proautomate-migrations', 'kairo-migrations'),
   defaults: {
@@ -126,11 +129,22 @@ export const migrations = new Store<{
     customThemeLibraryV1: false,
     cloudOnboardingV1: false,
     songsFolderExportV1: false,
+    deepseekDefaultV1: false,
   },
 })
 
 // Applied once for installs whose store predates a default translation, then
 // future user choices are preserved. The default itself is KJV (bundled).
+// The AI provider had no setting on screen, so an install on Anthropic is on
+// the old default, not a choice: move it to DeepSeek once. Clear a model name
+// too — it belonged to the old provider (and on some installs held a pasted
+// API key rather than a model).
+if (!migrations.get('deepseekDefaultV1')) {
+  const stt = store.get('stt')
+  if (stt.llmProvider !== 'deepseek' || stt.llmModel) store.set('stt', { ...stt, llmProvider: 'deepseek', llmModel: '' })
+  migrations.set('deepseekDefaultV1', true)
+}
+
 if (!migrations.get('nkjvDefaultV1')) {
   store.set('scripture', { ...store.get('scripture'), defaultTranslation: DEFAULT_TRANSLATION_ID })
   migrations.set('nkjvDefaultV1', true)

@@ -56,3 +56,18 @@ test('an API error retains its status when a session converts it again', () => {
   const error = { status: 401, message: 'Refresh token is not valid' }
   assert.deepEqual(toApiError(error), error)
 })
+
+test('a request retried after a token refresh keeps the server reason it fails with', async () => {
+  let posts = 0
+  const api = new CloudApiClient(primary, async () => 'fresh-token')
+  ;(api as unknown as { http: AxiosInstance }).http.defaults.adapter = async (config) => {
+    if (config.method === 'get') return response(config, { ok: true })
+    const status = ++posts === 1 ? 401 : 403
+    const data = status === 403 ? { message: 'This computer is no longer activated on the licence' } : {}
+    throw new AxiosError(`Request failed with status code ${status}`, 'ERR_BAD_REQUEST', config, null,
+      { data, status, statusText: '', headers: {}, config })
+  }
+  api.setAccessToken('stale-token')
+  await assert.rejects(api.request('post', '/v1/managed/transcription/s/renew'),
+    { status: 403, message: 'This computer is no longer activated on the licence' })
+})

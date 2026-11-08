@@ -1,6 +1,8 @@
 import { Worker } from 'node:worker_threads'
 import type { VideoOutputSink } from '../../provider'
 import type { PlaybackWorkerCommand, PlaybackWorkerData, PlaybackWorkerEvent, RingStatus } from './worker-protocol'
+import type { VideoPlaybackDiagnostics } from '@shared/video-devices'
+import log from 'electron-log/main'
 
 /** The slice of `Worker` this sink uses — tests pass a double. */
 export interface PlaybackWorkerLike {
@@ -99,6 +101,7 @@ export function openWorkerPlayback(
         clearTimeout(timer)
         resolve(sink)
       } else if (event.type === 'stats') {
+        reportHealth(hardware, event.diagnostics)
         hardware = event.diagnostics
       } else if (event.type === 'ack') {
         inFlight = false
@@ -118,4 +121,22 @@ export function openWorkerPlayback(
       fail(new Error('DeckLink playback worker exited'))
     })
   })
+}
+
+/**
+ * Logs when the card is falling behind: frames shown late or dropped, or new
+ * pictures arriving far slower than the card shows them. Silent when healthy;
+ * at most once every 30 seconds, so a long service doesn't flood the log.
+ */
+let lastHealthLog = 0
+function reportHealth(previous: VideoPlaybackDiagnostics | null, next: VideoPlaybackDiagnostics): void {
+  if (!previous) return
+  const late = next.late - previous.late
+  const dropped = next.dropped - previous.dropped
+  const received = next.received - previous.received
+  const now = Date.now()
+  if ((late > 0 || dropped > 0 || (next.outputFps > 0 && next.outputFps < 20)) && now - lastHealthLog > 30_000) {
+    lastHealthLog = now
+    log.warn('[DeckLink] Output falling behind', { late, dropped, newFramesPerSecond: received, outputFps: Math.round(next.outputFps) })
+  }
 }

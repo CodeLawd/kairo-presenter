@@ -218,7 +218,8 @@ export default function Documents({ active = true }: { active?: boolean }): Reac
           const sourcePage = await pdf.getPage(index + 1)
           const original = sourcePage.getViewport({ scale: 1 })
           const viewport = sourcePage.getViewport({
-            scale: Math.min(1920 / original.width, 1080 / original.height),
+            // 4K, so a slide stays sharp on Retina and 4K screens, not just 1080p.
+            scale: Math.min(3840 / original.width, 2160 / original.height),
           })
           const canvas = document.createElement('canvas')
           canvas.width = Math.ceil(viewport.width)

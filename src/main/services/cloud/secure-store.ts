@@ -1,3 +1,4 @@
+import '../../dev-profile' // a dev build's own profile — must run before any store opens
 import { createCipheriv, createDecipheriv, randomBytes } from 'crypto'
 import fs from 'fs'
 import path from 'path'
