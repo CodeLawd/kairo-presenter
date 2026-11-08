@@ -30,6 +30,16 @@ export type ChangelogEntry = {
 
 export const changelog: ChangelogEntry[] = [
   {
+    version: '1.0.31',
+    date: '2026-11-08',
+    title: 'Smoother scripture and transcription',
+    notes: [
+      'Following a passage aloud is less likely to trigger duplicate scripture suggestions while it is on screen.',
+      'Transcription handles interruptions more reliably, with clearer messages when a service cannot start.',
+      'Larger slide images can now be imported, and video card output is more reliable.',
+    ],
+  },
+  {
     version: '1.0.30',
     date: '2026-11-07',
     title: 'Slides that look like the original',
