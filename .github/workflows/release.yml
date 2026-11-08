@@ -154,6 +154,7 @@ jobs:
             const cached = new Cache().getCachePath(url, file);
             fs.mkdirSync(path.dirname(cached), { recursive: true });
             fs.copyFileSync(archive, cached);
+            fs.appendFileSync(process.env.GITHUB_ENV, `KAIRO_ELECTRON_ARCHIVE=${cached}\n`);
             execFileSync(process.execPath, ['node_modules/electron/install.js'], { stdio: 'inherit' });
             electronRequire('./index.js');
             console.log(`Verified Electron ${version} for ${process.platform}/${process.arch}`);
@@ -198,7 +199,9 @@ jobs:
               fi
               ;;
           esac
-          bun run ${{ matrix.build_script }} --publish never $EXTRA
+          # Reuse the checksum-verified archive; builder otherwise downloads
+          # Electron again through its own downloader and checksum endpoint.
+          bun run ${{ matrix.build_script }} --publish never "-c.electronDist=$KAIRO_ELECTRON_ARCHIVE" $EXTRA
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
