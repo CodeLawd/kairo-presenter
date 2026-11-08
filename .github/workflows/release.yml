@@ -118,15 +118,47 @@ jobs:
         # Native modules download prebuilt binaries/headers during install; a
         # runner network blip there fails the whole matrix, so retry.
         shell: bash
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
         run: |
           for attempt in 1 2 3; do
-            # Bun can leave a failed postinstall marked done. Explicitly retry
-            # Electron's verified download rather than accepting an empty dist.
-            bun install --frozen-lockfile && node node_modules/electron/install.js && node -e "require('electron')" && exit 0
+            bun install --frozen-lockfile && exit 0
             echo "::warning::bun install --frozen-lockfile failed (attempt $attempt of 3), retrying in 30s"
             sleep 30
           done
           exit 1
+
+      - name: Install verified Electron archive through GitHub API
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node <<'JS'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const os = require('node:os');
+          const crypto = require('node:crypto');
+          const { execFileSync } = require('node:child_process');
+          const { createRequire } = require('node:module');
+          const electronRequire = createRequire(path.resolve('node_modules/electron/package.json'));
+          const { version } = electronRequire('./package.json');
+          const { Cache } = electronRequire('@electron/get/dist/cjs/Cache');
+          const file = `electron-v${version}-${process.platform}-${process.arch}.zip`;
+          const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'electron-api-'));
+          try {
+            execFileSync('gh', ['release', 'download', `v${version}`, '--repo', 'electron/electron', '--pattern', file, '--dir', dir], { stdio: 'inherit' });
+            const archive = path.join(dir, file);
+            const hash = crypto.createHash('sha256').update(fs.readFileSync(archive)).digest('hex');
+            if (hash !== electronRequire('./checksums.json')[file]) throw new Error('Electron archive checksum mismatch');
+            const url = `https://github.com/electron/electron/releases/download/v${version}/${file}`;
+            const cached = new Cache().getCachePath(url, file);
+            fs.mkdirSync(path.dirname(cached), { recursive: true });
+            fs.copyFileSync(archive, cached);
+            execFileSync(process.execPath, ['node_modules/electron/install.js'], { stdio: 'inherit' });
+            electronRequire('./index.js');
+            console.log(`Verified Electron ${version} for ${process.platform}/${process.arch}`);
+          } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+          JS
 
       - name: Rebuild native modules for Electron
         run: bun run rebuild:native
