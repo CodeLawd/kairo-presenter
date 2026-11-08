@@ -49,7 +49,8 @@ jobs:
       MAIN_VITE_WEB_URL: ${{ vars.PROD_WEB_URL }}
       HAS_WIN_CERT: ${{ secrets.WIN_CSC_LINK != '' }}
     strategy:
-      fail-fast: true
+      # Let other platforms finish; `publish` still needs every job to succeed.
+      fail-fast: false
       matrix:
         include:
           - id: mac-arm64
@@ -201,7 +202,15 @@ jobs:
           esac
           # Reuse the checksum-verified archive; builder otherwise downloads
           # Electron again through its own downloader and checksum endpoint.
-          bun run ${{ matrix.build_script }} --publish never "-c.electronDist=$KAIRO_ELECTRON_ARCHIVE" $EXTRA
+          # Packaging depends on outside services (tool downloads, Apple
+          # notarization and stapling), so a network blip gets another attempt.
+          for attempt in 1 2 3; do
+            bun run ${{ matrix.build_script }} --publish never "-c.electronDist=$KAIRO_ELECTRON_ARCHIVE" $EXTRA && exit 0
+            echo "::warning::Packaging failed (attempt $attempt of 3)"
+            rm -rf release
+            [ "$attempt" -lt 3 ] && sleep 60
+          done
+          exit 1
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
