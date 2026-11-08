@@ -120,7 +120,9 @@ jobs:
         shell: bash
         run: |
           for attempt in 1 2 3; do
-            bun install --frozen-lockfile && exit 0
+            # Bun can leave a failed postinstall marked done. Explicitly retry
+            # Electron's verified download rather than accepting an empty dist.
+            bun install --frozen-lockfile && node node_modules/electron/install.js && node -e "require('electron')" && exit 0
             echo "::warning::bun install --frozen-lockfile failed (attempt $attempt of 3), retrying in 30s"
             sleep 30
           done
