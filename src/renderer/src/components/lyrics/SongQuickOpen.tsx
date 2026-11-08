@@ -100,7 +100,7 @@ export function SongQuickOpen({ songs, onClose, onOpen }: SongQuickOpenProps): R
       .then((hits) => {
         if (searchSeq.current !== seq) return
         setOnlineResults(hits)
-        if (hits.length === 0) setOnlineError('Nothing found online for that.')
+        if (hits.length === 0) setOnlineError('Could not find available lyrics. Try the artist, another spelling, or paste lyrics to add the song.')
       })
       .catch((err: Error) => {
         if (searchSeq.current !== seq) return
@@ -147,6 +147,11 @@ export function SongQuickOpen({ songs, onClose, onOpen }: SongQuickOpenProps): R
     const { result } = activeRow
     const seq = ++previewSeq.current
     setOnlinePreview(null)
+    if (result.lyricsAvailable === false) {
+      setPreviewLoading(false)
+      setOnlineError('Found online. Lyrics are not available for automatic import; open the source to view this song.')
+      return
+    }
     setPreviewLoading(true)
     window.api.lyrics
       .previewOnline({ provider: result.provider, url: result.url, title: result.title, artist: result.artist })
@@ -161,6 +166,7 @@ export function SongQuickOpen({ songs, onClose, onOpen }: SongQuickOpenProps): R
 
   /** Imports a web hit into the library, then opens it like any other song. */
   const importOnline = useCallback(async (result: LyricsOnlineResult): Promise<void> => {
+    if (result.lyricsAvailable === false) { window.open(result.url, '_blank', 'noopener,noreferrer'); return }
     setImportingId(result.id)
     setOnlineError(null)
     try {
@@ -305,7 +311,7 @@ export function SongQuickOpen({ songs, onClose, onOpen }: SongQuickOpenProps): R
                         <span className="shrink truncate text-[11px] text-zinc-500">
                           {row.kind === 'local'
                             ? row.song.artist
-                            : `${row.result.artist || 'Unknown artist'} · ${row.result.provider}`}
+                            : row.result.lyricsAvailable === false ? 'Web match · Open source' : `${row.result.artist || 'Unknown artist'} · ${row.result.provider}`}
                         </span>
                       </span>
                       {row.kind === 'local' && row.matchedLyric && (
@@ -471,7 +477,7 @@ export function SongQuickOpen({ songs, onClose, onOpen }: SongQuickOpenProps): R
                   importingId === activeRow.result.id ? (
                     <><Loader2 size={11} className="animate-spin" aria-hidden="true" /> Importing</>
                   ) : (
-                    <><Download size={11} aria-hidden="true" /> Import &amp; open</>
+                    <><Download size={11} aria-hidden="true" /> {activeRow.result.lyricsAvailable === false ? 'Open source' : 'Import & open'}</>
                   )
                 ) : (
                   'Open'

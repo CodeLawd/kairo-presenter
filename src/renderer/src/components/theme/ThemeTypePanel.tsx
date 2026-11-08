@@ -1,4 +1,4 @@
-import { useId } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { Popover } from 'radix-ui'
 import {
   AlignCenter,
@@ -51,6 +51,28 @@ const WEIGHTS: Array<{ label: string; value: number }> = [
 ]
 
 const SIZE_PRESETS = [18, 24, 28, 32, 36, 42, 48, 54, 60, 72, 84, 96, 120]
+
+function FontSizeField({ value, onChange }: { value: number; onChange: (value: number) => void }): React.ReactElement {
+  const listId = useId()
+  const [draft, setDraft] = useState(String(value))
+  useEffect(() => { setDraft(String(value)) }, [value])
+  const commit = (): void => {
+    const number = Number(draft)
+    if (!draft.trim() || !Number.isFinite(number)) { setDraft(String(value)); return }
+    const next = Math.max(12, Math.min(200, Math.round(number)))
+    setDraft(String(next))
+    if (next !== value) onChange(next)
+  }
+  return (
+    <FieldShell>
+      <input aria-label="Size" type="number" min={12} max={200} list={listId} value={draft}
+        onChange={(event) => setDraft(event.target.value)} onBlur={commit}
+        onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur() }}
+        className="h-full w-full min-w-0 bg-transparent text-sm outline-none tabular-nums" />
+      <datalist id={listId}>{SIZE_PRESETS.map((size) => <option key={size} value={size} />)}</datalist>
+    </FieldShell>
+  )
+}
 
 function nearestWeight(weight: number): number {
   return WEIGHTS.reduce((best, item) =>
@@ -389,17 +411,12 @@ export function ThemeTypePanel({
   onUpdateReferenceMeta,
   onAutoFitChange,
 }: ThemeTypePanelProps): React.ReactElement {
-  const sizeHintId = useId()
   const isReference = selectedLayer === 'reference'
   const style = isReference ? theme.reference : theme.verse
   const referenceLabel = overlayLayerLabel(contentKind, 'reference')
   const automaticSize = !isReference && theme.layout.autoFitText
   const update = (partial: Partial<OverlayTextStyle>): void => onUpdateLayer(selectedLayer, partial)
   const weight = nearestWeight(style.fontWeight)
-  const sizeOptions = [
-    ...SIZE_PRESETS.map((px) => ({ label: `${px}`, value: String(px) })),
-    ...(!SIZE_PRESETS.includes(style.fontSizePx) ? [{ label: `${style.fontSizePx}`, value: String(style.fontSizePx) }] : []),
-  ]
 
   return (
     <div>
@@ -428,15 +445,10 @@ export function ThemeTypePanel({
             options={WEIGHTS.map((item) => ({ label: item.label, value: String(item.value) }))}
             onChange={(next) => update({ fontWeight: Number(next) })}
           />
-          <CompactSelect
-            hideLabel
-            label="Size"
-            disabled={automaticSize}
-            describedBy={automaticSize ? sizeHintId : undefined}
-            value={String(style.fontSizePx)}
-            options={sizeOptions}
-            onChange={(next) => update({ fontSizePx: Number(next) })}
-          />
+          <FontSizeField value={style.fontSizePx} onChange={(fontSizePx) => {
+            if (automaticSize) onAutoFitChange(false)
+            update({ fontSizePx })
+          }} />
         </div>
         <div className="flex items-center justify-between gap-2">
           <DecorationToggles value={style.textDecoration} onChange={(textDecoration) => update({ textDecoration })} />
@@ -500,8 +512,8 @@ export function ThemeTypePanel({
           </Row>
         )}
         {automaticSize && (
-          <p id={sizeHintId} className="text-[11px] text-zinc-400">
-            Size follows the box while Fit to box is on.
+          <p className="text-[11px] text-zinc-400">
+            Size follows the box. Enter a size to switch to manual sizing.
           </p>
         )}
       </Section>

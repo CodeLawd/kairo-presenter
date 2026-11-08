@@ -1080,6 +1080,8 @@ export type LyricsImportSource =
 export type LyricsProvider = 'genius' | 'lrclib' | 'web'
 
 export interface LyricsOnlineResult {
+  /** False for a relevant web page whose lyrics could not be retrieved. */
+  lyricsAvailable?: boolean
   /** Stable per-provider identifier, used as a React key and for dedup. */
   id: string
   provider: LyricsProvider

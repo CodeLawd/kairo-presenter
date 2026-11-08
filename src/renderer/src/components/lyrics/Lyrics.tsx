@@ -906,7 +906,7 @@ function OnlineResultRow({
           }}
         >
           {isBusy ? <Loader2 size={11} className="animate-spin" /> : <Download size={11} />}
-          {isBusy ? 'Importing…' : 'Import'}
+          {isBusy ? 'Importing…' : result.lyricsAvailable === false ? 'Open source' : 'Import'}
         </button>
       )}
     </div>
@@ -945,6 +945,13 @@ function OnlinePreviewPane({
     )
   }
 
+  if (result.lyricsAvailable === false) return (
+    <div className="flex flex-1 flex-col gap-3 px-4 py-4">
+      <p className="text-sm font-semibold text-white">{result.title}</p>
+      <p className="text-xs text-zinc-400">Found online. Lyrics are not available for automatic import. Open the source, or paste lyrics to add the song.</p>
+      <button type="button" className="btn-secondary self-start" onClick={() => onImport(result)}>Open source</button>
+    </div>
+  )
   const inLibrary = Boolean(result.existingSongId)
 
   return (
@@ -1827,6 +1834,7 @@ function ImportModal({
   }, [onlineQuery, tab])
 
   const handleOnlineImport = useCallback(async (result: LyricsOnlineResult): Promise<void> => {
+    if (result.lyricsAvailable === false) { window.open(result.url, '_blank', 'noopener,noreferrer'); return }
     setImportingId(result.id)
     setError(null)
     try {
@@ -1856,6 +1864,7 @@ function ImportModal({
   const handlePreviewSelect = useCallback(async (result: LyricsOnlineResult): Promise<void> => {
     setPreviewResult(result)
     setPreviewError(null)
+    if (result.lyricsAvailable === false) { ++previewSeqRef.current; setPreviewData(null); setPreviewLoading(false); return }
     const cached = previewCacheRef.current.get(result.id)
     if (cached) {
       setPreviewData(cached)
@@ -2896,6 +2905,7 @@ export default function Lyrics(): React.ReactElement {
     setWebPreviewResult(result)
     setWebPreviewError(null)
     setOnlineError(null)
+    if (result.lyricsAvailable === false) { ++webPreviewSeqRef.current; setWebPreviewData(null); setWebPreviewLoading(false); return }
     const cached = webPreviewCacheRef.current.get(result.id)
     if (cached) {
       setWebPreviewData(cached)
@@ -2925,6 +2935,7 @@ export default function Lyrics(): React.ReactElement {
   }, [editMode])
 
   const handleImportSuggestion = useCallback(async (result: LyricsOnlineResult): Promise<void> => {
+    if (result.lyricsAvailable === false) { window.open(result.url, '_blank', 'noopener,noreferrer'); return }
     setImportingOnlineId(result.id)
     setOnlineError(null)
     try {

@@ -77,6 +77,25 @@ interface CacheEntry {
   expiresAt: number
 }
 
+/** Relevant music pages remain discoverable even if the source withholds lyrics. */
+export function discoverSongPages(results: BraveWebResult[], query: string): ProviderResult[] {
+  const needle = query.replace(/\b(?:lyrics|lyric|official|video)\b/gi, ' ').trim()
+  const found = new Map<string, ProviderResult>()
+  for (const result of results) {
+    try {
+      const url = new URL(result.url ?? '')
+      if (url.protocol !== 'https:' || url.username || url.password) continue
+      const host = url.hostname.replace(/^www\./, '')
+      const musicPage = isAllowedLyricsUrl(url.href) ||
+        ['musixmatch.com', 'shazam.com', 'open.spotify.com', 'music.apple.com', 'youtube.com', 'youtu.be', 'genius.com'].includes(host)
+      if (!musicPage || !result.title || !titleMatchesQuery(result.title, needle)) continue
+      found.set(url.href, { id: `web:${url.href}`, provider: 'web', title: cleanPageTitle(result.title),
+        artist: '', url: url.href, lyricsAvailable: false })
+    } catch { /* Search results can contain malformed URLs. */ }
+  }
+  return [...found.values()].slice(0, MAX_CANDIDATES)
+}
+
 // Re-export so existing tests keep a stable import path.
 export { cleanPageTitle } from './page-title'
 
@@ -99,7 +118,9 @@ class SnippetResolver {
     this.cache.delete(cacheKey)
 
     const canonicalSnippet = canonicalText(query)
+    const discovered = new Map<string, ProviderResult>()
     for await (const batch of searchWebProviders(`${query} lyrics`, credentials)) {
+      for (const page of discoverSongPages(batch.results, query)) discovered.set(page.url, page)
       const verified = await this.gatherCandidates(batch.results, canonicalSnippet, query)
       if (verified.length === 0) continue
       this.cache.set(cacheKey, { value: verified, expiresAt: Date.now() + CACHE_TTL_MS })
@@ -111,13 +132,14 @@ class SnippetResolver {
 
     try {
       const results = await this.searchWebHtml(query)
+      for (const page of discoverSongPages(results, query)) discovered.set(page.url, page)
       const verified = results.length ? await this.gatherCandidates(results, canonicalSnippet, query) : []
       // Do not cache failures: recovering credentials/network should take effect immediately.
       if (verified.length) this.cache.set(cacheKey, { value: verified, expiresAt: Date.now() + CACHE_TTL_MS })
-      return verified
+      return verified.length ? verified : [...discovered.values()].slice(0, MAX_CANDIDATES)
     } catch {
       log.warn('[SnippetResolver] keyless web search failed')
-      return []
+      return [...discovered.values()].slice(0, MAX_CANDIDATES)
     }
   }
 

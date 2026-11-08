@@ -201,3 +201,16 @@ test("a dashed page heading splits into artist and title", () => {
 test("a hyphenated title without spaces is not split", () => {
   assert.equal(parsePageHeading("Wonder-Working God").title, "Wonder-Working God");
 });
+
+test('web discovery retains a Yoruba song even when its lyrics are not readable', async () => {
+  const { discoverSongPages } = await import('../src/main/services/lyrics/snippet-resolver')
+  const hits = discoverSongPages([
+    { title: 'Steady Worship - Jesu Oloruko Aperire lyrics', url: 'https://www.musixmatch.com/lyrics/Steady-Worship/Jesu-Oloruko-Aperire' },
+    { title: 'Unrelated worship song', url: 'https://open.spotify.com/track/other' },
+    { title: 'Jesu Oloruko Aperire', url: 'javascript:alert(1)' },
+  ], 'oloruko aperire jesu lyrics')
+  assert.equal(hits.length, 1)
+  assert.equal(hits[0].lyricsAvailable, false)
+  assert.match(hits[0].title, /Jesu Oloruko Aperire/)
+  assert.equal(hits[0].lyrics, undefined)
+})

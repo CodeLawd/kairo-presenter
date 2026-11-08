@@ -279,6 +279,7 @@ test("destroying a detector suppresses a late model error", async () => {
 
 test('retries an empty model response in the same detection cycle', async () => {
   const detector = new ScriptureDetector({ apiKey: 'test', minIntervalMs: 0 });
+  detector.setGeneralQuoteProvider(async () => [{ book: 'Acts', chapter: 16, verse: 14, text: 'the Lord opened her heart', score: 6, ambiguous: false }]);
   const emitted: ScriptureReference[] = [];
   detector.on('detection', refs => emitted.push(...refs));
   let calls = 0;
@@ -314,6 +315,7 @@ test('the default detector throttle permits a fresh final after 1.5 seconds', ()
 
 test('an AI result keeps the transcript origin that started its request', async () => {
   const detector = new ScriptureDetector({ apiKey: 'test', minIntervalMs: 0 });
+  detector.setGeneralQuoteProvider(async () => [{ book: 'Acts', chapter: 16, verse: 14, text: 'the Lord opened her heart', score: 6, ambiguous: false }]);
   let resolve!: (value: string) => void;
   Object.assign(detector, { callModel: () => new Promise<string>(done => { resolve = done; }) });
   const refs: ScriptureReference[] = [];
@@ -328,7 +330,7 @@ test('an AI result keeps the transcript origin that started its request', async 
   detector.destroy();
 });
 
-test('a newer explicit citation keeps an in-flight AI quote for review only', async () => {
+test('a newer explicit citation discards an in-flight AI paraphrase', async () => {
   const detector = new ScriptureDetector({ apiKey: 'test', minIntervalMs: 0 });
   let resolve!: (value: string) => void;
   Object.assign(detector, { callModel: () => new Promise<string>(done => { resolve = done; }) });
@@ -343,12 +345,8 @@ test('a newer explicit citation keeps an in-flight AI quote for review only', as
     { book: 'John', chapter: 3, verseStart: 1, confidence: 0.8, detectionType: 'partial', sourceText: 'John chapter three' },
   ]));
   await new Promise(resolveTick => setImmediate(resolveTick));
-  // The quote was a different verse from the citation, so it must not be lost;
-  // the chapter placeholder is dropped. Arriving late, it may never auto-present.
-  assert.deepEqual(refs.map(ref => `${ref.book} ${ref.chapter}:${ref.verseStart}`), ['John 3:16', 'Romans 8:28']);
+  assert.deepEqual(refs.map(ref => `${ref.book} ${ref.chapter}:${ref.verseStart}`), ['John 3:16']);
   assert.equal(canAutoPresentScriptureReference(refs[0]), true);
-  assert.equal(refs[1].superseded, true);
-  assert.equal(canAutoPresentScriptureReference(refs[1]), false);
   detector.destroy();
 });
 

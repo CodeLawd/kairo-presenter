@@ -805,10 +805,15 @@ export class ProgramSurface extends ManagedWindow {
    * Drops verse / lyric / reference text without tearing down the background
    * video. Returns false when nothing has been painted yet.
    */
-  async clearText(): Promise<boolean> {
+  async clearText(background?: OverlayTheme['background']): Promise<boolean> {
     const current = this.lastRender
     if (!current) return false
     this.lastRender = { ...current, reference: '', text: '', coloredLines: undefined }
+    if (background && JSON.stringify(background) !== JSON.stringify(current.theme.background)) {
+      this.lastRender.theme = { ...current.theme, background }
+      await this.paint(this.lastRender, false)
+      return true
+    }
     if (!this.win || this.win.isDestroyed()) return true
     try {
       this.bumpForFade()

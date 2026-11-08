@@ -365,7 +365,7 @@ class Orchestrator {
     if (suggestion) {
       this.cancelAutoPresent(suggestionId);
       this.pendingSuggestions.delete(suggestionId);
-      scriptureService.dismissSuggestion(suggestionId);
+      // Keep the visible card available for an explicit replay (4 → 5 → 4).
       usageService.track("scripture_manual");
       await this.presentScripture(suggestion);
       return;
@@ -374,7 +374,6 @@ class Orchestrator {
     // Manual search suggestion from scriptureService
     const manual = scriptureService.getPendingSuggestion(suggestionId);
     if (manual) {
-      scriptureService.dismissSuggestion(suggestionId);
       usageService.track("scripture_manual");
       await this.presentScripture(manual);
     }
@@ -1105,12 +1104,15 @@ class Orchestrator {
     let targets: SurfaceTarget[] | null = null;
     await Promise.all(
       surfaceManager.allSurfaces().map(async (surface) => {
-        if (await surface.clearText()) return;
+        targets ??= this.liveSurfaceTargets("backgrounds");
+        const target = targets.find((t) => t.surface === surface);
+        const background = target && mediaService.getLiveItem()
+          ? withLiveBackground(outputThemeFor(target.output, "scripture"), true).background
+          : undefined;
+        if (await surface.clearText(background)) return;
         // Nothing was painted here: put the dock background up instead, or
         // blank it when there is no background either. Only this surface —
         // repainting the others would restart their background video.
-        targets ??= this.liveSurfaceTargets("backgrounds");
-        const target = targets.find((t) => t.surface === surface);
         if (!target || !mediaService.getLiveItem()) {
           await surface.clear();
           return;

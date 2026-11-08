@@ -185,6 +185,7 @@ const CHAPTER_QUOTE_WINDOW_CHARS = 600;
 
 // ─── System prompt ────────────────────────────────────────────────────────────
 
+const DIRECT_ONLY = '\nFINAL REQUIREMENT: Return only spoken citations or direct quotations. Never infer a passage from a topic, prayer, a shared keyword, or a paraphrase. When in doubt return [].';
 const SYSTEM_PROMPT = `\
 You are a scripture detection engine embedded in a live church service transcription pipeline. Your sole function: analyze sermon transcript excerpts and return structured JSON identifying every Bible reference present — explicit citations, direct quotes, and paraphrases alike.
 
@@ -931,7 +932,7 @@ export class ScriptureDetector extends EventEmitter {
     }
     const generation = this.resolutionGeneration;
     const origin = this.transcriptOrigin ? { ...this.transcriptOrigin, detectionStartedAt: this.detectionStartedAt ?? Date.now() } : null;
-    return this.generalQuoteProvider(text, !provisional).then(matches => {
+    return this.generalQuoteProvider(text, false).then(matches => {
       const stale = provisional ? revision !== this.generalQuoteRevision : finalRevision !== this.finalQuoteRevision;
       if (this.lifetime.signal.aborted || stale || generation !== this.resolutionGeneration) return true;
       // Retrieval may use committed context; publication must also be supported by new speech.
@@ -1285,10 +1286,21 @@ export class ScriptureDetector extends EventEmitter {
         // findings are kept — a quote it recognised may be a different verse
         // from the citation that superseded it — but they are too late to
         // auto-present, and chapter placeholders are dropped outright.
+        // Model confidence is not evidence: thematic prayer and paraphrases
+        // must never become cards. Quotations need an ordered local match.
+        const quotes = parsed.some(ref => ref.detectionType === 'quote') && this.generalQuoteProvider
+          ? await this.generalQuoteProvider(text, false).catch(() => []) : [];
+        if (this.lifetime.signal.aborted) return;
+        const direct = parsed.filter(ref =>
+          ref.detectionType === 'explicit' || ref.detectionType === 'partial'
+            ? hasExplicitVerseSignal(ref.sourceText)
+            : ref.detectionType === 'quote' && quotes.some(match =>
+              match.book === ref.book && match.chapter === ref.chapter &&
+              match.verse >= ref.verseStart && match.verse <= (ref.verseEnd ?? ref.verseStart)));
         const superseded = generation !== this.resolutionGeneration;
         const found = superseded
-          ? parsed.filter((ref) => ref.detectionType !== "partial")
-          : parsed;
+          ? direct.filter((ref) => ref.detectionType !== "partial")
+          : direct;
         if (superseded) {
           log.info("[ScriptureDetector] AI result superseded; review only", {
             generation,
@@ -1378,7 +1390,7 @@ export class ScriptureDetector extends EventEmitter {
           max_tokens: this.cfg.maxTokens,
           temperature: 0,
           messages: [
-            { role: "system", content: SYSTEM_PROMPT },
+            { role: "system", content: SYSTEM_PROMPT + DIRECT_ONLY },
             { role: "user", content: userContent },
           ],
         },
@@ -1393,7 +1405,7 @@ export class ScriptureDetector extends EventEmitter {
         model: this.cfg.model,
         max_tokens: this.cfg.maxTokens,
         temperature: 0,
-        system: SYSTEM_PROMPT,
+        system: SYSTEM_PROMPT + DIRECT_ONLY,
         messages: [{ role: "user", content: userContent }],
       },
       { signal },

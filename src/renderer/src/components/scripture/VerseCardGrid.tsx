@@ -1,4 +1,3 @@
-import { useMemo } from "react";
 import { Bible } from "@/icons";
 import { cn } from "@/lib/utils";
 import { VerseThemePreview } from "./VerseThemePreview";
@@ -54,24 +53,6 @@ export function VerseCardGrid({
   onMarqueeBegin,
   onMarqueeChange,
 }: VerseCardGridProps): React.ReactElement {
-  // Operator cards are for reading, not previewing the look: projection and the
-  // live monitor keep the full theme. Here the verse gets the whole card and
-  // fills it (Fit to box), and the reference is left to the card's label, so a
-  // thumbnail can be read at a glance instead of only recognised.
-  const cardTheme = useMemo<OverlayTheme>(() => ({
-    ...theme,
-    background: { type: "transparent", color: "#000000", opacity: 0 },
-    elements: [],
-    verse: {
-      ...theme.verse,
-      color: "#ffffff",
-      align: "center",
-      verticalAlign: "middle",
-      box: { xPct: 6, yPct: 8, widthPct: 88, heightPct: 84 },
-    },
-    reference: { ...theme.reference, color: "#ffffff", show: false },
-    layout: { ...theme.layout, backdropBox: false, autoFitText: true },
-  }), [theme]);
   let flatIndex = 0;
   const activeLocation = locateFlatCard(rows, activeCardIndex);
 
@@ -93,7 +74,7 @@ export function VerseCardGrid({
             <VerseThemePreview
               key={`${row.id}-${card.result.reference}-${localIdx}`}
               result={card.result}
-              theme={cardTheme}
+              theme={theme}
               showTranslation={showTranslation}
               showVerseNumbers={showVerseNumbers}
               maxVerses={maxVerses}

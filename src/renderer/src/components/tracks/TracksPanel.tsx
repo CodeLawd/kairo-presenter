@@ -137,11 +137,11 @@ export function TracksPanel(): React.ReactElement {
             </button>
           </div>
         ) : (
-          <ul className="space-y-0.5 p-1">
+          <ul className="divide-y divide-surface-border">
             {library.items.map((item) => {
               const active = item.id === library.liveId
               return (
-                <li key={item.id}>
+                <li key={item.id} className="p-1">
                   <div
                     className={cn(
                       'group rounded-md px-2.5 py-2 transition-colors',

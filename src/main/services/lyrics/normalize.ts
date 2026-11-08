@@ -134,7 +134,7 @@ export function foldAccents(value: string): string {
  */
 export function canonicalText(value: string): string {
   return foldAccents(value.toLowerCase())
-    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/[^\p{L}\p{N}\p{M}\s]/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim()
 }

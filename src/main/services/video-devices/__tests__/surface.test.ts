@@ -386,3 +386,18 @@ it('the live web page scrolls with the preview, and only while one is live', asy
     assert.deepEqual(win.webScripts, ["window.__kairoScrollTo ? __kairoScrollTo(0, 401) : scrollTo({ left: 0, top: 401, behavior: 'instant' })"])
   } finally { surface.destroy() }
 })
+
+it('clearing scripture restores the selected media background and removes verse text', async () => {
+  const surface = new ProgramSurface('Card', { kind: 'device', sink: { setFrame: () => {}, close: async () => {} } })
+  try {
+    await surface.showSlide('card', 'John 3:16', 'Verse to clear', DEFAULT_OVERLAY_THEME)
+    const background = { ...DEFAULT_OVERLAY_THEME.background, type: 'video' as const, mediaPath: '/walk-in.mp4' }
+    await surface.clearText(background)
+    const win = WindowDouble.windows.at(-1)!
+    const restore = win.commands.at(-1)!
+    assert.ok(restore.includes('walk-in.mp4'), 'selected media is restored')
+    assert.ok(!restore.includes('Verse to clear'), 'scripture text is removed')
+    await surface.clearText(background)
+    assert.equal(win.commands.at(-1), 'window.__clearText()', 'clearing again does not restart the media')
+  } finally { surface.destroy() }
+})

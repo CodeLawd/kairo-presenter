@@ -138,3 +138,21 @@ test('unrelated or incomplete glosses do not suppress Brave for the requested li
   assert.equal(braveCalled, true)
   assert.ok(pairs.has('abasi'))
 })
+
+test('unreadable Yoruba lyric pages remain visible after all retrieval fallbacks fail', async (t) => {
+  snippetResolver.clearCache()
+  const page = { title: 'Steady Worship - Jesu Oloruko Aperire lyrics', url: 'https://www.musixmatch.com/lyrics/Steady-Worship/Jesu-Oloruko-Aperire' }
+  t.mock.method(axios, 'post', async () => ({ data: { results: [page] } }))
+  t.mock.method(axios, 'get', async () => ({ data: { web: { results: [] } } }))
+  const internals = snippetResolver as unknown as {
+    searchWebHtml: () => Promise<unknown[]>
+    gatherCandidates: () => Promise<unknown[]>
+  }
+  t.mock.method(internals, 'gatherCandidates', async () => [])
+  t.mock.method(internals, 'searchWebHtml', async () => { throw new Error('challenge') })
+  const results = await snippetResolver.resolve('oloruko aperire jesu')
+  assert.equal(results.length, 1)
+  assert.equal(results[0].url, page.url)
+  assert.equal(results[0].lyricsAvailable, false)
+  snippetResolver.clearCache()
+})

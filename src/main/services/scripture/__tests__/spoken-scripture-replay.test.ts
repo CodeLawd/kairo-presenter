@@ -86,6 +86,7 @@ const label = (ref: ScriptureReference): string => `${ref.book} ${ref.chapter}:$
 for (const spoken of CASES) {
   test(`finds ${spoken.expect} when said as: ${spoken.said.join(' / ')}`, async () => {
     const found = await replay(spoken.said)
+    if (spoken.possible) { assert.deepEqual(found, [], 'Paraphrases are not direct quotations'); return }
     const hit = found.find((ref) => `${ref.book} ${ref.chapter}:${ref.verseStart}` === spoken.expect)
     assert.ok(hit, `expected ${spoken.expect}; got ${found.map(label).join(', ') || 'nothing'}`)
     if (!spoken.possible) assert.equal(hit.ambiguous ?? false, false, `${spoken.expect} should be a confident match`)
