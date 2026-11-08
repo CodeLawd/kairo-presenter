@@ -8,6 +8,7 @@ import { once } from 'node:events'
 import path from 'node:path'
 import { promisify } from 'node:util'
 import type { UpdateStatus } from '@shared/ipc'
+import { updateErrorMessage } from './errors'
 import {
   bundleFromExecutable,
   isAdhocSignature,
@@ -136,7 +137,7 @@ class UpdaterService {
     autoUpdater.on('error', (err) => {
       // A dead network or a repo with no releases yet is normal, not fatal.
       log.warn('[Updater] error:', err?.message ?? String(err))
-      this.set({ state: 'error', message: err?.message ?? 'Update check failed' })
+      this.set({ state: 'error', message: updateErrorMessage(err, this.status.state === 'downloading' ? 'download' : 'check') })
     })
   }
 
@@ -161,7 +162,7 @@ class UpdaterService {
       await autoUpdater.checkForUpdates()
     } catch (err) {
       log.warn('[Updater] check failed:', (err as Error).message)
-      this.set({ state: 'error', message: (err as Error).message })
+      this.set({ state: 'error', message: updateErrorMessage(err, 'check') })
     }
     return this.status
   }
@@ -188,7 +189,7 @@ class UpdaterService {
       await autoUpdater.downloadUpdate()
     } catch (err) {
       log.warn('[Updater] download failed:', (err as Error).message)
-      this.set({ state: 'error', message: (err as Error).message })
+      this.set({ state: 'error', message: updateErrorMessage(err, 'download') })
     }
     return this.status
   }
@@ -282,7 +283,7 @@ class UpdaterService {
     } catch (err) {
       log.warn('[Updater] self-update download failed:', (err as Error).message)
       if (dir) await rm(dir, { recursive: true, force: true }).catch(() => undefined)
-      this.set({ state: 'error', message: (err as Error).message })
+      this.set({ state: 'error', message: updateErrorMessage(err, 'download') })
     }
   }
 
