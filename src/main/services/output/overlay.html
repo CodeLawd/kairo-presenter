@@ -800,18 +800,26 @@
       // the new pixels are decoded AND painted, so the NDI sender never grabs a
       // frame of the previous page.
       window.__swapDocumentPage = function (src) {
-        clearDocumentVideos();
         var image = live(layers.bg, 'img');
         if (!image) return Promise.resolve(false);
-        image.src = src;
-        var decoded = image.decode ? image.decode() : Promise.resolve();
+        var request = {};
+        image.pageRequest = request;
+        // Decode offscreen first: changing the visible src can blank it while
+        // Chromium loads the next page, even when we await decode afterwards.
+        var next = new Image();
+        next.src = src;
+        var decoded = next.decode ? next.decode() : Promise.resolve();
         // One frame is enough to commit the new pixels; the main process then
         // waits for the offscreen capture that carries them.
-        return decoded.catch(function () {}).then(function () {
+        return decoded.then(function () {
+          // A faster click or a different presentation supersedes this page.
+          if (image.pageRequest !== request || live(layers.bg, 'img') !== image) return false;
+          clearDocumentVideos();
+          image.src = src;
           return new Promise(function (resolve) {
             requestAnimationFrame(function () { resolve(true); });
           });
-        });
+        }, function () { return false; });
       };
       // Decode the page after the current one while the room is still reading
       // this slide, so the next click swaps an image that is already in memory.

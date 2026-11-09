@@ -311,10 +311,6 @@ export default function ScreenConfiguration({
     setTab("hardware");
   };
 
-  const removeSelected = (): void => {
-    if (selected) removeScreen(selected);
-  };
-
   // ─── Status ─────────────────────────────────────────────────────────────────
 
   const outputStatus = (o: OverlayOutput): Status => {
@@ -604,7 +600,6 @@ export default function ScreenConfiguration({
             cardPortsInUse={outputs
               .filter((o) => o.kind === "device" && o.id !== selectedOutput.id)
               .map((o) => o.devicePortId)}
-            onRemove={removeSelected}
           />
         )}
         {selectedStage && (
@@ -619,7 +614,6 @@ export default function ScreenConfiguration({
             tab={tab}
             onTab={setTab}
             onChange={(patch) => updateStage(selectedStage.id, patch)}
-            onRemove={removeSelected}
           />
         )}
       </main>
@@ -1156,19 +1150,16 @@ const TAB_LABEL: Record<DetailTab, string> = {
   output: "Output",
 };
 
-/** Big name and size like ProPresenter, with on/off and remove beside it, then the tabs. */
+/** Screen name and status above the display canvas and settings tabs. */
 function Detail({
   name,
   kind,
   resolution,
   status,
-  enabled,
   tabs,
   tab,
   onTab,
   onRename,
-  onToggle,
-  onRemove,
   stage,
   children,
 }: {
@@ -1176,13 +1167,10 @@ function Detail({
   kind: string;
   resolution: string | null;
   status: Status;
-  enabled: boolean;
   tabs: DetailTab[];
   tab: DetailTab;
   onTab: (tab: DetailTab) => void;
   onRename: (name: string) => void;
-  onToggle: (enabled: boolean) => void;
-  onRemove: () => void;
   /** The darker band under the header — the display canvas, or a video card's connector. */
   stage?: React.ReactNode;
   children: (tab: DetailTab) => React.ReactNode;
@@ -1221,20 +1209,6 @@ function Detail({
               .join(" · ")}
           </p>
         </div>
-        <Switch
-          checked={enabled}
-          onCheckedChange={onToggle}
-          aria-label={`Turn ${name} on or off`}
-        />
-        <button
-          type="button"
-          className="grid h-8 w-8 place-items-center rounded-md text-slate-500 hover:bg-surface-tertiary hover:text-red-400"
-          aria-label={`Remove ${name}`}
-          title="Remove"
-          onClick={onRemove}
-        >
-          <Trash2 size={15} aria-hidden="true" />
-        </button>
       </div>
       {stage && (
         <div className="border-b border-white/10 shrink-0 bg-surface-stage px-6 py-5">
@@ -1353,7 +1327,6 @@ function OutputDetail({
   onChange,
   onPickCard,
   cardPortsInUse,
-  onRemove,
 }: {
   output: OverlayOutput;
   onPickCard: (port: VideoPort) => void;
@@ -1370,7 +1343,6 @@ function OutputDetail({
   onChange: (
     patch: Partial<OverlayOutput> | ((o: OverlayOutput) => OverlayOutput),
   ) => void;
-  onRemove: () => void;
 }): React.ReactElement {
   const tabs: DetailTab[] =
     output.kind === "device"
@@ -1387,13 +1359,10 @@ function OutputDetail({
       kind={KIND_TITLE[output.kind]}
       resolution={resolution}
       status={status}
-      enabled={output.enabled}
       tabs={tabs}
       tab={tab}
       onTab={onTab}
       onRename={(name) => onChange({ name })}
-      onToggle={(enabled) => onChange({ enabled })}
-      onRemove={onRemove}
       stage={
         output.kind === "screen" ? (
           canvas
@@ -1532,7 +1501,6 @@ function StageDetail({
   tab,
   onTab,
   onChange,
-  onRemove,
 }: {
   stage: StageDisplayConfig;
   status: Status;
@@ -1543,7 +1511,6 @@ function StageDetail({
   tab: DetailTab;
   onTab: (tab: DetailTab) => void;
   onChange: (patch: Partial<StageDisplayConfig>) => void;
-  onRemove: () => void;
 }): React.ReactElement {
   return (
     <Detail
@@ -1551,13 +1518,10 @@ function StageDetail({
       kind="Stage display"
       resolution={resolution}
       status={status}
-      enabled={stage.enabled}
       tabs={["display", "layout"]}
       tab={tab}
       onTab={onTab}
       onRename={(name) => onChange({ name })}
-      onToggle={(enabled) => onChange({ enabled })}
-      onRemove={onRemove}
       stage={canvas}
     >
       {(active) =>

@@ -600,6 +600,7 @@ export default function App(): React.ReactElement {
       <TransferHost />
       <AppShell
         currentRoute={route}
+        onSearchSongs={() => setSongSearchOpen(true)}
         toolbar={route === 'operator' ? <OperatorToolbar /> : undefined}
       />
       <div className="flex min-h-0 w-full flex-1 overflow-hidden">

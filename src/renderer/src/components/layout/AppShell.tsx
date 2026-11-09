@@ -8,6 +8,7 @@ import {
   Pause,
   Play,
   Radio,
+  Search,
   Settings,
 } from "@/icons";
 import { ChatsCircle, Presentation, Globe, Gauge as CircleGauge, MusicNotes as Music2, Palette } from "@phosphor-icons/react";
@@ -173,6 +174,7 @@ function MediaToolbarButton(): React.ReactElement {
 
 interface AppShellProps {
   currentRoute: NavRoute;
+  onSearchSongs: () => void;
   /** Route-specific controls rendered inline in the top bar (see OperatorToolbar). */
   toolbar?: React.ReactNode;
 }
@@ -430,6 +432,7 @@ function useScreensStatus(): {
 
 export default function AppShell({
   currentRoute,
+  onSearchSongs,
   toolbar,
 }: AppShellProps): React.ReactElement {
   const { liveOutputLabel, isTranscribing } = useAppStore(useShallow((state) => ({ liveOutputLabel: state.liveOutputLabel, isTranscribing: state.isTranscribing })));
@@ -473,6 +476,9 @@ export default function AppShell({
       >
         {showLogo && <KairoMark size="sm" />}
       </div>
+      <ToolbarButton label="Lyrics Search" title="Search lyrics" onClick={onSearchSongs}>
+        <Search size={15} style={hueStyle("violet")} className="text-[rgb(var(--hue))]" aria-hidden="true" />
+      </ToolbarButton>
       <div id={HEADER_TOOLBAR_SLOT_ID} className="header-toolbar min-w-0">
         {toolbar}
       </div>

@@ -1,4 +1,5 @@
 import { MediaInspector } from './MediaInspector'
+import { ZoomControl } from '@/components/shared/ZoomControl'
 import { selectGesture, useMultiSelect, type SelectGesture } from '@/hooks/useMultiSelect'
 import { MarqueeSelect } from '@/components/shared/MarqueeSelect'
 import {
@@ -23,24 +24,15 @@ import {
   Image as ImageIcon,
   Images,
   Queue,
-  Pause,
   Pencil,
-  Play,
   Plus,
-  RefreshCw,
   Repeat,
   Scissors,
   SidebarLeft,
   Trash2,
-  Volume2,
-  VolumeX,
-  X,
 } from '@/icons'
 import { cn } from '@/lib/utils'
 import { useMediaDockStore } from '@/stores/useMediaDockStore'
-import { useAppStore } from '@/stores/useAppStore'
-import { useSettings } from '@/hooks/useSettings'
-import { DEFAULT_PRESENTATION_SETTINGS } from '@shared/program'
 import { overlayMediaUrl } from '@shared/overlay-template'
 import { mediaFilterCss, normalizeMediaPlayback } from '@shared/media-playback'
 import { reorderIds } from '@shared/media-order'
@@ -54,6 +46,18 @@ const MIN_HEIGHT = 180
 const HARD_MAX_HEIGHT = 520
 const DEFAULT_HEIGHT = 288
 const STORAGE_KEY = 'media-dock-height'
+const ZOOM_STORAGE_KEY = 'media-dock-zoom'
+const DEFAULT_ZOOM = 100
+const MIN_ZOOM = 75
+const MAX_ZOOM = 200
+
+function storedZoom(): number {
+  try {
+    const value = Number(window.localStorage.getItem(ZOOM_STORAGE_KEY))
+    if (Number.isFinite(value) && value >= MIN_ZOOM && value <= MAX_ZOOM) return value
+  } catch { /* Use default when storage is unavailable. */ }
+  return DEFAULT_ZOOM
+}
 
 /**
  * Room kept for the page above. Pages scroll their own panels rather than
@@ -112,6 +116,10 @@ export default function MediaDock(): React.ReactElement | null {
   const setLive = useMediaDockStore((state) => state.setLive)
   const [library, setLibrary] = useState<MediaLibrary>(EMPTY_LIBRARY)
   const [height, setHeight] = useState(storedHeight)
+  const [itemZoom, setItemZoom] = useState(storedZoom)
+  useEffect(() => {
+    try { window.localStorage.setItem(ZOOM_STORAGE_KEY, String(itemZoom)) } catch { /* Keep zoom usable without storage. */ }
+  }, [itemZoom])
   const [selection, setSelection] = useState<Selection | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -307,13 +315,6 @@ export default function MediaDock(): React.ReactElement | null {
   // ── Actions ────────────────────────────────────────────────────────────────
 
   /** Clicking a background IS the push — no confirm step, one gesture mid-song. */
-  const [presentation, savePresentation] = useSettings('presentation', DEFAULT_PRESENTATION_SETTINGS)
-  const soundOn = presentation.audio.enabled
-  const toggleSound = (): void => {
-    void savePresentation({ ...presentation, audio: { ...presentation.audio, enabled: !soundOn } })
-      .catch((err: unknown) => setError((err as Error).message))
-  }
-
   const pushItem = useCallback(async (item: MediaItem): Promise<void> => {
     setBusyId(item.id)
     setError(null)
@@ -325,16 +326,6 @@ export default function MediaDock(): React.ReactElement | null {
       setError((err as Error).message)
     } finally {
       setBusyId(null)
-    }
-  }, [])
-
-  const clearBackground = useCallback(async (): Promise<void> => {
-    setError(null)
-    try {
-      await window.api.media.clear()
-      useAppStore.setState({ liveDocumentPreview: null })
-    } catch (err) {
-      setError((err as Error).message)
     }
   }, [])
 
@@ -705,15 +696,6 @@ export default function MediaDock(): React.ReactElement | null {
     finally { setAddingMedia(false) }
   }, !addingMedia)
 
-  const setPaused = useCallback(async (paused: boolean): Promise<void> => {
-    setLibrary((current) => ({ ...current, livePaused: paused }))
-    try {
-      setLibrary(await window.api.media.setPaused(paused))
-    } catch (err) {
-      setError((err as Error).message)
-    }
-  }, [])
-
   const setPlayback = useCallback(async (itemId: string, patch: Partial<MediaPlayback>): Promise<void> => {
     setLibrary((current) => {
       const next = normalizeMediaPlayback({ ...normalizeMediaPlayback(current.playback[itemId]), ...patch })
@@ -876,36 +858,14 @@ export default function MediaDock(): React.ReactElement | null {
 
               <div className="flex-1" />
 
-              {liveItem && (
-                <div className="flex min-w-0 items-center gap-2">
-                  <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-live" aria-hidden="true" />
-                  <span className="min-w-0 truncate text-[11px] text-slate-400">
-                    {liveItem.kind === 'video' && library.livePaused && <>Paused{' · '}</>}
-                    <span className="font-medium text-slate-200">{liveItem.name}</span>
-                  </span>
-                  {liveItem.kind === 'video' && (
-                    <LiveTransportButton
-                      paused={library.livePaused}
-                      onToggle={() => void setPaused(!library.livePaused)}
-                    />
-                  )}
-                  {liveItem.kind === 'video' && (
-                    <button
-                      type="button"
-                      onClick={toggleSound}
-                      aria-pressed={soundOn}
-                      aria-label={soundOn ? 'Mute video sound' : 'Play video sound'}
-                      title={soundOn ? 'Video sound is on — click to mute' : 'Video sound is off — click to play it'}
-                      className={cn(
-                        'grid h-6 w-6 place-items-center rounded transition-colors',
-                        soundOn ? 'text-slate-200 hover:bg-surface-tertiary' : 'text-slate-500 hover:text-slate-200',
-                      )}
-                    >
-                      {soundOn ? <Volume2 size={12} aria-hidden="true" /> : <VolumeX size={12} aria-hidden="true" />}
-                    </button>
-                  )}
-                </div>
-              )}
+              <ZoomControl
+                label="Media item size"
+                value={itemZoom}
+                min={MIN_ZOOM}
+                max={MAX_ZOOM}
+                defaultValue={DEFAULT_ZOOM}
+                onChange={setItemZoom}
+              />
 
               {selection?.kind === 'playlist' && (
                 <button
@@ -919,18 +879,6 @@ export default function MediaDock(): React.ReactElement | null {
                 </button>
               )}
 
-              <button type="button" onClick={() => void clearBackground()} disabled={!liveItem} title="Remove the background from the live output" className="btn-secondary flex items-center gap-1.5 px-2.5 py-1.5 text-xs">
-                <X size={11} aria-hidden="true" /> Clear background
-              </button>
-              <button
-                type="button"
-                onClick={() => void window.api.media.rescan()}
-                className="grid h-[26px] w-[26px] place-items-center rounded-none text-slate-400 hover:text-white"
-                aria-label="Rescan folder"
-                title="Rescan folder"
-              >
-                <RefreshCw size={12} aria-hidden="true" />
-              </button>
               <button
                 type="button"
                 onClick={() => setOpen(false)}
@@ -968,7 +916,8 @@ export default function MediaDock(): React.ReactElement | null {
               onChange={mediaSelect.updateMarquee}
             >
             <div
-              className="grid flex-1 min-h-0 content-start items-start gap-x-3.5 gap-y-3 overflow-y-auto px-5 py-2.5 [grid-template-columns:repeat(auto-fill,minmax(168px,1fr))]"
+              className="grid flex-1 min-h-0 content-start items-start gap-x-3.5 gap-y-3 overflow-y-auto px-5 py-2.5"
+              style={{ gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${Math.round(168 * itemZoom / 100)}px), 1fr))` }}
               onContextMenu={(event) => {
                 // Thumbnails stopPropagation; anything else is empty chrome.
                 event.preventDefault()
@@ -1883,32 +1832,6 @@ function MenuItem({
     >
       <span className={disabled ? 'text-slate-700' : 'text-slate-500'}>{icon}</span>
       {label}
-    </button>
-  )
-}
-
-function LiveTransportButton({
-  paused,
-  onToggle,
-}: {
-  paused: boolean
-  onToggle: () => void
-}): React.ReactElement {
-  return (
-    <button
-      type="button"
-      onClick={(event) => {
-        event.stopPropagation()
-        onToggle()
-      }}
-      onPointerDown={(event) => event.stopPropagation()}
-      title={paused ? 'Play' : 'Pause'}
-      aria-label={paused ? 'Play video' : 'Pause video'}
-      className="grid h-6 w-6 place-items-center text-slate-200 hover:bg-surface-tertiary"
-    >
-      {paused
-        ? <Play size={11} fill="currentColor" aria-hidden="true" />
-        : <Pause size={11} fill="currentColor" aria-hidden="true" />}
     </button>
   )
 }
