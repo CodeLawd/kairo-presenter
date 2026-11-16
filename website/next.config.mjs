@@ -8,6 +8,7 @@ const projectRoot = dirname(fileURLToPath(import.meta.url))
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  experimental: { agentUpgrade: 'security' },
   async redirects() {
     return [{
       source: '/:path*',
