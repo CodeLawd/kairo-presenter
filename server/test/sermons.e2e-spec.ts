@@ -281,6 +281,61 @@ describe('Sermons (e2e)', () => {
     })
   })
 
+  describe('notes', () => {
+    const notes = {
+      headline: 'Rooted and Growing',
+      bigIdea: 'Growth is a process, not an event.',
+      keyPoints: [
+        { title: 'Planted', explanation: 'Mark 4:26 — the seed goes in first.' },
+        { title: '  ', explanation: 'dropped: no title' },
+      ],
+      memorableQuotes: ['Growth takes time.', '  '],
+      takeaways: ['Stay planted.'],
+      keyScriptures: [{ reference: 'Mark 4:26-29', connection: 'The seed grows by itself.' }],
+      callToAction: 'Read Mark 4 this week.',
+    }
+
+    it('lets an admin rewrite every part of the recap', async () => {
+      const id = await uploadFor(alice, upload({ localId: 'edit-notes' }))
+      await waitForStatus(() => as(alice, 'get', `/v1/orgs/${alice.orgId}/sermons/${id}`), 'ready')
+
+      const updated = await as(alice, 'patch', `/v1/orgs/${alice.orgId}/sermons/${id}/notes`)
+        .send(notes)
+        .expect(200)
+
+      const summary = updated.body.summary
+      expect(updated.body.headline).toBe('Rooted and Growing')
+      expect(summary.bigIdea).toBe('Growth is a process, not an event.')
+      expect(summary.keyPoints).toEqual([
+        { title: 'Planted', explanation: 'Mark 4:26 — the seed goes in first.' },
+      ])
+      expect(summary.memorableQuotes).toEqual(['Growth takes time.'])
+      expect(summary.keyScriptures[0].reference).toBe('Mark 4:26-29')
+      expect(summary.callToAction).toBe('Read Mark 4 this week.')
+    })
+
+    it('refuses a blank big idea, and another org', async () => {
+      const id = await uploadFor(alice, upload({ localId: 'edit-notes-bad' }))
+      await waitForStatus(() => as(alice, 'get', `/v1/orgs/${alice.orgId}/sermons/${id}`), 'ready')
+      await as(alice, 'patch', `/v1/orgs/${alice.orgId}/sermons/${id}/notes`)
+        .send({ ...notes, bigIdea: '  ' })
+        .expect(400)
+      await as(bob, 'patch', `/v1/orgs/${alice.orgId}/sermons/${id}/notes`).send(notes).expect(403)
+    })
+
+    it('titles the recap with the sermon title the operator gave', async () => {
+      const id = await uploadFor(
+        alice,
+        upload({ localId: 'named-sermon', sermonTitle: '  The Power of Growth ' }),
+      )
+      const detail = await waitForStatus(
+        () => as(alice, 'get', `/v1/orgs/${alice.orgId}/sermons/${id}`),
+        'ready',
+      )
+      expect(detail.headline).toBe('The Power of Growth')
+    })
+  })
+
   it('keeps the wide body limit scoped to the upload route', async () => {
     // The 12mb door is opened for one path. Every other route must still refuse
     // a large body, or the limit change quietly became a global one.

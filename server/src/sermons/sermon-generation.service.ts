@@ -143,7 +143,10 @@ export class SermonGenerationService implements OnModuleInit, OnModuleDestroy {
           {
             $set: {
               status: 'ready',
-              summary: result.summary,
+              // The operator's own sermon title wins over the model's headline.
+              summary: sermon.sermonTitle
+                ? { ...result.summary, headline: sermon.sermonTitle }
+                : result.summary,
               model: result.model,
               generatedAt: new Date(),
               failureReason: null,

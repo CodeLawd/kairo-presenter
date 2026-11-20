@@ -144,6 +144,7 @@ export class SermonsService {
             generationActor: actor ?? null,
             title: dto.title.trim() || 'Untitled service',
             speaker: dto.speaker?.trim() ?? '',
+            sermonTitle: dto.sermonTitle?.trim() ?? '',
             preachedAt: new Date(dto.startedAt),
             endedAt: new Date(dto.endedAt),
             durationMs: transcriptDurationMs(segments),
@@ -350,6 +351,46 @@ export class SermonsService {
     }
     if (Object.keys($set).length === 0) return sermon
     return this.apply(sermon, { $set })
+  }
+
+  /** An admin rewrites the recap. Blank list items are dropped; the headline and big idea are required. */
+  async updateNotes(
+    orgId: string,
+    sermonId: string,
+    notes: {
+      headline: string
+      bigIdea: string
+      keyPoints: { title: string; explanation: string }[]
+      memorableQuotes: string[]
+      takeaways: string[]
+      keyScriptures: { reference: string; connection: string }[]
+      callToAction: string
+    },
+  ): Promise<SermonDocument> {
+    const sermon = await this.requireInOrg(orgId, sermonId)
+    if (!sermon.summary) throw new BadRequestException('There is no recap to edit yet.')
+    const headline = notes.headline.trim()
+    if (!headline) throw new BadRequestException('Give the recap a title.')
+    const bigIdea = notes.bigIdea.trim()
+    if (!bigIdea) throw new BadRequestException('Write the big idea.')
+    const lines = (items: string[]) => items.map((item) => item.trim()).filter(Boolean)
+    return this.apply(sermon, {
+      $set: {
+        summary: {
+          headline,
+          bigIdea,
+          keyPoints: notes.keyPoints
+            .map((p) => ({ title: p.title.trim(), explanation: p.explanation.trim() }))
+            .filter((p) => p.title),
+          memorableQuotes: lines(notes.memorableQuotes),
+          takeaways: lines(notes.takeaways),
+          keyScriptures: notes.keyScriptures
+            .map((s) => ({ reference: s.reference.trim(), connection: s.connection.trim() }))
+            .filter((s) => s.reference),
+          callToAction: notes.callToAction.trim(),
+        },
+      },
+    })
   }
 
   async remove(orgId: string, sermonId: string): Promise<void> {

@@ -70,6 +70,12 @@ export class UploadSermonDto {
   @MaxLength(200)
   speaker?: string
 
+  /** The sermon's own title, typed when the service ends. Used as the recap headline. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  sermonTitle?: string
+
   @IsInt()
   @Min(0)
   startedAt!: number
@@ -90,6 +96,65 @@ export class UploadSermonDto {
   @Type(() => DetectedScriptureDto)
   @ArrayMaxSize(500)
   scriptures?: DetectedScriptureDto[]
+}
+
+export class SermonPointDto {
+  @IsString()
+  @MaxLength(200)
+  title!: string
+
+  @IsString()
+  @MaxLength(2_000)
+  explanation!: string
+}
+
+export class SermonScriptureDto {
+  @IsString()
+  @MaxLength(100)
+  reference!: string
+
+  @IsString()
+  @MaxLength(1_000)
+  connection!: string
+}
+
+/** An admin's edit of the recap: every part is replaced as sent. */
+export class UpdateSermonNotesDto {
+  @IsString()
+  @MaxLength(200)
+  headline!: string
+
+  @IsString()
+  @MaxLength(2_000)
+  bigIdea!: string
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => SermonPointDto)
+  @ArrayMaxSize(20)
+  keyPoints!: SermonPointDto[]
+
+  @IsArray()
+  @IsString({ each: true })
+  @MaxLength(1_000, { each: true })
+  @ArrayMaxSize(20)
+  memorableQuotes!: string[]
+
+  @IsArray()
+  @IsString({ each: true })
+  @MaxLength(1_000, { each: true })
+  @ArrayMaxSize(20)
+  takeaways!: string[]
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => SermonScriptureDto)
+  @ArrayMaxSize(30)
+  keyScriptures!: SermonScriptureDto[]
+
+  @IsString()
+  @MaxLength(2_000)
+  callToAction!: string
 }
 
 export class ListSermonsDto {

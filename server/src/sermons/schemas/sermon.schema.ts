@@ -88,6 +88,10 @@ export class Sermon {
   @Prop({ default: '' })
   speaker!: string
 
+  /** What the operator named the sermon when saving it; the recap takes it as its headline. */
+  @Prop({ default: '' })
+  sermonTitle!: string
+
   @Prop({ required: true })
   preachedAt!: Date
 

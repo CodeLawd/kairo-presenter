@@ -9,6 +9,7 @@ import {
   RefreshCwIcon,
   Share2Icon,
   SquareIcon,
+  PencilIcon,
 } from 'lucide-react'
 import { useVisibleInterval } from '@/hooks/use-refresh'
 import { useDashboard } from '@/components/dashboard/dashboard-provider'
@@ -17,6 +18,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { SermonRecapPreview } from '@/components/pdf/SermonRecapDocument'
 import { onSermonsChanged, peekSermon, rememberSermon } from '@/components/sermon/sermon-cache'
 import { ShareDialog } from '@/components/sermon/ShareDialog'
+import { EditNotesDialog, type NotesEdit } from '@/components/sermon/EditNotesDialog'
 import { ApiError } from '@/lib/api'
 import {
   shareUrl,
@@ -76,6 +78,10 @@ export function SermonReader({ sermonId }: { sermonId: string }): React.ReactEle
   const [transcript, setTranscript] = useState<SermonTranscriptPayload | null>(null)
   const [transcriptOpen, setTranscriptOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
+  const [editError, setEditError] = useState<string | null>(null)
+  // Church admins and owners may rewrite a recap by hand.
+  const canEdit = session.role === 'admin' || session.role === 'owner'
   const [cancelling, setCancelling] = useState(false)
   const [downloading, setDownloading] = useState(false)
   const [pollingStalled, setPollingStalled] = useState(false)
@@ -198,6 +204,28 @@ export function SermonReader({ sermonId }: { sermonId: string }): React.ReactEle
       await load(loadSeq.current)
     } finally {
       setCancelling(false)
+    }
+  }
+
+  const saveNotes = async (edit: NotesEdit): Promise<void> => {
+    if (!base) return
+    setBusy(true)
+    setEditError(null)
+    try {
+      await request<SermonDetail>(base, {
+        method: 'PATCH',
+        body: { title: edit.title, speaker: edit.speaker },
+      })
+      const detail = await request<SermonDetail>(`${base}/notes`, {
+        method: 'PATCH',
+        body: edit.notes,
+      })
+      applySermon(detail)
+      setEditOpen(false)
+    } catch (failure) {
+      setEditError(failure instanceof ApiError ? failure.message : 'The recap could not be saved.')
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -330,6 +358,20 @@ export function SermonReader({ sermonId }: { sermonId: string }): React.ReactEle
                 Rewrite
               </button>
             )}
+            {canEdit ? (
+              <button
+                type="button"
+                disabled={busy || switching || rewriting}
+                onClick={() => {
+                  setEditError(null)
+                  setEditOpen(true)
+                }}
+                className={TOOL}
+              >
+                <PencilIcon className="size-3.5" />
+                Edit
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={() => void loadTranscript()}
@@ -357,6 +399,17 @@ export function SermonReader({ sermonId }: { sermonId: string }): React.ReactEle
               Share
             </button>
           </div>
+        ) : null}
+
+        {canEdit && shown.summary ? (
+          <EditNotesDialog
+            sermon={shown}
+            open={editOpen}
+            busy={busy}
+            error={editError}
+            onOpenChange={setEditOpen}
+            onSave={(edit) => void saveNotes(edit)}
+          />
         ) : null}
 
         <ShareDialog

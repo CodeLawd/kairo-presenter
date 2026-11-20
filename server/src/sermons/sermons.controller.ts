@@ -24,7 +24,14 @@ import { OrgRoleGuard } from '../common/guards/org-role.guard'
 import { CurrentUser, RequestUser } from '../common/decorators/current-user.decorator'
 import { SermonsService } from './sermons.service'
 import { SermonGenerationService } from './sermon-generation.service'
-import { ListSermonsDto, ShareSermonDto, StatsQueryDto, UpdateSermonDto, UploadSermonDto } from './dto/sermon.dto'
+import {
+  ListSermonsDto,
+  ShareSermonDto,
+  StatsQueryDto,
+  UpdateSermonDto,
+  UpdateSermonNotesDto,
+  UploadSermonDto,
+} from './dto/sermon.dto'
 
 /**
  * Every route here carries `@Roles` deliberately: `OrgRoleGuard` returns true
@@ -163,6 +170,18 @@ export class SermonsController {
       speaker: dto.speaker,
       headline: dto.headline,
     })
+    return this.sermons.toDetail(sermon)
+  }
+
+  @Patch(':sermonId/notes')
+  @Roles('admin')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  async updateNotes(
+    @Param('orgId') orgId: string,
+    @Param('sermonId') sermonId: string,
+    @Body() dto: UpdateSermonNotesDto,
+  ): Promise<SermonDetail> {
+    const sermon = await this.sermons.updateNotes(orgId, sermonId, dto)
     return this.sermons.toDetail(sermon)
   }
 
