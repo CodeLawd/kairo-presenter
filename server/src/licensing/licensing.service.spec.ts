@@ -1,6 +1,6 @@
 import { HttpException } from '@nestjs/common'
 import type { Connection } from 'mongoose'
-import { LicensingService, renewalRefusal, sessionLimit } from './licensing.service'
+import { LicensingService, alreadyRenewed, renewalRefusal, sessionLimit } from './licensing.service'
 import { testConfig } from '../config/test-config'
 import type { RequestUser } from '../common/decorators/current-user.decorator'
 
@@ -57,6 +57,12 @@ describe('transcription renewal refusals', () => {
   })
   it('names an expired session', () => {
     expect(renewalRefusal(base as never, 's1', 'booth', 5_000)).toBe('The transcription session expired')
+  })
+  it('answers a repeated renewal with the time left instead of refusing it', () => {
+    const row = { ...base, sessions: [{ id: 's1', deviceId: 'booth', until: 200_000, nextRenew: 60_500 }] }
+    expect(alreadyRenewed(row as never, 's1', 'booth', 5_000)).toBe(56)
+    expect(alreadyRenewed(base as never, 's1', 'booth', 1_000)).toBeNull()
+    expect(alreadyRenewed(row as never, 's1', 'booth', 300_000)).toBeNull()
   })
   it('lets every computer on a three-computer licence transcribe at once', () => {
     const row = {

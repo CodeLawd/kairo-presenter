@@ -42,6 +42,19 @@ const SESSION_LIMIT_EXPR = { $max: ['$maxDevices', '$maxTranscriptionSessions'] 
 
 export const SESSION_LIMIT_REASON = 'Another computer is using transcription on this licence'
 
+export const RENEWED_TOO_EARLY = 'The transcription session was renewed too early'
+
+/**
+ * Seconds until the next renewal is due when the session was already renewed
+ * this minute, else null. A client retrying a renewal whose response was lost
+ * gets the same answer again instead of a refusal that ends its transcription.
+ */
+export function alreadyRenewed(row: LicenseRow | null, id: string, deviceId: string, now: number): number | null {
+  if (renewalRefusal(row, id, deviceId, now) !== RENEWED_TOO_EARLY) return null
+  const session = row!.sessions.find((s) => s.id === id && s.deviceId === deviceId)!
+  return Math.max(1, Math.ceil((session.nextRenew - now) / 1000))
+}
+
 /** Why a transcription renewal was refused, in words a church can act on. */
 export function renewalRefusal(row: LicenseRow | null, id: string, deviceId: string, now: number): string {
   if (!row || row.status !== 'active' || (row.expiresAt && Date.parse(row.expiresAt) <= now)) return 'The licence is no longer active'
@@ -49,7 +62,7 @@ export function renewalRefusal(row: LicenseRow | null, id: string, deviceId: str
   if (!row.devices.some((d) => d.deviceId === deviceId)) return 'This computer is no longer activated on the licence'
   const session = row.sessions.find((s) => s.id === id && s.deviceId === deviceId)
   if (!session || session.until <= now) return 'The transcription session expired'
-  if (session.nextRenew > now) return 'The transcription session was renewed too early'
+  if (session.nextRenew > now) return RENEWED_TOO_EARLY
   if (row.usage.period === period() && row.usage.transcriptionMinutes + 1 > row.transcriptionMinutes) return "This month's transcription minutes are used up"
   if (row.sessions.filter((s) => s.until > now).length > sessionLimit(row)) return SESSION_LIMIT_REASON
   return 'The transcription session could not be renewed'
@@ -301,12 +314,18 @@ export class LicensingService {
     }
   }
   async renew(user: RequestUser, id: string) {
+    // The filter matches two arrays (devices and sessions), so a positional
+    // `sessions.$` could extend another session's lease; name it by id instead.
     await this.member(user); await this.resetPeriod(user.orgId)
     const now = Date.now()
-    const result = await this.licenses.findOneAndUpdate({ orgId: user.orgId, ...active(), features: 'transcription', 'devices.deviceId': user.deviceId, 'usage.period': period(), sessions: { $elemMatch: { id, deviceId: user.deviceId, until: { $gt: now }, nextRenew: { $lte: now } } }, $expr: { $and: [{ $lte: [{ $add: ['$usage.transcriptionMinutes', 1] }, '$transcriptionMinutes'] }, { $lte: [{ $size: { $filter: { input: '$sessions', as: 's', cond: { $gt: ['$$s.until', now] } } } }, SESSION_LIMIT_EXPR] }] } }, { $set: { 'sessions.$.until': now + LEASE_MS, 'sessions.$.nextRenew': now + 60000 }, $inc: { 'usage.transcriptionMinutes': 1 } }, { returnDocument: 'after' })
+    const result = await this.licenses.findOneAndUpdate({ orgId: user.orgId, ...active(), features: 'transcription', 'devices.deviceId': user.deviceId, 'usage.period': period(), sessions: { $elemMatch: { id, deviceId: user.deviceId, until: { $gt: now }, nextRenew: { $lte: now } } }, $expr: { $and: [{ $lte: [{ $add: ['$usage.transcriptionMinutes', 1] }, '$transcriptionMinutes'] }, { $lte: [{ $size: { $filter: { input: '$sessions', as: 's', cond: { $gt: ['$$s.until', now] } } } }, SESSION_LIMIT_EXPR] }] } }, { $set: { 'sessions.$[session].until': now + LEASE_MS, 'sessions.$[session].nextRenew': now + 60000 }, $inc: { 'usage.transcriptionMinutes': 1 } }, { returnDocument: 'after', arrayFilters: [{ 'session.id': id, 'session.deviceId': user.deviceId }] })
     if (!result) {
+      const row = await this.row(user.orgId)
+      // Renewing is idempotent within the minute: a retry is not a refusal.
+      const retryAfter = alreadyRenewed(row, id, user.deviceId, now)
+      if (retryAfter !== null) return { renewAfterSeconds: retryAfter }
       // Say which rule refused it: one vague message hid an out-of-minutes licence behind "expired".
-      const reason = renewalRefusal(await this.row(user.orgId), id, user.deviceId, now)
+      const reason = renewalRefusal(row, id, user.deviceId, now)
       this.log.warn('Transcription renewal refused: ' + reason)
       throw new ForbiddenException(reason)
     }
