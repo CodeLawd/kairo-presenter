@@ -41,7 +41,7 @@ export default function ChangelogPage(): React.ReactElement {
       <section className="landing-stage-glow pt-[80px] pb-[50px] min-[701px]:pt-[130px] min-[701px]:pb-[80px]">
         <div className={container}>
           <p className={label}>CHANGELOG</p>
-          <h1 className="mt-6 text-[clamp(44px,6vw,88px)] leading-[1] font-medium tracking-[-.06em]">
+          <h1 className="mt-6 text-[clamp(44px,6vw,88px)] leading-[1.02] font-medium tracking-[-.045em]">
             What&apos;s new in Kairo.
           </h1>
           <p className="mt-6 max-w-[520px] text-[clamp(17px,1.4vw,20px)] leading-[1.55] text-[#A3A9BD]">
@@ -57,7 +57,7 @@ export default function ChangelogPage(): React.ReactElement {
             id={`v${entry.version.replaceAll(".", "-")}`}
             key={entry.version}
           >
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 self-start min-[901px]:sticky min-[901px]:top-10 min-[901px]:flex-col min-[901px]:items-start">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 self-start min-[901px]:sticky min-[901px]:top-24 min-[901px]:flex-col min-[901px]:items-start">
               <span className="flex items-center gap-2.5">
                 <span className="text-[15px] font-semibold tabular-nums">
                   v{entry.version}
@@ -73,7 +73,7 @@ export default function ChangelogPage(): React.ReactElement {
               </time>
             </div>
             <div>
-              <h2 className="text-[clamp(24px,2.4vw,34px)] leading-[1.15] font-medium tracking-[-.04em]">
+              <h2 className="text-[clamp(24px,2.4vw,34px)] leading-[1.15] font-medium tracking-[-.03em]">
                 {entry.title}
               </h2>
               <ul className="mt-5 grid max-w-[680px] gap-3">

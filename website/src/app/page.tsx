@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import {
   isIndexable,
   siteUrl,
@@ -10,27 +10,31 @@ import {
 
 import { Fragment } from "react";
 import {
+  AudioLines,
   BookOpen,
   Film,
   Languages,
   ListMusic,
+  MessageCircleQuestion,
+  Monitor,
   Presentation,
   Timer,
   Video,
   WifiOff,
 } from "lucide-react";
-import { Logo } from "@/components/brand/Logo";
 import { HeroDownload } from "@/components/landing/HeroDownload";
-import { SessionNavLink } from "@/components/landing/SessionNavLink";
+import { SiteNav } from "@/components/landing/SiteNav";
+import { Stagger } from "@/components/landing/Stagger";
 import { LandingFooter } from "@/components/landing/LandingFooter";
 import { OperatorDemo } from "@/components/landing/OperatorDemo";
-import { RotatingWord } from "@/components/landing/RotatingWord";
 import { ScreenViews } from "@/components/landing/ScreenViews";
 import { EngageStory } from "@/components/landing/EngageStory";
 import { StretchyFooter } from "@/components/landing/StretchyFooter";
-import { ThesisLines } from "@/components/landing/ThesisLines";
 import "./landing.css";
 import Image from "next/image";
+
+/** The browser chrome matches the page, not the dashboard. */
+export const viewport: Viewport = { themeColor: "#0A0B10" };
 
 export const metadata: Metadata = {
   alternates: { canonical: "/" },
@@ -58,23 +62,25 @@ export const metadata: Metadata = {
 
 const container =
   "mx-auto w-[calc(100%-40px)] max-w-[1440px] md:w-[calc(100%-48px)] xl:w-[calc(100%-80px)]";
-const label = "text-[11px] font-bold tracking-[.18em] text-[#C3BFB7]";
+// One quiet type scale. Tracking tightens with size: display pulls in, body stays near 0.
+const eyebrow = "text-[13px] font-semibold tracking-[.02em] text-[#8AB4FF]";
 const heading =
-  "text-[clamp(36px,4vw,64px)] leading-[1.05] font-medium tracking-[-.055em]";
-const hairline = "border-[#403F35]";
+  "text-[clamp(40px,5.2vw,76px)] leading-[1.03] font-semibold tracking-[-.045em] text-balance";
+const lede = "text-[clamp(17px,1.5vw,21px)] leading-[1.5] tracking-[-.005em] text-[#9CA1B5] text-pretty";
+const section = "py-[clamp(96px,13vw,200px)]";
 
 const downloads = [
   {
     name: "Apple silicon",
     system: "macOS",
-    detail: "For Macs with M1 or later · macOS 11+",
+    detail: "M1 or later · macOS 11+",
     format: ".dmg",
     platform: "mac-arm64",
   },
   {
     name: "Intel Mac",
     system: "macOS",
-    detail: "For Macs with an Intel processor · macOS 11+",
+    detail: "Intel processor · macOS 11+",
     format: ".dmg",
     platform: "mac-x64",
   },
@@ -94,8 +100,29 @@ const downloads = [
   },
 ];
 
+const heroPillars = [
+  {
+    title: "Live Scripture",
+    body: "Hears verses & paraphrases live",
+    href: "#product",
+    Icon: AudioLines,
+  },
+  {
+    title: "Every Screen",
+    body: "Room, stage, lobby & NDI feeds",
+    href: "#screens",
+    Icon: Monitor,
+  },
+  {
+    title: "Congregation Engage",
+    body: "QR Q&A and polls, no app needed",
+    href: "#engage",
+    Icon: MessageCircleQuestion,
+  },
+] as const;
+
 const thesis =
-  "Church services don't always go according to plan. From unexpected Scripture references to spontaneous moments of worship, Kairo listens, recognizes Scripture, and helps you present the right content at the right moment.";
+  "Services don't always go to plan. A verse nobody scheduled. A song that keeps going. Kairo listens, and keeps up.";
 
 const features = [
   {
@@ -174,7 +201,7 @@ function Thesis(): React.ReactElement {
   const total = thesis.replace(/ /g, "").length;
   let letter = 0;
   return (
-    <p className="landing-thesis-text mt-7 max-w-[1180px] text-[clamp(28px,3.4vw,56px)] leading-[1.12] font-medium tracking-[-.05em]">
+    <p className="landing-thesis-text mx-auto max-w-[1100px] text-center text-[clamp(32px,4.4vw,68px)] leading-[1.1] font-semibold tracking-[-.04em] text-balance">
       <span className="sr-only">{thesis}</span>
       <span aria-hidden="true">
         {thesis.split(" ").map((word, w) => (
@@ -203,8 +230,15 @@ function Thesis(): React.ReactElement {
 export default function HomePage(): React.ReactElement {
   return (
     <>
+      <a
+        className="absolute -top-20 left-6 z-[100] rounded-lg bg-white px-[18px] py-3 text-[#11120D] focus:top-3"
+        href="#main"
+      >
+        Skip to content
+      </a>
+      <SiteNav home />
       <div
-        className="landing min-h-screen bg-[#0A0B10] font-[var(--font-manrope)] text-[#F6F3EB]"
+        className="landing relative z-10 min-h-screen bg-[#0A0B10] font-[var(--font-manrope)] text-[#F6F3EB]"
         id="top"
         data-stretchy-page=""
       >
@@ -269,173 +303,115 @@ export default function HomePage(): React.ReactElement {
             }).replace(/</g, "\u003c"),
           }}
         />
-        <a
-          className="absolute -top-20 left-6 z-[100] bg-white px-[18px] py-3 text-[#11120D] focus:top-3"
-          href="#main"
-        >
-          Skip to content
-        </a>
-        <header
-          className={`${container} absolute inset-x-0 top-0 z-5 flex h-[72px] items-center gap-5 min-[701px]:h-[88px] min-[701px]:gap-12`}
-        >
-          <Logo href="#top" priority />
-          <nav
-            className="m-auto hidden gap-[34px] min-[701px]:flex"
-            aria-label="Main navigation"
-          >
-            {[
-              ["Product", "#product"],
-              ["Screens", "#screens"],
-              ["Engage", "#engage"],
-              ["Questions", "#questions"],
-            ].map(([text, href]) => (
-              <a
-                className="text-sm font-medium text-[#EBE8E0] hover:underline hover:underline-offset-[5px]"
-                href={href}
-                key={href}
-              >
-                {text}
-              </a>
-            ))}
-          </nav>
-          <div className="ml-auto flex items-center gap-6 min-[701px]:ml-0">
-            <SessionNavLink />
-          </div>
-        </header>
 
         <main id="main">
+          {/* Hero: stage-lit statement, action, and three-pillar wayfinding dock. */}
           <section
-            className="relative isolate flex h-auto min-h-[760px] flex-col justify-end overflow-hidden bg-[#08060b] min-[701px]:h-[max(680px,100svh)] min-[701px]:min-h-[min(840px,100svh)]"
+            className="landing-hero relative isolate overflow-hidden pt-[clamp(112px,14vh,152px)] pb-[clamp(44px,5vw,72px)] text-center"
             aria-labelledby="hero-title"
           >
-            <Image
-              src="/images/kairo-worship-hero.webp"
-              alt=""
-              fill
-              priority
-              sizes="100vw"
-              className="landing-hero-photo object-cover"
-            />
+            <div className="grain pointer-events-none absolute inset-0 -z-1" aria-hidden="true" />
             <div
-              className="landing-hero-shade absolute inset-0"
+              className="landing-hero-arc pointer-events-none absolute inset-x-0 top-0 -z-1 h-[420px]"
               aria-hidden="true"
             />
-            <div
-              className="landing-hero-dissolve pointer-events-none absolute inset-x-0 bottom-0 h-[45%]"
-              aria-hidden="true"
-            />
-            <div
-              className={`landing-hero-copy ${container} relative z-2 mb-[150px] min-[701px]:mb-[clamp(110px,18vh,190px)]`}
-            >
-              <p className={label} style={{ textTransform: "uppercase" }}>
-                The future of presentations
-              </p>
-              <h1
-                className="landing-hero-title font-black my-6 text-[clamp(38px,10vw,56px)] leading-[1] font-medium tracking-[-.06em] min-[701px]:text-[clamp(46px,5.4vw,88px)]"
-                id="hero-title"
-                aria-label="Church Presentations, Reimagined With AI."
+            <div className={`landing-hero-copy ${container} flex flex-col items-center`}>
+              <a
+                href="#product"
+                className="landing-press inline-flex items-center gap-2.5 rounded-full border border-white/[.11] bg-white/[.04] px-4 py-1.5 text-[13px] font-medium tracking-[.01em] text-[#D8DCEB] shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] backdrop-blur-md hover:border-white/[.2] hover:bg-white/[.07] hover:text-white"
               >
-                <span className="landing-hero-line">
-                  <span
-                    className="landing-hero-word"
-                    style={{ "--word-index": 0 } as React.CSSProperties}
-                  >
-                    Church
-                  </span>{" "}
-                  <span
-                    className="landing-hero-word"
-                    style={{ "--word-index": 1 } as React.CSSProperties}
-                  >
-                    Presentations,
-                  </span>
-                </span>
-                <span className="landing-hero-line">
-                  <span
-                    className="landing-hero-word landing-hero-cue"
-                    style={{ "--word-index": 2 } as React.CSSProperties}
-                    aria-hidden="true"
-                  >
-                    <RotatingWord
-                      words={["Reimagined", "Simplified", "Automated"]}
-                    />
-                  </span>{" "}
-                  <span
-                    className="landing-hero-word"
-                    style={{ "--word-index": 3 } as React.CSSProperties}
-                  >
-                    With
-                  </span>{" "}
-                  <span
-                    className="landing-hero-word text-[#8AB4FF]"
-                    style={{ "--word-index": 4 } as React.CSSProperties}
-                  >
-                    AI.
-                  </span>
+                <span className="size-1.5 rounded-full bg-[#8AB4FF] shadow-[0_0_10px_#8AB4FF]" aria-hidden="true" />
+                Built for Sunday teams
+              </a>
+
+              <h1
+                className="mt-7 max-w-[15ch] text-[clamp(44px,7.2vw,104px)] leading-[.99] font-semibold tracking-[-.048em] text-balance"
+                id="hero-title"
+              >
+                <span className="bg-gradient-to-b from-white via-[#F6F3EB] to-[#C8CDD9] bg-clip-text text-transparent">
+                  Church presentations,
+                </span>{" "}
+                <span className="bg-gradient-to-b from-[#C7DCFF] via-[#8AB4FF] to-[#5888FF] bg-clip-text text-transparent">
+                  reimagined.
                 </span>
               </h1>
-              <p className="max-w-200 text-[clamp(17px,1.4vw,20px)] leading-[1.55] text-[#DED9D2]">
-                Kairo brings intelligence to every service, automatically
-                detecting Scripture and simplifying presentations so you can
-                focus on what matters most.
+
+              <p className="mt-6 max-w-[35em] text-[clamp(17px,1.45vw,21px)] leading-[1.52] tracking-[-.005em] text-[#AEB4C9] text-pretty">
+                Kairo listens to the sermon, recognizes Scripture as it&apos;s
+                spoken, and puts it on every screen—so your team stays in the
+                moment.
               </p>
-              <HeroDownload builds={downloads} id="get" />
-            </div>
-          </section>
 
-          <section
-            className="landing-thesis relative overflow-clip"
-            aria-label="Why Kairo"
-          >
-            <div className="pointer-events-none sticky top-0 -mb-[100svh] h-[100svh]">
-              <ThesisLines />
-            </div>
-            <div
-              className={`landing-thesis-pin ${container} relative z-1 py-[80px] min-[701px]:py-[140px]`}
-            >
-              <p className={label}>BECAUSE EVERY MOMENT MATTERS.</p>
-              <Thesis />
-            </div>
-          </section>
+              <div className="mt-9">
+                <HeroDownload builds={downloads} variant="hero" />
+              </div>
 
-          <section
-            className="landing-stage-glow py-[90px] min-[701px]:py-[150px]"
-            id="product"
-            aria-labelledby="product-title"
-          >
-            <div className={container}>
-              <p className={label}>LIVE SCRIPTURE</p>
-              <h2
-                className={`${heading} mt-6 mb-10 max-w-[900px] min-[701px]:mb-14`}
-                id="product-title"
-                data-reveal=""
+              <nav
+                aria-label="Core capabilities"
+                className="mt-12 w-full max-w-[960px] overflow-hidden rounded-2xl border border-white/[.09] bg-white/[.025] shadow-[0_24px_60px_-24px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-md"
               >
-                The pastor says it.{" "}
-                <span className="text-[#7D8399]">Kairo puts it on screen.</span>
-              </h2>
-              <div data-reveal="">
+                <ul className="grid grid-cols-1 divide-y divide-white/[.07] sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+                  {heroPillars.map(({ title, body, href, Icon }) => (
+                    <li key={title}>
+                      <a
+                        href={href}
+                        className="landing-press landing-press-soft group flex items-center gap-3.5 px-5 py-4 text-left transition-colors duration-200 hover:bg-white/[.04]"
+                      >
+                        <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#3B6BFF]/14 text-[#8AB4FF] ring-1 ring-[#8AB4FF]/22 transition-colors duration-200 group-hover:bg-[#3B6BFF]/22 group-hover:text-[#B4CEFF]">
+                          <Icon className="size-[18px]" strokeWidth={1.7} aria-hidden="true" />
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block text-[14.5px] font-semibold tracking-[-.01em] text-[#F2F3F7]">
+                            {title}
+                          </span>
+                          <span className="mt-0.5 block text-[13px] leading-[1.35] text-[#959BB2]">
+                            {body}
+                          </span>
+                        </span>
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </nav>
+            </div>
+          </section>
+
+          {/* The product shot: the operator view, playing. */}
+          <section className="landing-product relative" id="product" aria-label="Live Scripture">
+            <div className="landing-product-pin landing-stage-glow pb-[clamp(96px,13vw,200px)]">
+              <div className={`${container} landing-shot max-w-[1280px]`}>
                 <OperatorDemo />
               </div>
             </div>
           </section>
 
+          {/* Why: the room, full-bleed, and one sentence that fills in as you scroll. */}
+          <section className="landing-thesis relative" aria-label="Why Kairo">
+            <div className="relative isolate flex min-h-[100svh] flex-col justify-center overflow-hidden py-[120px]">
+              <Image
+                src="/images/kairo-worship-hero.webp"
+                alt=""
+                fill
+                sizes="100vw"
+                className="-z-2 object-cover"
+              />
+              <div className="landing-thesis-shade absolute inset-0 -z-1" aria-hidden="true" />
+              <div className={container}>
+                <Thesis />
+              </div>
+            </div>
+          </section>
+
           <section
-            className="landing-screens relative isolate overflow-clip bg-[#0E1440]"
+            className="landing-screens relative isolate overflow-clip"
             id="screens"
             aria-labelledby="screens-title"
           >
-            <div className="landing-screens-pin relative py-[80px] min-[701px]:py-[130px]">
-              <div
-                className="pointer-events-none absolute inset-0 -z-1 bg-[radial-gradient(ellipse_60%_70%_at_85%_20%,rgba(91,63,214,.35),transparent_70%),radial-gradient(ellipse_50%_60%_at_0%_100%,rgba(29,63,184,.35),transparent_70%)]"
-                aria-hidden="true"
-              />
+            <div className={`landing-screens-pin relative ${section}`}>
               <div className={container}>
                 <ScreenViews>
-                  <p className={label}>SCREENS</p>
-                  <h2
-                    className={`${heading} mt-6`}
-                    id="screens-title"
-                    data-reveal=""
-                  >
+                  <p className={eyebrow}>Screens</p>
+                  <h2 className={`${heading} mt-4`} id="screens-title" data-reveal="">
                     Every screen, its own job.
                   </h2>
                 </ScreenViews>
@@ -444,94 +420,95 @@ export default function HomePage(): React.ReactElement {
           </section>
 
           <section
-            className="landing-engage relative isolate overflow-clip bg-[#0A0B10]"
+            className="landing-engage relative isolate overflow-clip"
             id="engage"
             aria-labelledby="engage-title"
           >
             <div className="landing-engage-pin relative py-[80px]">
-              <div
-                className="pointer-events-none absolute inset-0 -z-1 bg-[radial-gradient(ellipse_55%_60%_at_12%_15%,rgba(255,122,92,.16),transparent_70%),radial-gradient(ellipse_45%_50%_at_90%_90%,rgba(123,92,255,.14),transparent_70%)]"
-                aria-hidden="true"
-              />
-              <div className={`${container} w-full`}>
+              <div className={container}>
                 <EngageStory>
-                  <p className={label}>ENGAGE</p>
-                  <h2 className={`${heading} mt-6`} id="engage-title" data-reveal="">
-                    The room asks.{" "}
-                    <span className="text-[#7D8399]">You choose what&apos;s shown.</span>
+                  <p className={eyebrow}>Engage</p>
+                  <h2 className={`${heading} mt-4`} id="engage-title" data-reveal="">
+                    The room asks. You choose what&apos;s shown.
                   </h2>
                 </EngageStory>
               </div>
             </div>
           </section>
 
-          <section
-            className="bg-[#111319] py-[80px] min-[701px]:py-[130px]"
-            aria-labelledby="features-title"
-          >
+          <section className={section} aria-labelledby="features-title">
             <div className={container}>
-              <p className={label}>ALSO IN KAIRO</p>
-              <h2
-                className={`${heading} mt-6 mb-12 max-w-[760px] min-[701px]:mb-16`}
-                id="features-title"
-                data-reveal=""
-              >
-                Everything else Sunday needs.
-              </h2>
-              <ul
-                className="grid grid-cols-1 gap-3 min-[561px]:grid-cols-2 min-[1101px]:grid-cols-4"
-                data-reveal=""
-              >
+              <div className="mx-auto max-w-[760px] text-center" data-reveal="">
+                <p className={eyebrow}>Also in Kairo</p>
+                <h2 className={`${heading} mt-4`} id="features-title">
+                  Everything else Sunday needs.
+                </h2>
+              </div>
+              <Stagger className="mt-[clamp(56px,7vw,96px)] grid grid-cols-1 gap-x-10 gap-y-10 min-[561px]:grid-cols-2 min-[1101px]:grid-cols-4 min-[1101px]:gap-y-12">
                 {features.map(({ title, body, Icon }) => (
-                  <li
-                    className="flex items-start gap-4 rounded-2xl bg-[#181B23] p-5 transition-colors duration-300 hover:bg-[#1D212B] min-[561px]:flex-col min-[561px]:gap-0 min-[561px]:p-6 min-[701px]:p-7"
-                    key={title}
-                  >
-                    <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#3B6BFF]/15 text-[#8AB4FF] [&_svg]:size-5">
-                      <Icon aria-hidden="true" />
+                  <li className="border-t border-white/[.09] pt-6" key={title}>
+                    <span className="grid size-10 place-items-center rounded-xl bg-[#3B6BFF]/12 text-[#8AB4FF] ring-1 ring-[#8AB4FF]/20">
+                      <Icon className="size-5" strokeWidth={1.65} aria-hidden="true" />
                     </span>
-                    <div className="min-[561px]:mt-8 min-[701px]:mt-12">
-                      <h3 className="text-[17px] font-medium tracking-[-.025em] text-[#F2F3F7] min-[561px]:text-[18px]">
-                        {title}
-                      </h3>
-                      <p className="mt-1 text-[15px] leading-[1.5] text-[#8D93AD] min-[561px]:mt-1.5">
-                        {body}
-                      </p>
-                    </div>
+                    <h3 className="mt-5 text-[17px] font-semibold tracking-[-.015em] text-[#F2F3F7]">
+                      {title}
+                    </h3>
+                    <p className="mt-1.5 text-[15px] leading-[1.5] text-[#9CA1B5]">{body}</p>
                   </li>
                 ))}
-              </ul>
+              </Stagger>
+            </div>
+          </section>
+
+          {/* The close: every build, in one place. */}
+          <section className={`landing-stage-glow ${section} text-center`} aria-labelledby="get-title">
+            <div className={`${container} flex flex-col items-center`} data-reveal="">
+              <Image
+                src="/brand/kairo-icon.png"
+                alt=""
+                width={88}
+                height={88}
+                className="rounded-[22px] shadow-[0_20px_50px_-12px_rgba(59,107,255,0.45),0_0_0_1px_rgba(255,255,255,0.12)]"
+              />
+              <h2 className={`${heading} mt-8`} id="get-title">
+                Ready when Sunday is.
+              </h2>
+              <p className={`${lede} mt-5 max-w-[30em]`}>
+                Kairo runs on Mac, Windows and Linux.
+              </p>
+              <div className="mt-10 w-full">
+                <HeroDownload builds={downloads} id="get" />
+              </div>
             </div>
           </section>
 
           <section
-            className={`${container} grid gap-[30px] py-[70px] min-[701px]:py-[120px] min-[901px]:grid-cols-[1fr_1.2fr] min-[901px]:gap-[70px]`}
+            className={`${container} ${section} pt-0`}
             id="questions"
+            aria-labelledby="questions-title"
           >
-            <div>
-              <p className={label}>QUESTIONS</p>
-              <h2 className={`${heading} mt-6`}>Good to know.</h2>
-            </div>
-            <div className={`mt-[42px] border-t min-[701px]:mt-0 ${hairline}`}>
+            <div className="mx-auto max-w-[820px]">
+            <h2 className={`${heading} text-center`} id="questions-title">
+              Questions.
+            </h2>
+            <Stagger as="div" className="mt-[clamp(40px,5vw,64px)] border-t border-white/[.09]">
               {questions.map(({ question, answer }) => (
-                <details
-                  className={`group border-b ${hairline}`}
-                  key={question}
-                >
-                  <summary className="flex cursor-pointer list-none justify-between gap-5 py-[25px] text-[19px] [&::-webkit-details-marker]:hidden">
+                <details className="landing-faq group border-b border-white/[.09]" key={question}>
+                  <summary className="landing-press landing-press-soft flex cursor-pointer list-none items-center justify-between gap-5 py-6 text-[clamp(17px,1.4vw,19px)] font-medium tracking-[-.01em] text-[#ECE9E2] transition-colors duration-200 hover:text-white [&::-webkit-details-marker]:hidden">
                     {question}
                     <span
-                      className="text-2xl leading-none text-[#B1AEA5] transition-transform duration-200 group-open:rotate-45 motion-reduce:transition-none"
+                      className="grid size-8 shrink-0 place-items-center rounded-full text-2xl leading-none font-normal text-[#8D93AD] transition-[transform,background-color,color] duration-300 ease-[var(--ease-spring)] group-hover:bg-white/[.06] group-hover:text-white group-open:rotate-45 motion-reduce:transition-colors"
                       aria-hidden="true"
                     >
                       +
                     </span>
                   </summary>
-                  <p className="mb-[25px] max-w-[600px] text-base leading-[1.6] text-[#C1BEB5]">
+                  <p className="mb-6 max-w-[640px] text-base leading-[1.6] text-[#A3A9BD]">
                     {answer}
                   </p>
                 </details>
               ))}
+            </Stagger>
             </div>
           </section>
         </main>

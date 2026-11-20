@@ -78,11 +78,12 @@ export function EngageStory({ children }: { children: React.ReactNode }): React.
   const beat = (i: number): number => (active > i ? 1 : active < i ? 0 : local);
 
   const scanned = active > 0 || local > 0.55; // phone has opened the audience page
-  const asked = active === 0 ? (scanned ? 0 : 0) : active === 1 ? Math.min(3, 1 + Math.floor(local * 4)) : 3;
+  const asked = active === 0 ? 0 : active === 1 ? Math.min(3, 1 + Math.floor(local * 4)) : 3;
   const voteP = active >= 2 ? 1 : active === 1 ? ease((local - 0.35) / 0.6) : 0;
   const onScreen = active === 2 && local > 0.45;
   const replied = active >= 2 && (active > 2 || local > 0.7);
-  const pollP = ease((beat(3) - 0.2) / 0.65);
+  // Settles to 100% by mid-beat (local = 0.5), including when jumping straight to this step.
+  const pollP = ease((beat(3) - 0.08) / 0.42);
 
   return (
     <div ref={rootRef} className="grid w-full items-center gap-12 min-[1101px]:grid-cols-[minmax(0,1fr)_minmax(0,1.55fr)] min-[1101px]:gap-16">
@@ -97,18 +98,18 @@ export function EngageStory({ children }: { children: React.ReactNode }): React.
                   type="button"
                   onClick={() => goTo(i)}
                   aria-current={on ? "step" : undefined}
-                  className={`relative flex w-full items-start gap-4 overflow-hidden rounded-2xl px-4 py-3.5 text-left transition-colors duration-300 ${on ? "bg-white/[.06]" : "hover:bg-white/[.03]"}`}
+                  className={`landing-press landing-press-soft relative flex w-full items-start gap-4 overflow-hidden rounded-2xl px-4 py-3.5 text-left ${on ? "bg-white/[.07]" : "hover:bg-white/[.04]"}`}
                 >
                   <span className={`grid size-9 shrink-0 place-items-center rounded-xl transition-colors duration-300 [&_svg]:size-[18px] ${on ? "bg-[#3B6BFF] text-white" : "bg-white/[.06] text-[#7D8399]"}`}>
                     <Icon aria-hidden="true" />
                   </span>
                   <span className="min-w-0 pt-1.5">
-                    <span className={`block text-[16px] leading-tight font-medium tracking-[-.015em] transition-colors ${on ? "text-[#F6F3EB]" : "text-[#8D93AD]"}`}>{title}</span>
-                    <span className={`grid transition-[grid-template-rows,opacity,margin] duration-500 ${on ? "mt-1.5 grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"}`}>
+                    <span className={`block text-[16px] leading-tight font-medium tracking-[-.015em] transition-colors duration-300 ${on ? "text-[#F6F3EB]" : "text-[#8D93AD]"}`}>{title}</span>
+                    <span className={`grid transition-[grid-template-rows,opacity,margin] duration-500 ease-[var(--ease-spring)] ${on ? "mt-1.5 grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"}`}>
                       <span className="overflow-hidden text-[14.5px] leading-[1.5] text-[#A7A9B8]">{body}</span>
                     </span>
                   </span>
-                  <span className="absolute bottom-0 left-0 h-[2px] w-full origin-left bg-[#3B6BFF]" style={{ transform: `scaleX(${on ? local : 0})` }} aria-hidden="true" />
+                  <span className="absolute bottom-0 left-0 h-0.5 w-full origin-left bg-[#8AB4FF]/70" style={{ transform: `scaleX(${on ? local.toFixed(3) : 0})` }} aria-hidden="true" />
                 </button>
               </li>
             );
@@ -169,7 +170,7 @@ export function EngageStory({ children }: { children: React.ReactNode }): React.
             <ScreenLayer show={active === 3}>
               <div className="w-[88%] rounded-[2cqw] bg-[#18212d]/95 p-[4cqw] text-left text-white shadow-2xl backdrop-blur-md">
                 <div className="flex items-center justify-between">
-                  <span className="text-[1.8cqw] font-semibold text-primary uppercase tracking-wider">Live Congregation Poll</span>
+                  <span className="text-[1.8cqw] font-semibold text-[#8AB4FF] uppercase tracking-wider">Live Congregation Poll</span>
                   <span className="text-[1.7cqw] text-white/70">{Math.round(POLL.voters * pollP)} votes</span>
                 </div>
                 <p className="mt-[0.8cqw] text-[3.6cqw] leading-tight font-bold text-white">{POLL.title}</p>
@@ -183,7 +184,7 @@ export function EngageStory({ children }: { children: React.ReactNode }): React.
                           <span className="tabular-nums font-semibold text-white">{pct}%</span>
                         </div>
                         <div className="mt-[0.7cqw] h-[1.3cqw] overflow-hidden rounded-full bg-white/15">
-                          <div className="h-full rounded-full bg-[#3B6BFF] transition-all duration-300" style={{ width: `${pct}%` }} />
+                          <div className="h-full w-full origin-left rounded-full bg-[#3B6BFF] transition-transform duration-300" style={{ transform: `scaleX(${(o.share * pollP).toFixed(3)})` }} />
                         </div>
                       </div>
                     );
@@ -215,7 +216,7 @@ export function EngageStory({ children }: { children: React.ReactNode }): React.
               <div className="absolute top-[2cqw] left-1/2 z-20 h-[3.8cqw] w-[26cqw] -translate-x-1/2 rounded-full bg-black" />
 
               {/* Camera Scanner View during Beat 0 */}
-              <div className={`absolute inset-0 z-10 flex flex-col justify-between bg-[#08090D] p-[5cqw] transition-opacity duration-500 ${scanned ? "pointer-events-none opacity-0" : "opacity-100"}`}>
+              <div className={`absolute inset-0 z-10 flex flex-col justify-between bg-[#08090D] p-[5cqw] transition-[opacity,transform] duration-200 ease-out ${scanned ? "pointer-events-none scale-105 opacity-0" : "scale-100 opacity-100"}`}>
                 <div className="pt-[6cqw] text-center">
                   <p className="text-[3.8cqw] font-semibold text-white/90">Camera</p>
                 </div>
@@ -270,36 +271,50 @@ export function EngageStory({ children }: { children: React.ReactNode }): React.
 
                   {/* Question cards */}
                   <div className="space-y-[2.2cqw]">
-                    {QUESTIONS.slice(0, asked).map((q, i) => (
-                      <div key={q.text} className="animate-[engage-in_.35s_ease-out] rounded-[3cqw] border border-black/8 bg-white p-[3.2cqw] shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-[2cqw]">
-                            <span className="grid size-[6.5cqw] place-items-center rounded-full bg-[#E8EAED] text-[3cqw] font-bold text-[#6B7280]">
-                              {q.author[0]}
-                            </span>
-                            <div>
-                              <p className="text-[3.4cqw] font-semibold text-[#1A1C1F]">{q.author}</p>
-                              <p className="text-[2.6cqw] text-[#6B7280]">{q.age} ago</p>
-                            </div>
-                          </div>
-                          <span className={`flex items-center gap-1 rounded-full px-[2.4cqw] py-[0.8cqw] text-[3.2cqw] font-bold tabular-nums transition-colors ${i === 0 && voteP > 0.4 ? "bg-[#3B6BFF] text-white" : "bg-[#F2F3F5] text-[#3C4048]"}`}>
-                            ▲ {Math.round(q.votes * voteP)}
-                          </span>
-                        </div>
-                        <p className="mt-[2cqw] text-[3.6cqw] leading-[1.35] text-[#1A1C1F]">{q.text}</p>
-                        {i === 0 && replied ? (
-                          <div className="mt-[2.2cqw] rounded-[2cqw] bg-[#F3F4F7] p-[2.2cqw] text-[3.2cqw] leading-[1.35]">
-                            <p className="font-semibold text-[#2F5BE0]">Answered by the team</p>
-                            <p className="mt-[0.5cqw] text-[#3C4048]">Pastor will cover this in the sermon.</p>
-                          </div>
-                        ) : null}
+                    {asked === 0 ? (
+                      <div className="rounded-[3cqw] border border-black/8 bg-white p-[4cqw] text-center shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+                        <span className="mx-auto grid size-[10cqw] place-items-center rounded-full bg-[#3B6BFF]/10 text-[4.5cqw] font-semibold text-[#3B6BFF]">
+                          ✓
+                        </span>
+                        <p className="mt-[2.5cqw] text-[3.8cqw] font-semibold text-[#1A1C1F]">
+                          Connected to Sunday Q&amp;A
+                        </p>
+                        <p className="mt-[1.2cqw] text-[3.2cqw] leading-[1.4] text-[#666B7E]">
+                          Send a question anytime. The room can upvote what they want answered most.
+                        </p>
                       </div>
-                    ))}
+                    ) : (
+                      QUESTIONS.slice(0, asked).map((q, i) => (
+                        <div key={q.text} className="animate-[engage-in_.35s_ease-out] rounded-[3cqw] border border-black/8 bg-white p-[3.2cqw] shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-[2cqw]">
+                              <span className="grid size-[6.5cqw] place-items-center rounded-full bg-[#E8EAED] text-[3cqw] font-bold text-[#6B7280]">
+                                {q.author[0]}
+                              </span>
+                              <div>
+                                <p className="text-[3.4cqw] font-semibold text-[#1A1C1F]">{q.author}</p>
+                                <p className="text-[2.6cqw] text-[#6B7280]">{q.age} ago</p>
+                              </div>
+                            </div>
+                            <span className={`flex items-center gap-1 rounded-full px-[2.4cqw] py-[0.8cqw] text-[3.2cqw] font-bold tabular-nums transition-colors ${i === 0 && voteP > 0.4 ? "bg-[#3B6BFF] text-white" : "bg-[#F2F3F5] text-[#3C4048]"}`}>
+                              ▲ {Math.round(q.votes * voteP)}
+                            </span>
+                          </div>
+                          <p className="mt-[2cqw] text-[3.6cqw] leading-[1.35] text-[#1A1C1F]">{q.text}</p>
+                          {i === 0 && replied ? (
+                            <div className="mt-[2.2cqw] rounded-[2cqw] bg-[#F3F4F7] p-[2.2cqw] text-[3.2cqw] leading-[1.35]">
+                              <p className="font-semibold text-[#2F5BE0]">Answered by the team</p>
+                              <p className="mt-[0.5cqw] text-[#3C4048]">Pastor will cover this in the sermon.</p>
+                            </div>
+                          ) : null}
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
               ) : (
                 /* Poll View on Phone */
-                <div className="p-[3.5cqw]">
+                <div className="space-y-[2.8cqw] p-[3.5cqw]">
                   <div className="rounded-[3cqw] border border-black/8 bg-white p-[3.5cqw] shadow-xs">
                     <span className="text-[2.8cqw] font-bold tracking-wider text-[#3B6BFF] uppercase">Live Poll</span>
                     <p className="mt-[0.8cqw] text-[4cqw] leading-tight font-bold text-[#1A1C1F]">{POLL.title}</p>
@@ -318,6 +333,15 @@ export function EngageStory({ children }: { children: React.ReactNode }): React.
                       })}
                     </div>
                   </div>
+                  <div className="flex items-center justify-between rounded-[3cqw] border border-black/8 bg-white px-[3.5cqw] py-[2.8cqw] text-[3.2cqw] shadow-xs">
+                    <span className="flex items-center gap-[1.8cqw] font-medium text-[#1A1C1F]">
+                      <span className="size-[2cqw] rounded-full bg-emerald-500" />
+                      Vote recorded
+                    </span>
+                    <span className="tabular-nums text-[#666B7E]">
+                      {Math.round(POLL.voters * pollP)} votes live
+                    </span>
+                  </div>
                 </div>
               )}
             </div>
@@ -330,7 +354,13 @@ export function EngageStory({ children }: { children: React.ReactNode }): React.
 
 function ScreenLayer({ show, children }: { show: boolean; children: React.ReactNode }): React.ReactElement {
   return (
-    <div className={`absolute inset-0 grid place-items-center p-[4cqw] transition-[opacity,transform] duration-500 ${show ? "scale-100 opacity-100" : "pointer-events-none scale-[.98] opacity-0"}`}>
+    <div
+      className={`absolute inset-0 grid place-items-center p-[4cqw] transition-[opacity,transform] ${
+        show
+          ? "scale-100 opacity-100 duration-300 delay-100 ease-[var(--ease-spring)]"
+          : "pointer-events-none scale-[.98] opacity-0 duration-150 ease-out"
+      }`}
+    >
       {children}
     </div>
   );

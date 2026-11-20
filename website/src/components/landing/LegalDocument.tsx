@@ -35,7 +35,7 @@ export function LegalDocument({
       <section className="landing-stage-glow pt-[80px] pb-[50px] min-[701px]:pt-[130px] min-[701px]:pb-[80px]">
         <div className={container}>
           <p className={label}>LEGAL</p>
-          <h1 className="mt-6 text-[clamp(44px,6vw,88px)] leading-[1] font-medium tracking-[-.06em]">
+          <h1 className="mt-6 text-[clamp(44px,6vw,88px)] leading-[1.02] font-medium tracking-[-.045em]">
             {title}
           </h1>
           <p className="mt-6 text-sm text-[#7D8399]">
@@ -47,7 +47,7 @@ export function LegalDocument({
       <div
         className={`${container} grid gap-10 border-t border-white/[.08] pt-10 pb-[100px] min-[901px]:grid-cols-[240px_minmax(0,1fr)] min-[901px]:gap-12 min-[901px]:pt-14 min-[701px]:pb-[150px]`}
       >
-        <nav className="hidden self-start min-[901px]:sticky min-[901px]:top-10 min-[901px]:block" aria-label="On this page">
+        <nav className="hidden self-start min-[901px]:sticky min-[901px]:top-24 min-[901px]:block" aria-label="On this page">
           <p className={label}>ON THIS PAGE</p>
           <ol className="mt-5 grid gap-2.5">
             {sections.map((section) => (
@@ -63,7 +63,7 @@ export function LegalDocument({
         <div className="landing-prose max-w-[720px]">
           <div className="text-[18px] leading-[1.65] text-[#C9CEDF]">{intro}</div>
           {sections.map((section) => (
-            <section className="mt-14 scroll-mt-8" id={section.id} key={section.id}>
+            <section className="mt-14 scroll-mt-24" id={section.id} key={section.id}>
               <h2>{section.title}</h2>
               {section.content}
             </section>

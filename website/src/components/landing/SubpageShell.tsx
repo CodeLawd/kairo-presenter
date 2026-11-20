@@ -1,14 +1,12 @@
-import Link from "next/link";
-import { Logo } from "@/components/brand/Logo";
 import { LandingFooter } from "@/components/landing/LandingFooter";
 import { StretchyFooter } from "@/components/landing/StretchyFooter";
-import { SessionNavLink } from "@/components/landing/SessionNavLink";
+import { SiteNav } from "@/components/landing/SiteNav";
 import "@/app/landing.css";
 
 /**
  * The frame for the site's pages beyond the homepage (changelog, privacy,
- * terms): the dark page, a slim header back to the homepage and downloads, the
- * shared footer and its stretchy aurora. Pages supply only their `<main>` content.
+ * terms): the dark page, the shared site header, the shared footer and its
+ * stretchy aurora. Pages supply only their `<main>` content.
  */
 
 export const subpageContainer =
@@ -17,25 +15,20 @@ export const subpageContainer =
 export function SubpageShell({ children }: { children: React.ReactNode }): React.ReactElement {
   return (
     <>
+      <a
+        className="absolute -top-20 left-6 z-[100] rounded-lg bg-white px-[18px] py-3 text-[#11120D] focus:top-3"
+        href="#main"
+      >
+        Skip to content
+      </a>
+      <SiteNav />
       <div
-        className="landing min-h-screen bg-[#0A0B10] font-[var(--font-manrope)] text-[#F6F3EB]"
+        className="landing relative z-10 min-h-screen bg-[#0A0B10] font-[var(--font-manrope)] text-[#F6F3EB]"
         id="top"
         data-stretchy-page=""
       >
-        <header className={`${subpageContainer} flex h-[72px] items-center gap-3 min-[701px]:h-[88px]`}>
-          <Logo href="/" priority className="shrink-0" />
-          <nav className="ml-auto flex items-center gap-3 sm:gap-5" aria-label="Main navigation">
-            <SessionNavLink variant="text" />
-            <Link
-              className="inline-flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-md px-1 text-sm font-semibold text-[#11120D] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F4F0E9] group"
-              href="/#get"
-            >
-              <span className="inline-flex h-8 items-center rounded-md bg-[#F4F0E9] px-3 transition-colors group-hover:bg-[#E9E5DE]">Download</span>
-            </Link>
-          </nav>
-        </header>
-
-        <main id="main">{children}</main>
+        {/* Room for the fixed header, which is out of flow. */}
+        <main id="main" className="pt-[72px] min-[701px]:pt-[88px]">{children}</main>
 
         <LandingFooter />
       </div>

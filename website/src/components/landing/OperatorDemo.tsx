@@ -10,7 +10,11 @@ import Image from "next/image";
  * the window light up as the story moves, with a line saying what just happened.
  * Everything is derived from one clock, `t`, so the story stays in step.
  *
- * Plays only while on screen; with reduced motion it shows the finished state.
+ * Where the page pins the demo (its section is much taller than the screen),
+ * scrolling drives the clock: forward plays the story, back rewinds it, and
+ * stopping holds the frame. Elsewhere it plays as a loop while on screen, and
+ * with reduced motion it shows the finished state. The step pills jump to
+ * their step either way.
  */
 
 const SENTENCE_1 =
@@ -45,6 +49,10 @@ const SLIDES = {
 } as const;
 
 const STEPS = ["Listening", "Verse found", "On screen"] as const;
+/** Where each pill jumps to: mid-sermon, John 3:16 counting down, Romans 5:8 live. */
+const STEP_AT = [T1 + 1800, D1 + 900, L2 + 700] as const;
+/** Share of the pinned scroll that plays the story; the rest holds the last frame. */
+const SCROLL_PLAY = 0.86;
 
 const clamp = (v: number, lo = 0, hi = 1): number => Math.min(hi, Math.max(lo, v));
 const ease = (p: number): number => 1 - Math.pow(1 - p, 3);
@@ -55,15 +63,31 @@ export function OperatorDemo(): React.ReactElement {
   // Total time played, so the service clock keeps counting across loops.
   const [elapsed, setElapsed] = useState(0);
 
+  // Jumps the story to a clock time; set by the effect for whichever mode is running.
+  const jumpRef = useRef<(at: number) => void>(() => {});
+
   useEffect(() => {
+    const root = rootRef.current;
+    const section = root?.closest("section");
+    if (!root || !section) return;
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (reduce) {
-      setT(SETTLED);
-      return;
-    }
+
+    // Pinned: the section is a tall track the demo sticks inside.
+    const track = (): { top: number; run: number; pinned: boolean } => {
+      const rect = section.getBoundingClientRect();
+      const vh = window.innerHeight;
+      const run = rect.height - vh;
+      return { top: rect.top, run, pinned: run > vh * 0.5 };
+    };
+
+    let mode: "scroll" | "loop" | "still" | null = null;
+    let visible = false;
     let start = performance.now();
     let played = 0;
     let timer: number | null = null;
+    let frame = 0;
+
+    // ── Loop mode: a clock that runs only while the demo is on screen.
     const tick = (): void => {
       const now = performance.now() - start;
       setT(now % LOOP);
@@ -76,18 +100,69 @@ export function OperatorDemo(): React.ReactElement {
       timer = window.setInterval(tick, 80);
     };
     const pause = (): void => {
-      if (timer !== null) window.clearInterval(timer);
-      if (timer !== null) played += performance.now() - start;
+      if (timer === null) return;
+      window.clearInterval(timer);
+      played += performance.now() - start;
       timer = null;
     };
+
+    // ── Scroll mode: the clock follows the scroll position, 1:1.
+    const follow = (): void => {
+      frame = 0;
+      const { top, run } = track();
+      const p = clamp(-top / run);
+      const at = Math.min(SETTLED, (p / SCROLL_PLAY) * SETTLED);
+      setT(at);
+      setElapsed(at);
+    };
+    const onScroll = (): void => {
+      if (mode === "scroll" && !frame) frame = requestAnimationFrame(follow);
+    };
+
+    const choose = (): void => {
+      const next = track().pinned ? "scroll" : reduce ? "still" : "loop";
+      if (next === mode) return;
+      pause();
+      mode = next;
+      if (mode === "scroll") follow();
+      else if (mode === "still") setT(SETTLED);
+      else if (visible) play();
+    };
+
+    jumpRef.current = (at: number): void => {
+      if (mode === "scroll") {
+        const { top, run } = track();
+        window.scrollTo({
+          top: window.scrollY + top + run * (at / SETTLED) * SCROLL_PLAY,
+          behavior: reduce ? "auto" : "smooth",
+        });
+      } else if (mode === "loop") {
+        start = performance.now() - at;
+        tick();
+      } else {
+        setT(at);
+      }
+    };
+
     const observer = new IntersectionObserver(
-      ([entry]) => (entry.isIntersecting ? play() : pause()),
+      ([entry]) => {
+        visible = entry.isIntersecting;
+        if (mode !== "loop") return;
+        if (visible) play();
+        else pause();
+      },
       { threshold: 0.25 },
     );
-    if (rootRef.current) observer.observe(rootRef.current);
+    observer.observe(root);
+    choose();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", choose);
     return () => {
       pause();
+      cancelAnimationFrame(frame);
       observer.disconnect();
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", choose);
     };
   }, []);
 
@@ -127,36 +202,40 @@ export function OperatorDemo(): React.ReactElement {
       aria-label="The Kairo operator view: a sermon is transcribed, John 3:16 is detected and sent automatically, then Romans 5:8 is sent by the operator"
     >
       {/* The story, in three steps and one line. */}
-      <div className="mb-6 flex flex-col gap-4 min-[901px]:mb-8 min-[901px]:flex-row min-[901px]:items-center min-[901px]:justify-between" aria-hidden="true">
-        <ol className="flex flex-wrap gap-2">
+      <div className="mb-6 flex flex-col items-center gap-3.5 text-center min-[901px]:mb-8">
+        <ol className="inline-flex flex-wrap justify-center gap-1 rounded-full border border-white/[.09] bg-white/[.03] p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-md">
           {STEPS.map((name, i) => (
-            <li
-              key={name}
-              className={`flex items-center gap-2 rounded-full border px-3.5 py-2 text-[13px] font-medium transition-colors duration-500 ${
+            <li key={name}>
+            <button
+              type="button"
+              onClick={() => jumpRef.current(STEP_AT[i])}
+              aria-current={step === i ? "step" : undefined}
+              className={`landing-press flex items-center gap-2 rounded-full px-3.5 py-1.5 text-[13px] font-medium transition-colors duration-300 ease-[var(--ease-spring)] ${
                 step === i
-                  ? "border-[#3B6BFF] bg-[#3B6BFF]/15 text-[#F2F3F7]"
-                  : "border-white/10 text-[#7D8399]"
+                  ? "bg-[#3B6BFF]/22 text-white shadow-[inset_0_1px_0_rgba(138,180,255,0.28)]"
+                  : "text-[#8D93AD] hover:text-[#D8DCEB]"
               }`}
             >
               <span
-                className={`grid size-5 place-items-center rounded-full text-[11px] tabular-nums transition-colors duration-500 ${
-                  step === i ? "bg-[#3B6BFF] text-white" : "bg-white/[.06] text-[#7D8399]"
+                className={`grid size-5 place-items-center rounded-full text-[11px] font-semibold tabular-nums transition-colors duration-300 ease-[var(--ease-spring)] ${
+                  step === i ? "bg-[#3B6BFF] text-white" : "bg-white/[.07] text-[#8D93AD]"
                 }`}
               >
                 {i + 1}
               </span>
               {name}
+            </button>
             </li>
           ))}
         </ol>
-        <p key={caption} className="animate-[demo-card-in_.45s_cubic-bezier(.16,1,.3,1)] text-[15px] text-[#C9CEDF] min-[901px]:text-right">
+        <p key={caption} aria-hidden="true" className="animate-[demo-card-in_.35s_cubic-bezier(.32,.72,0,1)] text-[15px] text-[#C9CEDF]">
           {caption}
         </p>
       </div>
 
       {/* The app window. */}
-      <div className="overflow-hidden rounded-2xl border border-white/[.08] bg-[#0F1117] text-[14px] text-[#F2F3F7]" aria-hidden="true">
-        <div className="flex h-12 items-center gap-4 border-b border-white/[.06] px-4 text-[13px] text-[#A3A9BD]">
+      <div className="overflow-hidden rounded-[22px] border border-white/[.11] bg-[#0F1117] text-[14px] text-[#F2F3F7] shadow-[0_48px_120px_-36px_rgba(0,0,0,.95),0_28px_80px_-48px_rgba(59,107,255,.48),inset_0_1px_0_rgba(255,255,255,0.12)]" aria-hidden="true">
+        <div className="flex h-12 items-center gap-4 border-b border-white/[.07] bg-white/[.02] px-4 text-[13px] text-[#A3A9BD]">
           <span className="flex gap-1.5">
             <i className="size-3 rounded-full bg-white/15" />
             <i className="size-3 rounded-full bg-white/15" />
@@ -338,7 +417,7 @@ function Waveform({ level, t }: { level: number; t: number }): React.ReactElemen
 function Slide({ shown, children }: { shown: boolean; children: React.ReactNode }): React.ReactElement {
   return (
     <div
-      className={`absolute inset-0 flex flex-col items-center justify-center px-[8%] text-center transition-opacity duration-500 ${shown ? "opacity-100" : "opacity-0"}`}
+      className={`absolute inset-0 flex flex-col items-center justify-center px-[8%] text-center transition-opacity duration-250 ease-out ${shown ? "opacity-100" : "opacity-0"}`}
     >
       {children}
     </div>

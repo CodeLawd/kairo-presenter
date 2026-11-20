@@ -5,8 +5,11 @@ import { useEffect, useState } from 'react'
 import { ApiError } from '@/lib/api'
 import { getSession, mintAccessToken } from '@/lib/session'
 
-/** Public navigation uses the same HttpOnly session as the dashboard. */
-export function SessionNavLink({ variant = 'button' }: { variant?: 'button' | 'text' }): React.ReactElement {
+/**
+ * Whether the visitor has a dashboard session: `null` while checking. Uses the
+ * same HttpOnly session as the dashboard, and re-checks when the tab returns.
+ */
+export function useSignedIn(): boolean | null {
   const [signedIn, setSignedIn] = useState<boolean | null>(null)
 
   useEffect(() => {
@@ -40,10 +43,26 @@ export function SessionNavLink({ variant = 'button' }: { variant?: 'button' | 't
     }
   }, [])
 
+  return signedIn
+}
+
+/** "Sign in" or "Dashboard", given a known session state. */
+export function SessionLink({
+  signedIn,
+  variant = 'button',
+  className = '',
+  onClick,
+}: {
+  signedIn: boolean | null
+  variant?: 'button' | 'text'
+  className?: string
+  onClick?: () => void
+}): React.ReactElement {
   return (
     <Link
-      className={`inline-flex min-h-11 shrink-0 items-center justify-center whitespace-nowrap text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#F4F0E9] ${variant === 'text' ? 'min-w-[76px] text-[#EBE8E0] hover:text-white' : 'min-w-[124px] rounded-lg bg-[#F4F0E9] px-5 text-[#11120D] hover:bg-[#E9E5DE]'}`}
+      className={`landing-press inline-flex min-h-11 shrink-0 items-center justify-center whitespace-nowrap text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#F4F0E9] ${variant === 'text' ? 'min-w-[76px] text-[#EBE8E0] hover:text-white' : 'min-w-[124px] rounded-lg bg-[#F4F0E9] px-5 text-[#11120D] hover:bg-[#E9E5DE]'} ${className}`}
       href={signedIn === false ? '/login' : '/dashboard'}
+      onClick={onClick}
     >
       {signedIn === null ? (
         <>
@@ -53,4 +72,9 @@ export function SessionNavLink({ variant = 'button' }: { variant?: 'button' | 't
       ) : signedIn ? 'Dashboard' : 'Sign in'}
     </Link>
   )
+}
+
+/** Public navigation uses the same HttpOnly session as the dashboard. */
+export function SessionNavLink({ variant = 'button' }: { variant?: 'button' | 'text' }): React.ReactElement {
+  return <SessionLink signedIn={useSignedIn()} variant={variant} />
 }

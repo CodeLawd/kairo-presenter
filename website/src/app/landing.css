@@ -1,6 +1,138 @@
 /* Scroll timelines need CSS; layout, color, and typography live in Tailwind classes. */
 .landing [id] { scroll-margin-top: 30px; }
-.landing :focus-visible { outline: 2px solid #D3CFC7; outline-offset: 4px; }
+.landing #get { scroll-margin-top: 120px; }
+.landing :focus-visible, .landing-nav :focus-visible { outline: 2px solid #D3CFC7; outline-offset: 4px; }
+
+/* Motion tokens. Critically damped curves (no overshoot) for UI that wasn't thrown. */
+:root {
+  --ease-out: cubic-bezier(.22, 1, .36, 1);
+  --ease-spring: cubic-bezier(.32, .72, 0, 1);
+}
+
+/* Optical sizing for the landing typography hierarchy. */
+.landing { font-optical-sizing: auto; }
+
+/* Press feedback: the control answers on pointer-down, not on release. */
+.landing-press {
+  transition: transform 180ms var(--ease-out), background-color 200ms ease, border-color 200ms ease, color 200ms ease, opacity 200ms ease, box-shadow 200ms ease;
+}
+.landing-press:active { transform: scale(.97); transition-duration: 60ms; }
+.landing-press-soft:active { transform: scale(.985); transition-duration: 60ms; }
+@media (prefers-reduced-motion: reduce) {
+  .landing-press:active, .landing-press-soft:active { transform: none; }
+}
+
+/* The site header: clear over the hero, a translucent bar once the page moves, so content
+   keeps reading through it. Heavier and solid when transparency or contrast is turned down. */
+.landing-nav {
+  height: 72px;
+  transition: height 420ms var(--ease-spring), background-color 300ms ease, box-shadow 300ms ease, backdrop-filter 300ms ease;
+}
+@media (min-width: 701px) { .landing-nav { height: 84px; } }
+.landing-nav[data-scrolled="true"] {
+  height: 60px;
+  background: rgba(10, 11, 16, .74);
+  -webkit-backdrop-filter: blur(22px) saturate(180%);
+  backdrop-filter: blur(22px) saturate(180%);
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, .09), 0 10px 30px -14px rgba(0, 0, 0, .65);
+}
+@media (prefers-reduced-transparency: reduce) {
+  .landing-nav[data-scrolled="true"] { background: #0A0B10; -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+@media (prefers-contrast: more) {
+  .landing-nav[data-scrolled="true"] { background: #0A0B10; box-shadow: inset 0 -1px 0 rgba(255, 255, 255, .45); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .landing-nav { transition: background-color 200ms ease, box-shadow 200ms ease; }
+}
+.landing-nav-link { color: #C9CCD6; }
+.landing-nav-link:hover { color: #FFFFFF; background: rgba(255, 255, 255, .07); }
+.landing-nav-link[aria-current] {
+  color: #FFFFFF;
+  background: rgba(255, 255, 255, .11);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .14);
+}
+
+/* Menu button: two bars that turn into a cross. */
+.landing-menu-button > span {
+  grid-area: 1 / 1;
+  width: 18px;
+  height: 1.5px;
+  border-radius: 1px;
+  background: #F6F3EB;
+  transition: transform 360ms var(--ease-spring);
+}
+.landing-menu-button > span:first-child { transform: translateY(-3.5px); }
+.landing-menu-button > span:last-child { transform: translateY(3.5px); }
+.landing-menu-button[aria-expanded="true"] > span:first-child { transform: rotate(45deg); }
+.landing-menu-button[aria-expanded="true"] > span:last-child { transform: rotate(-45deg); }
+
+/* Mobile menu: drops from the bar it belongs to and goes back the same way. Transitions
+   retarget from wherever they are, so a second tap mid-motion reverses it cleanly. */
+.landing-menu {
+  position: absolute;
+  inset: 100% 0 auto;
+  /* Heavier than the bar it hangs from: large text sits on it, so legibility wins over show-through. */
+  background: rgba(10, 11, 16, .95);
+  -webkit-backdrop-filter: blur(32px) saturate(160%);
+  backdrop-filter: blur(32px) saturate(160%);
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, .07), 0 24px 40px -20px rgba(0, 0, 0, .7);
+  transform-origin: top center;
+  opacity: 0;
+  transform: translateY(-8px);
+  visibility: hidden;
+  transition: opacity 240ms ease, transform 420ms var(--ease-spring), visibility 0s linear 420ms;
+}
+.landing-menu[data-open="true"] {
+  opacity: 1;
+  transform: none;
+  visibility: visible;
+  transition: opacity 240ms ease, transform 420ms var(--ease-spring), visibility 0s;
+}
+.landing-menu li, .landing-menu nav > div {
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity 200ms ease, transform 360ms var(--ease-spring);
+}
+.landing-menu[data-open="true"] li, .landing-menu[data-open="true"] nav > div {
+  opacity: 1;
+  transform: none;
+  transition-delay: calc(var(--i, 0) * 30ms);
+}
+.landing-menu a[aria-current] { color: #8AB4FF; }
+@media (prefers-reduced-transparency: reduce) {
+  .landing-menu { background: #0A0B10; -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .landing-menu, .landing-menu[data-open="true"], .landing-menu li, .landing-menu nav > div { transform: none; transition-property: opacity, visibility; transition-delay: 0s; }
+}
+
+/* Staggered groups: items rise in swiftly once the group enters view, never leaving gaps.
+   Hidden only when scripts run, so the content never depends on JavaScript to be seen. */
+@media (scripting: enabled) and (prefers-reduced-motion: no-preference) {
+  .landing-stagger > * {
+    opacity: 0;
+    transform: translateY(14px);
+    transition: opacity 420ms var(--ease-out), transform 520ms var(--ease-spring);
+    transition-delay: calc(var(--i, 0) * 45ms);
+  }
+  .landing-stagger[data-shown="true"] > * { opacity: 1; transform: none; }
+}
+
+/* FAQ: answers open to their height instead of snapping, where the browser can animate
+   `details`. Elsewhere they open instantly, as before. */
+.landing-faq { interpolate-size: allow-keywords; }
+.landing-faq::details-content {
+  block-size: 0;
+  overflow: clip;
+  transition: block-size 420ms var(--ease-spring), content-visibility 420ms allow-discrete;
+}
+.landing-faq[open]::details-content { block-size: auto; }
+.landing-faq > p { opacity: 0; transition: opacity 260ms ease; }
+.landing-faq[open] > p { opacity: 1; transition-delay: 80ms; }
+@media (prefers-reduced-motion: reduce) {
+  .landing-faq::details-content { transition: none; }
+}
 
 /* Operator demo: a detected verse lands in the list. */
 @keyframes demo-card-in {
@@ -12,7 +144,7 @@
 }
 
 @keyframes landing-rise {
-  from { opacity: .36; transform: translateY(38px); }
+  from { opacity: 0; transform: translateY(28px); }
   to { opacity: 1; transform: translateY(0); }
 }
 @keyframes landing-wordmark {
@@ -20,169 +152,120 @@
   to { opacity: .28; transform: translateY(0); }
 }
 @keyframes landing-letter {
-  from { color: #262934; }
+  from { color: rgba(246, 243, 235, .22); }
   to { color: #F6F3EB; }
 }
 
-@keyframes landing-hero-enter {
-  from { opacity: 0; transform: translateY(16px); }
-  to { opacity: 1; transform: translateY(0); }
+/* Hero: layered stage lighting from above, anti-banding grain, and copy settling cleanly.
+   The download button is reachable within half a second. */
+.landing-hero {
+  background:
+    radial-gradient(ellipse 70% 56% at 50% -14%, rgba(59, 107, 255, .28), transparent 68%),
+    radial-gradient(ellipse 38% 30% at 50% -4%, rgba(138, 180, 255, .17), transparent 65%),
+    radial-gradient(ellipse 42% 36% at 84% 16%, rgba(123, 92, 255, .10), transparent 70%),
+    radial-gradient(ellipse 38% 32% at 16% 22%, rgba(59, 107, 255, .08), transparent 70%);
 }
-@keyframes landing-hero-word-enter {
-  from { opacity: 0; transform: translateY(.7em) rotate(2deg); filter: blur(12px); }
-  to { opacity: 1; transform: translateY(0) rotate(0); filter: blur(0); }
+.landing-hero-arc {
+  background: radial-gradient(60% 100% at 50% 0%, rgba(138, 180, 255, .12), transparent 72%);
+  mask-image: linear-gradient(180deg, #000 0%, transparent 100%);
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, transparent 100%);
 }
-@keyframes landing-hero-cue-light {
-  0%, 28% { color: #F6F3EB; text-shadow: none; }
-  48% { color: #AABED7; text-shadow: 0 0 34px rgba(108, 145, 194, .48); }
-  100% { color: #F6F3EB; text-shadow: none; }
+@keyframes landing-settle {
+  from { opacity: 0; transform: translateY(14px); filter: blur(6px); }
+  to { opacity: 1; transform: none; filter: blur(0); }
 }
-@keyframes landing-hero-cue-line {
-  0%, 20% { transform: scaleX(0); opacity: 0; }
-  50% { transform: scaleX(1); opacity: 1; }
-  100% { transform: scaleX(1); opacity: .55; }
-}
-.landing-hero-line { display: block; }
-.landing-hero-word { display: inline-block; }
-.landing-hero-cue { position: relative; }
-.landing-hero-rotate { display: inline-grid; grid-template-columns: minmax(0, 1fr); vertical-align: baseline; }
-.landing-hero-rotate-measure { grid-area: 1 / 1; visibility: hidden; white-space: nowrap; }
-.landing-hero-rotate-window { grid-area: 1 / 1; position: relative; height: 1em; clip-path: inset(0 -100vw); }
-.landing-hero-rotate-word {
-  position: absolute; inset: 0 auto auto 0; line-height: 1; white-space: nowrap;
-  transition: transform 600ms cubic-bezier(.22, 1, .36, 1);
-}
-.landing-hero-rotate-word[data-state="out"] { transform: translateY(-110%); }
-.landing-hero-rotate-word[data-state="idle"] { transform: translateY(110%); visibility: hidden; transition: none; }
-@media (prefers-reduced-motion: reduce) {
-  .landing-hero-rotate, .landing-hero-rotate-word { transition: none; }
-}
-.landing-hero-cue::after {
-  content: "";
-  position: absolute;
-  left: .025em;
-  right: .04em;
-  bottom: -.085em;
-  height: .035em;
-  border-radius: 999px;
-  background: #6C91C2;
-  transform-origin: left;
-  transform: scaleX(1);
-  opacity: .55;
-}
-
 @media (prefers-reduced-motion: no-preference) {
-  .landing-hero-copy > * {
-    animation: landing-hero-enter 780ms cubic-bezier(.22, 1, .36, 1) both;
-  }
-  .landing-hero-copy > :nth-child(2) { animation: none; }
-  .landing-hero-copy > :nth-child(3) { animation-delay: 1080ms; }
-  .landing-hero-copy > :nth-child(4) { animation-delay: 1200ms; }
-  .landing-hero-word {
-    animation: landing-hero-word-enter 820ms cubic-bezier(.16, 1, .3, 1) both;
-    animation-delay: calc(120ms + var(--word-index) * 110ms);
-  }
-  .landing-hero-cue {
-    animation: landing-hero-word-enter 820ms cubic-bezier(.16, 1, .3, 1) 890ms both, landing-hero-cue-light 1250ms ease-out 1050ms both;
-  }
-  .landing-hero-cue::after {
-    animation: landing-hero-cue-line 1050ms cubic-bezier(.16, 1, .3, 1) 1100ms both;
-  }
-        }
+  .landing-hero-copy > * { animation: landing-settle 800ms var(--ease-out) both; }
+  .landing-hero-copy > :nth-child(2) { animation-delay: 70ms; }
+  .landing-hero-copy > :nth-child(3) { animation-delay: 140ms; }
+  .landing-hero-copy > :nth-child(4) { animation-delay: 200ms; }
+  .landing-hero-copy > :nth-child(5) { animation-delay: 260ms; }
+  .landing-shot { animation: landing-settle 950ms var(--ease-out) 300ms both; }
+}
 
 @supports (animation-timeline: view()) {
   @media (prefers-reduced-motion: no-preference) {
     .landing [data-reveal] {
       animation: landing-rise 1s both ease-out;
       animation-timeline: view();
-      animation-range: entry 0% cover 42%;
+      animation-range: entry 5% cover 30%;
     }
     .landing-footer-wordmark {
       animation: landing-wordmark 1s both ease-out;
       animation-timeline: view();
       animation-range: entry 0% cover 70%;
     }
-    .landing-thesis {
-      height: 300svh;
-      view-timeline: --landing-thesis block;
-    }
-    .landing-thesis-pin {
-      position: sticky;
-      top: 0;
-      height: 100svh;
-      padding-block: 0;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-    }
+    /* The thesis no longer pins: its letters fill in while the band crosses the screen. */
+    .landing-thesis { view-timeline: --landing-thesis block; }
     .landing-thesis-text span[style] {
       animation: landing-letter linear both;
       animation-timeline: --landing-thesis;
-      animation-range: contain calc(var(--at) * 88%) contain calc(var(--at) * 88% + 4%);
+      animation-range: cover calc(20% + var(--at) * 38%) cover calc(23% + var(--at) * 38%);
     }
   }
 }
 
-/* Full-bleed photography under the hero copy, washed from the left and deepest where the copy sits. */
-.landing-hero-photo { object-position: center center; }
-.landing-hero-shade {
-  --shade: 0, 0, 0;
+/* The thesis band: the room behind the words, washed dark enough for effortless contrast
+   even over brighter stage monitors in the photograph. */
+.landing-thesis-shade {
   background:
-    radial-gradient(ellipse 70% 90% at 0% 70%, rgba(37, 84, 220, .22), transparent 70%),
-    linear-gradient(90deg, rgba(var(--shade), .92) 0%, rgba(var(--shade), .78) 32%, rgba(var(--shade), .38) 62%, transparent 90%),
-    linear-gradient(180deg, rgba(var(--shade), .6) 0%, transparent 18%, transparent 40%, rgba(var(--shade), .8) 78%, rgba(var(--shade), .95) 100%);
-}
-@media (max-width: 700px) {
-  .landing-hero-photo { object-position: 68% center; }
-  .landing-hero-shade {
-    background:
-      radial-gradient(ellipse 120% 60% at 0% 75%, rgba(37, 84, 220, .2), transparent 70%),
-      linear-gradient(90deg, rgba(var(--shade), .7) 0%, rgba(var(--shade), .35) 100%),
-      linear-gradient(180deg, rgba(var(--shade), .5) 0%, rgba(var(--shade), .15) 25%, rgba(var(--shade), .85) 50%, rgba(var(--shade), .97) 100%);
-  }
+    linear-gradient(180deg, #0A0B10 0%, rgba(10, 11, 16, .62) 22%, rgba(10, 11, 16, .62) 78%, #0A0B10 100%),
+    radial-gradient(ellipse 72% 62% at 50% 52%, rgba(10, 11, 16, .78), rgba(10, 11, 16, .58) 100%);
 }
 
-/* At rest the hero is crisp; once the page starts to scroll its bottom dissolves into the page
-   colour, so it runs straight into the next section. Browsers without scroll timelines keep it crisp. */
-.landing-hero-dissolve {
-  background: linear-gradient(180deg, transparent 0%, #0A0B10 100%);
-  opacity: 0;
-}
-@keyframes landing-hero-dissolve { to { opacity: 1; } }
-@supports (animation-timeline: scroll()) {
-  .landing-hero-dissolve {
-    animation: landing-hero-dissolve linear both;
-    animation-timeline: scroll(root);
-    animation-range: 0 40vh;
+/* The product shot grows into place as it scrolls up, like a screen being brought forward. */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .landing-shot > * {
+      animation: landing-shot-in linear both;
+      animation-timeline: view();
+      animation-range: entry 0% cover 28%;
+    }
   }
 }
+@keyframes landing-shot-in {
+  from { transform: scale(.96); opacity: .75; }
+  to { transform: none; opacity: 1; }
+}
 
-/* Stretchy footer: the aurora that rises when the page is pulled past its end. The page's own
-   rubber band is turned off so the two don't fight. */
+/* Stretchy footer: the aurora that rises behind the lifting page when pulled past its end.
+   The page's own rubber band is turned off so the two don't fight. */
 html:has([data-stretchy-page]) { overscroll-behavior-y: none; }
-.landing-aurora { bottom: -24px; filter: blur(16px); transition: opacity 120ms linear; }
+.landing-aurora { bottom: -24px; filter: blur(22px); transition: opacity 150ms linear; }
 .landing-aurora-column {
   flex: 1;
   margin-inline: -6px;
   height: 0;
   border-radius: 999px 999px 0 0;
-  background: linear-gradient(0deg, #1D3FB8 0%, #3B6BFF 30%, #7B5CFF 58%, #C24FD9 80%, transparent 100%);
+  background: linear-gradient(0deg, rgba(29, 63, 184, .85) 0%, rgba(59, 107, 255, .75) 32%, rgba(123, 92, 255, .55) 62%, rgba(194, 79, 217, .35) 82%, transparent 100%);
 }
 
 /* The operator view's stage light: a soft blue-violet glow behind the demo, fading out at the edges. */
 .landing-stage-glow {
-  background:
-    radial-gradient(ellipse 60% 55% at 50% 62%, rgba(59, 107, 255, .26), transparent 70%),
-    radial-gradient(ellipse 40% 40% at 78% 80%, rgba(123, 92, 255, .2), transparent 70%);
+  background: radial-gradient(ellipse 55% 50% at 50% 55%, rgba(59, 107, 255, .16), transparent 70%);
 }
 
 /* Screens section: each drawn display is a size container, so its text scales with the display. */
 .landing-view { container-type: inline-size; }
 
+/* Live Scripture: the demo pins while scrolling plays its story. Only where steps and window
+   fit on screen together; elsewhere the demo plays as a loop. */
+@media (min-width: 1001px) and (min-height: 760px) {
+  .landing-product { height: 220svh; }
+  .landing-product-pin {
+    position: sticky;
+    top: 0;
+    height: 100svh;
+    padding-block: 56px 24px;
+    display: flex;
+    align-items: center;
+  }
+}
+
 /* Screens: a tall track whose content pins full-screen while each view takes its turn. Only where
    the whole layout fits on screen; elsewhere it scrolls normally. */
 @media (min-width: 1001px) and (min-height: 700px) {
-  .landing-screens { height: 400svh; }
+  .landing-screens { height: 320svh; }
   .landing-screens-pin {
     position: sticky;
     top: 0;
@@ -196,7 +279,7 @@ html:has([data-stretchy-page]) { overscroll-behavior-y: none; }
 /* Engage: same pinned track, a full-viewport stage while its four beats play. */
 .landing-engage-pin { min-height: 100svh; display: flex; align-items: center; }
 @media (min-width: 1001px) and (min-height: 700px) {
-  .landing-engage { height: 450svh; }
+  .landing-engage { height: 340svh; }
   .landing-engage-pin { position: sticky; top: 0; height: 100svh; padding-block: 0; }
 }
 @keyframes engage-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }

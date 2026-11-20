@@ -103,10 +103,10 @@ export function ScreenViews({
   };
 
   const frame = (index: number): string =>
-    `landing-view relative overflow-hidden rounded-lg border bg-black transition-[opacity,transform,border-color] duration-500 motion-reduce:transition-none ${
+    `landing-view relative overflow-hidden rounded-xl border bg-black transition-[opacity,transform,border-color,box-shadow] duration-300 ease-[var(--ease-spring)] motion-reduce:transition-none ${
       active === index
-        ? "border-[#8AB4FF]/70 opacity-100"
-        : "scale-[.98] border-white/10 opacity-45"
+        ? "border-[#8AB4FF]/80 opacity-100 shadow-[0_0_28px_-8px_rgba(59,107,255,0.5)]"
+        : "scale-[.985] border-white/10 opacity-45"
     }`;
 
   return (
@@ -121,21 +121,21 @@ export function ScreenViews({
             <li key={title}>
               <button
                 type="button"
-                className={`relative flex w-full items-start gap-4 overflow-hidden rounded-xl p-3.5 text-left transition-colors duration-300 ${
-                  active === i ? "bg-white/[.07]" : "hover:bg-white/[.04]"
+                className={`landing-press landing-press-soft relative flex w-full items-start gap-4 overflow-hidden rounded-2xl px-4 py-3.5 text-left transition-[background-color,box-shadow] duration-300 ease-[var(--ease-spring)] ${
+                  active === i
+                    ? "bg-white/[.07] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
+                    : "hover:bg-white/[.04]"
                 }`}
                 onClick={() => goTo(i)}
-                aria-pressed={active === i}
+                aria-current={active === i ? "step" : undefined}
               >
-                {active === i && (
-                  <span
-                    className="absolute bottom-0 left-0 h-0.5 bg-[#8AB4FF]/70"
-                    style={{ width: `${(step * 100).toFixed(1)}%` }}
-                    aria-hidden="true"
-                  />
-                )}
                 <span
-                  className={`grid size-9 shrink-0 place-items-center rounded-lg transition-colors duration-300 [&_svg]:size-[18px] ${
+                  className="absolute bottom-0 left-0 h-0.5 w-full origin-left bg-[#8AB4FF]/80"
+                  style={{ transform: `scaleX(${active === i ? step.toFixed(3) : 0})` }}
+                  aria-hidden="true"
+                />
+                <span
+                  className={`grid size-9 shrink-0 place-items-center rounded-xl transition-colors duration-300 ease-[var(--ease-spring)] [&_svg]:size-[18px] ${
                     active === i
                       ? "bg-[#3B6BFF] text-white"
                       : "bg-white/[.06] text-[#B9C3E6]"
@@ -144,11 +144,11 @@ export function ScreenViews({
                   <Icon aria-hidden="true" />
                 </span>
                 <span>
-                  <span className="block text-[17px] font-medium tracking-[-.02em] text-[#F6F3EB]">
+                  <span className="block pt-1.5 text-[16px] leading-tight font-medium tracking-[-.015em] text-[#F6F3EB]">
                     {title}
                   </span>
                   <span
-                    className={`mt-1 block text-[15px] leading-[1.5] transition-colors duration-300 ${
+                    className={`mt-1.5 block text-[14.5px] leading-[1.5] transition-colors duration-300 ease-[var(--ease-spring)] ${
                       active === i ? "text-[#C9CFE6]" : "text-[#8D93AD]"
                     }`}
                   >
@@ -162,7 +162,7 @@ export function ScreenViews({
       </div>
 
       <div
-        className="rounded-[22px] bg-white/[.05] p-3 min-[701px]:p-5"
+        className="rounded-[24px] border border-white/[.09] bg-gradient-to-b from-white/[.07] to-white/[.02] p-3.5 shadow-[0_32px_90px_-24px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(255,255,255,0.1)] min-[701px]:p-5"
         aria-label="The room, stage, lobby and stream screens, each showing its own output"
         role="img"
       >

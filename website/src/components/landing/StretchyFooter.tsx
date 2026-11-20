@@ -134,7 +134,7 @@ export function StretchyFooter(): React.ReactElement {
   return (
     <div
       ref={auroraRef}
-      className="landing-aurora pointer-events-none fixed inset-x-0 z-50 flex items-end opacity-0"
+      className="landing-aurora pointer-events-none fixed inset-x-0 z-0 flex items-end opacity-0"
       aria-hidden="true"
     >
       {Array.from({ length: COLUMNS }, (_, i) => (
