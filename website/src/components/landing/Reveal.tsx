@@ -23,7 +23,10 @@ export function Reveal({
   useEffect(() => {
     const el = ref.current
     if (!el) return
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    if (
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches ||
+      el.getBoundingClientRect().top < window.innerHeight * 1.2
+    ) {
       el.classList.add('is-in')
       return
     }
@@ -36,9 +39,9 @@ export function Reveal({
           }
         }
       },
-      // Positive bottom margin: start the fade just before the element
-      // reaches the fold, so a fast scroll never lands on a blank section.
-      { rootMargin: '0px 0px 12% 0px', threshold: 0 },
+      // Positive bottom margin: start the fade well before the element
+      // reaches the fold, so a fast scroll or anchor jump never lands blank.
+      { rootMargin: '0px 0px 25% 0px', threshold: 0 },
     )
     io.observe(el)
     return () => io.disconnect()

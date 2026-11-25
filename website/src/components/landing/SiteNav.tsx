@@ -19,6 +19,7 @@ import { SessionLink, useSignedIn } from "@/components/landing/SessionNavLink";
 const SECTIONS = [
   ["Product", "product"],
   ["Screens", "screens"],
+  ["Imagine", "imagine"],
   ["Engage", "engage"],
   ["Questions", "questions"],
 ] as const;
@@ -105,13 +106,13 @@ export function SiteNav({ home = false }: { home?: boolean }): React.ReactElemen
       className="landing-nav fixed inset-x-0 top-0 z-50 text-[#F6F3EB]"
       data-scrolled={scrolled || open}
     >
-      <div className={`${container} flex h-full items-center gap-3 min-[701px]:gap-12`}>
-        <Logo href={home ? "#top" : "/"} priority className="shrink-0" />
+      <div className={`${container} flex h-full items-center gap-3 min-[701px]:gap-10`}>
+        <Logo href={home ? "#top" : "/"} height={23} tone="light" priority className="shrink-0" />
 
-        <nav className="m-auto hidden items-center gap-1 min-[701px]:flex" aria-label="Main navigation">
+        <nav className="m-auto hidden items-center gap-6 min-[701px]:flex" aria-label="Main navigation">
           {SECTIONS.map(([text, id]) => (
             <Link
-              className="landing-press landing-nav-link rounded-full px-3.5 py-2 text-sm font-medium"
+              className="landing-press landing-nav-link py-2 text-[14px] font-medium"
               aria-current={current === id ? "location" : undefined}
               href={href(id)}
               key={id}
@@ -121,17 +122,20 @@ export function SiteNav({ home = false }: { home?: boolean }): React.ReactElemen
           ))}
         </nav>
 
-        <div className="ml-auto flex items-center gap-2 min-[701px]:ml-0 min-[701px]:gap-5">
+        <div className="ml-auto flex items-center gap-3 min-[701px]:ml-0 min-[701px]:gap-5">
           <span className="hidden min-[701px]:contents">
             <SessionLink signedIn={signedIn} variant="text" />
           </span>
-          <Link
-            className="landing-press inline-flex h-9 shrink-0 items-center rounded-full bg-[#F4F0E9] px-4 text-sm font-semibold text-[#11120D] hover:bg-[#E9E5DE] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#F4F0E9]"
-            href="/#get"
-            onClick={close}
-          >
-            Download
-          </Link>
+          {!home && (
+            <Link
+              className="landing-press inline-flex h-9 shrink-0 items-center gap-1 rounded-lg bg-white/10 px-3.5 text-[14px] font-medium text-white ring-1 ring-white/15 hover:bg-white/18 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white"
+              href="/#get"
+              onClick={close}
+            >
+              Download
+              <span aria-hidden="true" className="text-white/70">›</span>
+            </Link>
+          )}
           <button
             ref={menuButton}
             type="button"

@@ -1,301 +1,215 @@
-/* Scroll timelines need CSS; layout, color, and typography live in Tailwind classes. */
-.landing [id] { scroll-margin-top: 30px; }
-.landing #get { scroll-margin-top: 120px; }
-.landing :focus-visible, .landing-nav :focus-visible { outline: 2px solid #D3CFC7; outline-offset: 4px; }
+/* Landing page styles: MindCloud-inspired dark-to-light atmospheric system,
+   architectural hairlines, header transitions, and FAQ disclosure. */
+.landing [id] { scroll-margin-top: 88px; }
+.landing #get { scroll-margin-top: 96px; }
+.landing :focus-visible, .landing-nav :focus-visible { outline: 2px solid #1655F8; outline-offset: 3px; }
 
-/* Motion tokens. Critically damped curves (no overshoot) for UI that wasn't thrown. */
 :root {
   --ease-out: cubic-bezier(.22, 1, .36, 1);
   --ease-spring: cubic-bezier(.32, .72, 0, 1);
 }
 
-/* Optical sizing for the landing typography hierarchy. */
 .landing { font-optical-sizing: auto; }
 
-/* Press feedback: the control answers on pointer-down, not on release. */
 .landing-press {
-  transition: transform 180ms var(--ease-out), background-color 200ms ease, border-color 200ms ease, color 200ms ease, opacity 200ms ease, box-shadow 200ms ease;
+  transition:
+    transform 160ms var(--ease-out),
+    background-color 180ms var(--ease-out),
+    border-color 180ms var(--ease-out),
+    color 180ms var(--ease-out),
+    opacity 180ms var(--ease-out),
+    box-shadow 180ms var(--ease-out);
 }
-.landing-press:active { transform: scale(.97); transition-duration: 60ms; }
-.landing-press-soft:active { transform: scale(.985); transition-duration: 60ms; }
-@media (prefers-reduced-motion: reduce) {
-  .landing-press:active, .landing-press-soft:active { transform: none; }
-}
+.landing-press:active { transform: scale(.98); transition-duration: 60ms; }
+.landing-press-soft:active { transform: scale(.99); transition-duration: 60ms; }
 
-/* The site header: clear over the hero, a translucent bar once the page moves, so content
-   keeps reading through it. Heavier and solid when transparency or contrast is turned down. */
+/* Site header: seamless over dark/navy top, frosted surface on scroll. */
 .landing-nav {
   height: 72px;
-  transition: height 420ms var(--ease-spring), background-color 300ms ease, box-shadow 300ms ease, backdrop-filter 300ms ease;
+  background: transparent;
+  box-shadow: inset 0 -1px 0 transparent;
+  transition:
+    height 280ms var(--ease-spring),
+    background-color 220ms var(--ease-out),
+    box-shadow 220ms var(--ease-out),
+    color 220ms var(--ease-out);
 }
-@media (min-width: 701px) { .landing-nav { height: 84px; } }
 .landing-nav[data-scrolled="true"] {
-  height: 60px;
-  background: rgba(10, 11, 16, .74);
-  -webkit-backdrop-filter: blur(22px) saturate(180%);
-  backdrop-filter: blur(22px) saturate(180%);
-  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, .09), 0 10px 30px -14px rgba(0, 0, 0, .65);
+  height: 64px;
+  background: rgba(10, 13, 28, .86);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  backdrop-filter: blur(20px) saturate(150%);
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, .09);
 }
 @media (prefers-reduced-transparency: reduce) {
-  .landing-nav[data-scrolled="true"] { background: #0A0B10; -webkit-backdrop-filter: none; backdrop-filter: none; }
-}
-@media (prefers-contrast: more) {
-  .landing-nav[data-scrolled="true"] { background: #0A0B10; box-shadow: inset 0 -1px 0 rgba(255, 255, 255, .45); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .landing-nav { transition: background-color 200ms ease, box-shadow 200ms ease; }
-}
-.landing-nav-link { color: #C9CCD6; }
-.landing-nav-link:hover { color: #FFFFFF; background: rgba(255, 255, 255, .07); }
-.landing-nav-link[aria-current] {
-  color: #FFFFFF;
-  background: rgba(255, 255, 255, .11);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .14);
+  .landing-nav[data-scrolled="true"] {
+    background: #080E24;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
 }
 
-/* Menu button: two bars that turn into a cross. */
+.landing-nav-link { color: rgba(255, 255, 255, .74); }
+.landing-nav-link:hover { color: #FFFFFF; }
+.landing-nav-link[aria-current] { color: #FFFFFF; }
+
+/* Menu button */
 .landing-menu-button > span {
   grid-area: 1 / 1;
   width: 18px;
   height: 1.5px;
   border-radius: 1px;
-  background: #F6F3EB;
-  transition: transform 360ms var(--ease-spring);
+  background: #FFFFFF;
+  transition: transform 280ms var(--ease-spring);
 }
 .landing-menu-button > span:first-child { transform: translateY(-3.5px); }
 .landing-menu-button > span:last-child { transform: translateY(3.5px); }
 .landing-menu-button[aria-expanded="true"] > span:first-child { transform: rotate(45deg); }
 .landing-menu-button[aria-expanded="true"] > span:last-child { transform: rotate(-45deg); }
 
-/* Mobile menu: drops from the bar it belongs to and goes back the same way. Transitions
-   retarget from wherever they are, so a second tap mid-motion reverses it cleanly. */
+/* Mobile menu */
 .landing-menu {
   position: absolute;
   inset: 100% 0 auto;
-  /* Heavier than the bar it hangs from: large text sits on it, so legibility wins over show-through. */
-  background: rgba(10, 11, 16, .95);
-  -webkit-backdrop-filter: blur(32px) saturate(160%);
-  backdrop-filter: blur(32px) saturate(160%);
-  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, .07), 0 24px 40px -20px rgba(0, 0, 0, .7);
-  transform-origin: top center;
+  background: rgba(8, 13, 30, .97);
+  -webkit-backdrop-filter: blur(28px);
+  backdrop-filter: blur(28px);
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, .08);
   opacity: 0;
-  transform: translateY(-8px);
+  transform: translateY(-6px);
   visibility: hidden;
-  transition: opacity 240ms ease, transform 420ms var(--ease-spring), visibility 0s linear 420ms;
+  transition: opacity 200ms var(--ease-out), transform 280ms var(--ease-spring), visibility 0s linear 280ms;
 }
 .landing-menu[data-open="true"] {
   opacity: 1;
   transform: none;
   visibility: visible;
-  transition: opacity 240ms ease, transform 420ms var(--ease-spring), visibility 0s;
-}
-.landing-menu li, .landing-menu nav > div {
-  opacity: 0;
-  transform: translateY(-6px);
-  transition: opacity 200ms ease, transform 360ms var(--ease-spring);
-}
-.landing-menu[data-open="true"] li, .landing-menu[data-open="true"] nav > div {
-  opacity: 1;
-  transform: none;
-  transition-delay: calc(var(--i, 0) * 30ms);
+  transition: opacity 200ms var(--ease-out), transform 280ms var(--ease-spring), visibility 0s;
 }
 .landing-menu a[aria-current] { color: #8AB4FF; }
-@media (prefers-reduced-transparency: reduce) {
-  .landing-menu { background: #0A0B10; -webkit-backdrop-filter: none; backdrop-filter: none; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .landing-menu, .landing-menu[data-open="true"], .landing-menu li, .landing-menu nav > div { transform: none; transition-property: opacity, visibility; transition-delay: 0s; }
+
+/* MindCloud-inspired atmospheric hero: deep midnight navy -> electric royal blue -> soft sky -> crisp white. */
+.mc-hero {
+  background:
+    radial-gradient(ellipse 90% 62% at 50% 56%, rgba(28, 96, 255, .92) 0%, rgba(16, 68, 224, .58) 42%, transparent 78%),
+    linear-gradient(
+      180deg,
+      #040920 0%,
+      #071238 24%,
+      #1037A8 50%,
+      #3474FF 72%,
+      #9DC0FF 86%,
+      #EDF3FF 94%,
+      #FFFFFF 100%
+    );
 }
 
-/* Staggered groups: items rise in swiftly once the group enters view, never leaving gaps.
-   Hidden only when scripts run, so the content never depends on JavaScript to be seen. */
-@media (scripting: enabled) and (prefers-reduced-motion: no-preference) {
-  .landing-stagger > * {
-    opacity: 0;
-    transform: translateY(14px);
-    transition: opacity 420ms var(--ease-out), transform 520ms var(--ease-spring);
-    transition-delay: calc(var(--i, 0) * 45ms);
-  }
-  .landing-stagger[data-shown="true"] > * { opacity: 1; transform: none; }
+/* Soft rose-lavender-blue gradient text accent (MindCloud Section 2 signature). */
+.mc-gradient-text {
+  background: linear-gradient(92deg, #E8B5BF 0%, #B89FF2 45%, #5C9BFF 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.mc-tab-underline {
+  background: linear-gradient(90deg, #E8B5BF 0%, #B89FF2 50%, #5C9BFF 100%);
 }
 
-/* FAQ: answers open to their height instead of snapping, where the browser can animate
-   `details`. Elsewhere they open instantly, as before. */
+/* Electric royal blue closing CTA card with subtle architectural grid lines. */
+.mc-cta-card {
+  background-color: #1456F6;
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, .08) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, .08) 1px, transparent 1px),
+    radial-gradient(ellipse 80% 70% at 50% 100%, rgba(110, 170, 255, .32), transparent 70%);
+  background-size: 96px 96px, 96px 96px, 100% 100%;
+}
+
+/* Compact atmospheric header band for subpages (changelog, legal, download). */
+.mc-subpage-hero {
+  background:
+    radial-gradient(ellipse 80% 65% at 50% 55%, rgba(28, 96, 255, .82) 0%, rgba(16, 68, 224, .48) 46%, transparent 80%),
+    linear-gradient(
+      180deg,
+      #040920 0%,
+      #071238 30%,
+      #123EB4 62%,
+      #7AA8FF 84%,
+      #E8F0FF 94%,
+      #FFFFFF 100%
+    );
+}
+
+/* Auth split brand panel: midnight navy -> electric royal blue with subtle grid. */
+.mc-auth-panel {
+  background-color: #061032;
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, .06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, .06) 1px, transparent 1px),
+    radial-gradient(ellipse 90% 70% at 30% 85%, rgba(22, 85, 248, .92) 0%, rgba(16, 62, 198, .55) 48%, transparent 82%),
+    linear-gradient(180deg, #040920 0%, #091B56 58%, #1456F6 100%);
+  background-size: 80px 80px, 80px 80px, 100% 100%, 100% 100%;
+}
+
+/* FAQ disclosure */
 .landing-faq { interpolate-size: allow-keywords; }
 .landing-faq::details-content {
   block-size: 0;
   overflow: clip;
-  transition: block-size 420ms var(--ease-spring), content-visibility 420ms allow-discrete;
+  transition: block-size 300ms var(--ease-spring), content-visibility 300ms allow-discrete;
 }
 .landing-faq[open]::details-content { block-size: auto; }
-.landing-faq > p { opacity: 0; transition: opacity 260ms ease; }
-.landing-faq[open] > p { opacity: 1; transition-delay: 80ms; }
-@media (prefers-reduced-motion: reduce) {
-  .landing-faq::details-content { transition: none; }
-}
+.landing-faq > p { opacity: 0; transition: opacity 180ms var(--ease-out); }
+.landing-faq[open] > p { opacity: 1; transition-delay: 40ms; }
 
-/* Operator demo: a detected verse lands in the list. */
 @keyframes demo-card-in {
-  from { opacity: 0; transform: translateY(-8px) scale(.98); }
+  from { opacity: 0; transform: translateY(-4px); }
   to { opacity: 1; transform: none; }
 }
-@media (prefers-reduced-motion: reduce) {
-  .landing [class*="demo-card-in"] { animation: none !important; }
-}
 
-@keyframes landing-rise {
-  from { opacity: 0; transform: translateY(28px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-@keyframes landing-wordmark {
-  from { opacity: .06; transform: translateY(36px); }
-  to { opacity: .28; transform: translateY(0); }
-}
-@keyframes landing-letter {
-  from { color: rgba(246, 243, 235, .22); }
-  to { color: #F6F3EB; }
-}
-
-/* Hero: layered stage lighting from above, anti-banding grain, and copy settling cleanly.
-   The download button is reachable within half a second. */
-.landing-hero {
-  background:
-    radial-gradient(ellipse 70% 56% at 50% -14%, rgba(59, 107, 255, .28), transparent 68%),
-    radial-gradient(ellipse 38% 30% at 50% -4%, rgba(138, 180, 255, .17), transparent 65%),
-    radial-gradient(ellipse 42% 36% at 84% 16%, rgba(123, 92, 255, .10), transparent 70%),
-    radial-gradient(ellipse 38% 32% at 16% 22%, rgba(59, 107, 255, .08), transparent 70%);
-}
-.landing-hero-arc {
-  background: radial-gradient(60% 100% at 50% 0%, rgba(138, 180, 255, .12), transparent 72%);
-  mask-image: linear-gradient(180deg, #000 0%, transparent 100%);
-  -webkit-mask-image: linear-gradient(180deg, #000 0%, transparent 100%);
-}
 @keyframes landing-settle {
-  from { opacity: 0; transform: translateY(14px); filter: blur(6px); }
-  to { opacity: 1; transform: none; filter: blur(0); }
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
 }
 @media (prefers-reduced-motion: no-preference) {
-  .landing-hero-copy > * { animation: landing-settle 800ms var(--ease-out) both; }
-  .landing-hero-copy > :nth-child(2) { animation-delay: 70ms; }
-  .landing-hero-copy > :nth-child(3) { animation-delay: 140ms; }
-  .landing-hero-copy > :nth-child(4) { animation-delay: 200ms; }
-  .landing-hero-copy > :nth-child(5) { animation-delay: 260ms; }
-  .landing-shot { animation: landing-settle 950ms var(--ease-out) 300ms both; }
+  .landing-hero-copy > * { animation: landing-settle 560ms var(--ease-out) both; }
+  .landing-hero-copy > :nth-child(2) { animation-delay: 60ms; }
+  .landing-hero-copy > :nth-child(3) { animation-delay: 120ms; }
+  .landing-hero-copy > :nth-child(4) { animation-delay: 180ms; }
 }
 
-@supports (animation-timeline: view()) {
-  @media (prefers-reduced-motion: no-preference) {
-    .landing [data-reveal] {
-      animation: landing-rise 1s both ease-out;
-      animation-timeline: view();
-      animation-range: entry 5% cover 30%;
-    }
-    .landing-footer-wordmark {
-      animation: landing-wordmark 1s both ease-out;
-      animation-timeline: view();
-      animation-range: entry 0% cover 70%;
-    }
-    /* The thesis no longer pins: its letters fill in while the band crosses the screen. */
-    .landing-thesis { view-timeline: --landing-thesis block; }
-    .landing-thesis-text span[style] {
-      animation: landing-letter linear both;
-      animation-timeline: --landing-thesis;
-      animation-range: cover calc(20% + var(--at) * 38%) cover calc(23% + var(--at) * 38%);
-    }
-  }
-}
-
-/* The thesis band: the room behind the words, washed dark enough for effortless contrast
-   even over brighter stage monitors in the photograph. */
-.landing-thesis-shade {
-  background:
-    linear-gradient(180deg, #0A0B10 0%, rgba(10, 11, 16, .62) 22%, rgba(10, 11, 16, .62) 78%, #0A0B10 100%),
-    radial-gradient(ellipse 72% 62% at 50% 52%, rgba(10, 11, 16, .78), rgba(10, 11, 16, .58) 100%);
-}
-
-/* The product shot grows into place as it scrolls up, like a screen being brought forward. */
-@supports (animation-timeline: view()) {
-  @media (prefers-reduced-motion: no-preference) {
-    .landing-shot > * {
-      animation: landing-shot-in linear both;
-      animation-timeline: view();
-      animation-range: entry 0% cover 28%;
-    }
-  }
-}
-@keyframes landing-shot-in {
-  from { transform: scale(.96); opacity: .75; }
-  to { transform: none; opacity: 1; }
-}
-
-/* Stretchy footer: the aurora that rises behind the lifting page when pulled past its end.
-   The page's own rubber band is turned off so the two don't fight. */
-html:has([data-stretchy-page]) { overscroll-behavior-y: none; }
-.landing-aurora { bottom: -24px; filter: blur(22px); transition: opacity 150ms linear; }
-.landing-aurora-column {
-  flex: 1;
-  margin-inline: -6px;
-  height: 0;
-  border-radius: 999px 999px 0 0;
-  background: linear-gradient(0deg, rgba(29, 63, 184, .85) 0%, rgba(59, 107, 255, .75) 32%, rgba(123, 92, 255, .55) 62%, rgba(194, 79, 217, .35) 82%, transparent 100%);
-}
-
-/* The operator view's stage light: a soft blue-violet glow behind the demo, fading out at the edges. */
-.landing-stage-glow {
-  background: radial-gradient(ellipse 55% 50% at 50% 55%, rgba(59, 107, 255, .16), transparent 70%);
-}
-
-/* Screens section: each drawn display is a size container, so its text scales with the display. */
 .landing-view { container-type: inline-size; }
 
-/* Live Scripture: the demo pins while scrolling plays its story. Only where steps and window
-   fit on screen together; elsewhere the demo plays as a loop. */
-@media (min-width: 1001px) and (min-height: 760px) {
-  .landing-product { height: 220svh; }
-  .landing-product-pin {
-    position: sticky;
-    top: 0;
-    height: 100svh;
-    padding-block: 56px 24px;
-    display: flex;
-    align-items: center;
-  }
+@keyframes engage-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
 }
 
-/* Screens: a tall track whose content pins full-screen while each view takes its turn. Only where
-   the whole layout fits on screen; elsewhere it scrolls normally. */
-@media (min-width: 1001px) and (min-height: 700px) {
-  .landing-screens { height: 320svh; }
-  .landing-screens-pin {
-    position: sticky;
-    top: 0;
-    height: 100svh;
-    padding-block: 0;
-    display: flex;
-    align-items: center;
-  }
-}
-
-/* Engage: same pinned track, a full-viewport stage while its four beats play. */
-.landing-engage-pin { min-height: 100svh; display: flex; align-items: center; }
-@media (min-width: 1001px) and (min-height: 700px) {
-  .landing-engage { height: 340svh; }
-  .landing-engage-pin { position: sticky; top: 0; height: 100svh; padding-block: 0; }
-}
-@keyframes engage-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) {
-  .landing-engage * { animation: none !important; transition: none !important; }
+  .landing *,
+  .landing *::before,
+  .landing *::after,
+  .landing-nav,
+  .landing-nav *,
+  .landing-menu,
+  .landing-menu * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .landing-press:active, .landing-press-soft:active { transform: none; }
 }
 
-/* Legal pages: long-form prose in the site's dark palette. */
-.landing-prose h2 { font-size: clamp(22px, 2.2vw, 28px); line-height: 1.2; font-weight: 500; letter-spacing: -.03em; color: #F2F3F7; }
-.landing-prose h3 { margin-top: 1.75rem; font-size: 17px; font-weight: 600; color: #F2F3F7; }
-.landing-prose p, .landing-prose li { font-size: 16px; line-height: 1.7; color: #A3A9BD; }
+/* Legal pages (light editorial prose matching the new design system) */
+.landing-prose h2 { font-size: clamp(22px, 2.2vw, 28px); line-height: 1.2; font-weight: 500; letter-spacing: -.03em; color: #141518; }
+.landing-prose h3 { margin-top: 1.75rem; font-size: 17px; font-weight: 600; color: #141518; }
+.landing-prose p, .landing-prose li { font-size: 16px; line-height: 1.7; color: #5C616E; }
 .landing-prose h2 + p, .landing-prose h2 + ul, .landing-prose h3 + p, .landing-prose h3 + ul { margin-top: .9rem; }
 .landing-prose p + p, .landing-prose p + ul, .landing-prose ul + p, .landing-prose ul + h3 { margin-top: 1rem; }
 .landing-prose ul { display: grid; gap: .55rem; }
 .landing-prose ul > li { position: relative; padding-left: 1.25rem; }
-.landing-prose ul > li::before { content: ""; position: absolute; left: 0; top: .72em; width: 6px; height: 6px; border-radius: 999px; background: #8AB4FF; }
-.landing-prose strong { color: #F2F3F7; font-weight: 600; }
-.landing-prose a { color: #8AB4FF; text-decoration: underline; text-underline-offset: 3px; }
-.landing-prose a:hover { color: #B4CEFF; }
+.landing-prose ul > li::before { content: ""; position: absolute; left: 0; top: .72em; width: 6px; height: 6px; border-radius: 999px; background: #1655F8; }
+.landing-prose strong { color: #141518; font-weight: 600; }
+.landing-prose a { color: #1655F8; text-decoration: underline; text-underline-offset: 3px; }
+.landing-prose a:hover { color: #0F40C4; }

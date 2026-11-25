@@ -3,34 +3,29 @@
 import { useEffect, useRef, useState } from 'react'
 
 /** Scroll length given to each stage, as a fraction of the viewport height. */
-const PER_STAGE = 0.8
+const PER_STAGE = 0.72
 
 /**
- * Drives a section that pins itself and advances its copy as the page scrolls.
+ * Drives a section that pins itself and smoothly tracks continuous scroll
+ * progress (`0..1`) alongside the active stage index (`0..count-1`).
  *
- * `enhanced` is false on the server and on the first client render, so the
- * markup that ships is the plain stacked version. It only turns true once we
- * know the viewport is wide and the reader has not asked for reduced motion,
- * which keeps the effect an enhancement rather than a requirement — and means
- * a component can render an entirely different tree for the two cases without
- * a hydration mismatch.
- *
- * The stage comes from measured scroll progress rather than from
- * IntersectionObserver triggers. Triggers have to be sized against the pinned
- * travel — the section height minus one viewport — and read through a band at
- * the very top of the window; getting either wrong silently shifts every stage
- * boundary by half a screen. Dividing the travel directly is the same idea
- * without the offsets to get wrong.
+ * `enhanced` is false on the server and on the first client render, so SSR
+ * ships the plain stacked version without hydration mismatch, and mobile /
+ * reduced-motion users keep immediate native scrolling.
  */
 export function usePinnedStages(count: number): {
   ref: React.RefObject<HTMLElement | null>
   active: number
+  /** Continuous normalized progress across the whole pinned section (0..1). */
+  progress: number
+  /** Continuous progress within the active stage (0..1). */
+  stageProgress: number
   enhanced: boolean
   travel: string
   goTo: (i: number) => void
 } {
   const ref = useRef<HTMLElement | null>(null)
-  const [active, setActive] = useState(0)
+  const [state, setState] = useState({ active: 0, progress: 0, stageProgress: 0 })
   const [enhanced, setEnhanced] = useState(false)
 
   useEffect(() => {
@@ -55,9 +50,17 @@ export function usePinnedStages(count: number): {
       frame = 0
       const travel = el.offsetHeight - window.innerHeight
       if (travel <= 0) return
-      const progress = (window.scrollY - el.offsetTop) / travel
-      const i = Math.floor(progress * count)
-      setActive(Math.min(Math.max(i, 0), count - 1))
+      const raw = (window.scrollY - el.offsetTop) / travel
+      const progress = Math.min(Math.max(raw, 0), 1)
+      const scaled = progress * count
+      const active = Math.min(Math.max(Math.floor(scaled), 0), count - 1)
+      const stageProgress = active === count - 1 && progress >= 1 ? 1 : Math.min(Math.max(scaled - active, 0), 1)
+
+      setState((prev) =>
+        Math.abs(prev.progress - progress) < 0.001 && prev.active === active
+          ? prev
+          : { active, progress, stageProgress },
+      )
     }
     const onScroll = (): void => {
       if (!frame) frame = requestAnimationFrame(read)
@@ -73,20 +76,21 @@ export function usePinnedStages(count: number): {
     }
   }, [enhanced, count])
 
-  /**
-   * Jump to the middle of a stage's share of the travel.
-   *
-   * Not a convenience: while pinned, every stage but the live one is hidden, so
-   * the only route to that copy is scrolling. Wiring the index rail to this
-   * gives it a keyboard- and pointer-reachable way in.
-   */
   const goTo = (i: number): void => {
     const el = ref.current
     if (!el) return
     const travel = el.offsetHeight - window.innerHeight
     if (travel <= 0) return
-    window.scrollTo({ top: el.offsetTop + travel * ((i + 0.5) / count), behavior: 'smooth' })
+    window.scrollTo({ top: el.offsetTop + travel * ((i + 0.45) / count), behavior: 'smooth' })
   }
 
-  return { ref, active, enhanced, goTo, travel: `${(1 + count * PER_STAGE) * 100}vh` }
+  return {
+    ref,
+    active: state.active,
+    progress: state.progress,
+    stageProgress: state.stageProgress,
+    enhanced,
+    travel: `${Math.round((1 + count * PER_STAGE) * 100)}vh`,
+    goTo,
+  }
 }

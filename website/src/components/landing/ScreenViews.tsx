@@ -1,247 +1,226 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import Image from "next/image";
-import { Monitor, Projector, Radio, Tv } from "lucide-react";
-
-/**
- * The screens section: what each output is for on the left, and on the right a
- * drawing of all four at once — the room, the stage, the lobby and the stream —
- * each showing what that screen would show. The section pins while you scroll
- * through it and each row takes its turn; where it can't pin (small or short
- * screens) the rows still advance as the section passes. A row scrolls to its turn.
- */
+import { usePinnedStages } from "@/components/landing/usePinnedStages";
 
 const VIEWS = [
   {
     title: "In the room",
     body: "Lyrics, Scripture, slides and media on the projector or TV.",
-    Icon: Projector,
   },
   {
     title: "On the stage",
     body: "The current and next line, the clock, a countdown and notes for the team.",
-    Icon: Monitor,
   },
   {
     title: "In the lobby",
     body: "Its own playlist of images and video, apart from what the room sees.",
-    Icon: Tv,
   },
   {
     title: "On the stream",
     body: "Up to four NDI feeds, with lower thirds while the room sees full slides.",
-    Icon: Radio,
   },
 ] as const;
+
+const container =
+  "mx-auto w-[calc(100%-40px)] max-w-[1200px] md:w-[calc(100%-64px)] xl:w-[calc(100%-96px)]";
 
 export function ScreenViews({
   children,
 }: {
   children: React.ReactNode;
 }): React.ReactElement {
-  const [progress, setProgress] = useState(0); // 0..1 through the section
-  const rootRef = useRef<HTMLDivElement>(null);
+  const {
+    ref,
+    active: pinnedActive,
+    stageProgress,
+    enhanced,
+    travel,
+    goTo,
+  } = usePinnedStages(VIEWS.length);
+  const [manualActive, setManualActive] = useState(0);
 
-  const active = Math.min(
-    VIEWS.length - 1,
-    Math.floor(progress * VIEWS.length),
-  );
-  const step = progress * VIEWS.length - active; // 0..1 through the active row
-
-  // A pinned section is much taller than the screen; otherwise it just passes through.
-  const measure = (
-    section: HTMLElement,
-  ): { top: number; run: number; pinned: boolean } => {
-    const rect = section.getBoundingClientRect();
-    const vh = window.innerHeight;
-    const run = rect.height - vh;
-    return { top: rect.top, run, pinned: run > vh * 0.5 };
-  };
-
-  useEffect(() => {
-    const section = rootRef.current?.closest("section");
-    if (!section) return;
-    let frame = 0;
-    const update = (): void => {
-      frame = 0;
-      const { top, run, pinned } = measure(section);
-      const vh = window.innerHeight;
-      const p = pinned
-        ? -top / run
-        : (vh * 0.6 - top) / (section.offsetHeight + vh * 0.2);
-      setProgress(Math.min(0.9999, Math.max(0, p)));
-    };
-    const onScroll = (): void => {
-      if (!frame) frame = requestAnimationFrame(update);
-    };
-    update();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("resize", onScroll);
-    return () => {
-      cancelAnimationFrame(frame);
-      window.removeEventListener("scroll", onScroll);
-      window.removeEventListener("resize", onScroll);
-    };
-  }, []);
-
-  const goTo = (index: number): void => {
-    const section = rootRef.current?.closest("section");
-    if (!section) return;
-    const { top, run, pinned } = measure(section);
-    if (!pinned) {
-      setProgress((index + 0.5) / VIEWS.length);
-      return;
-    }
-    const reduce = window.matchMedia(
-      "(prefers-reduced-motion: reduce)",
-    ).matches;
-    window.scrollTo({
-      top: window.scrollY + top + run * ((index + 0.5) / VIEWS.length),
-      behavior: reduce ? "auto" : "smooth",
-    });
+  const active = enhanced ? pinnedActive : manualActive;
+  const select = (i: number): void => {
+    if (enhanced) goTo(i);
+    else setManualActive(i);
   };
 
   const frame = (index: number): string =>
-    `landing-view relative overflow-hidden rounded-xl border bg-black transition-[opacity,transform,border-color,box-shadow] duration-300 ease-[var(--ease-spring)] motion-reduce:transition-none ${
+    `landing-view relative cursor-pointer overflow-hidden rounded-2xl bg-[#0D0F14] text-left ring-1 transition-[opacity,transform,box-shadow] duration-500 ease-[var(--ease-out)] motion-reduce:transition-none ${
       active === index
-        ? "border-[#8AB4FF]/80 opacity-100 shadow-[0_0_28px_-8px_rgba(59,107,255,0.5)]"
-        : "scale-[.985] border-white/10 opacity-45"
+        ? "scale-100 opacity-100 ring-[#1655F8] shadow-[0_28px_64px_-22px_rgba(20,86,246,0.32)]"
+        : "scale-[.985] opacity-45 ring-black/10 hover:opacity-80"
     }`;
 
   return (
-    <div
-      ref={rootRef}
-      className="grid w-full items-center gap-12 min-[1001px]:grid-cols-[minmax(0,.85fr)_minmax(0,1.15fr)] min-[1001px]:gap-16"
+    <section
+      ref={ref}
+      id="screens"
+      aria-labelledby="screens-title"
+      className="relative bg-white"
+      style={enhanced ? { minHeight: travel } : undefined}
     >
-      <div>
-        {children}
-        <ul className="mt-10 grid gap-2">
-          {VIEWS.map(({ title, body, Icon }, i) => (
-            <li key={title}>
+      <div
+        className={
+          enhanced
+            ? "sticky top-0 flex min-h-screen items-center py-20"
+            : "py-[clamp(80px,9vw,124px)]"
+        }
+      >
+        <div
+          className={`${container} grid w-full items-center gap-12 min-[1024px]:grid-cols-[minmax(0,.8fr)_minmax(0,1.2fr)] min-[1024px]:gap-16`}
+        >
+          <div>
+            {children}
+            <ul className="mt-9 divide-y divide-[#EAECEF] border-y border-[#EAECEF]">
+              {VIEWS.map(({ title, body }, i) => {
+                const on = active === i;
+                const fill = enhanced
+                  ? i < active
+                    ? 1
+                    : on
+                      ? Math.max(0.08, stageProgress)
+                      : 0
+                  : on
+                    ? 1
+                    : 0;
+                return (
+                  <li key={title} className="relative">
+                    <button
+                      type="button"
+                      className={`landing-press landing-press-soft relative w-full px-4 py-4 text-left transition-colors duration-300 ${
+                        on ? "bg-[#F7F9FC]" : "hover:bg-[#FAFAFC]"
+                      }`}
+                      onClick={() => select(i)}
+                      aria-current={on ? "step" : undefined}
+                    >
+                      {/* Fluid vertical progress rail on the left edge */}
+                      <span
+                        aria-hidden="true"
+                        className="absolute inset-y-0 left-0 w-[2.5px] origin-top bg-[#1655F8] transition-opacity duration-300"
+                        style={{
+                          transform: `scaleY(${fill.toFixed(3)})`,
+                          opacity: on ? 1 : 0,
+                        }}
+                      />
+                      <span
+                        className={`block text-[16px] font-medium tracking-[-.015em] transition-colors duration-300 ${
+                          on ? "text-[#141518]" : "text-[#6B707C] hover:text-[#141518]"
+                        }`}
+                      >
+                        {title}
+                      </span>
+                      <span
+                        className={`mt-1 block text-[15px] leading-[1.55] transition-colors duration-300 ${
+                          on ? "text-[#585D69]" : "text-[#8A8F9B]"
+                        }`}
+                      >
+                        {body}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+
+          <div
+            className="grid grid-cols-[2fr_1fr] gap-3 min-[701px]:gap-4"
+            aria-label="The room, stage, lobby and stream screens, each showing its own output"
+          >
+            <div className="grid gap-3 min-[701px]:gap-4">
               <button
                 type="button"
-                className={`landing-press landing-press-soft relative flex w-full items-start gap-4 overflow-hidden rounded-2xl px-4 py-3.5 text-left transition-[background-color,box-shadow] duration-300 ease-[var(--ease-spring)] ${
-                  active === i
-                    ? "bg-white/[.07] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
-                    : "hover:bg-white/[.04]"
-                }`}
-                onClick={() => goTo(i)}
-                aria-current={active === i ? "step" : undefined}
+                onClick={() => select(0)}
+                className={`${frame(0)} aspect-video`}
+                aria-label="Preview room screen"
               >
-                <span
-                  className="absolute bottom-0 left-0 h-0.5 w-full origin-left bg-[#8AB4FF]/80"
-                  style={{ transform: `scaleX(${active === i ? step.toFixed(3) : 0})` }}
-                  aria-hidden="true"
-                />
-                <span
-                  className={`grid size-9 shrink-0 place-items-center rounded-xl transition-colors duration-300 ease-[var(--ease-spring)] [&_svg]:size-[18px] ${
-                    active === i
-                      ? "bg-[#3B6BFF] text-white"
-                      : "bg-white/[.06] text-[#B9C3E6]"
-                  }`}
-                >
-                  <Icon aria-hidden="true" />
-                </span>
-                <span>
-                  <span className="block pt-1.5 text-[16px] leading-tight font-medium tracking-[-.015em] text-[#F6F3EB]">
-                    {title}
-                  </span>
-                  <span
-                    className={`mt-1.5 block text-[14.5px] leading-[1.5] transition-colors duration-300 ease-[var(--ease-spring)] ${
-                      active === i ? "text-[#C9CFE6]" : "text-[#8D93AD]"
-                    }`}
-                  >
-                    {body}
-                  </span>
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      </div>
-
-      <div
-        className="rounded-[24px] border border-white/[.09] bg-gradient-to-b from-white/[.07] to-white/[.02] p-3.5 shadow-[0_32px_90px_-24px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(255,255,255,0.1)] min-[701px]:p-5"
-        aria-label="The room, stage, lobby and stream screens, each showing its own output"
-        role="img"
-      >
-        <div className="grid grid-cols-[2fr_1fr] gap-2.5 min-[701px]:gap-3.5">
-          <div className="grid gap-2.5 min-[701px]:gap-3.5">
-            {/* Room: the full slide */}
-            <div className={`${frame(0)} aspect-video`}>
-              <Image
-                src="/images/kairo-worship-hero.webp"
-                alt=""
-                fill
-                sizes="(min-width: 1001px) 40vw, 70vw"
-                className="object-cover brightness-[.32] blur-[2px]"
-              />
-              <div className="absolute inset-0 grid place-items-center text-center text-[5.2cqw] leading-[1.25] font-medium tracking-[-.02em] text-white">
-                <p>
-                  Amazing grace, how sweet the sound
-                  <br />
-                  That saved a wretch like me
-                </p>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-2.5 min-[701px]:gap-3.5">
-              {/* Stage: current and next, clock and countdown */}
-              <div className={`${frame(1)} aspect-video text-white`}>
-                <div className="absolute inset-0 p-[5cqw]">
-                  <div className="flex justify-between text-[6cqw] font-semibold tabular-nums">
-                    <span>10:42</span>
-                    <span className="text-[#8AB4FF]">04:59</span>
-                  </div>
-                  <p className="mt-[5cqw] text-[8cqw] leading-[1.1] font-medium tracking-[-.02em]">
-                    Amazing grace, how sweet the sound
-                  </p>
-                  <p className="mt-[3cqw] text-[6cqw] leading-[1.15] text-white/45">
-                    That saved a wretch like me
-                  </p>
-                </div>
-              </div>
-              {/* Stream: the room's picture with a lower third */}
-              <div className={`${frame(3)} aspect-video`}>
                 <Image
                   src="/images/kairo-worship-hero.webp"
                   alt=""
                   fill
-                  sizes="(min-width: 1001px) 20vw, 35vw"
-                  className="object-cover object-[60%_30%] brightness-[.8]"
+                  sizes="(min-width: 1024px) 40vw, 70vw"
+                  className="object-cover brightness-[.34] blur-[1.5px]"
                 />
-                <span className="absolute top-[4cqw] right-[4cqw] rounded-[1.5cqw] bg-black/60 px-[2.5cqw] py-[1cqw] text-[4.5cqw] font-semibold text-white">
-                  NDI
-                </span>
-                <div className="absolute inset-x-[5cqw] bottom-[5cqw] rounded-[2cqw] bg-black/70 px-[4cqw] py-[2.5cqw] text-white">
-                  <p className="text-[6cqw] font-semibold leading-tight">
-                    Amazing grace
-                  </p>
-                  <p className="text-[5cqw] leading-tight text-white/70">
-                    How sweet the sound
+                <div className="absolute inset-0 grid place-items-center px-[8%] text-center text-[5.2cqw] leading-[1.28] font-medium tracking-[-.02em] text-white">
+                  <p>
+                    Amazing grace, how sweet the sound
+                    <br />
+                    That saved a wretch like me
                   </p>
                 </div>
+              </button>
+
+              <div className="grid grid-cols-2 gap-3 min-[701px]:gap-4">
+                <button
+                  type="button"
+                  onClick={() => select(1)}
+                  className={`${frame(1)} aspect-video bg-[#111216] text-white`}
+                  aria-label="Preview stage screen"
+                >
+                  <div className="absolute inset-0 flex flex-col justify-between p-[6cqw]">
+                    <div className="flex justify-between text-[6cqw] font-medium tabular-nums">
+                      <span>10:42</span>
+                      <span className="text-[#72A7FF]">04:59</span>
+                    </div>
+                    <div>
+                      <p className="text-[7.5cqw] leading-[1.14] font-medium tracking-[-.02em]">
+                        Amazing grace, how sweet the sound
+                      </p>
+                      <p className="mt-[2.5cqw] text-[5.8cqw] leading-[1.18] text-white/45">
+                        That saved a wretch like me
+                      </p>
+                    </div>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => select(3)}
+                  className={`${frame(3)} aspect-video`}
+                  aria-label="Preview stream output"
+                >
+                  <Image
+                    src="/images/kairo-worship-hero.webp"
+                    alt=""
+                    fill
+                    sizes="(min-width: 1024px) 20vw, 35vw"
+                    className="object-cover object-[60%_30%] brightness-[.8]"
+                  />
+                  <span className="absolute top-[4cqw] right-[4cqw] rounded-[1.4cqw] bg-black/65 px-[2.4cqw] py-[0.8cqw] text-[4.2cqw] font-medium text-white">
+                    NDI
+                  </span>
+                  <div className="absolute inset-x-[4.5cqw] bottom-[4.5cqw] rounded-[1.8cqw] bg-black/72 px-[4cqw] py-[2.4cqw] text-white backdrop-blur-xs">
+                    <p className="text-[6cqw] leading-tight font-medium">Amazing grace</p>
+                    <p className="mt-[0.5cqw] text-[4.8cqw] leading-tight text-white/70">
+                      How sweet the sound
+                    </p>
+                  </div>
+                </button>
               </div>
             </div>
-          </div>
-          {/* Lobby: a portrait screen with its own playlist */}
-          <div
-            className={`${frame(2)} bg-[linear-gradient(160deg,#1D3FB8_0%,#5B3FD6_55%,#A63DC4_100%)] text-white`}
-          >
-            <div className="absolute inset-0 flex flex-col justify-end p-[9cqw]">
-              <p className="text-[6cqw] font-semibold tracking-[.14em] text-white/70 uppercase">
-                Today
-              </p>
-              <p className="mt-[3cqw] text-[15cqw] leading-[1] font-medium tracking-[-.04em]">
-                Welcome home.
-              </p>
-              <p className="mt-[5cqw] text-[7cqw] leading-[1.35] text-white/80">
-                Coffee in the foyer after the service.
-              </p>
-            </div>
+
+            <button
+              type="button"
+              onClick={() => select(2)}
+              className={`${frame(2)} bg-[linear-gradient(165deg,#0B1A4B_0%,#1655F8_62%,#4B8BFF_100%)] text-white`}
+              aria-label="Preview lobby display"
+            >
+              <div className="absolute inset-0 flex flex-col justify-end p-[9cqw]">
+                <p className="text-[6cqw] font-medium text-white/70">Today</p>
+                <p className="mt-[2.5cqw] text-[15cqw] leading-[1.02] font-medium tracking-[-.04em]">
+                  Welcome home.
+                </p>
+                <p className="mt-[4.5cqw] text-[7cqw] leading-[1.35] text-white/80">
+                  Coffee in the foyer after the service.
+                </p>
+              </div>
+            </button>
           </div>
         </div>
       </div>
-    </div>
+    </section>
   );
 }
