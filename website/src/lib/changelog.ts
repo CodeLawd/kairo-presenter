@@ -34,12 +34,14 @@ export const changelog: ChangelogEntry[] = [
     date: '2026-11-20',
     title: 'Kairo 2.0, rebuilt from the ground up',
     notes: [
+      'Imagine: Generate images and slide decks from a prompt, then refine the results in Kairo.',
       'Kairo has been rebuilt as a native app for Mac, Windows and Linux, so it starts faster and stays responsive through a full service.',
       'Slido moderators can now sign in with Google accounts that use 2-Step Verification.',
       'Song quick open has a new look with smoother motion, and lyric section labels take up less space.',
       'The media panel has a cleaner sidebar for your backgrounds and playlists.',
     ],
     highlights: [
+      { icon: 'media', title: 'Imagine', body: 'Generate images and slide decks from a prompt, then refine the results in Kairo.' },
       { icon: 'speed', title: 'Rebuilt as a native app', body: 'Kairo 2.0 runs natively on your computer, so it opens quickly and stays smooth during a live service.' },
       { icon: 'cloud', title: 'Slido sign-in that works', body: 'Moderators using Google with 2-Step Verification can now sign in to Slido from Kairo.' },
       { icon: 'media', title: 'A tidier media panel', body: 'Backgrounds and playlists sit in a cleaner, more compact sidebar.' },
