@@ -19,7 +19,7 @@
 import { BIBLE_TRANSLATIONS } from './bible-translations'
 
 /** Ids that are also English words, so only their capitalized form is a translation. */
-const WORD_IDS = new Set(['WEB'])
+const WORD_IDS = new Set(['WEB', 'EASY'])
 
 /** Short names that mean a translation however they're used. */
 const UNAMBIGUOUS_SHORT_NAME = /king james/i
@@ -30,6 +30,7 @@ const NAME_ENDING = String.raw`(?=\s+(?:translation|version|bible)\b|\s*(?:[,.;:
 /** Spoken forms that replace the registry's name patterns for ids whose names are common words. */
 const SPOKEN_NAME_OVERRIDES: Record<string, string[]> = {
   MSG: ['the message (?:bible|translation|version)', 'message bible', 'message translation'],
+  GNT: ['good news (?:translation|bible|version)', "today[’']?s english version"],
   AMPC: ['the amplified', 'amplified (?:bible|version|translation|classic)'],
 }
 

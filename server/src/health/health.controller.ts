@@ -1,6 +1,6 @@
 import { Controller, Get } from '@nestjs/common'
 import { InjectConnection } from '@nestjs/mongoose'
-import { Connection } from 'mongoose'
+import type { Connection } from 'mongoose'
 import { Public } from '../common/decorators/public.decorator'
 
 @Controller('v1/health')

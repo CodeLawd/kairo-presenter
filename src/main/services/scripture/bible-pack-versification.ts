@@ -10,14 +10,28 @@ export function getPackVerseNumbers(translation: string, bookId: number, chapter
     .filter((verse) => !override?.omitted?.includes(verse))
 }
 
+/** Untranslated books and chapters hold no verses, so they are not counted. */
 export function packTotalsFor(translation: string): { books: number; chapters: number; verses: number } {
+  let books = 0
   let chapters = 0
   let verses = 0
   for (const [bookIndex, counts] of BIBLE_VERSE_COUNTS.entries()) {
-    chapters += counts.length
+    const before = chapters
     for (let chapter = 1; chapter <= counts.length; chapter++) {
-      verses += getPackVerseNumbers(translation, bookIndex + 1, chapter).length
+      const count = getPackVerseNumbers(translation, bookIndex + 1, chapter).length
+      if (count > 0) chapters++
+      verses += count
     }
+    if (chapters > before) books++
   }
-  return { books: BIBLE_VERSE_COUNTS.length, chapters, verses }
+  return { books, chapters, verses }
+}
+
+/** The last chapter of `bookId` that holds verses in `translation`, or 0. */
+export function lastPackChapter(translation: string, bookId: number): number {
+  const counts = BIBLE_VERSE_COUNTS[bookId - 1] ?? []
+  for (let chapter = counts.length; chapter >= 1; chapter--) {
+    if (getPackVerseNumbers(translation, bookId, chapter).length > 0) return chapter
+  }
+  return 0
 }

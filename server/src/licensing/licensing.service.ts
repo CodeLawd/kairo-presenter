@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, HttpException, Inject, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common'
 import { InjectConnection } from '@nestjs/mongoose'
-import { Connection, Types } from 'mongoose'
+import { Types, type Connection } from 'mongoose'
 import { createHash, generateKeyPairSync, randomBytes, randomUUID, sign } from 'node:crypto'
 import type { AdminChurchLicense, ChurchLicense, LicenseActivationKey, LicensePolicy, LicenseSnapshot, LicenseUpdate, ManagedProviderPatch, ManagedProviderStatus, ManagedRequest, TranscriptionGrant, LicensedFeature } from '@contracts/licensing'
 import type { RequestUser } from '../common/decorators/current-user.decorator'

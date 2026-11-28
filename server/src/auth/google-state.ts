@@ -1,5 +1,5 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
-import type { CookieOptions } from 'express'
+import type { NodeCookieOptions as CookieOptions } from '@nestjs/platform-node'
 import type { AppConfig } from '../config/env'
 import { safeReturnPath } from '@contracts/return-path'
 

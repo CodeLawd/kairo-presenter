@@ -11,7 +11,9 @@ import {
   UnauthorizedException,
 } from '@nestjs/common'
 import { Throttle } from '@nestjs/throttler'
-import type { Request, Response } from 'express'
+import type { NodeRequest, NodeResponse as Response } from '@nestjs/platform-node'
+
+type Request = NodeRequest & { cookies?: Record<string, string> }
 import { Types } from 'mongoose'
 import { AuthService, AuthContext, AuthResult } from './auth.service'
 import {

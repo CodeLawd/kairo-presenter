@@ -67,11 +67,14 @@ export default function RootLayout({
     <html
       suppressHydrationWarning
       lang="en"
+      data-type="software"
       data-scroll-behavior="smooth"
       className={cn(barlow.variable, manrope.variable, jetbrainsMono.variable, inter.variable, "font-sans", geist.variable)}
     >
       <head>
-        <meta name="theme-color" content="#11120D" />
+        <meta name="theme-color" content="#0A0B10" />
+        <meta name="page-type" content="software" />
+        <meta name="site-kind" content="software" />
         {/* Dashboard light mode, set before first paint (no dark flash). */}
         <script dangerouslySetInnerHTML={{ __html: DASHBOARD_THEME_BOOT_SCRIPT }} />
       </head>

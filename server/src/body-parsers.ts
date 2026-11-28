@@ -1,9 +1,9 @@
 import type { INestApplication } from '@nestjs/common'
-import { json, urlencoded } from 'express'
-import type { Request } from 'express'
+import type { NodeRequest } from '@nestjs/platform-node'
+import { json, urlencoded } from '@nestjs/platform-node/body-parser/body-parser'
 import { LARGE_BODY_ROUTES } from './large-body-routes'
 
-/** Everything not named in `LARGE_BODY_ROUTES`. Express's own default, made explicit. */
+/** Everything not named in `LARGE_BODY_ROUTES`. NodeAdapter's own default, made explicit. */
 const DEFAULT_LIMIT = '100kb'
 
 /**
@@ -22,12 +22,12 @@ const DEFAULT_LIMIT = '100kb'
  */
 export function applyBodyParsers(app: INestApplication): void {
   const parsers = LARGE_BODY_ROUTES.map((route) => ({
-    matches: (req: Request) => req.method === route.method && route.path.test(req.path),
+    matches: (req: NodeRequest) => req.method === route.method && route.path.test(req.path),
     parse: json({ limit: route.limit }),
   }))
   const normal = json({ limit: DEFAULT_LIMIT })
 
-  app.use((req: Request, res: never, next: () => void) => {
+  app.use((req: NodeRequest, res: never, next: () => void) => {
     const match = parsers.find((parser) => parser.matches(req))
     return (match ? match.parse : normal)(req, res, next)
   })

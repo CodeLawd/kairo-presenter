@@ -4,12 +4,14 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import {
   ArrowLeftIcon,
+  CheckIcon,
   DownloadIcon,
   FileTextIcon,
   RefreshCwIcon,
   Share2Icon,
   SquareIcon,
   PencilIcon,
+  XIcon,
 } from 'lucide-react'
 import { useVisibleInterval } from '@/hooks/use-refresh'
 import { useDashboard } from '@/components/dashboard/dashboard-provider'
@@ -18,7 +20,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { SermonRecapPreview } from '@/components/pdf/SermonRecapDocument'
 import { onSermonsChanged, peekSermon, rememberSermon } from '@/components/sermon/sermon-cache'
 import { ShareDialog } from '@/components/sermon/ShareDialog'
-import { EditNotesDialog, type NotesEdit } from '@/components/sermon/EditNotesDialog'
+import { SermonRecapEditor, type NotesEdit } from '@/components/sermon/SermonRecapEditor'
 import { ApiError } from '@/lib/api'
 import {
   shareUrl,
@@ -78,7 +80,7 @@ export function SermonReader({ sermonId }: { sermonId: string }): React.ReactEle
   const [transcript, setTranscript] = useState<SermonTranscriptPayload | null>(null)
   const [transcriptOpen, setTranscriptOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
-  const [editOpen, setEditOpen] = useState(false)
+  const [editing, setEditing] = useState(false)
   const [editError, setEditError] = useState<string | null>(null)
   // Church admins and owners may rewrite a recap by hand.
   const canEdit = session.role === 'admin' || session.role === 'owner'
@@ -126,6 +128,8 @@ export function SermonReader({ sermonId }: { sermonId: string }): React.ReactEle
     setTranscript(null)
     setTranscriptOpen(false)
     setShareOpen(false)
+    setEditing(false)
+    setEditError(null)
     setCopied(false)
     setDownloading(false)
     setBusy(false)
@@ -221,7 +225,7 @@ export function SermonReader({ sermonId }: { sermonId: string }): React.ReactEle
         body: edit.notes,
       })
       applySermon(detail)
-      setEditOpen(false)
+      setEditing(false)
     } catch (failure) {
       setEditError(failure instanceof ApiError ? failure.message : 'The recap could not be saved.')
     } finally {
@@ -333,83 +337,111 @@ export function SermonReader({ sermonId }: { sermonId: string }): React.ReactEle
           All recaps
         </Link>
 
-        {error ? <p className="mb-3 text-[13px] text-[#fb7185]">{error}</p> : null}
+        {error || editError ? (
+          <p className="mb-3 text-[13px] text-[#fb7185]">{editError ?? error}</p>
+        ) : null}
 
         {shown.summary ? (
           <div className="flex flex-wrap items-center gap-x-5 gap-y-1">
-            {rewriting ? (
-              <button
-                type="button"
-                disabled={switching || cancelling}
-                onClick={() => void cancelRewrite()}
-                className={TOOL}
-              >
-                <SquareIcon className="size-3.5" />
-                {cancelling ? 'Stopping…' : 'Stop'}
-              </button>
+            {editing ? (
+              <>
+                <button
+                  type="submit"
+                  form="sermon-recap-editor"
+                  disabled={busy || switching}
+                  className={`${TOOL} font-medium text-paper`}
+                >
+                  <CheckIcon className="size-3.5 text-accent" />
+                  {busy ? 'Saving…' : 'Save'}
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    setEditError(null)
+                    setEditing(false)
+                  }}
+                  className={TOOL}
+                >
+                  <XIcon className="size-3.5" />
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void loadTranscript()}
+                  aria-pressed={transcriptOpen}
+                  className={`${TOOL} ${transcriptOpen ? 'text-paper' : ''}`}
+                >
+                  <FileTextIcon className="size-3.5" />
+                  {transcriptOpen ? 'Hide transcript' : 'Transcript'}
+                </button>
+              </>
             ) : (
-              <button
-                type="button"
-                disabled={busy || switching}
-                onClick={() => void regenerate()}
-                className={TOOL}
-              >
-                <RefreshCwIcon className="size-3.5" />
-                Rewrite
-              </button>
+              <>
+                {rewriting ? (
+                  <button
+                    type="button"
+                    disabled={switching || cancelling}
+                    onClick={() => void cancelRewrite()}
+                    className={TOOL}
+                  >
+                    <SquareIcon className="size-3.5" />
+                    {cancelling ? 'Stopping…' : 'Stop'}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={busy || switching}
+                    onClick={() => void regenerate()}
+                    className={TOOL}
+                  >
+                    <RefreshCwIcon className="size-3.5" />
+                    Rewrite
+                  </button>
+                )}
+                {canEdit ? (
+                  <button
+                    type="button"
+                    disabled={busy || switching || rewriting}
+                    onClick={() => {
+                      setEditError(null)
+                      setEditing(true)
+                    }}
+                    className={TOOL}
+                  >
+                    <PencilIcon className="size-3.5" />
+                    Edit
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => void loadTranscript()}
+                  aria-pressed={transcriptOpen}
+                  className={`${TOOL} ${transcriptOpen ? 'text-paper' : ''}`}
+                >
+                  <FileTextIcon className="size-3.5" />
+                  {transcriptOpen ? 'Hide transcript' : 'Transcript'}
+                </button>
+                <button
+                  type="button"
+                  disabled={downloading}
+                  onClick={() => void downloadPdf()}
+                  className={TOOL}
+                >
+                  <DownloadIcon className="size-3.5" />
+                  {downloading ? 'Building…' : 'PDF'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShareOpen(true)}
+                  className={`${TOOL} ${shown.shareEnabled ? 'text-paper' : ''}`}
+                >
+                  <Share2Icon className={`size-3.5 ${shown.shareEnabled ? 'text-accent' : ''}`} />
+                  Share
+                </button>
+              </>
             )}
-            {canEdit ? (
-              <button
-                type="button"
-                disabled={busy || switching || rewriting}
-                onClick={() => {
-                  setEditError(null)
-                  setEditOpen(true)
-                }}
-                className={TOOL}
-              >
-                <PencilIcon className="size-3.5" />
-                Edit
-              </button>
-            ) : null}
-            <button
-              type="button"
-              onClick={() => void loadTranscript()}
-              aria-pressed={transcriptOpen}
-              className={`${TOOL} ${transcriptOpen ? 'text-paper' : ''}`}
-            >
-              <FileTextIcon className="size-3.5" />
-              {transcriptOpen ? 'Hide transcript' : 'Transcript'}
-            </button>
-            <button
-              type="button"
-              disabled={downloading}
-              onClick={() => void downloadPdf()}
-              className={TOOL}
-            >
-              <DownloadIcon className="size-3.5" />
-              {downloading ? 'Building…' : 'PDF'}
-            </button>
-            <button
-              type="button"
-              onClick={() => setShareOpen(true)}
-              className={`${TOOL} ${shown.shareEnabled ? 'text-paper' : ''}`}
-            >
-              <Share2Icon className={`size-3.5 ${shown.shareEnabled ? 'text-accent' : ''}`} />
-              Share
-            </button>
           </div>
-        ) : null}
-
-        {canEdit && shown.summary ? (
-          <EditNotesDialog
-            sermon={shown}
-            open={editOpen}
-            busy={busy}
-            error={editError}
-            onOpenChange={setEditOpen}
-            onSave={(edit) => void saveNotes(edit)}
-          />
         ) : null}
 
         <ShareDialog
@@ -458,14 +490,24 @@ export function SermonReader({ sermonId }: { sermonId: string }): React.ReactEle
             </CardContent>
           </Card>
         ) : shown.summary ? (
-          <SermonRecapPreview
-            title={shown.title}
-            speaker={shown.speaker}
-            preachedAt={shown.preachedAt}
-            churchName={churchName}
-            summary={shown.summary}
-            generating={rewriting}
-          />
+          editing && canEdit ? (
+            <SermonRecapEditor
+              key={shown.id}
+              formId="sermon-recap-editor"
+              sermon={shown}
+              churchName={churchName}
+              onSave={(edit) => void saveNotes(edit)}
+            />
+          ) : (
+            <SermonRecapPreview
+              title={shown.title}
+              speaker={shown.speaker}
+              preachedAt={shown.preachedAt}
+              churchName={churchName}
+              summary={shown.summary}
+              generating={rewriting}
+            />
+          )
         ) : null}
 
         {transcriptOpen ? (

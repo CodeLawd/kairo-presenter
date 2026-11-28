@@ -7,7 +7,7 @@ import { gunzipSync } from 'zlib'
 import os from 'os'
 import { BIBLE_VERSE_COUNTS } from './bible-verse-counts'
 import type { LocalBibleInstallProgress } from '@shared/ipc'
-import { getPackVerseNumbers, hasCustomPackVersification, packTotalsFor } from './bible-pack-versification'
+import { getPackVerseNumbers, hasCustomPackVersification, lastPackChapter, packTotalsFor } from './bible-pack-versification'
 import {
   DEFAULT_PACK_TRANSLATION_ID,
   getDownloadablePack,
@@ -287,7 +287,7 @@ export function validatePackRowsFor(
     const { bookId, chapter, verse } = row
     const text = typeof row.text === 'string' ? row.text : ''
 
-    if (!Number.isInteger(bookId) || bookId < 1 || bookId > books) {
+    if (!Number.isInteger(bookId) || bookId < 1 || bookId > BIBLE_VERSE_COUNTS.length) {
       throw new Error(`Verse has out-of-range book id ${String(bookId)}.`)
     }
     if (!Number.isInteger(chapter) || chapter < 1) {
@@ -317,8 +317,9 @@ export function validatePackRowsFor(
   if (booksSeen.size !== books) {
     throw new Error(`Expected ${books} books, found ${booksSeen.size}.`)
   }
-  for (let bookId = 1; bookId <= books; bookId++) {
-    if (!booksSeen.has(bookId)) {
+  for (let bookId = 1; bookId <= BIBLE_VERSE_COUNTS.length; bookId++) {
+    // An untranslated book (TPT's missing books) expects no rows.
+    if (!booksSeen.has(bookId) && lastPackChapter(normalized, bookId) > 0) {
       throw new Error(`Missing book id ${bookId}.`)
     }
   }
@@ -329,21 +330,22 @@ export function validatePackRowsFor(
     )
   }
 
-  for (let bookId = 1; bookId <= books; bookId++) {
+  for (let bookId = 1; bookId <= BIBLE_VERSE_COUNTS.length; bookId++) {
     const expectedChapterVerses = BIBLE_VERSE_COUNTS[bookId - 1]
     if (!expectedChapterVerses) {
       throw new Error(`Missing canonical verse bounds for book ${bookId}.`)
     }
     const actualChapterCount = bookMaxChapter.get(bookId) ?? 0
-    if (actualChapterCount !== expectedChapterVerses.length) {
+    const expectedChapterCount = lastPackChapter(normalized, bookId)
+    if (actualChapterCount !== expectedChapterCount) {
       throw new Error(
-        `${bookLabel(bookId)} expected ${expectedChapterVerses.length} chapters, found ${actualChapterCount}.`,
+        `${bookLabel(bookId)} expected ${expectedChapterCount} chapters, found ${actualChapterCount}.`,
       )
     }
     for (let chapter = 1; chapter <= expectedChapterVerses.length; chapter++) {
       const actualVerseCount = chapterMaxVerse.get(`${bookId}:${chapter}`) ?? 0
       const expectedNumbers = getPackVerseNumbers(normalized, bookId, chapter)
-      const expectedVerseCount = expectedNumbers[expectedNumbers.length - 1]
+      const expectedVerseCount = expectedNumbers[expectedNumbers.length - 1] ?? 0
       if (actualVerseCount !== expectedVerseCount) {
         throw new Error(
           `${bookLabel(bookId)} ${chapter} expected ${expectedVerseCount} verses, found ${actualVerseCount}.`,
@@ -366,7 +368,7 @@ export function validatePackRowsFor(
   // translation's exact numbering above, including any verified omissions.
   for (const [bookId, maxChapter] of bookMaxChapter) {
     for (let chapter = 1; chapter <= maxChapter; chapter++) {
-      if (!chaptersSeen.has(`${bookId}:${chapter}`)) {
+      if (!chaptersSeen.has(`${bookId}:${chapter}`) && getPackVerseNumbers(normalized, bookId, chapter).length > 0) {
         throw new Error(`Missing chapter ${chapter} in book ${bookId}.`)
       }
     }

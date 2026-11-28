@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { Controller, Get, Inject, Req, Res, UseGuards } from '@nestjs/common'
-import type { Response } from 'express'
+import type { NodeResponse as Response } from '@nestjs/platform-node'
 import { AuthService } from './auth.service'
 import { GoogleAuthGuard, type GoogleRequest } from '../common/guards/google-auth.guard'
 import { Public } from '../common/decorators/public.decorator'

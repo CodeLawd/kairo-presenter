@@ -4,6 +4,7 @@ import { MongoMemoryServer } from 'mongodb-memory-server'
 import { AppModule } from '../src/app.module'
 import { MailService } from '../src/mail/mail.service'
 import { SermonSummaryService, SummaryError } from '../src/sermons/sermon-summary.service'
+import { NestNodeApplication, NodeAdapter } from '@nestjs/platform-node'
 import { configureApp } from '../src/configure-app'
 
 export interface SentMail {
@@ -109,7 +110,9 @@ export async function createTestApp(options: { google?: boolean } = {}): Promise
     .compile()
   // The same middleware stack production runs. Sharing it is what keeps a
   // route working in tests for the same reasons it works in production.
-  const app = moduleRef.createNestApplication({ bodyParser: false })
+  const app = moduleRef.createNestApplication<NestNodeApplication>(new NodeAdapter(), {
+    bodyParser: false,
+  })
   configureApp(app)
   await app.init()
 

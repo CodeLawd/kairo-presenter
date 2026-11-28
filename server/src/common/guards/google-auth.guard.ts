@@ -1,6 +1,6 @@
 import { ExecutionContext, Inject, Injectable, ServiceUnavailableException } from '@nestjs/common'
 import { AuthGuard } from '@nestjs/passport'
-import type { Request, Response } from 'express'
+import type { NodeRequest as Request, NodeResponse as Response } from '@nestjs/platform-node'
 import { APP_CONFIG } from '../../config/config.module'
 import type { AppConfig } from '../../config/env'
 import {
@@ -8,7 +8,11 @@ import {
   issueGoogleState, readGoogleState, googleFailureUrl,
 } from '../../auth/google-state'
 
-export interface GoogleRequest extends Request { googleReturnTo?: string }
+export interface GoogleRequest extends Request {
+  googleReturnTo?: string
+  cookies?: Record<string, string>
+  user?: unknown
+}
 
 @Injectable()
 export class GoogleAuthGuard extends AuthGuard('google') {

@@ -5,6 +5,13 @@
     "ts",
     "tsx"
   ],
+  "extensionsToTreatAsEsm": [
+    ".ts",
+    ".tsx"
+  ],
+  "setupFiles": [
+    "<rootDir>/test/jest-esm-setup.ts"
+  ],
   "rootDir": "..",
   "testEnvironment": "node",
   "testRegex": "test/.*\\.e2e-spec\\.ts$",
@@ -12,6 +19,11 @@
     "^.+\\.(t|j)sx?$": [
       "ts-jest",
       {
+        "useESM": true,
+        "tsconfig": {
+          "module": "ES2022",
+          "moduleResolution": "bundler"
+        },
         "diagnostics": {
           "exclude": [
             "**/components/email/**"
@@ -22,7 +34,8 @@
   },
   "moduleNameMapper": {
     "^@contracts/(.*)$": "<rootDir>/../src/lib/cloud/$1",
-    "^@/(.*)$": "<rootDir>/src/$1"
+    "^@/(.*)$": "<rootDir>/src/$1",
+    "^(\\.{1,2}/.*)\\.js$": "$1"
   },
   "testTimeout": 60000
 }

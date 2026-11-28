@@ -65,8 +65,8 @@ test('registry bundled ids match the translations shipped in resources/bible.db'
   }
 })
 
-test('NKJV, NLT and AMPC offer a one-click offline download', () => {
-  for (const id of ['NKJV', 'NLT', 'AMPC']) {
+test('registry packs offer a one-click offline download', () => {
+  for (const id of ['NKJV', 'NLT', 'MSG', 'AMPC', 'TPT', 'GNT', 'EASY']) {
     const pack = getDownloadablePack(id)
     assert.ok(pack, `${id} must be downloadable`)
     assert.match(pack.url, /^https:\/\//)
@@ -75,7 +75,7 @@ test('NKJV, NLT and AMPC offer a one-click offline download', () => {
   }
   assert.equal(getDownloadablePack('KJV'), undefined)
   assert.equal(getDownloadablePack('BBE'), undefined)
-  assert.deepEqual(getDownloadableTranslationIds(), ['NKJV', 'NLT', 'AMPC'])
+  assert.deepEqual(getDownloadableTranslationIds(), ['NKJV', 'NLT', 'MSG', 'AMPC', 'TPT', 'GNT', 'EASY'])
 })
 
 test('sermon detection aliases resolve alternate abbreviations', () => {

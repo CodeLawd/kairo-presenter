@@ -1,4 +1,4 @@
-import type { CookieOptions, Response } from 'express'
+import type { NodeCookieOptions as CookieOptions, NodeResponse as Response } from '@nestjs/platform-node'
 import type { AppConfig } from '../config/env'
 
 /** Name of the web refresh cookie. Desktop never sees it. */

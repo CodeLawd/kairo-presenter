@@ -1,6 +1,6 @@
 import { randomBytes, createHash, timingSafeEqual } from 'node:crypto'
 import { Injectable } from '@nestjs/common'
-import { JwtService } from '@nestjs/jwt'
+import { JwtService, type JwtSignOptions } from '@nestjs/jwt'
 import { InjectModel } from '@nestjs/mongoose'
 import { Model, Types } from 'mongoose'
 import { Session, SessionDocument, SessionDeviceInfo } from './schemas/session.schema'
@@ -122,7 +122,7 @@ export class TokenService {
         deviceId: input.deviceId,
         emailVerified: input.emailVerified,
       } satisfies AccessTokenClaims,
-      { expiresIn: this.config.accessTokenTtl },
+      { expiresIn: this.config.accessTokenTtl as JwtSignOptions['expiresIn'] },
     )
   }
 

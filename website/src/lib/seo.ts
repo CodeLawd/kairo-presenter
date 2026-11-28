@@ -14,5 +14,5 @@ export const socialImage = {
   url: '/brand/kairo-og.jpg',
   width: 1200,
   height: 669,
-  alt: 'Kairo — Church Presentations, Reimagined With AI.',
+  alt: 'Kairo Presenter — Church presentation software with live Scripture detection.',
 }

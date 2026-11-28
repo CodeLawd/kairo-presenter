@@ -122,6 +122,11 @@ export const BIBLE_TRANSLATIONS: readonly BibleTranslationDefinition[] = [
     access: 'api',
     aliases: ['MESSAGE', 'THEMESSAGE'],
     namePatterns: ['\\bthe message\\b'],
+    downloadablePack: {
+      url: 'https://github.com/CodeLawd/kairo-bible-packs/releases/download/bible-packs-v1/msg-pack.db.gz',
+      sha256: '0a3ddc7dd55d04b347b07de41540cb51fdeeb85c415d8ca6cf45b0760960ac8f',
+      approxLabel: 'about 6 MB',
+    },
   },
   {
     id: 'AMPC',
@@ -141,6 +146,12 @@ export const BIBLE_TRANSLATIONS: readonly BibleTranslationDefinition[] = [
     access: 'api',
     aliases: ['PASSION', 'THEPASSIONTRANSLATION', 'THE PASSION TRANSLATION'],
     namePatterns: ['passion translation'],
+    // Partial: 15 Old Testament books are not yet translated.
+    downloadablePack: {
+      url: 'https://github.com/CodeLawd/kairo-bible-packs/releases/download/bible-packs-v1/tpt-pack.db.gz',
+      sha256: '13822ccd801dce33584cfec25d9234eaed5e777ed820665a60a8c81242e8c614',
+      approxLabel: 'about 4 MB',
+    },
   },
   { id: 'ESV', name: 'English Standard Version', access: 'api', namePatterns: ['english standard'] },
   {
@@ -149,6 +160,29 @@ export const BIBLE_TRANSLATIONS: readonly BibleTranslationDefinition[] = [
     access: 'api',
     namePatterns: ['christian standard'],
     preferredBibleId: 'a556c5305ee15c3f-01',
+  },
+  {
+    id: 'GNT',
+    name: 'Good News Translation',
+    access: 'api',
+    aliases: ['GNB', 'TEV'],
+    namePatterns: ['good news'],
+    downloadablePack: {
+      url: 'https://github.com/CodeLawd/kairo-bible-packs/releases/download/bible-packs-v1/gnt-pack.db.gz',
+      sha256: '5df80c33b57ac552bb2ff69d2f1cc94e387fc8d0fc008c5fb0b67d92f344a909',
+      approxLabel: 'about 5 MB',
+    },
+  },
+  {
+    id: 'EASY',
+    name: 'EasyEnglish Bible',
+    access: 'api',
+    namePatterns: ['easy\\s*english'],
+    downloadablePack: {
+      url: 'https://github.com/CodeLawd/kairo-bible-packs/releases/download/bible-packs-v1/easy-pack.db.gz',
+      sha256: '6c3c11097104035a64003ed26d36dcec42c28f61b9ae036234684fd0b3da6184',
+      approxLabel: 'about 6 MB',
+    },
   },
 ]
 

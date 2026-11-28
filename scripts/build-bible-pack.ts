@@ -175,11 +175,11 @@ export function parsePackSource(
       if (chapter.chapter !== chapterNum) {
         fail(`book "${book.name}": expected chapter ${chapterNum}, found ${JSON.stringify(chapter.chapter)}`)
       }
-      if (!Array.isArray(chapter.verses) || chapter.verses.length === 0) {
+      const expectedVerses = getPackVerseNumbers(translationId, bookId, chapterNum)
+      // Untranslated chapters (TPT's missing books) are expected to be empty.
+      if (!Array.isArray(chapter.verses) || (chapter.verses.length === 0 && expectedVerses.length > 0)) {
         fail(`book "${book.name}" chapter ${chapterNum} has no verses`)
       }
-
-      const expectedVerses = getPackVerseNumbers(translationId, bookId, chapterNum)
       for (let v = 0; v < chapter.verses.length; v++) {
         const verse = chapter.verses[v] as SourceVerse
         const verseNum = expectedVerses[v]

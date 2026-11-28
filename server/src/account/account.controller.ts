@@ -1,6 +1,6 @@
 import { Body, Controller, Get, HttpCode, Inject, Post, Res } from '@nestjs/common'
 import { Throttle } from '@nestjs/throttler'
-import type { Response } from 'express'
+import type { NodeResponse as Response } from '@nestjs/platform-node'
 import { AccountService, DeletionPreview } from './account.service'
 import { DeleteAccountDto } from './dto/account.dto'
 import { AllowUnverified } from '../common/decorators/allow-unverified.decorator'

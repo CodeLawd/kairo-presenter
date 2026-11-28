@@ -1,3 +1,5 @@
+import { ABSENT_BOOKS, GENERATED_OVERRIDES } from './bible-versification-data'
+
 interface VerseNumberingOverride {
   lastVerse: number
   omitted?: readonly number[]
@@ -12,8 +14,12 @@ const OVERRIDES: Record<string, Record<string, VerseNumberingOverride>> = {
   },
 }
 
+/** Every chapter of an untranslated book holds no verses. */
+const ABSENT_CHAPTER: VerseNumberingOverride = { lastVerse: 0 }
+
 export function hasCustomPackVersification(translation: string): boolean {
-  return Object.hasOwn(OVERRIDES, translation.toUpperCase())
+  const id = translation.toUpperCase()
+  return Object.hasOwn(OVERRIDES, id) || Object.hasOwn(GENERATED_OVERRIDES, id) || Object.hasOwn(ABSENT_BOOKS, id)
 }
 
 export function getVerseNumberingOverride(
@@ -21,5 +27,13 @@ export function getVerseNumberingOverride(
   bookId: number,
   chapter: number,
 ): VerseNumberingOverride | undefined {
-  return OVERRIDES[translation.toUpperCase()]?.[`${bookId}:${chapter}`]
+  const id = translation.toUpperCase()
+  if (ABSENT_BOOKS[id]?.includes(bookId)) return ABSENT_CHAPTER
+  const key = `${bookId}:${chapter}`
+  const hand = OVERRIDES[id]?.[key]
+  if (hand) return hand
+  const generated = GENERATED_OVERRIDES[id]?.[key]
+  if (!generated) return undefined
+  const [lastVerse, ...omitted] = generated
+  return omitted.length ? { lastVerse, omitted } : { lastVerse }
 }

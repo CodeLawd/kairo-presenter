@@ -1,5 +1,5 @@
 import type { ExecutionContext } from '@nestjs/common'
-import type { Response } from 'express'
+import type { NodeResponse as Response } from '@nestjs/platform-node'
 import { GoogleAuthGuard } from './google-auth.guard'
 import { loadConfig } from '../../config/env'
 
