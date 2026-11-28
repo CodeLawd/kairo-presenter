@@ -74,6 +74,13 @@ describe('Managed licensing (e2e)', () => {
     await call().post('/v1/licensing/activate').set(auth(owner.accessToken)).send({ key: first, name: 'Revoked' }).expect(403)
     const replacement = await key()
     expect(replacement).not.toBe(first)
+    // Revoking can also sign every computer out (a leaked key).
+    expect((await call().get('/v1/licensing').set(auth(owner.accessToken)).expect(200)).body.license.devices).toHaveLength(1)
+    await call().delete('/v1/licensing/key?deactivate=all').set(auth(owner.accessToken)).expect(200)
+    const signedOut = (await call().get('/v1/licensing').set(auth(owner.accessToken)).expect(200)).body as LicenseSnapshot
+    expect(signedOut.license?.devices).toEqual([])
+    expect(signedOut.activated).toBe(false)
+    await key()
     // A licence from before keys were stored gains one the first time it is viewed.
     await context.app.get<Connection>(getConnectionToken()).collection('church_licenses').updateOne({ orgId: owner.orgId }, { $unset: { key: '', keyRevokedAt: '' } })
     const backfilled = await call().get('/v1/licensing/key').set(auth(owner.accessToken)).expect(200)

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common'
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common'
 import { CurrentUser, RequestUser } from '../common/decorators/current-user.decorator'
 import { PlatformAdminGuard, SuperadminOnly } from '../admin/platform-admin.guard'
 import { LicensingService } from './licensing.service'
@@ -9,7 +9,8 @@ export class LicensingController {
   constructor(private readonly licensing: LicensingService) {}
   @Get() get(@CurrentUser() user: RequestUser) { return this.licensing.snapshot(user) }
   @Get('key') getKey(@CurrentUser() user: RequestUser) { return this.licensing.getKey(user) }
-  @Delete('key') revokeKey(@CurrentUser() user: RequestUser) { return this.licensing.revokeKey(user) }
+  /** `?deactivate=all` also signs every computer out: for a key that leaked. */
+  @Delete('key') revokeKey(@CurrentUser() user: RequestUser, @Query('deactivate') deactivate?: string) { return this.licensing.revokeKey(user, deactivate === 'all') }
   @Post('key') key(@CurrentUser() user: RequestUser) { return this.licensing.issueKey(user) }
   @Post('activate') activate(@CurrentUser() user: RequestUser, @Body() body: { key: string; name: string }) { return this.licensing.activate(user, body?.key, body?.name) }
   @Post('refresh') refresh(@CurrentUser() user: RequestUser) { return this.licensing.snapshot(user) }

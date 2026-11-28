@@ -186,11 +186,13 @@ export class LicensingService {
     await this.audit(user.sub, 'activation-key.issued', user.orgId)
     return { id: hash(key).slice(0, 16), key, createdAt }
   }
-  async revokeKey(user: RequestUser) {
+  async revokeKey(user: RequestUser, deactivateAll = false) {
     await this.member(user, true)
     // The timestamp stops a later page view from silently creating a new key.
-    await this.licenses.updateOne({ orgId: user.orgId }, { $set: { keyRevokedAt: new Date().toISOString() }, $unset: { key: '' } })
+    const set = { keyRevokedAt: new Date().toISOString(), ...(deactivateAll ? { devices: [], sessions: [] } : {}) }
+    await this.licenses.updateOne({ orgId: user.orgId }, { $set: set, $unset: { key: '' } })
     await this.audit(user.sub, 'activation-key.revoked', user.orgId)
+    if (deactivateAll) await this.audit(user.sub, 'device.deactivated-all', user.orgId)
     return null
   }
   private readKey(row: KeyRow): LicenseActivationKey {
