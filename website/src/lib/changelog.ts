@@ -30,6 +30,20 @@ export type ChangelogEntry = {
 
 export const changelog: ChangelogEntry[] = [
   {
+    version: '2.1.2',
+    date: '2026-11-28',
+    title: 'Imagine finds your key after you sign in',
+    notes: [
+      'Imagine now picks up the OpenAI key saved on your Kairo account as soon as you sign in, instead of asking for it again.',
+      'Signing out removes your Imagine key from that computer, so the next person to sign in there never gets it.',
+      'Church owners can revoke the activation key and deactivate every computer in one step, for a key that was shared by mistake.',
+    ],
+    highlights: [
+      { icon: 'cloud', title: 'Imagine follows you, for real', body: 'Sign in on any computer and Imagine uses the OpenAI key saved on your Kairo account.' },
+      { icon: 'tip', title: 'Revoke and deactivate', body: 'On the Licence & devices page, revoking the key can also deactivate every computer, for a key that was shared by mistake.' },
+    ],
+  },
+  {
     version: '2.1.1',
     date: '2026-11-28',
     title: 'Imagine on every computer, and Media everywhere',
