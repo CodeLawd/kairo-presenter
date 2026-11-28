@@ -20,7 +20,7 @@ describe('Managed licensing (e2e)', () => {
   const call = () => request(app.getHttpServer())
   const key = async (token = owner.accessToken): Promise<string> => {
     const response = await call().post('/v1/licensing/key').set(auth(token)).expect(201)
-    expect(response.body.key).toEqual(expect.stringMatching(/^[a-f0-9]{48}$/))
+    expect(response.body.key).toEqual(expect.stringMatching(/^KAIRO(-[0-9A-HJKMNP-TV-Z]{4}){6}$/))
     return response.body.key
   }
   const login = async (deviceId: string): Promise<string> => {
@@ -77,7 +77,7 @@ describe('Managed licensing (e2e)', () => {
     // A licence from before keys were stored gains one the first time it is viewed.
     await context.app.get<Connection>(getConnectionToken()).collection('church_licenses').updateOne({ orgId: owner.orgId }, { $unset: { key: '', keyRevokedAt: '' } })
     const backfilled = await call().get('/v1/licensing/key').set(auth(owner.accessToken)).expect(200)
-    expect(backfilled.body.key).toMatch(/^[a-f0-9]{48}$/)
+    expect(backfilled.body.key).toMatch(/^KAIRO(-[0-9A-HJKMNP-TV-Z]{4}){6}$/)
   })
 
   it('allows free key issuance without billing and rejects keys belonging to another church', async () => {

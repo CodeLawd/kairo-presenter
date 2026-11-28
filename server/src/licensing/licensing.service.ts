@@ -1,13 +1,14 @@
 import { BadRequestException, ForbiddenException, HttpException, Inject, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common'
 import { InjectConnection } from '@nestjs/mongoose'
 import { Types, type Connection } from 'mongoose'
-import { createHash, generateKeyPairSync, randomBytes, randomUUID, sign } from 'node:crypto'
+import { createHash, generateKeyPairSync, randomUUID, sign } from 'node:crypto'
 import type { AdminChurchLicense, ChurchLicense, LicenseActivationKey, LicensePolicy, LicenseSnapshot, LicenseUpdate, ManagedProviderPatch, ManagedProviderStatus, ManagedRequest, TranscriptionGrant, LicensedFeature } from '@contracts/licensing'
 import type { RequestUser } from '../common/decorators/current-user.decorator'
 import { APP_CONFIG } from '../config/config.module'
 import type { AppConfig } from '../config/env'
 import { decryptJson, encryptJson, vaultKeyFromSecret } from '../orgs/vault-crypto'
 import { FEATURES, leaseTimes, validateManagedRequest } from './managed-policy'
+import { canonicalActivationKey, newActivationKey } from './activation-key'
 
 const DEFAULT_POLICY: LicensePolicy = { freeIssuanceEnabled: true, defaultMaxDevices: 3, defaultMaxTranscriptionSessions: 3, defaultTranscriptionMinutes: 600, defaultManagedRequests: 5000, offlineGraceDays: 14 }
 const PROVIDERS = ['deepgram', 'bible', 'anthropic', 'deepseek', 'brave', 'googleTranslate'] as const
@@ -174,7 +175,7 @@ export class LicensingService {
     }
     if (!row || row.status !== 'active' || (row.expiresAt && Date.parse(row.expiresAt) <= Date.now())) throw new ForbiddenException('Licence is inactive')
     if (row.key?.sealed) return this.readKey(row.key)
-    const key = randomBytes(24).toString('hex'), createdAt = new Date().toISOString()
+    const key = newActivationKey(), createdAt = new Date().toISOString()
     // Only the first writer wins, so two tabs cannot rotate the church key by accident.
     const stored = await this.licenses.findOneAndUpdate({ orgId: user.orgId, ...active(), key: null }, { $set: { key: { hash: hash(key), createdAt, sealed: encryptJson(this.key, { key }) } }, $unset: { keyRevokedAt: '' } }, { returnDocument: 'after' })
     if (!stored) {
@@ -198,8 +199,9 @@ export class LicensingService {
   }
   async activate(user: RequestUser, key: string, name: string) {
     await this.member(user)
-    if (typeof key !== 'string' || !/^[a-f0-9]{48}$/.test(key) || typeof name !== 'string' || !name.trim() || name.length > 160) throw new BadRequestException('Valid activation key and device name required')
-    const now = new Date().toISOString(), hashed = hash(key)
+    const canonical = canonicalActivationKey(key)
+    if (!canonical || typeof name !== 'string' || !name.trim() || name.length > 160) throw new BadRequestException('Valid activation key and device name required')
+    const now = new Date().toISOString(), hashed = hash(canonical)
     const result = await this.licenses.findOneAndUpdate({ orgId: user.orgId, ...active(), 'key.hash': hashed, $expr: { $or: [{ $in: [{ $literal: user.deviceId }, '$devices.deviceId'] }, { $lt: [{ $size: '$devices' }, '$maxDevices'] }] } }, [{ $set: {
       devices: { $concatArrays: [{ $filter: { input: '$devices', as: 'd', cond: { $ne: ['$$d.deviceId', { $literal: user.deviceId }] } } }, { $literal: [{ deviceId: user.deviceId, name: name.trim(), activatedAt: now, lastSeenAt: now }] }] },
     } }], { returnDocument: 'after' })

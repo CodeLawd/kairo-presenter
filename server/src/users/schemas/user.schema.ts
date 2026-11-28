@@ -46,6 +46,14 @@ export class User {
    */
   @Prop({ type: String, enum: ['admin'], default: null })
   platformRole!: 'admin' | null
+
+  /**
+   * The person's own OpenAI key for Imagine, so it follows them to every
+   * device they sign in on. Only the AES-256-GCM envelope is stored; never
+   * selected by default, never exported.
+   */
+  @Prop({ type: Object, required: false, select: false })
+  imagineKey?: { ciphertext: string; iv: string; authTag: string }
 }
 
 export const UserSchema = SchemaFactory.createForClass(User)

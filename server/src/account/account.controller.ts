@@ -1,8 +1,9 @@
-import { Body, Controller, Get, HttpCode, Inject, Post, Res } from '@nestjs/common'
+import { Body, Controller, Delete, Get, HttpCode, Inject, Post, Put, Res } from '@nestjs/common'
 import { Throttle } from '@nestjs/throttler'
 import type { NodeResponse as Response } from '@nestjs/platform-node'
 import { AccountService, DeletionPreview } from './account.service'
-import { DeleteAccountDto } from './dto/account.dto'
+import { DeleteAccountDto, ImagineKeyDto } from './dto/account.dto'
+import { ImagineKeyService } from './imagine-key.service'
 import { AllowUnverified } from '../common/decorators/allow-unverified.decorator'
 import { CurrentUser, RequestUser } from '../common/decorators/current-user.decorator'
 import { APP_CONFIG } from '../config/config.module'
@@ -19,8 +20,32 @@ import { clearRefreshCookie } from '../auth/refresh-cookie'
 export class AccountController {
   constructor(
     private readonly account: AccountService,
+    private readonly imagineKeys: ImagineKeyService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
+
+  /** The person's own OpenAI key for Imagine, synced to each device they sign in on. */
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @Get('imagine-key')
+  async imagineKey(@CurrentUser() user: RequestUser): Promise<{ key: string | null }> {
+    return { key: await this.imagineKeys.get(user.sub) }
+  }
+
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Put('imagine-key')
+  async saveImagineKey(
+    @CurrentUser() user: RequestUser,
+    @Body() dto: ImagineKeyDto,
+  ): Promise<{ saved: true }> {
+    await this.imagineKeys.set(user.sub, dto.key)
+    return { saved: true }
+  }
+
+  @Delete('imagine-key')
+  async clearImagineKey(@CurrentUser() user: RequestUser): Promise<{ cleared: true }> {
+    await this.imagineKeys.clear(user.sub)
+    return { cleared: true }
+  }
 
   @AllowUnverified()
   @Throttle({ default: { limit: 5, ttl: 60_000 } })

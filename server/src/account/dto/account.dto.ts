@@ -1,4 +1,20 @@
-import { ArrayMaxSize, IsArray, IsMongoId, IsOptional, IsString, MaxLength } from 'class-validator'
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsMongoId,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+} from 'class-validator'
+
+/** An OpenAI API key: `sk-` and URL-safe characters, nothing else. */
+export class ImagineKeyDto {
+  @IsString()
+  @MaxLength(400)
+  @Matches(/^sk-[A-Za-z0-9_-]{20,}$/)
+  key!: string
+}
 
 export class DeleteAccountDto {
   /** Required when the account has a password. */

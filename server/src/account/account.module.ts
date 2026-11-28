@@ -13,6 +13,7 @@ import { CrashReport, CrashReportSchema } from '../crashes/schemas/crash-report.
 import { UsageDay, UsageDaySchema } from '../usage/schemas/usage-day.schema'
 import { AccountController } from './account.controller'
 import { AccountService } from './account.service'
+import { ImagineKeyService } from './imagine-key.service'
 
 @Module({
   imports: [
@@ -31,6 +32,6 @@ import { AccountService } from './account.service'
     ]),
   ],
   controllers: [AccountController],
-  providers: [AccountService],
+  providers: [AccountService, ImagineKeyService],
 })
 export class AccountModule {}
