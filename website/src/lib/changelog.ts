@@ -30,6 +30,54 @@ export type ChangelogEntry = {
 
 export const changelog: ChangelogEntry[] = [
   {
+    version: '2.1.1',
+    date: '2026-11-28',
+    title: 'Imagine on every computer, and Media everywhere',
+    notes: [
+      'Imagine remembers your OpenAI key on your Kairo account, so it is ready on every computer you sign in on. Disconnecting removes it everywhere.',
+      'The Media panel now opens on every page, including Engage, Web, Prompter, Imagine and the Theme Editor.',
+      'New activation keys are easier to read and type, like KAIRO-7F3K-Q9PX-M2TD-WC8H-4RNB-ZJ61. Existing keys keep working.',
+    ],
+    highlights: [
+      { icon: 'cloud', title: 'Imagine follows you', body: 'Connect your OpenAI key once and Imagine is ready on every computer you sign in to Kairo on.' },
+      { icon: 'media', title: 'Media on every page', body: 'Open the Media panel from Engage, Web, Prompter, Imagine and the Theme Editor too.' },
+      { icon: 'tip', title: 'Readable activation keys', body: 'New activation keys look like KAIRO-7F3K-Q9PX-…, so they are easy to read out and type. Existing keys keep working.' },
+    ],
+  },
+  {
+    version: '2.1.0',
+    date: '2026-11-27',
+    title: 'Motion backgrounds and a refreshed app',
+    notes: [
+      'Imagine can save a picture to Media with motion: slow zoom, drift, pan, light rays, dust, bokeh, haze, or depth (parallax, which makes one more image).',
+      'The Media Inspector has a Motion section for images, and its Save button stays in view.',
+      'The rail moves Theme and other tools into a More menu, and the account, audio and feedback into an avatar menu.',
+      'Screen Themes are now called Looks, under a new Screens menu with Audience and Stage shortcuts.',
+      'The Theme Editor adds text, pen drawing and shapes, and Delete removes elements, images and videos.',
+      'Dialogs, popovers and workspaces now animate, respecting reduced motion.',
+      'Windows: no terminal window on launch, and no false engine-unresponsive warning after sleep.',
+    ],
+    highlights: [
+      { icon: 'media', title: 'Motion backgrounds', body: 'Ask Imagine for a moving background and it makes the picture, then sets it gently in motion with a slow camera move, light rays, dust, bokeh, haze or depth. It plays on screen without video files.' },
+      { icon: 'theme', title: 'Motion loops', body: 'Free animated colour loops, drawn by Kairo, sit with the Imagine templates. One click adds one to Media.' },
+      { icon: 'tip', title: 'A calmer, livelier app', body: 'A tidier rail with a More menu and an account menu, a Screens menu with Looks, smooth animations throughout, and the Inter typeface.' },
+      { icon: 'speed', title: 'Steadier on Windows', body: 'On Windows, Kairo no longer opens a terminal window beside the app, and the engine no longer reports itself unresponsive after the computer sleeps.' },
+    ],
+  },
+  {
+    version: '2.0.1',
+    date: '2026-11-25',
+    title: 'Faster live scripture and a warmer Imagine welcome',
+    notes: [
+      'Opening Imagine for the first time now introduces what it can create with visual examples, followed by a cleaner OpenAI connection card.',
+      'Detected scripture cards in the Operator view are now clickable across the whole card to push directly to the live screen.',
+    ],
+    highlights: [
+      { icon: 'media', title: 'A warmer welcome to Imagine', body: 'Opening Imagine for the first time now shows what it can create before asking you to connect your OpenAI account.' },
+      { icon: 'scripture', title: 'One-click live scripture', body: 'Click anywhere on a detected scripture card in the Operator view to send it straight to the live screen.' },
+    ],
+  },
+  {
     version: '2.0.0',
     date: '2026-11-20',
     title: 'Kairo 2.0, rebuilt from the ground up',
